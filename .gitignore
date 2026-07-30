@@ -1,1 +1,13 @@
-node_modules
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+.venv/
+**pycache**/
+.pytest_cache/
+.ruff_cache/
+coverage/
+playwright-report/
+test-results/
+.DS_Store
