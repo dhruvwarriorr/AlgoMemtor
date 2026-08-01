@@ -1,8 +1,8 @@
-# MentorForge
+# AlgoMemtor
 
 > From first line of code to contest legend — a coach that never forgets.
 
-MentorForge is a learning platform for Data Structures and Algorithms,
+AlgoMemtor is a learning platform for Data Structures and Algorithms,
 competitive programming, coding interviews, and algorithmic thinking. Its core
 idea is a persistent AI mentor that uses evidence from attempts, submissions,
 hints, and goals to make future guidance more relevant.
@@ -53,7 +53,7 @@ React + TypeScript + Vite
                         +-- LLM and embedding provider
 ```
 
-MentorForge starts as one product with two specialized backend services:
+AlgoMemtor starts as one product with two specialized backend services:
 
 | Component     | Ownership                                                        |
 | ------------- | ---------------------------------------------------------------- |
@@ -240,7 +240,7 @@ and whether they introduce migrations or environment variables.
 
 - [Project documentation](docs/PROJECT_DOCUMENTATION.md)
 - [Development roadmap](docs/ROADMAP.md)
-- [MVP technical blueprint](docs/MentorForge_MVP_Blueprint.md)
+- [MVP technical blueprint](docs/AlgoMemtor_MVP_Blueprint.md)
 - [Product vision](docs/CP_Mentor_AI_Project_Vision.md)
 - [Architecture decisions](docs/adr/)
 

@@ -1,4 +1,4 @@
-# MentorForge: Your Persistent AI Coding Coach
+# AlgoMemtor: Your Persistent AI Coding Coach
 ## Project Vision Document — Detailed Feature Edition
 *Version 2.0 · June 2026*
 
@@ -8,13 +8,13 @@
 
 ## 1. Executive Summary
 
-MentorForge is an AI-powered autonomous learning companion built specifically for students and developers on the Competitive Programming (CP) and Data Structures & Algorithms (DSA) journey. Unlike generic AI tools that treat every conversation as a blank slate, MentorForge remembers you — your strengths, your weak spots, your contest history, your learning rhythm, and your long-term goals.
+AlgoMemtor is an AI-powered autonomous learning companion built specifically for students and developers on the Competitive Programming (CP) and Data Structures & Algorithms (DSA) journey. Unlike generic AI tools that treat every conversation as a blank slate, AlgoMemtor remembers you — your strengths, your weak spots, your contest history, your learning rhythm, and your long-term goals.
 
 It is not a chatbot. It is a long-term mentor that grows with you.
 
-The platform is powered by a collaborative ecosystem of specialized AI agents that work together behind the scenes to personalize every recommendation, every practice session, every contest, and every piece of feedback. Whether you are a complete beginner figuring out recursion for the first time, or a seasoned competitive programmer chasing a higher Codeforces rating, MentorForge adapts to exactly where you are and guides you toward where you want to be.
+The platform is powered by a collaborative ecosystem of specialized AI agents that work together behind the scenes to personalize every recommendation, every practice session, every contest, and every piece of feedback. Whether you are a complete beginner figuring out recursion for the first time, or a seasoned competitive programmer chasing a higher Codeforces rating, AlgoMemtor adapts to exactly where you are and guides you toward where you want to be.
 
-At its core, MentorForge is built on one belief: **personalized, authentic learning beats generic, one-size-fits-all guidance — every single time.**
+At its core, AlgoMemtor is built on one belief: **personalized, authentic learning beats generic, one-size-fits-all guidance — every single time.**
 
 ---
 
@@ -31,30 +31,30 @@ Most learning platforms offer the same roadmap to every student. A complete begi
 **Authentic learning is increasingly difficult to verify.**
 With AI-generated solutions now a copy-paste away, it is becoming almost impossible to know whether a student actually solved a problem independently or simply generated the answer. This erodes the integrity of learning progress and makes skill evaluation unreliable — for students, mentors, and recruiters alike.
 
-MentorForge addresses all three problems simultaneously — through persistent memory, deep personalization, and an authenticity-first approach to learning.
+AlgoMemtor addresses all three problems simultaneously — through persistent memory, deep personalization, and an authenticity-first approach to learning.
 
 ---
 
 ## 3. The Solution & Core Concept
 
-MentorForge introduces the concept of the **Persistent AI Mentor** — a system that builds a continuously evolving, deeply personalized model of each learner and uses that model to guide every single interaction.
+AlgoMemtor introduces the concept of the **Persistent AI Mentor** — a system that builds a continuously evolving, deeply personalized model of each learner and uses that model to guide every single interaction.
 
 The platform is powered by a collaborative ecosystem of specialized AI agents, each with a distinct role, all working in coordination toward one mission: helping you grow authentically as a competitive programmer and problem solver.
 
-Rather than replacing human mentorship, MentorForge scales it. It makes the kind of thoughtful, personalized coaching that was previously only available from elite tutors or top university programs accessible to every learner — regardless of their background, institution, or resources.
+Rather than replacing human mentorship, AlgoMemtor scales it. It makes the kind of thoughtful, personalized coaching that was previously only available from elite tutors or top university programs accessible to every learner — regardless of their background, institution, or resources.
 
-The creative philosophy behind MentorForge is **"Learning that remembers you."**
+The creative philosophy behind AlgoMemtor is **"Learning that remembers you."**
 
-Every problem you solve, every hint you request, every contest you participate in, every mistake you make, and every concept you master feeds back into the system's evolving understanding of who you are. Over time, MentorForge stops feeling like a tool and starts feeling like a coach who has watched you grow from day one — and knows exactly what you need next.
+Every problem you solve, every hint you request, every contest you participate in, every mistake you make, and every concept you master feeds back into the system's evolving understanding of who you are. Over time, AlgoMemtor stops feeling like a tool and starts feeling like a coach who has watched you grow from day one — and knows exactly what you need next.
 
 ---
 
 ## 4. Target Audience
 
-MentorForge is designed for three distinct learner profiles, each with their own set of challenges and goals.
+AlgoMemtor is designed for three distinct learner profiles, each with their own set of challenges and goals.
 
 **The Complete Beginner**
-Someone who is just starting their programming journey or stepping into DSA for the first time. They feel overwhelmed by the volume of content online, do not know where to start, and need structured, patient, and encouraging guidance from the very ground up. For this learner, MentorForge is a starting point that removes all confusion and replaces it with a clear, personalized path forward.
+Someone who is just starting their programming journey or stepping into DSA for the first time. They feel overwhelmed by the volume of content online, do not know where to start, and need structured, patient, and encouraging guidance from the very ground up. For this learner, AlgoMemtor is a starting point that removes all confusion and replaces it with a clear, personalized path forward.
 
 **The Intermediate Practitioner**
 A developer or student who can solve basic problems but wants to level up — for placement interviews at top companies, competitive programming contests, or personal skill growth. They need targeted improvement in specific topics, smarter preparation strategies, and a system that can identify exactly where they are losing marks and why.
@@ -66,17 +66,17 @@ Someone already participating in rated contests on platforms like Codeforces, Le
 
 ## 5. Key Features & User Experience
 
-MentorForge is built around fifteen deeply integrated features that together create a holistic, adaptive, and personalized learning experience. Every feature is designed to serve the learner's long-term growth — not just their immediate question.
+AlgoMemtor is built around fifteen deeply integrated features that together create a holistic, adaptive, and personalized learning experience. Every feature is designed to serve the learner's long-term growth — not just their immediate question.
 
 ---
 
 ### Feature 1 — Intelligent Onboarding & Adaptive Skill Assessment
 
-A new user's journey on MentorForge begins not with a generic tutorial or a wall of content, but with a meaningful conversation.
+A new user's journey on AlgoMemtor begins not with a generic tutorial or a wall of content, but with a meaningful conversation.
 
 #### The Onboarding Flow
 
-When a user joins MentorForge for the first time, the platform walks them through a structured onboarding dialogue designed to understand who they are as a learner. The system explores:
+When a user joins AlgoMemtor for the first time, the platform walks them through a structured onboarding dialogue designed to understand who they are as a learner. The system explores:
 
 - Previous programming experience and background
 - Familiarity with data structures and algorithms
@@ -88,7 +88,7 @@ When a user joins MentorForge for the first time, the platform walks them throug
 
 #### The Adaptive Skill Assessment
 
-Following onboarding, MentorForge generates a customized adaptive skill assessment — not a pass-or-fail exam, but a calibration experience designed to estimate the learner's real-world skill level. The assessment observes:
+Following onboarding, AlgoMemtor generates a customized adaptive skill assessment — not a pass-or-fail exam, but a calibration experience designed to estimate the learner's real-world skill level. The assessment observes:
 
 - Problem-solving approach — how the user breaks down a problem before coding
 - Solving speed and consistency under mild time pressure
@@ -99,17 +99,17 @@ Following onboarding, MentorForge generates a customized adaptive skill assessme
 
 #### The Outcome: A Personalized Starting Roadmap
 
-Based on the onboarding and assessment results, MentorForge's mentor agents generate a fully personalized learning roadmap. A beginner who struggles with recursion receives a structured 30-day foundational plan, with concepts progressively unlocked as confidence improves. An intermediate user with graph theory gaps receives a targeted 7-day focused plan embedded within a broader roadmap. Crucially, this roadmap is not static — it is a living document that evolves continuously as the user progresses, improves, and changes their goals.
+Based on the onboarding and assessment results, AlgoMemtor's mentor agents generate a fully personalized learning roadmap. A beginner who struggles with recursion receives a structured 30-day foundational plan, with concepts progressively unlocked as confidence improves. An intermediate user with graph theory gaps receives a targeted 7-day focused plan embedded within a broader roadmap. Crucially, this roadmap is not static — it is a living document that evolves continuously as the user progresses, improves, and changes their goals.
 
 ---
 
 ### Feature 2 — The Persistent AI Mentor & Long-Term Memory System
 
-At the heart of MentorForge is something no other CP/DSA platform currently offers: a mentor with genuine long-term memory.
+At the heart of AlgoMemtor is something no other CP/DSA platform currently offers: a mentor with genuine long-term memory.
 
 #### What the Mentor Remembers
 
-Unlike a chatbot that forgets everything between sessions, MentorForge continuously maintains and updates a persistent learner profile capturing:
+Unlike a chatbot that forgets everything between sessions, AlgoMemtor continuously maintains and updates a persistent learner profile capturing:
 
 - Strengths and weak topics at a granular level (e.g., "Dijkstra's is strong, Floyd-Warshall is weak, topological sort is untested")
 - Problem-solving patterns and tendencies — whether the user jumps to code too quickly, handles edge cases consistently, or defaults to brute force under pressure
@@ -126,13 +126,13 @@ Unlike a chatbot that forgets everything between sessions, MentorForge continuou
 
 This persistent memory is not just a profile page. It actively shapes every recommendation, every hint, every roadmap adjustment, every contest selection, and every piece of feedback the system generates. The mentor is always asking: what does this specific person need right now, based on everything I know about them?
 
-This is what transforms MentorForge from a tool into a genuine long-term coaching relationship.
+This is what transforms AlgoMemtor from a tool into a genuine long-term coaching relationship.
 
 ---
 
 ### Feature 3 — Smart Problem Recommendation Agent
 
-Instead of browsing through hundreds of problems and guessing which one to attempt next, MentorForge curates a personalized daily problem feed for every user.
+Instead of browsing through hundreds of problems and guessing which one to attempt next, AlgoMemtor curates a personalized daily problem feed for every user.
 
 #### How Recommendations Are Generated
 
@@ -153,7 +153,7 @@ Every recommended problem comes with context — not just a link, but a short ex
 
 ### Feature 4 — Guided Hint & Debugging System
 
-When a user gets stuck, MentorForge does not hand over the answer. It guides the user toward the answer in a way that preserves genuine learning.
+When a user gets stuck, AlgoMemtor does not hand over the answer. It guides the user toward the answer in a way that preserves genuine learning.
 
 #### Layered, Progressive Hints
 
@@ -169,7 +169,7 @@ Hint depth is adapted based on the user's skill level and prior exposure to simi
 
 #### Bug Detection & Code Feedback
 
-Beyond hints, the system assists with debugging. When a user submits code that produces wrong answers or runtime errors, MentorForge:
+Beyond hints, the system assists with debugging. When a user submits code that produces wrong answers or runtime errors, AlgoMemtor:
 
 - Identifies the likely category of bug — logical error, edge case miss, off-by-one, overflow, wrong algorithm choice
 - Explains why the current approach fails without simply rewriting the code
@@ -180,7 +180,7 @@ Beyond hints, the system assists with debugging. When a user submits code that p
 
 ### Feature 5 — Adaptive Learning Roadmaps & Curated Free Resources
 
-MentorForge eliminates one of the biggest pain points in the CP/DSA journey: not knowing what to study, in what order, or where to find good material.
+AlgoMemtor eliminates one of the biggest pain points in the CP/DSA journey: not knowing what to study, in what order, or where to find good material.
 
 #### Dynamic, Evolving Roadmaps
 
@@ -194,7 +194,7 @@ The Learning Strategy Agent creates personalized roadmaps that are never static:
 
 #### Curated Free Learning Resources
 
-For every topic in the roadmap, MentorForge provides a curated set of free, high-quality resources:
+For every topic in the roadmap, AlgoMemtor provides a curated set of free, high-quality resources:
 
 - Handpicked YouTube playlists and video explanations suited to the topic and the user's learning style
 - High-quality blog posts and written explanations from trusted sources in the CP community
@@ -203,17 +203,17 @@ For every topic in the roadmap, MentorForge provides a curated set of free, high
 - Beginner-to-advanced progression paths that show exactly how a topic evolves in difficulty
 - Revision problem sets for concepts the user learned weeks or months ago
 
-The goal is to eliminate the confusion and wasted time that comes from searching randomly across the internet. Every resource on MentorForge is there for a specific reason, tied to a specific learner's specific need at a specific point in their journey.
+The goal is to eliminate the confusion and wasted time that comes from searching randomly across the internet. Every resource on AlgoMemtor is there for a specific reason, tied to a specific learner's specific need at a specific point in their journey.
 
 ---
 
 ### Feature 6 — Solution Explorer: Multiple Approaches & Community Solutions
 
-After a user solves a problem — or after a genuine attempt — MentorForge opens a rich learning layer around that problem.
+After a user solves a problem — or after a genuine attempt — AlgoMemtor opens a rich learning layer around that problem.
 
 #### Multiple Solution Approaches
 
-For every problem, MentorForge presents a structured exploration of different solution methods:
+For every problem, AlgoMemtor presents a structured exploration of different solution methods:
 
 - **Brute force approach:** Explaining why it works conceptually but fails at scale
 - **Optimized approach:** Showing the complexity improvement and the insight that enables it
@@ -223,7 +223,7 @@ For every problem, MentorForge presents a structured exploration of different so
 
 #### Community Solutions
 
-MentorForge surfaces curated, high-quality community solutions from platforms like Codeforces (editorials and top user solutions) and LeetCode (best-voted approaches). These are not just links — the system highlights what makes each solution interesting or instructive, helping users learn not just one correct answer but multiple ways of thinking about the same problem.
+AlgoMemtor surfaces curated, high-quality community solutions from platforms like Codeforces (editorials and top user solutions) and LeetCode (best-voted approaches). These are not just links — the system highlights what makes each solution interesting or instructive, helping users learn not just one correct answer but multiple ways of thinking about the same problem.
 
 This feature trains users to think like experienced competitive programmers who always evaluate problems from multiple angles before committing to a solution.
 
@@ -231,7 +231,7 @@ This feature trains users to think like experienced competitive programmers who 
 
 ### Feature 7 — Personalized Virtual Contest System
 
-One of MentorForge's flagship features is its ability to autonomously organize fully personalized virtual contests for individual users and groups.
+One of AlgoMemtor's flagship features is its ability to autonomously organize fully personalized virtual contests for individual users and groups.
 
 #### How Contests Are Built
 
@@ -244,7 +244,7 @@ The system analyzes each user's profile and dynamically selects problems from Co
 
 #### The Contest Experience
 
-During a virtual contest, MentorForge simulates real contest pressure:
+During a virtual contest, AlgoMemtor simulates real contest pressure:
 
 - A countdown timer creates urgency and trains time management instincts
 - Problems are presented in the same style as their originating platform
@@ -253,7 +253,7 @@ During a virtual contest, MentorForge simulates real contest pressure:
 
 #### Post-Contest Analytics
 
-After every contest, MentorForge generates a detailed performance breakdown covering:
+After every contest, AlgoMemtor generates a detailed performance breakdown covering:
 
 - Problems solved vs. attempted — with an explanation of where time was lost
 - Time management analysis — how the user distributed time across problems
@@ -266,11 +266,11 @@ After every contest, MentorForge generates a detailed performance breakdown cove
 
 ### Feature 8 — Contest Upsolve Tracker
 
-The contest upsolve experience on MentorForge transforms every unsolved contest problem into a structured learning opportunity rather than a forgotten failure.
+The contest upsolve experience on AlgoMemtor transforms every unsolved contest problem into a structured learning opportunity rather than a forgotten failure.
 
-#### How Upsolving Works on MentorForge
+#### How Upsolving Works on AlgoMemtor
 
-After a user participates in a real or virtual contest and leaves problems unsolved, MentorForge:
+After a user participates in a real or virtual contest and leaves problems unsolved, AlgoMemtor:
 
 - Automatically flags every unattempted or unsuccessfully attempted problem from the contest
 - Builds a structured upsolve queue with problems ordered by recommended learning priority
@@ -280,7 +280,7 @@ After a user participates in a real or virtual contest and leaves problems unsol
 
 #### Editorial Integration
 
-For every upsolve problem, MentorForge links to the official editorial and supplements it with the Solution Explorer's multi-approach breakdown, so users understand not just the accepted solution but the reasoning behind it and the alternatives they could have used.
+For every upsolve problem, AlgoMemtor links to the official editorial and supplements it with the Solution Explorer's multi-approach breakdown, so users understand not just the accepted solution but the reasoning behind it and the alternatives they could have used.
 
 The upsolve tracker transforms the painful experience of a bad contest into one of the highest-quality learning sessions a competitive programmer can have.
 
@@ -288,7 +288,7 @@ The upsolve tracker transforms the painful experience of a bad contest into one 
 
 ### Feature 9 — Progress Evaluation Agent
 
-MentorForge provides users with a continuous, transparent view of their own growth over time — not just raw statistics but genuine insight into their learning trajectory.
+AlgoMemtor provides users with a continuous, transparent view of their own growth over time — not just raw statistics but genuine insight into their learning trajectory.
 
 #### What Is Tracked
 
@@ -304,7 +304,7 @@ The Progress Evaluation Agent measures and visualizes:
 
 #### Insight Reports
 
-Beyond raw metrics, MentorForge generates periodic insight reports that interpret the data meaningfully:
+Beyond raw metrics, AlgoMemtor generates periodic insight reports that interpret the data meaningfully:
 
 - *"You have solved 23 graph problems this month but your binary search accuracy is still below 60%. Your next 5 recommended problems will focus on binary search."*
 - *"Your contest solve rate has improved by 18% over the last 4 weeks. The biggest driver is faster identification of greedy patterns."*
@@ -314,7 +314,7 @@ Beyond raw metrics, MentorForge generates periodic insight reports that interpre
 
 ### Feature 10 — Contest Analysis Agent
 
-For users who participate in rated contests, MentorForge provides deep post-contest analysis that goes far beyond a simple score summary.
+For users who participate in rated contests, AlgoMemtor provides deep post-contest analysis that goes far beyond a simple score summary.
 
 #### What Is Analyzed
 
@@ -328,13 +328,13 @@ After every real or virtual contest, the Contest Analysis Agent examines:
 
 #### Behavioral Patterns Over Time
 
-The Contest Analysis Agent tracks patterns across multiple contests over weeks and months, identifying systemic behavioral tendencies — not just what happened in one contest, but what the user consistently does under contest pressure. This enables MentorForge to coach not just skill improvement but contest strategy and mental performance.
+The Contest Analysis Agent tracks patterns across multiple contests over weeks and months, identifying systemic behavioral tendencies — not just what happened in one contest, but what the user consistently does under contest pressure. This enables AlgoMemtor to coach not just skill improvement but contest strategy and mental performance.
 
 ---
 
 ### Feature 11 — Social & Competitive Learning System
 
-MentorForge recognizes that learning in isolation can be demotivating. The social layer makes the CP and DSA journey more engaging, collaborative, and competitive without sacrificing the personalization at the platform's core.
+AlgoMemtor recognizes that learning in isolation can be demotivating. The social layer makes the CP and DSA journey more engaging, collaborative, and competitive without sacrificing the personalization at the platform's core.
 
 #### Coding Circles & Friend Networks
 
@@ -347,7 +347,7 @@ Users can connect with friends, classmates, or community members to form coding 
 
 #### Head-to-Head Coding Duels
 
-Users can challenge friends or be matched with users at a similar skill level to a head-to-head coding duel. MentorForge:
+Users can challenge friends or be matched with users at a similar skill level to a head-to-head coding duel. AlgoMemtor:
 
 - Selects problems appropriate for both participants' skill levels
 - Sets a time limit and scores both users on speed, accuracy, and approach quality
@@ -356,7 +356,7 @@ Users can challenge friends or be matched with users at a similar skill level to
 
 #### AI-Generated Private Group Contests
 
-Friend groups can request a private contest, and MentorForge's AI will:
+Friend groups can request a private contest, and AlgoMemtor's AI will:
 
 - Select a problem set calibrated to the group's average skill level and combined weak topics
 - Adjust difficulty distribution to ensure everyone in the group has problems they can meaningfully engage with
@@ -365,17 +365,17 @@ Friend groups can request a private contest, and MentorForge's AI will:
 
 #### Community Leaderboards
 
-Optional public leaderboards allow users to see how they rank within the broader MentorForge community across different metrics — contest performance, upsolve completion rate, streak length, and authentic problem-solving rate.
+Optional public leaderboards allow users to see how they rank within the broader AlgoMemtor community across different metrics — contest performance, upsolve completion rate, streak length, and authentic problem-solving rate.
 
 ---
 
 ### Feature 12 — Authenticity Evaluation Agent
 
-The Authenticity Evaluation Agent is one of the most distinctive and important features of MentorForge, addressing the growing crisis of trust in online learning outcomes.
+The Authenticity Evaluation Agent is one of the most distinctive and important features of AlgoMemtor, addressing the growing crisis of trust in online learning outcomes.
 
 #### The Core Philosophy
 
-MentorForge does not treat authenticity as a punishment or surveillance mechanism. The goal is to give users a truthful picture of their own genuine skill level, and to help them build a learning profile they can actually trust and be proud of. The system is not designed to catch cheaters — it is designed to protect the integrity of every user's own progress.
+AlgoMemtor does not treat authenticity as a punishment or surveillance mechanism. The goal is to give users a truthful picture of their own genuine skill level, and to help them build a learning profile they can actually trust and be proud of. The system is not designed to catch cheaters — it is designed to protect the integrity of every user's own progress.
 
 #### What the System Evaluates
 
@@ -391,13 +391,13 @@ Instead of only checking whether a solution was submitted and accepted, the Auth
 
 #### What Authenticity Scores Enable
 
-Each user's profile includes an authenticity dimension that contributes to their learning reputation on the platform. Problems solved with high authenticity scores carry more weight in skill assessments and achievement unlocks. The authenticity layer also gives users honest self-awareness: if a user's authenticity score on a topic is low, MentorForge will gently surface this and suggest revisiting foundational problems before moving on.
+Each user's profile includes an authenticity dimension that contributes to their learning reputation on the platform. Problems solved with high authenticity scores carry more weight in skill assessments and achievement unlocks. The authenticity layer also gives users honest self-awareness: if a user's authenticity score on a topic is low, AlgoMemtor will gently surface this and suggest revisiting foundational problems before moving on.
 
 ---
 
 ### Feature 13 — Mock Interview Simulator
 
-For users preparing for technical interviews at top companies, MentorForge includes a full interview simulation environment.
+For users preparing for technical interviews at top companies, AlgoMemtor includes a full interview simulation environment.
 
 #### The Interview Experience
 
@@ -411,7 +411,7 @@ The Mock Interview Agent creates a realistic, pressure-tested interview environm
 
 #### Post-Interview Analysis
 
-After every mock interview, MentorForge provides a detailed debrief:
+After every mock interview, AlgoMemtor provides a detailed debrief:
 
 - Code quality assessment — correctness, efficiency, readability, and edge case handling
 - Communication quality analysis — how well the user explained their reasoning
@@ -422,7 +422,7 @@ After every mock interview, MentorForge provides a detailed debrief:
 
 ### Feature 14 — Achievement & Reputation System
 
-MentorForge builds a portable, verifiable, and trustworthy learning identity for every user.
+AlgoMemtor builds a portable, verifiable, and trustworthy learning identity for every user.
 
 #### Achievement Badges
 
@@ -436,13 +436,13 @@ Users earn verified badges that represent real, demonstrated skill and consisten
 
 #### The Portable Learning Identity
 
-Every user's achievement profile is designed to be a trustworthy, portable record of genuine skill growth. Unlike a simple rating on a single platform, a MentorForge learning identity captures the full picture of a user's development — topics mastered, contests completed, growth rate, and authentic problem-solving behavior — in a format that can be shared with employers, academic institutions, or the competitive programming community.
+Every user's achievement profile is designed to be a trustworthy, portable record of genuine skill growth. Unlike a simple rating on a single platform, a AlgoMemtor learning identity captures the full picture of a user's development — topics mastered, contests completed, growth rate, and authentic problem-solving behavior — in a format that can be shared with employers, academic institutions, or the competitive programming community.
 
 ---
 
 ### Feature 15 — Lightweight Agent Economy
 
-MentorForge also explores a lightweight economy layer built around the platform's community of learners, coaches, and contributors.
+AlgoMemtor also explores a lightweight economy layer built around the platform's community of learners, coaches, and contributors.
 
 #### How It Works
 
@@ -458,16 +458,16 @@ This economy layer is designed to create a self-improving, community-driven laye
 
 ## 6. Future Vision
 
-MentorForge's long-term ambition is to become the world's most trusted AI mentor for developers at every stage of their journey.
+AlgoMemtor's long-term ambition is to become the world's most trusted AI mentor for developers at every stage of their journey.
 
 **A Portable Learning Identity**
-Every learner will carry a verifiable, portable record of their authentic skill growth — a living portfolio that can be shared with employers, communities, and educational institutions as a trustworthy signal of real competence. This identity will travel with the user beyond MentorForge.
+Every learner will carry a verifiable, portable record of their authentic skill growth — a living portfolio that can be shared with employers, communities, and educational institutions as a trustworthy signal of real competence. This identity will travel with the user beyond AlgoMemtor.
 
 **An Autonomous Mentor Economy**
 The platform will evolve into a fully collaborative ecosystem where experienced practitioners contribute structured training workflows, curated problem sets, and coaching programs — creating a community-driven layer of mentorship that compounds and improves over time.
 
 **Beyond Competitive Programming**
-The persistent mentor model pioneered by MentorForge has applications far beyond CP and DSA. The same architecture of continuous memory, personalized guidance, and authentic evaluation can extend to system design interview preparation, open-source contribution journeys, full-stack development learning paths, and beyond.
+The persistent mentor model pioneered by AlgoMemtor has applications far beyond CP and DSA. The same architecture of continuous memory, personalized guidance, and authentic evaluation can extend to system design interview preparation, open-source contribution journeys, full-stack development learning paths, and beyond.
 
 > *"The ultimate goal is to make AI mentorship feel less like a chatbot and more like a persistent personal coach that truly understands the learner."*
 

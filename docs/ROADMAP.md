@@ -1,8 +1,8 @@
-# MentorForge Beginner Development Roadmap
+# AlgoMemtor Beginner Development Roadmap
 
-> A practical, milestone-based plan for building MentorForge from an empty folder to a deployed MVP.
+> A practical, milestone-based plan for building AlgoMemtor from an empty folder to a deployed MVP.
 
-**Project:** MentorForge — Your Persistent AI Coding Coach  
+**Project:** AlgoMemtor — Your Persistent AI Coding Coach
 **Audience:** Beginner or early-intermediate developer  
 **Suggested pace:** 12–15 hours per week  
 **Estimated duration:** 18 weeks  
@@ -269,7 +269,7 @@ Create a clean project that every later phase can extend.
 ### Suggested commits
 
 ```text
-chore: initialize MentorForge monorepo
+chore: initialize AlgoMemtor monorepo
 chore(web): configure TypeScript and linting
 docs: add architecture decision records
 ci: add frontend typecheck workflow
@@ -1331,7 +1331,7 @@ Ask:
 - Was the recommended problem appropriate?
 - Did hints help without giving away too much?
 - Did the result/error panel make sense?
-- Did MentorForge remember anything useful?
+- Did AlgoMemtor remember anything useful?
 - What made you stop or feel confused?
 - Would you return next week?
 
@@ -1585,7 +1585,7 @@ Review this table at the end of every phase.
 
 ## Closing advice
 
-The fastest way to finish MentorForge is to keep it boring where boring is good:
+The fastest way to finish AlgoMemtor is to keep it boring where boring is good:
 
 - normal React components;
 - normal REST endpoints;

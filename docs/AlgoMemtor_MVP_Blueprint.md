@@ -1,4 +1,4 @@
-# MentorForge: Persistent AI Coding Coach
+# AlgoMemtor: Persistent AI Coding Coach
 
 ## Scalable MVP Product and Technical Blueprint
 
@@ -9,9 +9,9 @@
 
 ## 1. Executive Summary
 
-MentorForge is a personalized learning platform for students and developers practicing Data Structures and Algorithms (DSA), competitive programming, coding interviews, debugging, and algorithmic thinking.
+AlgoMemtor is a personalized learning platform for students and developers practicing Data Structures and Algorithms (DSA), competitive programming, coding interviews, debugging, and algorithmic thinking.
 
-Its central idea is a **persistent AI mentor**. Instead of treating every interaction as a fresh conversation, MentorForge gradually builds a learner profile from attempts, submissions, hint requests, mistakes, topic mastery, solving speed, and long-term goals. It uses that profile to recommend suitable problems, provide progressive hints, and show meaningful progress.
+Its central idea is a **persistent AI mentor**. Instead of treating every interaction as a fresh conversation, AlgoMemtor gradually builds a learner profile from attempts, submissions, hint requests, mistakes, topic mastery, solving speed, and long-term goals. It uses that profile to recommend suitable problems, provide progressive hints, and show meaningful progress.
 
 The first release should validate this core promise without building a complex distributed system. The recommended approach is a **frontend-first modular application** with:
 
@@ -38,7 +38,7 @@ Current coding-learning tools have three recurring weaknesses:
 
 ### 2.2 The solution
 
-MentorForge turns learner activity into an evolving, inspectable profile. The system remembers evidence-backed patterns such as:
+AlgoMemtor turns learner activity into an evolving, inspectable profile. The system remembers evidence-backed patterns such as:
 
 > The learner often selects the correct prefix-sum approach but misses integer-overflow edge cases.
 
@@ -345,7 +345,7 @@ The system records hint depth so later recommendations can distinguish independe
 ## 9. Frontend Structure and Contracts
 
 ```text
-mentorforge/
+algomemtor/
 ├── apps/
 │   ├── web/
 │   │   └── src/
@@ -544,4 +544,4 @@ Data and identity
   Supabase Auth
 ```
 
-MentorForge should begin as **one product with two specialized backend services**, not as a microservice platform. This is small enough for a beginner team to understand, practical enough for a polished MVP, and structured enough to evolve when real usage proves which parts need to scale.
+AlgoMemtor should begin as **one product with two specialized backend services**, not as a microservice platform. This is small enough for a beginner team to understand, practical enough for a polished MVP, and structured enough to evolve when real usage proves which parts need to scale.

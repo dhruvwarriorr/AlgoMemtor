@@ -1,8 +1,8 @@
-# MentorForge Project Documentation
+# AlgoMemtor Project Documentation
 
-> A beginner-friendly, implementation-ready guide for building MentorForge from scratch.
+> A beginner-friendly, implementation-ready guide for building AlgoMemtor from scratch.
 
-**Project:** MentorForge — Your Persistent AI Coding Coach  
+**Project:** AlgoMemtor — Your Persistent AI Coding Coach
 **Tagline:** *From first line of code to contest legend — a coach that never forgets.*  
 **Document version:** 1.0  
 **Last updated:** July 2026  
@@ -54,7 +54,7 @@
 
 This document is the technical reference for the project. Read it once from sections 1–10 before writing code. After that, use it as a lookup guide while following the implementation sequence in `ROADMAP.md`.
 
-Do not try to understand or implement everything at once. MentorForge contains several independent ideas:
+Do not try to understand or implement everything at once. AlgoMemtor contains several independent ideas:
 
 - a normal React web application;
 - a normal Express REST API;
@@ -80,9 +80,9 @@ You will build them in that order. At every stage, the application should still 
 
 # 2. Product Overview
 
-## 2.1 What MentorForge is
+## 2.1 What AlgoMemtor is
 
-MentorForge is a learning and competitive-programming platform for students and developers practicing:
+AlgoMemtor is a learning and competitive-programming platform for students and developers practicing:
 
 - Data Structures and Algorithms;
 - competitive programming;
@@ -92,7 +92,7 @@ MentorForge is a learning and competitive-programming platform for students and 
 - contest strategy; and
 - consistent, independent problem-solving.
 
-Its main differentiator is a **persistent AI mentor**. A normal chatbot answers the current question. MentorForge also remembers useful evidence from earlier work, such as:
+Its main differentiator is a **persistent AI mentor**. A normal chatbot answers the current question. AlgoMemtor also remembers useful evidence from earlier work, such as:
 
 - topics the learner understands;
 - repeated mistakes;
@@ -228,11 +228,11 @@ The MVP is ready for a small beta when a user can:
 
 ## 4.1 Frontend
 
-The frontend is the code that runs in the browser. It displays pages, buttons, forms, editor panels, loading indicators, and errors. MentorForge uses React for this.
+The frontend is the code that runs in the browser. It displays pages, buttons, forms, editor panels, loading indicators, and errors. AlgoMemtor uses React for this.
 
 ## 4.2 Backend
 
-A backend receives requests, validates them, talks to databases or other services, and returns responses. MentorForge has two backends with different jobs:
+A backend receives requests, validates them, talks to databases or other services, and returns responses. AlgoMemtor has two backends with different jobs:
 
 - Express owns normal product behavior.
 - FastAPI owns AI behavior.
@@ -283,7 +283,7 @@ A valid login does not automatically permit access to another user’s submissio
 
 ## 4.9 Embedding and vector search
 
-An embedding converts text into a numeric vector. Similar meanings produce nearby vectors. MentorForge uses embeddings to find relevant learner memories.
+An embedding converts text into a numeric vector. Similar meanings produce nearby vectors. AlgoMemtor uses embeddings to find relevant learner memories.
 
 You do not need to understand the mathematics to build the first version. You need to understand the flow:
 
@@ -486,8 +486,8 @@ The commands below create a monorepo. A monorepo keeps the frontend and both bac
 ## 8.1 Create the root
 
 ```bash
-mkdir mentorforge
-cd mentorforge
+mkdir algomemtor
+cd algomemtor
 git init
 npm init -y
 mkdir apps packages docs
@@ -496,7 +496,7 @@ mkdir apps packages docs
 Create the first files:
 
 ```text
-mentorforge/
+algomemtor/
 ├── apps/
 ├── packages/
 ├── docs/
@@ -607,7 +607,7 @@ Create `app/main.py`:
 ```python
 from fastapi import FastAPI
 
-app = FastAPI(title="MentorForge AI API", version="0.1.0")
+app = FastAPI(title="AlgoMemtor AI API", version="0.1.0")
 
 
 @app.get("/health")
@@ -635,21 +635,21 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_USER: mentorforge
-      POSTGRES_PASSWORD: mentorforge_local
-      POSTGRES_DB: mentorforge
+      POSTGRES_USER: algomemtor
+      POSTGRES_PASSWORD: algomemtor_local
+      POSTGRES_DB: algomemtor
     ports:
       - "5432:5432"
     volumes:
-      - mentorforge_postgres:/var/lib/postgresql/data
+      - algomemtor_postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mentorforge -d mentorforge"]
+      test: ["CMD-SHELL", "pg_isready -U algomemtor -d algomemtor"]
       interval: 5s
       timeout: 5s
       retries: 10
 
 volumes:
-  mentorforge_postgres:
+  algomemtor_postgres:
 ```
 
 Start and inspect:
@@ -688,7 +688,7 @@ Example root scripts:
 # 9. Repository Structure
 
 ```text
-mentorforge/
+algomemtor/
 ├── apps/
 │   ├── web/
 │   │   ├── public/
@@ -795,7 +795,7 @@ Only variables beginning with `VITE_` are available to browser code. Anything av
 NODE_ENV=development
 PORT=3001
 WEB_ORIGIN=http://localhost:5173
-DATABASE_URL=postgresql://mentorforge:mentorforge_local@localhost:5432/mentorforge
+DATABASE_URL=postgresql://algomemtor:algomemtor_local@localhost:5432/algomemtor
 SUPABASE_URL=
 SUPABASE_JWT_ISSUER=
 JUDGE0_BASE_URL=
@@ -810,7 +810,7 @@ INTERNAL_SERVICE_TOKEN=replace-in-production
 APP_ENV=development
 PORT=8000
 WEB_ORIGIN=http://localhost:5173
-DATABASE_URL=postgresql+psycopg://mentorforge:mentorforge_local@localhost:5432/mentorforge
+DATABASE_URL=postgresql+psycopg://algomemtor:algomemtor_local@localhost:5432/algomemtor
 SUPABASE_URL=
 SUPABASE_JWT_ISSUER=
 LLM_API_KEY=

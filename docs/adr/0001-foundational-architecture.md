@@ -10,7 +10,7 @@ Accepted
 
 ## Context
 
-MentorForge needs to deliver a beginner-maintainable MVP for DSA and competitive
+AlgoMemtor needs to deliver a beginner-maintainable MVP for DSA and competitive
 programming practice. Its central product loop combines ordinary product
 behavior—profiles, problems, attempts, submissions, and progress—with specialized
 AI behavior—progressive hints, learner memory, embeddings, and recommendations.
@@ -33,7 +33,7 @@ Four foundational choices are coupled:
 
 The browser application will use React, TypeScript, and Vite with React Router.
 
-MentorForge is initially an authenticated application with a rich coding
+AlgoMemtor is initially an authenticated application with a rich coding
 workspace, not a content-heavy site whose MVP depends on server rendering or
 framework-managed backend routes. Vite keeps the browser application explicit,
 starts quickly, supports MSW-based development, and avoids coupling UI delivery
@@ -74,7 +74,7 @@ Python provides the strongest ecosystem for model providers, embeddings, and AI
 evaluation. Pydantic gives typed API boundaries, while SQLAlchemy and Alembic
 provide explicit ownership of AI data.
 
-The split does not imply a general microservice architecture. MentorForge starts
+The split does not imply a general microservice architecture. AlgoMemtor starts
 with exactly two backend services because they have distinct responsibilities
 and ecosystems. Both communicate over authenticated HTTP. Agent frameworks and
 message brokers are deferred until ordinary services become demonstrably
@@ -130,7 +130,7 @@ materially harm primary database performance.
 
 ### Next.js for the complete application
 
-Rejected for the MVP because MentorForge benefits more from an explicit SPA and
+Rejected for the MVP because AlgoMemtor benefits more from an explicit SPA and
 two stable backend boundaries than from framework-managed rendering and server
 routes.
 

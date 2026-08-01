@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type PropsWithChildren } from 'react'
 
 import { ThemeContext, type Theme } from './theme-context'
 
-const themeStorageKey = 'mentorforge-theme'
+const themeStorageKey = 'algomemtor-theme'
 
 function getInitialTheme(): Theme {
   const storedTheme = localStorage.getItem(themeStorageKey)
