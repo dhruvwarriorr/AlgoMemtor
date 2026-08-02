@@ -1,4 +1,4 @@
-import { Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes } from 'react-router-dom'
 
 import AppShell from '@/layouts/AppShell'
 import DashboardPage from '@/pages/DashboardPage'
@@ -7,11 +7,12 @@ import ProblemsPage from '@/pages/ProblemsPage'
 import ProgressPage from '@/pages/ProgressPage'
 import SettingPage from '@/pages/SettingPage'
 
-function App() {
+function AppRouter() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route index element={<DashboardPage />} />
+        <Route index element={<Navigate replace to="/dashboard" />} />
+        <Route path="dashboard" element={<DashboardPage />} />
         <Route path="problems" element={<ProblemsPage />} />
         <Route path="progress" element={<ProgressPage />} />
         <Route path="settings" element={<SettingPage />} />
@@ -21,4 +22,4 @@ function App() {
   )
 }
 
-export default App
+export default AppRouter
