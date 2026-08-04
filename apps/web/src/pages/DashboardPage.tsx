@@ -1,23 +1,44 @@
+import PageContainer from '@/components/layout/PageContainer'
+import PageHeader from '@/components/layout/PageHeader'
 
 function DashboardPage() {
   return (
-    <main>
-      <header>
-        <h1>Dashboard</h1>
-        <p>Welcome back! Here is a quick overview of your progress.</p>
-      </header>
+    <PageContainer>
+      <PageHeader
+        description="Welcome back! Here is a quick overview of your progress."
+        title="Dashboard"
+      />
 
-      <section>
-        <h2 id="progress-heading">Your Progress</h2>
-        <p>Problems solved: 0</p>
-        <p>Current streak: 0 days</p>
+      <section aria-labelledby="progress-heading" className="space-y-4">
+        <h2
+          className="text-xl font-semibold tracking-tight text-foreground"
+          id="progress-heading"
+        >
+          Your Progress
+        </h2>
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+          <p className="min-w-0 flex-1 rounded-lg border border-border bg-card p-4 text-foreground sm:min-w-48">
+            Problems solved: 0
+          </p>
+          <p className="min-w-0 flex-1 rounded-lg border border-border bg-card p-4 text-foreground sm:min-w-48">
+            Current streak: 0 days
+          </p>
+        </div>
       </section>
 
-      <section>
-        <h2 id="activity-heading">Recent Activity</h2>
-        <p>No recent activity yet.</p>
+      <section
+        aria-labelledby="activity-heading"
+        className="space-y-2 border-t border-border pt-6"
+      >
+        <h2
+          className="text-xl font-semibold tracking-tight text-foreground"
+          id="activity-heading"
+        >
+          Recent Activity
+        </h2>
+        <p className="text-muted-foreground">No recent activity yet.</p>
       </section>
-    </main>
+    </PageContainer>
   )
 }
 

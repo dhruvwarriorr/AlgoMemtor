@@ -1,16 +1,28 @@
+import PageContainer from '@/components/layout/PageContainer'
+import PageHeader from '@/components/layout/PageHeader'
+import { EmptyState } from '@/components/states/EmptyState'
+
 function SubmissionsPage() {
   return (
-    <main>
-      <header>
-        <h1>Submissions</h1>
-        <p>Review your coding submission history.</p>
-      </header>
+    <PageContainer>
+      <PageHeader
+        description="Review your coding submission history."
+        title="Submissions"
+      />
 
-      <section>
-        <h2>Submission History</h2>
-        <p>No submissions yet.</p>
+      <section
+        aria-labelledby="submission-history-heading"
+        className="space-y-4"
+      >
+        <h2
+          className="text-xl font-semibold tracking-tight text-foreground"
+          id="submission-history-heading"
+        >
+          Submission History
+        </h2>
+        <EmptyState title="No submissions yet." />
       </section>
-    </main>
+    </PageContainer>
   )
 }
 

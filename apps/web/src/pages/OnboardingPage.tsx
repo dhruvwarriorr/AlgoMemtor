@@ -1,16 +1,29 @@
+import PageContainer from '@/components/layout/PageContainer'
+import PageHeader from '@/components/layout/PageHeader'
+
 function OnboardingPage() {
   return (
-    <main>
-      <header>
-        <h1>Onboarding</h1>
-        <p>Tell us about your learning goals and coding experience.</p>
-      </header>
+    <PageContainer>
+      <PageHeader
+        description="Tell us about your learning goals and coding experience."
+        title="Onboarding"
+      />
 
-      <section>
-        <h2>Learning Setup</h2>
-        <p>The multi-step onboarding flow will be added here later.</p>
+      <section
+        aria-labelledby="learning-setup-heading"
+        className="space-y-2 rounded-lg border border-border bg-card p-4 sm:p-6"
+      >
+        <h2
+          className="text-xl font-semibold tracking-tight text-foreground"
+          id="learning-setup-heading"
+        >
+          Learning Setup
+        </h2>
+        <p className="text-muted-foreground">
+          The multi-step onboarding flow will be added here later.
+        </p>
       </section>
-    </main>
+    </PageContainer>
   )
 }
 

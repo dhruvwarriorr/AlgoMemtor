@@ -7,10 +7,10 @@ function PageSkeleton({ rows = 4, label = 'Loading page' }: PageSkeletonProps) {
   const rowCount = Math.max(0, Math.floor(rows))
 
   return (
-    <section className="w-full space-y-6 p-4 sm:p-6" role="status">
+    <section className="w-full min-w-0 space-y-6 p-4 sm:p-6" role="status">
       <span className="sr-only">{label}</span>
 
-      <div aria-hidden="true" className="animate-pulse space-y-6">
+      <div aria-hidden="true" className="min-w-0 animate-pulse space-y-6">
         <header className="space-y-3">
           <div className="h-8 w-2/5 rounded-md bg-muted" />
           <div className="h-4 w-3/5 rounded-md bg-muted" />

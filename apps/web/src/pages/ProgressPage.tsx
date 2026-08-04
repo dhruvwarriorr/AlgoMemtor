@@ -1,23 +1,47 @@
+import PageContainer from '@/components/layout/PageContainer'
+import PageHeader from '@/components/layout/PageHeader'
+
 function ProgressPage() {
   return (
-    <main>
-      <header>
-        <h1>Progress</h1>
-        <p>Track your learning and coding activity.</p>
-      </header>
+    <PageContainer>
+      <PageHeader
+        description="Track your learning and coding activity."
+        title="Progress"
+      />
 
-      <section>
-        <h2>Overview</h2>
-        <p>Problems solved: 0</p>
-        <p>Current streak: 0 days</p>
-        <p>Total practice time: 0 hours</p>
+      <section aria-labelledby="overview-heading" className="space-y-4">
+        <h2
+          className="text-xl font-semibold tracking-tight text-foreground"
+          id="overview-heading"
+        >
+          Overview
+        </h2>
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+          <p className="min-w-0 flex-1 rounded-lg border border-border bg-card p-4 text-foreground sm:min-w-48">
+            Problems solved: 0
+          </p>
+          <p className="min-w-0 flex-1 rounded-lg border border-border bg-card p-4 text-foreground sm:min-w-48">
+            Current streak: 0 days
+          </p>
+          <p className="min-w-0 flex-1 rounded-lg border border-border bg-card p-4 text-foreground sm:min-w-48">
+            Total practice time: 0 hours
+          </p>
+        </div>
       </section>
 
-      <section>
-        <h2>Recent Activity</h2>
-        <p>No activity recorded yet.</p>
+      <section
+        aria-labelledby="recent-activity-heading"
+        className="space-y-2 border-t border-border pt-6"
+      >
+        <h2
+          className="text-xl font-semibold tracking-tight text-foreground"
+          id="recent-activity-heading"
+        >
+          Recent Activity
+        </h2>
+        <p className="text-muted-foreground">No activity recorded yet.</p>
       </section>
-    </main>
+    </PageContainer>
   )
 }
 

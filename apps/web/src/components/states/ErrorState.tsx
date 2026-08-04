@@ -15,11 +15,15 @@ function ErrorState({
 }: ErrorStateProps) {
   return (
     <section
-      className="flex w-full flex-col items-center justify-center rounded-lg border border-border bg-background px-4 py-10 text-center sm:px-6"
+      className="flex w-full min-w-0 flex-col items-center justify-center rounded-lg border border-border bg-background px-4 py-10 text-center sm:px-6"
       role="alert"
     >
-      <h2 className="text-xl font-medium text-foreground">{title}</h2>
-      <p className="mt-2 max-w-md text-muted-foreground">{message}</p>
+      <h2 className="max-w-full break-words text-xl font-medium text-foreground">
+        {title}
+      </h2>
+      <p className="mt-2 max-w-md break-words text-muted-foreground">
+        {message}
+      </p>
       {onRetry ? (
         <Button className="mt-6" onClick={onRetry} type="button">
           {retryLabel}
