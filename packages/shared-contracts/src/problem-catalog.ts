@@ -55,8 +55,8 @@ export const ProblemCatalogQueryParamsSchema = z.object({
   difficulty: DifficultySchema.optional(),
   topic: nonEmptyStringSchema.optional(),
   status: ProblemStatusSchema.optional(),
-  page: z.coerce.number().int().positive().optional(),
-  pageSize: z.coerce.number().int().positive().optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().default(10),
 })
 
 export type ProblemCatalogQueryParams = z.infer<
