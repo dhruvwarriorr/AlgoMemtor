@@ -1,32 +1,60 @@
-# React + TypeScript + Vite
+# AlgoMemtor Web Application
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+This workspace contains the React, Vite, and TypeScript frontend for AlgoMemtor.
 
-Currently, two official plugins are available:
+The target frontend helps learners discover externally hosted coding problems,
+understand AI-generated recommendation reasons, and navigate safely to the
+original provider. The provider owns the full statement, editor, compiler,
+submissions, and verdicts.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Frontend responsibilities
 
-## React Compiler
+- application routes and responsive layouts;
+- onboarding and learner preferences;
+- external problem metadata cards and filters;
+- provider attribution;
+- AI recommendation explanations;
+- bookmarks, outbound opens, and progress labels;
+- accessible external navigation; and
+- loading, empty, stale, partial, error, and fallback states.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+The web application must not:
 
-## Expanding the Oxlint configuration
+- call provider APIs directly;
+- render copied problem statements;
+- embed a coding editor or execute code;
+- trust an arbitrary external URL from browser input or an LLM; or
+- treat opening a link as completing a problem.
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+## Current implementation stage
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+The frontend shell and metadata-only mock contracts are in place. The visible
+catalog, filters, safe outbound-link component, and live provider gateway remain
+later roadmap work.
+
+## Development
+
+From the repository root:
+
+```bash
+npm install
+npm run dev:web
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Quality checks:
+
+```bash
+npm run typecheck:web
+npm run lint
+npm run format:check
+npm run build:web
+```
+
+The frontend uses MSW for mock-first development. New mock problems must contain
+fictional or permitted metadata only, never copied statements or test cases.
+
+## Related documentation
+
+- [Project documentation](../../docs/PROJECT_DOCUMENTATION.md)
+- [Development roadmap](../../docs/ROADMAP.md)
+- [MVP blueprint](../../docs/AlgoMemtor_MVP_Blueprint.md)

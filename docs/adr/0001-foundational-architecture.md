@@ -6,157 +6,197 @@ Accepted
 
 ## Date
 
-2026-07-31
+2026-08-04
 
 ## Context
 
-AlgoMemtor needs to deliver a beginner-maintainable MVP for DSA and competitive
-programming practice. Its central product loop combines ordinary product
-behavior—profiles, problems, attempts, submissions, and progress—with specialized
-AI behavior—progressive hints, learner memory, embeddings, and recommendations.
+AlgoMemtor helps learners decide what algorithm problem to practise next. The
+original project direction proposed an internal problem catalog containing full
+statements, an embedded code editor, and hosted code execution. That direction
+duplicates mature external platforms, creates content and test-data ownership
+problems, expands the security surface, and distracts from AlgoMemtor's primary
+advantage: personalized discovery and long-term learning guidance.
 
-The project must support a frontend-first, mock-driven workflow and later add
-safe code execution, authentication, persistence, and AI streaming. It should
-remain understandable to a small team and must not introduce distributed
-infrastructure before real usage demonstrates a need.
+The revised product needs to:
 
-Four foundational choices are coupled:
-
-1. the browser application framework;
-2. the core API runtime;
-3. the AI service runtime; and
-4. the primary durable database.
+- fetch problem metadata from supported external APIs;
+- normalize differences between providers;
+- rank safe candidates using learner context and AI;
+- explain each recommendation;
+- redirect the learner to the canonical source page;
+- track manual and provider-verified activity honestly; and
+- stay useful when AI or a provider is unavailable.
 
 ## Decision
 
-### Use React with Vite rather than Next.js
+### External platforms own problems and solving
 
-The browser application will use React, TypeScript, and Vite with React Router.
+AlgoMemtor will not store full problem statements, examples, constraints,
+starter code, editorials, or test cases. It will not embed a code editor, compile
+code, judge submissions, or persist learner source code.
 
-AlgoMemtor is initially an authenticated application with a rich coding
-workspace, not a content-heavy site whose MVP depends on server rendering or
-framework-managed backend routes. Vite keeps the browser application explicit,
-starts quickly, supports MSW-based development, and avoids coupling UI delivery
-to either backend.
+AlgoMemtor may cache provider-permitted metadata such as external ID, title,
+rating, tags, public statistics, canonical URL, and freshness timestamps.
 
-Next.js remains a valid option if measured product requirements later depend on
-server rendering, framework-level routing, or server components. Those needs do
-not currently justify the additional execution model.
+The learner solves on the originating platform.
 
-### Use Express for core product APIs
+### Use approved provider adapters
 
-Express with strict TypeScript will own:
+Express will own a provider gateway with one adapter per approved platform. An
+adapter validates the provider response, normalizes metadata, constructs or
+validates canonical URLs, respects rate and cache policy, and returns stable
+internal errors.
 
-- users and learner profiles;
-- problems and topics;
-- attempts, drafts, and submissions;
-- progress calculations;
-- hosted Judge0 integration; and
-- future contest or real-time product behavior.
+Only official or explicitly permitted APIs/feeds may be used. A missing API is a
+reason to defer a provider, not scrape it.
 
-Express aligns with the frontend’s TypeScript contracts and provides a small,
-transparent request pipeline. Controllers handle HTTP, services hold business
-logic, repositories own database access, and integration clients isolate
-external systems.
+Codeforces is the reference initial adapter because its official API exposes
+problem identifiers, names, ratings, tags, and statistics suitable for
+metadata-only discovery.
+
+### Use React with Vite
+
+React owns routes, accessible catalog and recommendation UI, server-state
+consumption, provider attribution, and outbound navigation. Vite keeps the
+frontend simple and well suited to a client-rendered application.
+
+React never calls external provider APIs directly and never receives provider or
+LLM secrets.
+
+### Use Express for core product behavior
+
+Express owns:
+
+- authentication-aware product endpoints;
+- learner profiles and provider preferences;
+- provider adapters, caching, normalization, and rate-limit handling;
+- canonical URL safety;
+- deterministic candidate filtering and fallback ranking;
+- bookmarks, outbound events, recommendation history, and progress evidence;
+- provider-account consent and activity synchronization; and
+- internal calls to FastAPI.
 
 ### Use FastAPI for AI capabilities
 
-FastAPI with Python will own:
+FastAPI owns:
 
-- progressive hints and streaming;
-- LLM and embedding provider clients;
-- learner-memory extraction and retrieval;
-- recommendation reasoning;
-- mistake classification; and
-- AI evaluation utilities.
+- ranking a bounded candidate set supplied by Express;
+- concise recommendation explanations;
+- evidence-backed learner memory;
+- embeddings and retrieval when justified; and
+- structured AI output validation.
 
-Python provides the strongest ecosystem for model providers, embeddings, and AI
-evaluation. Pydantic gives typed API boundaries, while SQLAlchemy and Alembic
-provide explicit ownership of AI data.
+The AI service cannot introduce an unknown candidate or arbitrary URL. Express
+validates returned IDs and attaches trusted canonical URLs after ranking.
 
-The split does not imply a general microservice architecture. AlgoMemtor starts
-with exactly two backend services because they have distinct responsibilities
-and ecosystems. Both communicate over authenticated HTTP. Agent frameworks and
-message brokers are deferred until ordinary services become demonstrably
-insufficient.
+### Use one PostgreSQL database with schema ownership
 
-### Use PostgreSQL as the primary database
+PostgreSQL stores learner-owned data and permitted metadata cache:
 
-One PostgreSQL database will be the durable source of truth. It will use:
+- Prisma owns the `core` schema.
+- Alembic owns the `ai` schema.
+- The tools never manage the same table.
 
-- a `core` schema managed only by Prisma and Express;
-- an `ai` schema managed only by SQLAlchemy/Alembic and FastAPI; and
-- pgvector for MVP learner-memory similarity search.
+The target model deliberately excludes internal statement, draft, submission,
+test-bundle, and judge-token tables.
 
-PostgreSQL supports relational product data, transactions, JSON where useful,
-and vector search without requiring a second database during the MVP.
+### Keep evidence types distinct
 
-Express and FastAPI must never run migrations against the same table. A
-dedicated vector database may be introduced only if measured vector workloads
-materially harm primary database performance.
+The data model and UI distinguish:
+
+- recommended;
+- opened;
+- manually in progress;
+- manually completed;
+- provider-verified solved; and
+- dismissed.
+
+An outbound click is never treated as a solve.
 
 ## Consequences
 
 ### Positive
 
-- The frontend can be built and tested with mocks before either backend exists.
-- Core contracts stay close to TypeScript consumers.
-- AI implementation can use Python-native libraries without forcing the entire
-  product backend into Python.
-- PostgreSQL provides one operational data system for the MVP.
-- Service and schema ownership are explicit.
-- Each boundary has a scale-up path that does not require rewriting the UI.
+- AlgoMemtor focuses on personalized guidance instead of recreating judges.
+- External platforms remain authoritative for content and verdicts.
+- The application does not execute untrusted learner code.
+- Content storage and hidden-test maintenance are removed.
+- Provider adapters isolate external API differences.
+- Deterministic fallback keeps the catalog useful without AI.
+- Evidence labels make progress claims more trustworthy.
 
 ### Negative
 
-- Authentication and API contracts must remain consistent across two backends.
-- The team must maintain both TypeScript and Python tooling.
-- Internal HTTP calls introduce failure modes that must degrade safely.
-- One PostgreSQL instance requires discipline around schema and migration
-  ownership.
+- The learner leaves AlgoMemtor to solve.
+- AlgoMemtor cannot observe completion unless the learner reports it or a
+  permitted provider API verifies it.
+- Provider outages, API changes, and rate limits affect discovery.
+- Some desirable platforms may not have a suitable official integration.
+- Cross-platform difficulty and topic normalization will always be approximate.
 
 ### Constraints
 
-- AI analysis must never invalidate an otherwise successful submission.
-- Learner code must run only through hosted Judge0, never inside an application
-  process.
-- Supabase service credentials, database credentials, internal service tokens,
-  Judge0 credentials, and LLM keys must never enter browser bundles.
-- Prisma and Alembic must not manage the same table.
-- Kafka, NATS, Kubernetes, separate vector databases, custom code runners, and
-  agent frameworks remain deferred until measured usage justifies them.
+- No HTML scraping or undocumented private APIs.
+- No open redirect accepting arbitrary destinations.
+- Canonical URLs must be constructed or allowlisted by deterministic server code.
+- Provider responses and AI outputs are untrusted.
+- Provider terms, attribution, rate limits, and cache rules must be reviewed.
+- AI ranks only candidates supplied by Express.
+- Provider linking requires consent and deletion controls.
+- The application must not claim unverified activity as solved.
 
 ## Alternatives considered
 
-### Next.js for the complete application
+### Internal problem hosting and code execution
 
-Rejected for the MVP because AlgoMemtor benefits more from an explicit SPA and
-two stable backend boundaries than from framework-managed rendering and server
-routes.
+Rejected because it duplicates external platforms and introduces problem-content,
+test-data, editor, judge, and untrusted-code responsibilities unrelated to the
+core recommendation value.
 
-### A single Express service
+### Browser-to-provider API calls
 
-Rejected because AI and embedding work benefits from Python’s ecosystem and
-would either constrain implementation or introduce provider-specific scripts
-inside the core service.
+Rejected because the browser is the wrong place for provider credentials,
+rate-limit coordination, stable caching, response normalization, and URL safety.
 
-### A single FastAPI service
+### Let the LLM search the open web directly
 
-Rejected because the product API, Judge0 workflow, and frontend contracts are a
-natural fit for strict TypeScript, while placing every capability in Python
-would remove that alignment.
+Rejected because model-selected URLs may be hallucinated, unsafe, unlicensed, or
+inconsistent. Deterministic adapters must define the candidate set.
 
-### Separate databases or a dedicated vector database
+### Scrape platforms without suitable APIs
 
-Rejected for the MVP because they increase operational complexity before data
-volume or query performance demonstrates a need.
+Rejected because it is brittle and may violate provider rules. Such providers
+remain deferred until permitted access exists.
+
+### A single backend service
+
+Viable for a smaller application, but the project keeps Express for product and
+provider behavior and FastAPI for AI experimentation. The internal boundary must
+remain small and authenticated.
+
+### Separate databases immediately
+
+Rejected because one PostgreSQL database with explicit schema ownership is easier
+to operate for the MVP.
 
 ## Review triggers
 
-Review this decision when:
+Review this decision if:
 
-- server-rendering becomes a measured product or acquisition requirement;
-- internal AI work requires durable background jobs;
-- vector queries materially affect transactional workloads;
-- hosted Judge0 becomes unacceptable in cost, latency, or limits; or
-- multiple real-time Express instances require shared coordination.
+- users strongly reject leaving AlgoMemtor to solve;
+- a provider offers an official embeddable solving experience;
+- provider-account verification becomes the dominant product workload;
+- legal or provider terms require a different cache model;
+- FastAPI adds operational cost without measurable recommendation benefit;
+- PostgreSQL cannot meet measured cache or retrieval needs; or
+- the team proposes code execution again.
+
+Any proposal to host statements, embed an editor, or execute code requires a new
+ADR covering content rights, security isolation, operational cost, and product
+evidence.
+
+## References
+
+- [Codeforces API](https://codeforces.com/apiHelp)
+- [Codeforces API methods](https://codeforces.com/apiHelp/methods)
+- [Codeforces API objects](https://codeforces.com/apiHelp/objects)

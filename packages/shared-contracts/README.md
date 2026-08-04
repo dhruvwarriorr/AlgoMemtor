@@ -3,29 +3,55 @@
 `@algomemtor/shared-contracts` contains runtime-validated request and response
 contracts shared by the AlgoMemtor web app, MSW mocks, and core API.
 
-## Problem catalog
+## External-problem contract
 
-The package currently exports the Week 4 problem-catalog schemas and the
-TypeScript types inferred from them. Import schemas when parsing data at a
-runtime boundary and import the corresponding types for static type checking.
+The package uses an external metadata model. Its schemas cover:
+
+- provider keys;
+- provider-owned external IDs;
+- titles and canonical outbound URLs;
+- provider-native and normalized difficulty;
+- provider tags and normalized topics;
+- permitted public statistics;
+- metadata freshness;
+- catalog queries, pagination, and provider warnings;
+- recommendation reasons; and
+- learner evidence states.
+
+The target contract must not contain:
+
+- problem statements;
+- examples or constraints;
+- starter code;
+- visible or hidden tests;
+- code drafts;
+- submissions; or
+- judge verdicts.
+
+Example usage:
 
 ```ts
 import {
-  ProblemCatalogResponseSchema,
-  type ProblemCatalogResponse,
+  ExternalProblemCatalogResponseSchema,
+  type ExternalProblemCatalogResponse,
 } from '@algomemtor/shared-contracts'
 
-const result = ProblemCatalogResponseSchema.safeParse(await response.json())
+const result = ExternalProblemCatalogResponseSchema.safeParse(
+  await response.json(),
+)
 
 if (!result.success) {
-  throw new Error('The problem catalog response is invalid')
+  throw new Error('The external problem catalog response is invalid')
 }
 
-const catalog: ProblemCatalogResponse = result.data
+const catalog: ExternalProblemCatalogResponse = result.data
 ```
 
-The catalog uses only `easy`, `medium`, and `hard` for difficulty and only
-`not_started`, `attempted`, and `solved` for learner status.
+## Boundary rule
+
+Provider-specific raw DTOs do not belong in this package. They remain inside
+their Express provider adapter. Shared contracts describe AlgoMemtor's normalized
+API only.
 
 ## Commands
 

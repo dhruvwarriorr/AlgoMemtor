@@ -5,7 +5,7 @@ function DashboardPage() {
   return (
     <PageContainer>
       <PageHeader
-        description="Welcome back! Here is a quick overview of your progress."
+        description="Review your recommendations and evidence-backed learning activity."
         title="Dashboard"
       />
 
@@ -18,10 +18,10 @@ function DashboardPage() {
         </h2>
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
           <p className="min-w-0 flex-1 rounded-lg border border-border bg-card p-4 text-foreground sm:min-w-48">
-            Problems solved: 0
+            Recommendations opened: 0
           </p>
           <p className="min-w-0 flex-1 rounded-lg border border-border bg-card p-4 text-foreground sm:min-w-48">
-            Current streak: 0 days
+            Verified solves: 0
           </p>
         </div>
       </section>

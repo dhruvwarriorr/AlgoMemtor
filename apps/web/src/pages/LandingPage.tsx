@@ -35,7 +35,7 @@ function LandingPage() {
           </nav>
         }
         className="mx-auto max-w-3xl items-center text-center sm:flex-col sm:items-center [&_h1]:text-3xl sm:[&_h1]:text-4xl lg:[&_h1]:text-5xl"
-        description="Build your problem-solving skills with a coding mentor that learns alongside you."
+        description="Get AI-guided problem recommendations and practise on the external platforms you already use."
         title="Learn with AlgoMemtor"
       />
     </PageContainer>

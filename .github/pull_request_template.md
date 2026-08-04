@@ -25,6 +25,10 @@
 - [ ] New environment variables are documented in `.env.example`.
 - [ ] Database ownership remains clear between Prisma (`core`) and Alembic (`ai`).
 - [ ] API or architecture documentation was updated when needed.
+- [ ] External problem integrations use an official or explicitly permitted API.
+- [ ] No copied statement, test data, embedded editor, or code execution was added.
+- [ ] External URLs are constructed or allowlisted server-side and cannot create an open redirect.
+- [ ] Opened, manually completed, and provider-verified states remain distinct.
 
 ## Migrations
 

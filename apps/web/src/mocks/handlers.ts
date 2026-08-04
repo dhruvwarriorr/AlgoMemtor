@@ -1,9 +1,9 @@
 import {
   ApiErrorResponseSchema,
-  ProblemCatalogQueryParamsSchema,
-  ProblemCatalogResponseSchema,
-  ProblemSummarySchema,
-  SingleProblemResponseSchema,
+  ExternalProblemCatalogQueryParamsSchema,
+  ExternalProblemCatalogResponseSchema,
+  ExternalProblemSummarySchema,
+  ProvidersResponseSchema,
   TopicsResponseSchema,
 } from '@algomemtor/shared-contracts'
 import { delay, http, HttpResponse, type RequestHandler } from 'msw'
@@ -12,6 +12,16 @@ import { problemFixtures } from './fixtures/problems'
 import { topicFixtures } from './fixtures/topics'
 
 const mockDelayMs = 300
+
+const providersResponse = ProvidersResponseSchema.parse({
+  data: [
+    {
+      key: 'codeforces',
+      label: 'Codeforces',
+      availability: 'available',
+    },
+  ],
+})
 
 const topicsResponse = TopicsResponseSchema.parse({
   data: topicFixtures,
@@ -32,38 +42,48 @@ function normalizeSearchText(value: string) {
 }
 
 export const handlers: RequestHandler[] = [
+  http.get('/api/providers', () => HttpResponse.json(providersResponse)),
   http.get('/api/topics', () => HttpResponse.json(topicsResponse)),
   http.get('/api/problems', async ({ request }) => {
     await delay(mockDelayMs)
 
     const url = new URL(request.url)
     const rawQuery = Object.fromEntries(url.searchParams)
-    const queryResult = ProblemCatalogQueryParamsSchema.safeParse(rawQuery)
+    const queryResult =
+      ExternalProblemCatalogQueryParamsSchema.safeParse(rawQuery)
 
     if (!queryResult.success) {
       const errorResponse = createApiError(
         'INVALID_QUERY_PARAMETERS',
-        'The problem catalog query parameters are invalid.',
+        'The external problem catalog query parameters are invalid.',
         queryResult.error.issues,
       )
 
       return HttpResponse.json(errorResponse, { status: 400 })
     }
 
-    const { search, difficulty, topic, status, page, pageSize } =
+    const { search, provider, difficulty, topic, status, page, pageSize } =
       queryResult.data
     let filteredProblems = problemFixtures
 
     if (search) {
       const normalizedSearch = normalizeSearchText(search)
       filteredProblems = filteredProblems.filter((problem) =>
-        normalizeSearchText(problem.title).includes(normalizedSearch),
+        [problem.title, problem.externalId, ...problem.providerTags].some(
+          (value) => normalizeSearchText(value).includes(normalizedSearch),
+        ),
+      )
+    }
+
+    if (provider) {
+      filteredProblems = filteredProblems.filter(
+        (problem) => problem.provider === provider,
       )
     }
 
     if (difficulty) {
       filteredProblems = filteredProblems.filter(
-        (problem) => problem.difficulty === difficulty,
+        (problem) => problem.normalizedDifficulty === difficulty,
       )
     }
 
@@ -75,7 +95,7 @@ export const handlers: RequestHandler[] = [
 
     if (status) {
       filteredProblems = filteredProblems.filter(
-        (problem) => problem.status === status,
+        (problem) => problem.learnerStatus === status,
       )
     }
 
@@ -85,41 +105,19 @@ export const handlers: RequestHandler[] = [
     const endIndex = startIndex + pageSize
     const summaries = filteredProblems
       .slice(startIndex, endIndex)
-      .map((problem) => ProblemSummarySchema.parse(problem))
-    const catalogResponse = ProblemCatalogResponseSchema.parse({
+      .map((problem) => ExternalProblemSummarySchema.parse(problem))
+    const catalogResponse = ExternalProblemCatalogResponseSchema.parse({
       data: summaries,
       meta: {
         page,
         pageSize,
         total,
         totalPages,
+        partial: false,
+        warnings: [],
       },
     })
 
     return HttpResponse.json(catalogResponse)
-  }),
-  http.get('/api/problems/:problemId', async ({ params }) => {
-    await delay(mockDelayMs)
-
-    const problemId = String(params.problemId ?? '')
-    const problem = problemFixtures.find(
-      (fixture) => fixture.id === problemId || fixture.slug === problemId,
-    )
-
-    if (!problem) {
-      const errorResponse = createApiError(
-        'PROBLEM_NOT_FOUND',
-        'The requested problem could not be found.',
-        { problemId },
-      )
-
-      return HttpResponse.json(errorResponse, { status: 404 })
-    }
-
-    const problemResponse = SingleProblemResponseSchema.parse({
-      data: problem,
-    })
-
-    return HttpResponse.json(problemResponse)
   }),
 ]

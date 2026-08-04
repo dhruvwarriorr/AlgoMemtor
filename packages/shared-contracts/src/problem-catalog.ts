@@ -2,45 +2,68 @@ import { z } from 'zod'
 
 const nonEmptyStringSchema = z.string().trim().min(1)
 
-export const DifficultySchema = z.enum(['easy', 'medium', 'hard'])
+const httpsUrlSchema = z
+  .string()
+  .url()
+  .refine((value) => new URL(value).protocol === 'https:', {
+    message: 'Only HTTPS URLs are allowed.',
+  })
 
-export type Difficulty = z.infer<typeof DifficultySchema>
+export const ProviderKeySchema = z.enum(['codeforces'])
 
-export const ProblemStatusSchema = z.enum([
-  'not_started',
-  'attempted',
-  'solved',
+export type ProviderKey = z.infer<typeof ProviderKeySchema>
+
+export const ProviderAvailabilitySchema = z.enum([
+  'available',
+  'degraded',
+  'unavailable',
 ])
 
-export type ProblemStatus = z.infer<typeof ProblemStatusSchema>
+export type ProviderAvailability = z.infer<typeof ProviderAvailabilitySchema>
 
-export const ProblemExampleSchema = z.object({
-  input: nonEmptyStringSchema,
-  output: nonEmptyStringSchema,
-  explanation: nonEmptyStringSchema.optional(),
-})
+export const NormalizedDifficultySchema = z.enum(['easy', 'medium', 'hard'])
 
-export type ProblemExample = z.infer<typeof ProblemExampleSchema>
+export type NormalizedDifficulty = z.infer<typeof NormalizedDifficultySchema>
 
-export const ProblemSummarySchema = z.object({
-  id: nonEmptyStringSchema,
-  slug: nonEmptyStringSchema,
+export const LearnerProblemStatusSchema = z.enum([
+  'recommended',
+  'opened',
+  'in_progress',
+  'completed_manual',
+  'solved_verified',
+  'dismissed',
+])
+
+export type LearnerProblemStatus = z.infer<typeof LearnerProblemStatusSchema>
+
+export const ExternalProblemSummarySchema = z.object({
+  provider: ProviderKeySchema,
+  externalId: nonEmptyStringSchema,
   title: nonEmptyStringSchema,
-  difficulty: DifficultySchema,
-  topics: z.array(nonEmptyStringSchema),
-  status: ProblemStatusSchema,
-  acceptanceRate: z.number().min(0).max(100).optional(),
+  canonicalUrl: httpsUrlSchema,
+  providerDifficulty: z
+    .union([z.number().nonnegative(), nonEmptyStringSchema])
+    .optional(),
+  normalizedDifficulty: NormalizedDifficultySchema.optional(),
+  providerTags: z.array(nonEmptyStringSchema),
+  topics: z.array(nonEmptyStringSchema).min(1),
+  solvedCount: z.number().int().nonnegative().optional(),
+  fetchedAt: z.iso.datetime(),
+  learnerStatus: LearnerProblemStatusSchema.optional(),
+  recommendationReason: nonEmptyStringSchema.optional(),
 })
 
-export type ProblemSummary = z.infer<typeof ProblemSummarySchema>
+export type ExternalProblemSummary = z.infer<
+  typeof ExternalProblemSummarySchema
+>
 
-export const ProblemDetailSchema = ProblemSummarySchema.extend({
-  statement: nonEmptyStringSchema,
-  constraints: z.array(nonEmptyStringSchema),
-  examples: z.array(ProblemExampleSchema),
+export const ProviderSummarySchema = z.object({
+  key: ProviderKeySchema,
+  label: nonEmptyStringSchema,
+  availability: ProviderAvailabilitySchema,
 })
 
-export type ProblemDetail = z.infer<typeof ProblemDetailSchema>
+export type ProviderSummary = z.infer<typeof ProviderSummarySchema>
 
 export const TopicSchema = z.object({
   id: nonEmptyStringSchema,
@@ -50,17 +73,18 @@ export const TopicSchema = z.object({
 
 export type Topic = z.infer<typeof TopicSchema>
 
-export const ProblemCatalogQueryParamsSchema = z.object({
+export const ExternalProblemCatalogQueryParamsSchema = z.object({
   search: nonEmptyStringSchema.optional(),
-  difficulty: DifficultySchema.optional(),
+  provider: ProviderKeySchema.optional(),
+  difficulty: NormalizedDifficultySchema.optional(),
   topic: nonEmptyStringSchema.optional(),
-  status: ProblemStatusSchema.optional(),
+  status: LearnerProblemStatusSchema.optional(),
   page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().positive().default(10),
+  pageSize: z.coerce.number().int().positive().max(100).default(10),
 })
 
-export type ProblemCatalogQueryParams = z.infer<
-  typeof ProblemCatalogQueryParamsSchema
+export type ExternalProblemCatalogQueryParams = z.infer<
+  typeof ExternalProblemCatalogQueryParamsSchema
 >
 
 export const PaginationMetadataSchema = z.object({
@@ -72,20 +96,31 @@ export const PaginationMetadataSchema = z.object({
 
 export type PaginationMetadata = z.infer<typeof PaginationMetadataSchema>
 
-export const ProblemCatalogResponseSchema = z.object({
-  data: z.array(ProblemSummarySchema),
-  meta: PaginationMetadataSchema,
+export const ProviderWarningSchema = z.object({
+  provider: ProviderKeySchema,
+  code: nonEmptyStringSchema,
+  message: nonEmptyStringSchema,
 })
 
-export type ProblemCatalogResponse = z.infer<
-  typeof ProblemCatalogResponseSchema
+export type ProviderWarning = z.infer<typeof ProviderWarningSchema>
+
+export const ExternalProblemCatalogResponseSchema = z.object({
+  data: z.array(ExternalProblemSummarySchema),
+  meta: PaginationMetadataSchema.extend({
+    partial: z.boolean().default(false),
+    warnings: z.array(ProviderWarningSchema).default([]),
+  }),
+})
+
+export type ExternalProblemCatalogResponse = z.infer<
+  typeof ExternalProblemCatalogResponseSchema
 >
 
-export const SingleProblemResponseSchema = z.object({
-  data: ProblemDetailSchema,
+export const ProvidersResponseSchema = z.object({
+  data: z.array(ProviderSummarySchema),
 })
 
-export type SingleProblemResponse = z.infer<typeof SingleProblemResponseSchema>
+export type ProvidersResponse = z.infer<typeof ProvidersResponseSchema>
 
 export const TopicsResponseSchema = z.object({
   data: z.array(TopicSchema),

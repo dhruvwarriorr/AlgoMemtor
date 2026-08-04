@@ -5,7 +5,7 @@ function OnboardingPage() {
   return (
     <PageContainer>
       <PageHeader
-        description="Tell us about your learning goals and coding experience."
+        description="Tell us about your goals, experience, topics, and preferred problem platforms."
         title="Onboarding"
       />
 
@@ -20,7 +20,7 @@ function OnboardingPage() {
           Learning Setup
         </h2>
         <p className="text-muted-foreground">
-          The multi-step onboarding flow will be added here later.
+          The preference-based onboarding flow will be added here later.
         </p>
       </section>
     </PageContainer>

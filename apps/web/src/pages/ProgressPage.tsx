@@ -5,7 +5,7 @@ function ProgressPage() {
   return (
     <PageContainer>
       <PageHeader
-        description="Track your learning and coding activity."
+        description="Track external problem opens, manual progress, and provider-verified solves separately."
         title="Progress"
       />
 
@@ -18,13 +18,13 @@ function ProgressPage() {
         </h2>
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
           <p className="min-w-0 flex-1 rounded-lg border border-border bg-card p-4 text-foreground sm:min-w-48">
-            Problems solved: 0
+            Opened externally: 0
           </p>
           <p className="min-w-0 flex-1 rounded-lg border border-border bg-card p-4 text-foreground sm:min-w-48">
-            Current streak: 0 days
+            Completed manually: 0
           </p>
           <p className="min-w-0 flex-1 rounded-lg border border-border bg-card p-4 text-foreground sm:min-w-48">
-            Total practice time: 0 hours
+            Verified solves: 0
           </p>
         </div>
       </section>

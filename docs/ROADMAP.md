@@ -1,229 +1,197 @@
 # AlgoMemtor Beginner Development Roadmap
 
-> A practical, milestone-based plan for building AlgoMemtor from an empty folder to a deployed MVP.
+## External Problem Discovery and AI Recommendation Plan
 
-**Project:** AlgoMemtor — Your Persistent AI Coding Coach
-**Audience:** Beginner or early-intermediate developer  
-**Suggested pace:** 12–15 hours per week  
-**Estimated duration:** 18 weeks  
-**Technical reference:** [`PROJECT_DOCUMENTATION.md`](./PROJECT_DOCUMENTATION.md)
+This roadmap replaces the earlier internal problem workspace and code-execution
+plan. Do not implement stored statements, examples, starter code, hidden tests,
+Monaco, Judge0, code drafts, or internal submissions.
+
+The new core loop is:
+
+```text
+learner profile
+  -> provider metadata
+  -> deterministic filters
+  -> AI ranking and explanation
+  -> attributed external link
+  -> manual or provider-verified evidence
+  -> better next recommendation
+```
 
 ---
 
 ## Table of Contents
 
-1. [How to Follow This Roadmap](#1-how-to-follow-this-roadmap)
-2. [The Build Order](#2-the-build-order)
-3. [Milestone Summary](#3-milestone-summary)
-4. [Phase 0 — Preparation](#4-phase-0--preparation)
-5. [Phase 1 — Repository and UI Foundation](#5-phase-1--repository-and-ui-foundation)
-6. [Phase 2 — Mocked Problem Catalog](#6-phase-2--mocked-problem-catalog)
-7. [Phase 3 — Mocked Coding Workspace](#7-phase-3--mocked-coding-workspace)
-8. [Phase 4 — Authentication and Onboarding](#8-phase-4--authentication-and-onboarding)
-9. [Phase 5 — Express, PostgreSQL, and Core Data](#9-phase-5--express-postgresql-and-core-data)
-10. [Phase 6 — Real Problem and Submission APIs](#10-phase-6--real-problem-and-submission-apis)
-11. [Phase 7 — Judge0 Code Execution](#11-phase-7--judge0-code-execution)
-12. [Phase 8 — FastAPI AI Foundation](#12-phase-8--fastapi-ai-foundation)
-13. [Phase 9 — Progressive AI Hints](#13-phase-9--progressive-ai-hints)
-14. [Phase 10 — Learner Memory](#14-phase-10--learner-memory)
-15. [Phase 11 — Recommendations and Progress](#15-phase-11--recommendations-and-progress)
-16. [Phase 12 — Testing and Hardening](#16-phase-12--testing-and-hardening)
-17. [Phase 13 — Deployment and Beta](#17-phase-13--deployment-and-beta)
-18. [After the MVP](#18-after-the-mvp)
-19. [Weekly Working Method](#19-weekly-working-method)
-20. [Risk Register](#20-risk-register)
-21. [Final MVP Checklist](#21-final-mvp-checklist)
+1. [How to follow the roadmap](#1-how-to-follow-the-roadmap)
+2. [Build order](#2-build-order)
+3. [Milestone summary](#3-milestone-summary)
+4. [Phase 0 — Product and provider clarity](#4-phase-0--product-and-provider-clarity)
+5. [Phase 1 — Repository and UI foundation](#5-phase-1--repository-and-ui-foundation)
+6. [Phase 2 — Architecture migration](#6-phase-2--architecture-migration)
+7. [Phase 3 — Mocked external problem catalog](#7-phase-3--mocked-external-problem-catalog)
+8. [Phase 4 — Provider gateway](#8-phase-4--provider-gateway)
+9. [Phase 5 — Authentication and onboarding](#9-phase-5--authentication-and-onboarding)
+10. [Phase 6 — PostgreSQL and learner data](#10-phase-6--postgresql-and-learner-data)
+11. [Phase 7 — Deterministic recommendations](#11-phase-7--deterministic-recommendations)
+12. [Phase 8 — AI ranking and explanations](#12-phase-8--ai-ranking-and-explanations)
+13. [Phase 9 — Progress and provider linking](#13-phase-9--progress-and-provider-linking)
+14. [Phase 10 — Learner memory](#14-phase-10--learner-memory)
+15. [Phase 11 — Testing and hardening](#15-phase-11--testing-and-hardening)
+16. [Phase 12 — Deployment and beta](#16-phase-12--deployment-and-beta)
+17. [After the MVP](#17-after-the-mvp)
+18. [Working method](#18-working-method)
+19. [Risk register](#19-risk-register)
+20. [Final MVP checklist](#20-final-mvp-checklist)
 
 ---
 
-# 1. How to Follow This Roadmap
+# 1. How to Follow the Roadmap
 
-This roadmap is intentionally slower than a hackathon tutorial. It assumes you are learning while building.
+## 1.1 Work in order
 
-## 1.1 Time expectations
+Later phases depend on earlier contracts. In particular:
 
-At 12–15 hours per week:
+- do not build AI before deterministic candidate filtering works;
+- do not add multiple providers before one provider adapter is reliable;
+- do not claim verified progress before provider evidence exists; and
+- do not use scraping to make a blocked phase appear complete.
 
-- 3–4 sessions for implementation;
-- 1 shorter session for learning;
-- 1 short review/testing session.
+## 1.2 Weekly completion rule
 
-If you have only 6–8 hours per week, treat each “week” below as two calendar weeks. Do not skip acceptance checks to catch up.
+A phase is complete only when:
 
-## 1.2 What to do when stuck
+- its acceptance checks pass;
+- automated checks pass;
+- relevant browser behavior is verified;
+- documentation matches implementation; and
+- known limitations are written down.
 
-Use this order:
+## 1.3 Scope rule
 
-1. Read the error carefully.
-2. Reproduce it with the smallest possible case.
-3. Check browser Network/Console or server logs.
-4. Read the official documentation for the exact tool.
-5. Explain the expected flow in plain language.
-6. Ask for help with the error, expected result, actual result, and relevant code.
+When tempted to add a feature, ask:
 
-Do not respond to confusion by installing another library.
+1. Does it improve problem discovery or recommendation quality?
+2. Can it be built with provider-permitted metadata?
+3. Does the user understand the evidence behind it?
+4. Will the product still work if AI is unavailable?
 
-## 1.3 The stop rule
+If not, defer it.
 
-Do not begin the next phase unless:
+## 1.4 Provider stop rule
 
-- the current deliverable runs;
-- acceptance checks pass;
-- the work is committed;
-- known problems are recorded;
-- setup instructions are updated.
+Stop a provider integration when:
 
-## 1.4 The scope rule
+- no official or explicitly permitted API/feed exists;
+- terms do not permit the intended display or cache;
+- attribution cannot be satisfied;
+- canonical links cannot be constructed safely; or
+- the required fields would need HTML scraping.
 
-During the 18-week MVP, do not add:
-
-- duels;
-- real-time multiplayer;
-- public leaderboards;
-- microservices beyond Express and FastAPI;
-- message brokers;
-- Kubernetes;
-- custom code runners;
-- separate vector databases;
-- agent frameworks;
-- payments;
-- mobile applications.
-
-Write attractive ideas in `docs/BACKLOG.md` instead of implementing them.
+Record the provider as deferred. Do not work around the boundary.
 
 ---
 
-# 2. The Build Order
+# 2. Build Order
 
 ```mermaid
 flowchart TD
-    A["Foundations"] --> B["Mock React UI"]
-    B --> C["Auth + Onboarding"]
-    C --> D["Express + PostgreSQL"]
-    D --> E["Judge0 Submissions"]
-    E --> F["FastAPI + AI Hints"]
-    F --> G["Memory + Recommendations"]
-    G --> H["Testing + Deployment"]
+    A["Product and provider clarity"] --> B["Repository and UI foundation"]
+    B --> C["Remove old workspace assumptions"]
+    C --> D["Mock external metadata contracts"]
+    D --> E["Catalog and outbound links"]
+    E --> F["Live provider gateway"]
+    F --> G["Authentication and onboarding"]
+    G --> H["Learner database"]
+    H --> I["Deterministic recommendations"]
+    I --> J["AI ranking and explanations"]
+    J --> K["Progress and provider sync"]
+    K --> L["Learner memory"]
+    L --> M["Hardening and beta"]
 ```
 
-This sequence reduces simultaneous unknowns:
+Why this order:
 
-- First you learn the product through the UI.
-- Then you persist ordinary data.
-- Then you integrate untrusted code execution.
-- Finally you add AI to a working product.
+- Provider contracts determine what the product can honestly show.
+- Mock-first UI avoids depending on live API availability.
+- Deterministic recommendations provide a baseline and fallback.
+- AI improves a working loop instead of becoming the loop's only engine.
 
 ---
 
 # 3. Milestone Summary
 
-| Week | Milestone | Main outcome |
-|---:|---|---|
-| 1 | Preparation | Tools installed and concepts reviewed |
-| 2 | Repository foundation | Monorepo and quality tooling |
-| 3 | UI system and routing | Navigable responsive shell |
-| 4 | Problem catalog | Complete mock catalog |
-| 5 | Coding workspace | Monaco and simulated run/submit |
-| 6 | UX states and mock flows | Frontend-first prototype complete |
-| 7 | Supabase authentication | Login and protected routes |
-| 8 | Onboarding | Persisted learner setup |
-| 9 | Express and PostgreSQL | Core API and database running |
-| 10 | Problems and profiles API | Mocks replaced for core reads |
-| 11 | Submission data flow | Real submission records |
-| 12 | Judge0 | Real code execution |
-| 13 | FastAPI foundation | AI service and internal contracts |
-| 14 | Progressive hints | Streamed AI hints |
-| 15 | Learner memory | Evidence-backed memories |
-| 16 | Recommendations/progress | Personalized core loop |
-| 17 | Test and harden | Reliable release candidate |
-| 18 | Deploy and beta | Live MVP with feedback loop |
+| Week | Milestone                | Deliverable                                        |
+| ---- | ------------------------ | -------------------------------------------------- |
+| 1    | Product clarity          | Written metadata-and-redirect boundary             |
+| 2    | Repository foundation    | Monorepo and service scaffolding                   |
+| 3    | UI foundation            | Responsive shell and placeholder routes            |
+| 4    | Architecture migration   | Old editor/judge contracts and docs removed        |
+| 5    | Mock catalog             | External metadata cards, filters, and safe links   |
+| 6    | Provider gateway         | First live official provider adapter               |
+| 7    | Authentication           | Login and protected routes                         |
+| 8    | Onboarding               | Learner preferences and provider choices           |
+| 9    | Core data                | Profiles, metadata cache, actions, recommendations |
+| 10   | Baseline recommendations | Deterministic personalized feed                    |
+| 11   | AI recommendations       | Ranked candidates with explanations and fallback   |
+| 12   | Progress                 | Honest manual evidence and outbound history        |
+| 13   | Provider linking         | One supported verified-activity flow, if permitted |
+| 14   | Learner memory           | Evidence-backed user-controlled personalization    |
+| 15   | Hardening                | Security, accessibility, testing, observability    |
+| 16   | Deployment               | Production beta and feedback loop                  |
 
-The milestones are targets, not deadlines. Quality gates matter more than calendar dates.
+Weeks are planning units, not deadlines. Preserve the dependency order even if
+the calendar changes.
 
 ---
 
-# 4. Phase 0 — Preparation
+# 4. Phase 0 — Product and Provider Clarity
 
-## Week 1: Skills, tools, and product clarity
+## Week 1: Define the product boundary
 
 ### Goal
 
-Prepare your machine, understand the architecture, and define exactly what you will build.
+Understand exactly what AlgoMemtor owns and what external platforms own.
 
 ### Learn
 
-Spend focused time on:
-
-- Git repositories, commits, branches, and pull requests;
-- JavaScript `async/await`;
-- TypeScript interfaces and unions;
-- React components, props, state, and effects;
-- HTTP methods and JSON;
-- SQL tables, keys, joins, and indexes;
-- Python type hints and virtual environments;
-- environment variables.
-
-You do not need mastery. You need enough familiarity to recognize each concept.
+- metadata versus problem content;
+- official API versus scraping;
+- canonical URLs and open redirects;
+- rate limits and caching;
+- manual versus verified evidence; and
+- AI ranking versus deterministic integration code.
 
 ### Build tasks
 
-1. Install all prerequisites from `PROJECT_DOCUMENTATION.md`.
-2. Verify every command:
-
-   ```bash
-   git --version
-   node --version
-   npm --version
-   python --version
-   uv --version
-   docker --version
-   docker compose version
-   ```
-
-3. Create accounts for GitHub only. Delay other provider accounts.
-4. Read sections 1–10 of `PROJECT_DOCUMENTATION.md`.
-5. Write a one-page product summary in `docs/PRODUCT_BRIEF.md`.
-6. Create `docs/BACKLOG.md` for deferred ideas.
-7. Create a simple sketch for:
-   - dashboard;
-   - problem catalog;
-   - problem workspace;
-   - progress page.
-8. Decide on:
-   - project name;
-   - colors;
-   - basic logo/text mark;
-   - initial four programming languages.
-
-### Product brief questions
-
-Answer:
-
-- Who is the first user?
-- What problem do they face?
-- What is the single most important user loop?
-- What does the MVP intentionally exclude?
-- What would make a five-person beta successful?
+1. Write a one-page product brief.
+2. State that AlgoMemtor does not host or execute problems.
+3. Choose the initial learner persona.
+4. Define the initial recommendation request.
+5. Select one candidate provider with an official metadata API.
+6. Review its fields, attribution, rate limit, caching, and URL format.
+7. Record unavailable fields explicitly.
+8. Define the evidence states:
+   - recommended;
+   - opened;
+   - in progress;
+   - completed manually;
+   - solved verified; and
+   - dismissed.
+9. Define success metrics that do not count clicks as solves.
 
 ### Acceptance checks
 
-- [ ] All required software opens and reports a version.
-- [ ] GitHub repository exists.
-- [ ] Product brief is committed.
-- [ ] Four screen sketches exist.
-- [ ] MVP and non-MVP lists are written.
-- [ ] You can explain why Express and FastAPI have different jobs.
-
-### Common mistakes
-
-- Watching many tutorials without building anything.
-- Designing 20 screens before validating four primary screens.
-- Creating provider accounts and secrets before they are needed.
-- Treating a logo as more important than the core loop.
+- [ ] The product brief says solving occurs externally.
+- [ ] No statement/editor/compiler is part of the MVP.
+- [ ] The initial provider has a documented permitted API.
+- [ ] Required attribution and rate limits are recorded.
+- [ ] Evidence states are unambiguous.
+- [ ] AI is not responsible for URL safety or provider access.
 
 ### Deliverable
 
-**Preparation checkpoint:** a repository containing product brief, backlog, documentation, and screen sketches.
+**Product-boundary checkpoint:** everyone can explain the system in the same
+sentence: AlgoMemtor recommends; the provider hosts and judges.
 
 ---
 
@@ -233,1366 +201,874 @@ Answer:
 
 ### Goal
 
-Create a clean project that every later phase can extend.
-
-### Learn
-
-- `package.json` scripts;
-- TypeScript configuration;
-- linting versus formatting;
-- environment files;
-- monorepo basics;
-- semantic commits.
+Create a maintainable frontend, core API, AI API, and shared-contract foundation.
 
 ### Build tasks
 
-1. Create the repository structure from the documentation.
-2. Scaffold React with Vite and TypeScript.
-3. Create empty `apps/core-api` and `apps/ai-api` placeholders.
-4. Configure:
-   - ESLint;
-   - Prettier;
-   - TypeScript strict mode;
-   - `.editorconfig`;
-   - `.gitignore`;
-   - `.env.example`.
-5. Add root scripts for frontend development.
-6. Add a basic `README.md` with setup steps.
-7. Create the first Architecture Decision Record:
-   - React rather than Next.js;
-   - Express for core APIs;
-   - FastAPI for AI;
-   - PostgreSQL as the primary database.
-8. Create a pull-request template.
-9. Add a minimal continuous-integration workflow that installs and type-checks the React app.
-
-### Suggested commits
-
-```text
-chore: initialize AlgoMemtor monorepo
-chore(web): configure TypeScript and linting
-docs: add architecture decision records
-ci: add frontend typecheck workflow
-```
+1. Configure npm workspaces.
+2. Create `apps/web`, `apps/core-api`, and `apps/ai-api`.
+3. Create `packages/shared-contracts`.
+4. Add strict TypeScript, ESLint, Prettier, and Ruff.
+5. Add health endpoints.
+6. Add PostgreSQL through Docker Compose.
+7. Create environment examples without real secrets.
+8. Add root development and quality commands.
+9. Record Express/FastAPI/database ownership in an ADR.
 
 ### Acceptance checks
 
-- [ ] A fresh clone can run `npm install`.
-- [ ] `apps/web` starts successfully.
-- [ ] Type checking passes.
-- [ ] Linting passes.
-- [ ] `.env.example` contains no secrets.
-- [ ] README setup instructions work.
-- [ ] CI passes on the main branch.
-
-### Common mistakes
-
-- Globally installing packages that should be project dependencies.
-- Committing `node_modules`.
-- Disabling strict TypeScript because of the first error.
-- Adding Turborepo/Nx before basic npm scripts become insufficient.
+- [ ] All services start independently.
+- [ ] Root scripts work.
+- [ ] No secrets are tracked.
+- [ ] Type-check, lint, format, and builds pass.
 
 ## Week 3: UI system, routing, and layouts
 
 ### Goal
 
-Build a responsive application shell with all primary routes.
-
-### Learn
-
-- React Router route configuration;
-- nested layouts;
-- responsive CSS;
-- accessible navigation;
-- component variants;
-- semantic HTML.
+Create the responsive application shell without product data.
 
 ### Build tasks
 
-1. Configure Tailwind CSS using current official guidance.
-2. Configure shadcn/ui or create a small component set.
-3. Define design tokens:
-   - colors;
-   - spacing;
-   - border radius;
-   - typography;
-   - shadows.
-4. Create:
-   - `AppShell`;
-   - desktop sidebar;
-   - mobile navigation;
-   - top bar;
-   - page container;
-   - page header.
-5. Add routes with placeholder content:
-   - `/`;
-   - `/login`;
-   - `/onboarding`;
-   - `/dashboard`;
-   - `/problems`;
-   - `/problems/:problemId`;
-   - `/submissions`;
-   - `/progress`;
-   - `/profile`;
-   - `/settings`;
-   - not found.
-6. Create reusable states:
-   - `PageSkeleton`;
-   - `EmptyState`;
-   - `ErrorState`;
-   - `NotFoundPage`.
-7. Test keyboard navigation and mobile widths.
+1. Define accessible design tokens and UI primitives.
+2. Build the desktop topbar.
+3. Build the mobile/narrow-tablet drawer.
+4. Build `AppShell`, `PageContainer`, and `PageHeader`.
+5. Add placeholder routes.
+6. Add loading, empty, error, and not-found components.
+7. Verify responsive behavior and focus states.
 
 ### Acceptance checks
 
-- [ ] Every route renders.
-- [ ] Active navigation is visible.
-- [ ] Sidebar becomes mobile navigation at narrow widths.
-- [ ] Keyboard focus is visible.
-- [ ] No horizontal overflow at 360 px width.
-- [ ] Placeholder loading/error/empty states exist.
-- [ ] Directly visiting a route works in development.
-
-### Common mistakes
-
-- Creating a separate custom button for every page.
-- Hard-coding colors instead of using tokens.
-- Building only at desktop width.
-- Using clickable `div` elements instead of buttons/links.
+- [ ] Routes render inside the correct shell.
+- [ ] Desktop uses a horizontal topbar.
+- [ ] Mobile uses an accessible drawer.
+- [ ] Pages have one main landmark and visible heading.
+- [ ] No product data or speculative logic is required yet.
 
 ### Deliverable
 
-**UI foundation checkpoint:** a polished but data-free navigable application.
+**Foundation checkpoint:** an accessible shell ready for the new discovery flow.
 
 ---
 
-# 6. Phase 2 — Mocked Problem Catalog
+# 6. Phase 2 — Architecture Migration
 
-## Week 4: Data contracts, MSW, catalog, and filters
+## Week 4: Remove internal-workspace assumptions
 
 ### Goal
 
-Build the first useful product feature entirely with mock data.
+Bring source contracts and scaffolding into alignment with the new documentation
+before building more features.
 
 ### Learn
 
-- HTTP request/response contracts;
-- TanStack Query;
-- Mock Service Worker;
-- URL search parameters;
-- runtime validation with Zod.
+- migration planning;
+- contract compatibility;
+- deleting superseded code safely; and
+- repository-wide terminology audits.
 
 ### Build tasks
 
-1. Define types:
+1. Check and preserve existing uncommitted changes.
+2. Audit source, configuration, fixtures, packages, and tests for:
+   - problem statements;
+   - examples and constraints;
+   - starter code and test cases;
+   - Monaco/editor workspace;
+   - run/submit workflows;
+   - Judge0;
+   - drafts, submissions, and verdicts.
+3. Replace problem contracts with external metadata contracts.
+4. Add provider and external-ID types.
+5. Add `canonicalUrl` only to server-validated responses.
+6. Replace the internal detail route with a direct external action or a
+   metadata-only preview decision.
+7. Remove obsolete Judge0 configuration and dependencies.
+8. Update mock handlers to metadata-only responses.
+9. Remove copied or lookalike statement fixtures.
+10. Add a migration note for intentionally deferred source changes.
 
-   ```ts
-   type Difficulty = "easy" | "medium" | "hard";
+### Acceptance checks
 
-   type ProblemSummary = {
-     id: string;
-     slug: string;
-     title: string;
-     difficulty: Difficulty;
-     topics: string[];
-     status: "not_started" | "attempted" | "solved";
-     acceptanceRate?: number;
-   };
-   ```
+- [ ] No target contract contains statement, constraints, examples, starter code,
+      or tests.
+- [ ] No target UI promises an editor, compiler, run, or submit action.
+- [ ] No active configuration requires Judge0.
+- [ ] Existing unrelated user changes are preserved.
+- [ ] All quality commands pass.
 
-2. Create 20–30 realistic problem fixtures.
-3. Install and initialize MSW.
-4. Implement mock endpoints:
+### Common mistakes
+
+- Updating docs but keeping incompatible contracts.
+- Renaming `ProblemDetail` while leaving statement fields inside it.
+- Leaving a generic redirect accepting arbitrary URLs.
+- Deleting unrelated uncommitted work.
+
+### Deliverable
+
+**Migration checkpoint:** the repository has one product direction.
+
+---
+
+# 7. Phase 3 — Mocked External Problem Catalog
+
+## Week 5: Contracts, MSW, catalog, and outbound links
+
+### Goal
+
+Build the first useful discovery experience entirely with fictional or permitted
+metadata.
+
+### Target contract
+
+```ts
+type ProviderKey = 'codeforces'
+
+type ExternalProblemSummary = {
+  provider: ProviderKey
+  externalId: string
+  title: string
+  canonicalUrl: string
+  providerDifficulty?: number | string
+  normalizedDifficulty?: 'easy' | 'medium' | 'hard'
+  providerTags: string[]
+  topics: string[]
+  solvedCount?: number
+  fetchedAt: string
+}
+```
+
+### Build tasks
+
+1. Define Zod schemas for provider keys, problems, queries, pagination, provider
+   warnings, and evidence status.
+2. Create 20–30 fictional metadata fixtures.
+3. Implement MSW endpoints:
+   - `GET /api/providers`;
    - `GET /api/problems`;
-   - `GET /api/problems/:problemId`;
-   - `GET /api/topics`.
-5. Create a central API client.
-6. Configure TanStack Query.
-7. Build:
-   - problem cards/table;
-   - search input;
-   - difficulty filter;
-   - topic filter;
-   - status filter;
-   - pagination.
-8. Store filters in URL search parameters.
-9. Add:
-   - loading skeletons;
-   - empty filtered results;
-   - mock API error;
-   - retry action.
-10. Add tests for filter behavior.
+   - `POST /api/outbound-events`.
+4. Add a central API client and TanStack Query hooks.
+5. Build problem cards or a table.
+6. Add search, provider, topic, rating/difficulty, and status filters.
+7. Keep filters in URL search parameters.
+8. Add pagination.
+9. Add provider attribution and **Solve on Provider** anchors.
+10. Add bookmark and dismiss placeholders.
+11. Add loading, empty, partial, stale, rate-limited, and error modes.
+12. Test keyboard access and new-tab behavior.
 
 ### Acceptance checks
 
-- [ ] Catalog loads through MSW, not direct imports.
-- [ ] Search and filters can be combined.
-- [ ] Refresh preserves URL filters.
-- [ ] Loading skeleton appears.
-- [ ] Error mode displays retry.
-- [ ] Empty mode gives a clear reset action.
-- [ ] Cards are usable on mobile.
-- [ ] Problem types are validated.
-
-### Common mistakes
-
-- Importing fixture arrays directly into pages.
-- Copying fetched data to Zustand.
-- Filtering only in the UI while pretending the API does it.
-- Using inconsistent difficulty strings.
+- [ ] Catalog loads through MSW, not fixture imports in the page.
+- [ ] Filters combine and survive refresh.
+- [ ] Every card displays a provider.
+- [ ] Every outbound action names its destination provider.
+- [ ] Links use approved HTTPS fixtures.
+- [ ] Opening a link records only `opened`.
+- [ ] No fixture contains a full statement or test case.
+- [ ] Cards work on mobile.
 
 ### Deliverable
 
-**Problem catalog checkpoint:** a realistic, testable catalog ready for a future API.
+**Mock-discovery checkpoint:** a complete metadata-and-redirect journey without a
+live provider.
 
 ---
 
-# 7. Phase 3 — Mocked Coding Workspace
+# 8. Phase 4 — Provider Gateway
 
-## Week 5: Problem detail and Monaco Editor
+## Week 6: First live provider adapter
 
 ### Goal
 
-Create the central learning screen.
+Replace metadata mocks with one permitted external API without changing React's
+contract.
 
 ### Learn
 
-- Monaco Editor integration;
-- controlled versus uncontrolled values;
-- debouncing;
-- resizable panels or tab layouts;
-- preserving drafts;
-- displaying Markdown safely.
+- third-party API clients;
+- response validation;
+- rate limiting and backoff;
+- caching and freshness;
+- provider-specific DTOs; and
+- URL construction and allowlisting.
 
 ### Build tasks
 
-1. Expand the problem-detail contract:
-   - statement;
-   - constraints;
-   - examples;
-   - topics;
-   - starter code per language.
-2. Build problem statement sections.
-3. Integrate Monaco using a dynamic/lazy import.
-4. Add language selector:
-   - C++17/20;
-   - Python 3;
-   - Java;
-   - JavaScript.
-5. Create an editor store containing:
-   - code by problem/language;
-   - selected language;
-   - editor theme;
-   - active bottom panel.
-6. Save drafts to `localStorage` or IndexedDB with debouncing.
-7. Add Run and Submit buttons.
-8. Build console/verdict panel.
-9. Build mobile tabs for statement, editor, and results.
-10. Warn before replacing a non-empty draft with starter code.
+1. Define the `ProblemProvider` interface.
+2. Create a Codeforces adapter using the official API.
+3. Validate raw envelopes and `Problem`/`ProblemStatistics` fields.
+4. Normalize IDs, tags, rating, solved count, and topics.
+5. Construct canonical URLs from contest ID and index.
+6. Add server-side search/filter support over normalized metadata.
+7. Add timeout and retry classification.
+8. Add request deduplication.
+9. Add a provider-specific metadata TTL.
+10. Add safe structured logs.
+11. Add provider health/freshness metadata.
+12. Test with mocked HTTP responses before live manual testing.
 
 ### Acceptance checks
 
-- [ ] Editor loads without blocking the entire page bundle.
-- [ ] Switching language changes to the correct draft.
-- [ ] Refresh restores the draft.
-- [ ] Long code remains usable.
-- [ ] Problem statement scrolls independently on desktop.
-- [ ] Mobile tabs are readable and usable.
-- [ ] Run and Submit have disabled/loading states.
+- [ ] React never calls Codeforces directly.
+- [ ] Provider payloads are validated before use.
+- [ ] Invalid records are skipped or rejected safely.
+- [ ] Canonical URLs resolve to the expected Codeforces host and problem.
+- [ ] Documented rate limits are respected.
+- [ ] Cached results reduce provider calls.
+- [ ] Provider errors produce stable internal codes.
+- [ ] The catalog contract matches Week 5 mocks.
 
 ### Common mistakes
 
-- Replacing code every time language state rerenders.
-- Saving on every keystroke without debouncing.
-- Loading Monaco on the landing page bundle.
-- Treating custom input and hidden-test submission as the same action.
-
-## Week 6: Simulated execution, hints, dashboard, and complete mock flow
-
-### Goal
-
-Complete the frontend-first MVP prototype before introducing real services.
-
-### Build tasks
-
-1. Mock `POST /api/submissions/run` with delays and outcomes.
-2. Mock `POST /api/submissions`.
-3. Support verdicts:
-   - accepted;
-   - wrong answer;
-   - compile error;
-   - runtime error;
-   - time limit exceeded;
-   - system error.
-4. Build a progressive hint panel with five locked/unlocked levels.
-5. Simulate streaming hint text.
-6. Build mocked:
-   - dashboard;
-   - submission history;
-   - progress page;
-   - recommendation card.
-7. Create scenario selection in development.
-8. Add Playwright and write one full mocked journey.
-9. Ask 2–3 classmates to use the prototype without instructions.
-10. Record confusing points and fix the top five.
-
-### Acceptance checks
-
-- [ ] User can complete an entire mocked learning loop.
-- [ ] Every verdict has a designed state.
-- [ ] Hint streaming can be cancelled/retried.
-- [ ] Submission appears in mocked history.
-- [ ] Dashboard changes after mock acceptance.
-- [ ] One Playwright happy path passes.
-- [ ] Usability feedback is recorded.
-
-### Frontend-first exit gate
-
-Do not begin real backend work until:
-
-- routes are stable;
-- data contracts are written;
-- critical states are designed;
-- the complete mock flow works;
-- major usability problems are fixed.
+- Passing provider DTOs directly to React.
+- Depending on fields the official API does not supply.
+- Fetching on every keystroke.
+- Retrying rate-limit failures immediately.
+- Scraping statements to enrich cards.
 
 ### Deliverable
 
-**Frontend prototype checkpoint:** a polished demo that behaves like the future product.
+**Provider checkpoint:** one live, lawful metadata source with safe redirects.
 
 ---
 
-# 8. Phase 4 — Authentication and Onboarding
+# 9. Phase 5 — Authentication and Onboarding
 
 ## Week 7: Supabase authentication
 
 ### Goal
 
-Replace fake identity with real login and protected routes.
-
-### Learn
-
-- sessions;
-- JWTs;
-- publishable versus secret keys;
-- auth state changes;
-- protected routes;
-- redirect URLs.
+Add real identity and protected learner routes.
 
 ### Build tasks
 
-1. Create a Supabase development project.
-2. Configure local and future callback URLs.
-3. Add frontend environment variables.
-4. Create one Supabase client module.
-5. Build:
-   - sign-up form;
-   - login form;
-   - email verification/magic-link state if used;
-   - logout;
-   - expired-session state.
-6. Create `AuthProvider`.
-7. Create `ProtectedRoute`.
-8. Add token attachment to API client.
-9. Do not add social OAuth yet.
-10. Document auth setup in README.
+1. Configure Supabase Auth.
+2. Implement login, logout, and session restoration.
+3. Verify JWTs in Express and FastAPI.
+4. Protect dashboard, recommendations, bookmarks, progress, and settings.
+5. Handle loading, expired, and invalid sessions.
+6. Configure local and production callback URLs.
 
 ### Acceptance checks
 
-- [ ] User can register.
-- [ ] User can sign in after refresh.
-- [ ] User can sign out.
 - [ ] Protected routes redirect correctly.
-- [ ] Auth callback handles success and error.
-- [ ] No secret/service-role key exists in browser code.
-- [ ] Login works in a fresh private browser window.
+- [ ] APIs reject invalid tokens.
+- [ ] Refresh restores valid sessions.
+- [ ] Service-role keys never enter React.
 
-### Common mistakes
-
-- Using a service-role key in React.
-- Creating Supabase clients in multiple components.
-- Assuming a user session equals completed onboarding.
-- Forgetting production callback URLs later.
-
-## Week 8: Onboarding and learner profile
+## Week 8: Learner onboarding
 
 ### Goal
 
-Collect the minimum information needed for personalization.
+Collect enough preference data for a useful first recommendation.
 
 ### Build tasks
 
-1. Build a five-step onboarding form.
-2. Validate each step with Zod.
-3. Save temporary progress locally.
-4. Use mock persistence initially.
-5. Add onboarding route guard:
-   - unauthenticated → login;
-   - authenticated + incomplete → onboarding;
-   - authenticated + complete → dashboard.
-6. Build profile editing.
-7. Keep questions minimal:
-   - goal;
-   - experience;
-   - language;
-   - known topics;
-   - weekly target.
-8. Add summary confirmation before completion.
-9. Test back/forward navigation and refresh.
+1. Collect goal and experience.
+2. Collect preferred/weak topics.
+3. Collect weekly time and session length.
+4. Collect preferred providers.
+5. Collect rating/difficulty comfort range.
+6. Explain optional provider linking without requiring it.
+7. Validate and persist the profile.
+8. Allow later editing.
 
 ### Acceptance checks
 
-- [ ] Validation errors are understandable.
-- [ ] Refresh preserves incomplete progress.
-- [ ] User can go backward without losing fields.
-- [ ] Completion redirects to dashboard.
-- [ ] Profile page displays and can edit answers.
-- [ ] Onboarding is usable on mobile.
+- [ ] Onboarding works without a linked external account.
+- [ ] Required fields are understandable.
+- [ ] Completion leads to the dashboard.
+- [ ] Settings can correct the profile later.
 
 ### Deliverable
 
-**Identity checkpoint:** a real user can authenticate and establish a learner profile.
+**Identity checkpoint:** every learner has an editable recommendation profile.
 
 ---
 
-# 9. Phase 5 — Express, PostgreSQL, and Core Data
+# 10. Phase 6 — PostgreSQL and Learner Data
 
-## Week 9: Express foundation, database, and Prisma
+## Week 9: Core schema and persistence
 
 ### Goal
 
-Create the durable core backend without yet integrating Judge0 or AI.
-
-### Learn
-
-- Express middleware;
-- controllers/services/repositories;
-- Prisma schema;
-- migrations;
-- foreign keys;
-- database seeding;
-- token verification.
+Persist learner-owned data and permitted metadata without introducing internal
+problem content.
 
 ### Build tasks
 
-1. Set up Express TypeScript application.
-2. Add:
-   - Helmet;
-   - CORS;
-   - JSON body limit;
-   - request ID;
-   - structured logging;
-   - central error middleware.
-3. Start PostgreSQL using Docker Compose.
-4. Install Prisma and initialize it.
-5. Create `core` schema/table ownership plan.
-6. Model:
+1. Configure Prisma for the `core` schema.
+2. Configure Alembic for the separate `ai` schema.
+3. Create core tables for:
    - users;
    - learner profiles;
-   - topics;
-   - problems;
-   - problem topics.
-7. Create and apply the first migration.
-8. Write seed script for 20–30 problems.
-9. Add Supabase JWT verification middleware.
-10. Implement:
-    - `GET /health`;
-    - `GET /api/users/me`;
-    - `POST /api/users/me/onboarding`;
-    - `PATCH /api/users/me`.
-11. Add API tests with a test database.
+   - provider accounts and consent;
+   - external problem metadata cache;
+   - bookmarks;
+   - problem actions;
+   - recommendation batches; and
+   - recommendation feedback.
+4. Create unique `(provider, externalId)` indexes.
+5. Add ownership checks.
+6. Add metadata expiry indexes.
+7. Add seed data only for normalized topics and fictional development records.
+8. Write idempotent migrations and seeds.
 
 ### Acceptance checks
 
-- [ ] PostgreSQL health check passes.
-- [ ] Migration applies to an empty database.
-- [ ] Seed script can run twice safely or clearly prevents duplicates.
-- [ ] `/health` works.
-- [ ] Authenticated request creates/maps an application user.
-- [ ] User cannot read another profile.
-- [ ] Errors use the standard response format.
-- [ ] API test suite passes.
-
-### Common mistakes
-
-- Editing tables manually instead of creating migrations.
-- Putting Prisma queries directly in controllers.
-- Trusting `userId` from the body.
-- Using the development database for automated tests.
+- [ ] No table stores statements, tests, drafts, or submissions.
+- [ ] Prisma and Alembic never own the same table.
+- [ ] Learners can access only their own records.
+- [ ] Metadata rows deduplicate correctly.
+- [ ] Seed scripts can run safely more than once.
 
 ### Deliverable
 
-**Backend foundation checkpoint:** authenticated Express and PostgreSQL with seeded core data.
+**Data checkpoint:** durable learner and metadata records with clear ownership.
 
 ---
 
-# 10. Phase 6 — Real Problem and Submission APIs
+# 11. Phase 7 — Deterministic Recommendations
 
-## Week 10: Replace problem/profile mocks
-
-### Goal
-
-Connect React to real read APIs while preserving the existing UI contracts.
-
-### Build tasks
-
-1. Implement:
-   - `GET /api/topics`;
-   - `GET /api/problems`;
-   - `GET /api/problems/:problemId`;
-   - `GET /api/users/me/progress` with placeholder calculations.
-2. Add query validation for:
-   - search;
-   - topic;
-   - difficulty;
-   - status;
-   - page;
-   - page size.
-3. Ensure API response matches MSW exactly.
-4. Add frontend environment switch:
-   - mocks on;
-   - mocks off.
-5. Replace mock profile and problem data with real endpoints.
-6. Keep MSW active in automated frontend tests.
-7. Add integration tests for filters and pagination.
-8. Add authorization tests.
-
-### Acceptance checks
-
-- [ ] UI does not need a major rewrite.
-- [ ] Real catalog matches mock behavior.
-- [ ] URL filters reach the API.
-- [ ] Pagination metadata is correct.
-- [ ] Unpublished problems are hidden.
-- [ ] Loading/error states still work.
-- [ ] Tests can use mocks independently of the real API.
-
-## Week 11: Attempts, drafts, and submission records
+## Week 10: Explainable baseline ranking
 
 ### Goal
 
-Persist the learner’s workspace activity before adding real execution.
+Create a useful recommendation feed before adding an LLM.
 
 ### Build tasks
 
-1. Add tables:
-   - attempts;
-   - code drafts;
-   - submissions.
-2. Add migration and tests.
-3. Implement draft endpoints:
-   - `GET /api/problems/:id/draft`;
-   - `PUT /api/problems/:id/draft`.
-4. Implement attempts:
-   - start attempt on workspace activity;
-   - record completion/abandonment;
-   - record hint count later.
-5. Implement a temporary simulated submission service that writes real records.
-6. Implement:
-   - `GET /api/submissions`;
-   - `GET /api/submissions/:id`.
-7. Move drafts from local-only storage to server persistence with local fallback.
-8. Reconcile draft conflicts using `updatedAt`.
+1. Fetch candidates through the provider gateway.
+2. Exclude dismissed and recently completed problems.
+3. Score topic match.
+4. Score difficulty-range match.
+5. Score provider preference.
+6. Add revision and diversity rules.
+7. Generate template-based reasons.
+8. Save recommendation batches.
+9. Add useful/not-useful and too-easy/too-hard feedback.
+10. Add cold-start defaults.
+
+### Example baseline score
+
+```text
+score =
+  topic_match * 0.35
+  + difficulty_match * 0.30
+  + provider_preference * 0.15
+  + revision_need * 0.10
+  + diversity_bonus * 0.10
+```
+
+Weights are a starting hypothesis, not truth. Record them and measure feedback.
 
 ### Acceptance checks
 
-- [ ] Draft survives login on another browser.
-- [ ] User can only access own draft/submission.
-- [ ] Submission history uses real PostgreSQL data.
-- [ ] Long source code is size-limited.
-- [ ] Pagination works.
-- [ ] Attempt records are not created on every render.
+- [ ] Recommendations work without FastAPI or an LLM.
+- [ ] Every item has an understandable reason.
+- [ ] Dismissed items do not immediately return.
+- [ ] Difficulty preferences affect ranking.
+- [ ] Cold-start users receive safe starter problems.
+- [ ] Results are reproducible for the same inputs.
 
 ### Deliverable
 
-**Core data checkpoint:** the ordinary product works with durable real data, but execution is still simulated.
+**Baseline checkpoint:** a useful, measurable recommendation system without AI.
 
 ---
 
-# 11. Phase 7 — Judge0 Code Execution
+# 12. Phase 8 — AI Ranking and Explanations
 
-## Week 12: Real Run and Submit
+## Week 11: FastAPI recommendation intelligence
 
 ### Goal
 
-Execute code safely through hosted Judge0.
+Improve candidate ordering and explanations while keeping deterministic safety
+and fallback behavior.
 
 ### Learn
 
-- external API clients;
-- provider authentication;
-- timeouts;
-- polling;
-- status mapping;
-- retryable versus non-retryable errors.
+- structured LLM output;
+- prompt boundaries;
+- candidate allowlisting;
+- evaluation datasets;
+- latency and cost budgets; and
+- graceful degradation.
 
 ### Build tasks
 
-1. Create a hosted Judge0 account or endpoint.
-2. Store credentials only in Express environment variables.
-3. Implement `JudgeClient`:
-   - create submission;
-   - fetch result;
-   - wait with maximum polls;
-   - map statuses.
-4. Create a language mapping:
-
-   ```ts
-   type LanguageKey = "cpp" | "python" | "java" | "javascript";
-   ```
-
-5. Implement `POST /api/submissions/run`.
-6. Implement real `POST /api/submissions`.
-7. Add limits:
-   - code length;
-   - custom input length;
-   - output length;
-   - per-user requests;
-   - timeout.
-8. Store pending record before provider call.
-9. Store final result or system error.
-10. Display compiler and runtime errors safely.
-11. Test Judge0 client using mocked HTTP responses.
-12. Run a small manual language matrix.
-
-### Manual language matrix
-
-For each language, test:
-
-- valid output;
-- compile/syntax error;
-- runtime error;
-- infinite loop/time limit;
-- wrong output;
-- accepted submission.
+1. Define Pydantic ranking input/output models.
+2. Send only a bounded normalized candidate list.
+3. Exclude canonical URLs when the model does not need them.
+4. Ask for selected IDs, scores, and concise reasons.
+5. Validate output IDs against the candidate set.
+6. Attach canonical URLs in Express after validation.
+7. Add timeouts and cancellation.
+8. Fall back to Week 10 ranking on any AI failure.
+9. Record model, latency, fallback, and candidate IDs.
+10. Build an evaluation set for relevance, difficulty, diversity, and reason
+    quality.
+11. Add natural-language preference input.
 
 ### Acceptance checks
 
-- [ ] Learner code never runs in your server process.
-- [ ] Run uses custom input.
-- [ ] Submit uses hidden cases.
-- [ ] Pending submissions survive provider delays.
-- [ ] Polling stops.
-- [ ] Raw provider statuses do not leak into UI contracts.
-- [ ] Output is truncated safely.
-- [ ] Rate limiting works.
-- [ ] Submission history shows real verdicts.
+- [ ] AI cannot introduce an unknown problem or URL.
+- [ ] Invalid output activates deterministic fallback.
+- [ ] Recommendations remain available during AI outage.
+- [ ] Reasons do not expose private learner data.
+- [ ] Latency and cost are measured.
+- [ ] An evaluation compares AI against the baseline.
 
 ### Common mistakes
 
-- Passing provider language IDs directly from the browser.
-- Polling without maximum duration.
-- Saving only accepted submissions.
-- Blocking the event loop with synchronous waiting.
-- Returning hidden test cases to the client.
+- Asking the model to browse arbitrary sites.
+- Treating fluent reasons as proof of good ranking.
+- Sending thousands of candidates.
+- Removing the baseline after AI works once.
+- Persisting unnecessary raw prompts.
 
 ### Deliverable
 
-**Execution checkpoint:** a user can submit real code safely in four languages.
+**AI checkpoint:** bounded AI improves a safe, functioning recommendation loop.
 
 ---
 
-# 12. Phase 8 — FastAPI AI Foundation
+# 13. Phase 9 — Progress and Provider Linking
 
-## Week 13: AI service, schemas, and internal communication
-
-### Goal
-
-Create a clean AI service before adding an LLM.
-
-### Learn
-
-- FastAPI routes and dependencies;
-- Pydantic settings and schemas;
-- async generators;
-- SQLAlchemy session patterns;
-- Alembic migrations;
-- service-to-service authentication.
-
-### Build tasks
-
-1. Initialize FastAPI with `uv`.
-2. Create package structure from the documentation.
-3. Configure:
-   - settings;
-   - database connection;
-   - logging;
-   - CORS;
-   - error handlers;
-   - request IDs.
-4. Add `GET /health`.
-5. Create AI-owned PostgreSQL schema with Alembic.
-6. Create placeholder tables:
-   - AI requests;
-   - hint requests.
-7. Add user JWT verification for browser calls.
-8. Add internal-service token verification for Express calls.
-9. Implement placeholder endpoints:
-   - `POST /ai/hints/stream`;
-   - `POST /ai/submissions/analyze`;
-   - `GET /ai/recommendations`.
-10. Make Express call the placeholder analysis endpoint after a completed submission.
-11. Ensure analysis failure does not fail submission.
-12. Add Pytest tests.
-
-### Acceptance checks
-
-- [ ] FastAPI `/health` and `/docs` work.
-- [ ] Alembic owns only `ai` tables.
-- [ ] Browser JWT path works.
-- [ ] Internal Express path works.
-- [ ] Invalid internal token is rejected.
-- [ ] Express submissions succeed when FastAPI is offline.
-- [ ] Pytest passes.
-
-### Common mistakes
-
-- Sharing one ORM model between TypeScript and Python.
-- Letting Alembic modify `core` tables.
-- Putting LLM calls directly in route functions.
-- Treating internal service tokens as user identity.
-
-### Deliverable
-
-**AI foundation checkpoint:** authenticated FastAPI with no provider dependency yet.
-
----
-
-# 13. Phase 9 — Progressive AI Hints
-
-## Week 14: LLM integration and streaming
+## Week 12: Honest manual progress
 
 ### Goal
 
-Deliver useful hints while protecting independent learning.
-
-### Learn
-
-- LLM request structure;
-- prompt roles;
-- streaming responses;
-- cancellation;
-- token/cost limits;
-- deterministic output validation.
+Track what AlgoMemtor genuinely knows after external navigation.
 
 ### Build tasks
 
-1. Select one LLM provider.
-2. Create `LLMClient` interface so provider code is isolated.
-3. Add `LLM_API_KEY` only to FastAPI.
-4. Implement the five hint levels.
-5. Create versioned prompt templates.
-6. Include:
-   - problem summary;
-   - current code;
-   - latest verdict/output;
-   - requested level;
-   - previous hints.
-7. Add anti-answer-leakage rules.
-8. Stream metadata, tokens, completion, and errors.
-9. Implement cancellation when the browser closes.
-10. Add request deadline and maximum output tokens.
-11. Store:
-    - request status;
-    - level;
-    - model identifier;
-    - latency;
-    - token usage if available.
-12. Add simple evaluation cases:
-    - beginner stuck before coding;
-    - correct idea with bug;
-    - user asks for full answer at level 1;
-    - malicious problem text;
-    - provider timeout.
-13. Connect React hint panel to the real stream.
-
-### Hint quality rubric
-
-Score 1–5:
-
-- relevant to current problem;
-- appropriate for requested level;
-- does not reveal too much;
-- correct;
-- actionable;
-- personalized only when evidence exists.
+1. Record recommendation impressions separately from opens.
+2. Record outbound opens without blocking navigation.
+3. Add manual in-progress and completion actions.
+4. Add perceived difficulty and time-spent reflection.
+5. Show manual status labels everywhere.
+6. Keep append-only evidence history where practical.
+7. Update recommendation exclusions and revision rules.
 
 ### Acceptance checks
 
-- [ ] Level 1 does not reveal the full algorithm.
-- [ ] Level 3 does not produce copy-ready code.
-- [ ] User can cancel a stream.
-- [ ] Partial output remains visible after interruption.
-- [ ] Provider failure does not affect editor/submission.
-- [ ] Request limits prevent unbounded cost.
-- [ ] At least 20 manual evaluation cases are recorded.
+- [ ] Opening never becomes completion.
+- [ ] Manual completion is labelled manual.
+- [ ] Back navigation preserves the recommendation/catalog state.
+- [ ] Reflection data changes later recommendations.
 
-### Common mistakes
+## Week 13: One provider-verified activity flow
 
-- Trusting “do not reveal the answer” without tests.
-- Sending hidden test cases to the model.
-- Including the entire user history.
-- Hard-coding provider calls in the hint service.
-- Ignoring cancellation.
+### Goal
+
+Verify solves only where the initial provider API and terms permit reliable,
+consented user activity access.
+
+### Build tasks
+
+1. Document the provider activity endpoint and evidence mapping.
+2. Add explicit link/consent UI.
+3. Validate handles or authorization.
+4. Fetch activity through Express.
+5. Normalize and deduplicate provider events.
+6. Store last successful sync and errors.
+7. Mark confirmed solves as `solved_verified`.
+8. Add disconnect and learner-data deletion.
+9. Rate-limit manual sync.
+10. Add reconciliation tests.
+
+If reliable verification is not permitted, ship Week 12 without Week 13 and label
+provider verification as deferred. Do not fake it.
+
+### Acceptance checks
+
+- [ ] User consent is explicit.
+- [ ] Verified state comes only from provider evidence.
+- [ ] Manual and verified states remain separate.
+- [ ] Sync failures do not erase previous evidence.
+- [ ] Disconnect and deletion work.
 
 ### Deliverable
 
-**Mentor checkpoint:** real progressive AI hints work end to end.
+**Progress checkpoint:** trustworthy evidence with no inflated solve counts.
 
 ---
 
 # 14. Phase 10 — Learner Memory
 
-## Week 15: Evidence, embeddings, retrieval, and user control
+## Week 14: Evidence-backed personalization
 
 ### Goal
 
-Make hints and recommendations remember useful learner patterns.
-
-### Learn
-
-- embeddings;
-- vector similarity;
-- pgvector;
-- confidence scoring;
-- background/best-effort processing;
-- data correction.
+Remember useful learner patterns without creating an opaque permanent profile.
 
 ### Build tasks
 
-1. Enable pgvector.
-2. Add AI tables:
-   - learner memories;
-   - memory evidence.
-3. Define memory types.
-4. Implement `EmbeddingService`.
-5. Implement candidate extraction from completed submissions.
-6. Validate extracted structured output with Pydantic.
-7. Add deduplication:
-   - same user;
-   - same topic;
-   - semantically similar content.
-8. Add confidence rules:
-   - one event → low confidence;
-   - repeated evidence → higher confidence;
-   - conflicting success → reduce/revise.
-9. Generate and store embedding.
-10. Retrieve top 3–5 relevant memories for hint requests.
-11. Build a profile section where users can:
-    - view memory;
-    - view evidence count;
-    - correct wording;
-    - delete memory.
-12. Add tests ensuring one user can never retrieve another user’s memories.
-13. Add graceful fallback if embeddings fail.
-
-### Beginner simplification
-
-Do not build a job queue yet. Use a best-effort internal request after a submission and add a reconciliation script for missed analysis.
+1. Configure the `ai` schema.
+2. Define memory categories:
+   - preference;
+   - difficulty calibration;
+   - topic weakness;
+   - scheduling preference; and
+   - recommendation feedback pattern.
+3. Link every memory to evidence.
+4. Add confidence and status.
+5. Let users inspect, correct, archive, and delete memories.
+6. Use simple SQL retrieval first.
+7. Add embeddings only when semantic retrieval is measurably helpful.
+8. Exclude low-confidence memories from strong claims.
+9. Test memory influence on recommendations.
 
 ### Acceptance checks
 
-- [ ] Every memory has evidence.
-- [ ] One bad submission does not create a confident fact.
-- [ ] Duplicate observations are merged.
-- [ ] Retrieval is scoped to the authenticated user.
-- [ ] Hints use at most 3–5 memories.
-- [ ] User can edit/delete a memory.
-- [ ] AI works without memory when retrieval fails.
-- [ ] Embedding model identifier is stored.
-
-### Common mistakes
-
-- Storing every event as a permanent natural-language memory.
-- Ranking only by cosine similarity.
-- Letting the model invent evidence.
-- Hiding memory from the user.
-- Blocking verdict delivery while memory is extracted.
+- [ ] Every active memory has evidence.
+- [ ] Users can correct and delete memories.
+- [ ] A click alone does not create a “solved” memory.
+- [ ] Manual and verified evidence are distinguishable.
+- [ ] Recommendations explain relevant memory influence without exposing private
+      details.
 
 ### Deliverable
 
-**Persistent mentor checkpoint:** evidence-backed memory influences a later hint.
+**Memory checkpoint:** personalization improves over time and remains under user
+control.
 
 ---
 
-# 15. Phase 11 — Recommendations and Progress
+# 15. Phase 11 — Testing and Hardening
 
-## Week 16: Personalized next action and transparent progress
+## Week 15: Release candidate
 
 ### Goal
 
-Close the product loop after each submission.
+Verify the complete learner loop under normal and degraded conditions.
 
-### Build tasks
+### Functional tasks
 
-1. Implement deterministic recommendation scoring.
-2. Inputs:
-   - unsolved problems;
-   - topic needs;
-   - difficulty fit;
-   - recent attempts;
-   - revision value;
-   - learner goal.
-3. Store recommendation reason codes.
-4. Optionally use the LLM to phrase the explanation.
-5. Build recommendation API and dashboard card.
-6. Track:
-   - displayed;
-   - opened;
-   - skipped;
-   - completed.
-7. Implement transparent progress calculations:
-   - attempted;
-   - solved;
-   - acceptance rate;
-   - weekly activity;
-   - hint distribution;
-   - topic confidence.
-8. Build progress charts only where a chart is clearer than text.
-9. Add “why this is recommended” details.
-10. Test new, intermediate, and sparse-data users.
+1. Test onboarding.
+2. Test combined catalog filters.
+3. Test deterministic recommendations.
+4. Test AI recommendations and fallback.
+5. Test outbound navigation.
+6. Test manual progress.
+7. Test provider verification if supported.
+8. Test memory controls.
 
-### Cold-start behavior
+### Provider tasks
 
-For a new user:
+1. Test valid, missing, and malformed fields.
+2. Test rate limits and timeouts.
+3. Test cache expiry and stale display.
+4. Test partial-provider results.
+5. Confirm no statement/content ingestion.
+6. Re-check provider API terms and attribution.
 
-- use onboarding goal;
-- use claimed experience;
-- recommend curated starter problems;
-- avoid pretending to know weaknesses;
-- update after real evidence arrives.
+### Security tasks
+
+1. Review CORS and auth.
+2. Test cross-user record access.
+3. Test redirect allowlists and lookalike hosts.
+4. Confirm React receives no provider/LLM secrets.
+5. Confirm AI cannot introduce candidate IDs or URLs.
+6. Confirm disconnect/deletion behavior.
+
+### Accessibility tasks
+
+1. Complete keyboard navigation.
+2. Verify focus styles and external-link labels.
+3. Verify screen-reader names for provider actions.
+4. Check contrast and zoom.
+5. Verify mobile layouts at narrow widths.
+
+### Performance tasks
+
+1. Measure catalog API latency.
+2. Measure provider cache hit rate.
+3. Measure AI latency and fallback rate.
+4. Paginate or virtualize only when measured.
+5. Avoid fetching providers on every filter keystroke.
 
 ### Acceptance checks
 
-- [ ] New user receives sensible starter recommendation.
-- [ ] Solved problems are excluded.
-- [ ] Recommendation has stable reason codes.
-- [ ] Weak topics influence ranking.
-- [ ] Difficulty does not jump unpredictably.
-- [ ] Progress explanations are understandable.
-- [ ] Dashboard updates after accepted submission.
+- [ ] The end-to-end loop works in a real browser.
+- [ ] Provider and AI outages have usable fallbacks.
+- [ ] No open redirect is possible.
+- [ ] Evidence labels remain correct.
+- [ ] No prohibited problem content is stored.
+- [ ] Automated quality commands pass.
+- [ ] Known limitations are documented.
 
 ### Deliverable
 
-**Closed-loop checkpoint:** attempts change memory, progress, and the next recommendation.
+**Release-candidate checkpoint:** the product is safe enough for a small beta.
 
 ---
 
-# 16. Phase 12 — Testing and Hardening
+# 16. Phase 12 — Deployment and Beta
 
-## Week 17: Release candidate
-
-### Goal
-
-Turn a working project into a reliable beta.
-
-### Build tasks
-
-#### Frontend
-
-1. Test critical components.
-2. Test protected routes.
-3. Test query invalidation.
-4. Run accessibility checks.
-5. Test 360 px, tablet, and desktop layouts.
-6. Test slow network and failed requests.
-
-#### Express
-
-1. Test every service’s important branches.
-2. Test authorization.
-3. Test validation.
-4. Test Judge0 mapping and timeout.
-5. Test pagination.
-6. Test output truncation.
-
-#### FastAPI
-
-1. Test prompt-level rules.
-2. Test stream events.
-3. Test memory isolation.
-4. Test deduplication.
-5. Test recommendation scoring.
-6. Test provider failures.
-
-#### End to end
-
-Write Playwright tests for:
-
-1. registration/onboarding;
-2. catalog filters;
-3. draft persistence;
-4. wrong submission;
-5. hint request;
-6. accepted submission;
-7. updated dashboard;
-8. memory inspection.
-
-#### Security
-
-1. Confirm no secrets in Git history.
-2. Review CORS.
-3. Review payload limits.
-4. Review rate limits.
-5. Try accessing another user’s IDs.
-6. Confirm hidden cases never reach React.
-7. Confirm production errors hide stack traces.
-
-#### Performance
-
-1. Lazy-load Monaco.
-2. Inspect frontend bundle.
-3. Remove accidental repeated API requests.
-4. Add database indexes identified in the documentation.
-5. Measure AI time to first token.
-
-### Bug priority
-
-| Priority | Meaning |
-|---|---|
-| P0 | Data/security loss or unusable product |
-| P1 | Core loop broken |
-| P2 | Important feature impaired with workaround |
-| P3 | Minor or visual issue |
-
-Fix all P0/P1 issues before beta.
-
-### Acceptance checks
-
-- [ ] CI runs typecheck, lint, unit tests, and builds.
-- [ ] Critical Playwright flows pass.
-- [ ] No P0/P1 bug remains.
-- [ ] Accessibility basics pass.
-- [ ] Mobile core loop works.
-- [ ] Rate limits and timeouts are configured.
-- [ ] A fresh setup works from README.
-
-### Deliverable
-
-**Release-candidate checkpoint:** a tested version that another person can run and use.
-
----
-
-# 17. Phase 13 — Deployment and Beta
-
-## Week 18: Production setup and user feedback
+## Week 16: Production setup and feedback
 
 ### Goal
 
-Deploy safely and observe a small group of real learners.
+Deploy the smallest production system and learn whether recommendations help.
 
 ### Build tasks
 
-1. Select hosting based on current pricing and availability.
-2. Create production Supabase/PostgreSQL.
-3. Configure backups.
-4. Apply production migrations.
-5. Seed curated public problems.
-6. Deploy Express.
-7. Deploy FastAPI.
-8. Verify both `/health` endpoints.
-9. Configure:
-   - environment variables;
-   - allowed origins;
-   - Supabase redirect URLs;
-   - provider API credentials.
-10. Deploy React.
-11. Disable MSW/mock mode.
-12. Add basic error tracking.
-13. Add a privacy page and plain-language memory explanation.
-14. Create five test accounts.
-15. Run the full production smoke checklist.
-16. Invite 5–10 beta users.
-17. Create a feedback form.
-18. Observe users completing the core loop.
+1. Deploy PostgreSQL.
+2. Deploy Express.
+3. Configure production provider integration and limits.
+4. Deploy FastAPI.
+5. Deploy React.
+6. Configure Supabase production callbacks.
+7. Configure secrets and internal authentication.
+8. Add health checks and structured logging.
+9. Add provider/AI error alerts.
+10. Add privacy, terms, attribution, and data-deletion pages.
+11. Run production smoke tests.
 
 ### Production smoke test
 
-- [ ] Landing page opens over HTTPS.
-- [ ] Registration/login works.
-- [ ] Auth callback returns to correct domain.
-- [ ] Onboarding saves.
-- [ ] Catalog loads.
-- [ ] Problem opens.
-- [ ] Draft saves.
-- [ ] Run works in all supported languages.
-- [ ] Submit returns verdict.
-- [ ] Hint streams.
-- [ ] Submission appears in history.
-- [ ] Dashboard updates.
-- [ ] Memory page displays user-specific data.
-- [ ] Logout works.
+1. Create an account.
+2. Complete onboarding.
+3. Load live external metadata.
+4. Request an AI recommendation.
+5. Confirm provider attribution and destination.
+6. Open the external problem.
+7. Return and mark progress manually.
+8. Verify provider activity if supported.
+9. Edit or delete a learner memory.
+10. Disconnect a provider account.
 
 ### Beta questions
 
-Ask:
+- Was the recommended difficulty appropriate?
+- Did the reason help the learner decide?
+- Did the external link lead to the expected problem?
+- Was returning to AlgoMemtor natural?
+- Did manual progress feel burdensome?
+- Did users understand manual versus verified evidence?
+- Which provider or topic was missing?
 
-- Did you understand what to do next?
-- Was the recommended problem appropriate?
-- Did hints help without giving away too much?
-- Did the result/error panel make sense?
-- Did AlgoMemtor remember anything useful?
-- What made you stop or feel confused?
-- Would you return next week?
+### Beta success targets
 
-### Success targets for the first beta
+Set targets only after measuring a baseline. Track:
 
-Avoid aggressive growth targets. Look for evidence:
-
-- at least five users complete onboarding;
-- at least five complete one real submission;
-- at least three return for another session;
-- hints are rated helpful more often than unhelpful;
-- no privacy/security incident;
-- no P0 data-loss bug;
-- at least three specific improvements are identified.
+- recommendation open rate;
+- useful/not-useful feedback;
+- manual and verified completion separately;
+- repeat practice days;
+- provider error rate;
+- AI fallback rate; and
+- broken destination rate.
 
 ### Deliverable
 
-**MVP checkpoint:** a live product used by real learners with recorded feedback.
+**Beta checkpoint:** real learners complete the discovery-to-reflection loop.
 
 ---
 
-# 18. After the MVP
+# 17. After the MVP
 
-Do not immediately build every deferred feature. Spend 1–2 weeks fixing the beta’s most important issues.
+## 17.1 Recommended order
 
-## 18.1 Recommended order
+### Stage A: Improve recommendation quality
 
-### Stage A: Improve the core mentor
+- calibrate difficulty per learner;
+- improve topic normalization;
+- add revision scheduling;
+- compare AI and deterministic ranking; and
+- improve explanation usefulness.
 
-- better problem quality;
-- better hint evaluations;
-- better memory correction;
-- recommendation tuning;
-- faster submission feedback;
-- better onboarding.
+### Stage B: Add providers carefully
 
-### Stage B: Improve practice
+For each provider, repeat the approval checklist, adapter tests, attribution work,
+and fallback design. Do not create a single generic scraper.
 
-- bookmarks;
-- revision queue;
-- curated learning paths;
-- basic contest mode;
-- richer progress explanations.
+### Stage C: Improve progress evidence
 
-### Stage C: Add real-time only if justified
+- add more consented provider activity integrations;
+- improve reconciliation;
+- add reflection prompts; and
+- make confidence visible.
 
-- contest presence;
-- live standings;
-- challenges;
-- duels;
-- Socket.IO;
-- Redis adapter when multiple instances exist.
+### Stage D: Planning features
 
-### Stage D: Scale measured bottlenecks
+- external contest recommendations;
+- upsolve lists;
+- interview practice plans;
+- study groups and accountability; and
+- curated resource links.
 
-| Measured problem | Possible response |
-|---|---|
-| AI analysis delays requests | Background queue |
-| Vector search hurts PostgreSQL | Qdrant |
-| Hosted Judge0 is costly/limited | Self-hosted isolated workers |
-| Analytics slows core database | Read replica or analytics store |
-| Multiple Socket.IO instances | Redis adapter |
-| AI workflows need durable branching | LangGraph |
+### Stage E: Scale measured bottlenecks
 
-Technology is added in response to evidence, not ambition.
+- Redis for coordinated provider cache;
+- background refresh workers;
+- event queues for durable sync jobs;
+- separate vector storage only if PostgreSQL is insufficient.
+
+## 17.2 Still out of scope unless a new ADR changes direction
+
+- mirrored problem statements;
+- embedded IDE/compiler;
+- internal code judging;
+- hidden test-case storage;
+- HTML scraping; and
+- pretending to be the source platform.
 
 ---
 
-# 19. Weekly Working Method
+# 18. Working Method
 
-## 19.1 Suggested weekly rhythm
+## 18.1 Weekly rhythm
 
 ### Session 1 — Learn and plan
 
-- Read the relevant documentation section.
-- Define one vertical slice.
-- Write acceptance checks.
-- Identify unknowns.
+- Read the milestone.
+- Inspect the current checkout.
+- Compare source with docs.
+- Break work into small tasks.
+- Identify provider or security assumptions.
 
 ### Sessions 2–4 — Build
 
-- Work in small commits.
-- Keep app running.
-- Test manually after each meaningful change.
-- Record bugs immediately.
+- Make one focused change.
+- Test it.
+- Record unexpected behavior.
+- Preserve unrelated changes.
 
-### Session 5 — Test and document
+### Session 5 — Verify and document
 
 - Run automated checks.
-- Test error/mobile states.
-- Update README/API notes.
-- Review acceptance checks.
-- Merge only when complete.
+- Verify browser behavior.
+- Review the diff.
+- Update docs and decision notes.
+- Record anything not verified.
 
-## 19.2 Daily task size
+## 18.2 Task sizing
 
 Good tasks:
 
-- “Create problem-card skeleton.”
-- “Add Zod validation for problem filters.”
-- “Map Judge0 compile error.”
-- “Add hint-stream cancellation.”
+- “Define the provider-key Zod schema.”
+- “Normalize Codeforces rating into display bands.”
+- “Reject unknown hosts in the redirect resolver.”
+- “Render a stale-provider warning.”
+- “Test that an open does not become a solve.”
 
-Tasks that are too large:
+Tasks that are too broad:
 
-- “Build backend.”
-- “Implement AI.”
-- “Finish dashboard.”
+- “Build all providers.”
+- “Finish AI.”
+- “Implement the backend.”
+- “Make recommendations smart.”
 
-If a task cannot reasonably finish in one or two sessions, split it.
+## 18.3 Decision log
 
-## 19.3 Learning log
+Record decisions with:
 
-Create `docs/LEARNING_LOG.md`:
+- date;
+- context;
+- decision;
+- alternatives;
+- consequences; and
+- review trigger.
 
-```markdown
-## 2026-07-26
-
-### Learned
-- TanStack Query caches server data by query key.
-
-### Problem
-- Filters did not refresh because the query key ignored search parameters.
-
-### Fix
-- Included normalized filters in the query key.
-
-### Follow-up
-- Add test for combined topic and difficulty filters.
-```
-
-This becomes your personal debugging reference.
-
-## 19.4 Decision log
-
-Before adding a library, answer:
-
-1. What exact problem does it solve?
-2. Can the current stack solve it simply?
-3. Is it maintained?
-4. What new concept must I learn?
-5. How would I remove it later?
+Create a new ADR if the change affects service ownership, provider/content
+boundaries, evidence meaning, or AI safety.
 
 ---
 
-# 20. Risk Register
+# 19. Risk Register
 
-| Risk | Early warning | Prevention | Response |
-|---|---|---|---|
-| Scope expansion | New feature added every week | Keep MVP/non-MVP list visible | Move idea to backlog |
-| Backend duplication | Same models/rules in Express and FastAPI | Ownership table | Move write logic to owner |
-| AI answer leakage | Level 1 reveals algorithm/code | Evaluation dataset | Tighten prompt and add checks |
-| Judge0 instability | Long pending/error rate | Timeout and status storage | Retry/reconcile later |
-| Secret exposure | Key appears in commit/browser | `.env`, reviews, scanning | Rotate immediately |
-| Database migration conflict | Prisma and Alembic touch same table | Separate schemas | Revert wrong migration |
-| User data leak | ID-based route returns other user’s data | Ownership tests | Disable route and fix |
-| Beginner burnout | Many unfinished branches | Weekly deliverable rule | Reduce scope, finish one slice |
-| Poor mobile UX | Workspace unusable under 768 px | Mobile tabs from start | Redesign before beta |
-| LLM cost growth | Repeated/unbounded calls | Rate and token limits | Disable nonessential calls |
-| Memory becomes incorrect | User disputes observations | Evidence/confidence UI | Correct/supersede/delete |
-| Deployment-only bugs | Works locally only | Staging/smoke checklist | Compare env and migrations |
-
-Review this table at the end of every phase.
+| Risk                     | Warning sign                    | MVP response                     | Later option                               |
+| ------------------------ | ------------------------------- | -------------------------------- | ------------------------------------------ |
+| Provider API unavailable | high error/timeout rate         | cached/partial results and retry | background refresh or alternative provider |
+| Provider terms change    | integration no longer compliant | disable provider                 | renegotiate or replace                     |
+| Rate limits exceeded     | frequent throttling             | cache, debounce, backoff         | coordinated cache/worker                   |
+| AI hallucinates IDs      | unknown candidate returned      | reject and fallback              | stronger constrained decoding              |
+| AI adds little value     | baseline performs equally       | keep baseline/default            | revise evaluation/prompt                   |
+| Redirect vulnerability   | arbitrary host accepted         | server mapping and allowlist     | security review automation                 |
+| False progress claims    | opens counted as solves         | evidence-state separation        | more provider verification                 |
+| Stale metadata           | broken links/difficulty         | freshness labels and expiry      | background reconciliation                  |
+| Too many providers       | adapter inconsistency           | one provider first               | provider certification checklist           |
+| Privacy overreach        | users distrust account linking  | optional consent and deletion    | privacy review                             |
 
 ---
 
-# 21. Final MVP Checklist
+# 20. Final MVP Checklist
 
 ## Product
 
-- [ ] Core user journey is clear.
-- [ ] Onboarding is short and useful.
-- [ ] Catalog contains enough curated problems.
-- [ ] Workspace is usable on desktop and mobile.
-- [ ] Hints are progressive.
-- [ ] Progress and recommendations lead to action.
+- [ ] AlgoMemtor recommends external problems.
+- [ ] Source platforms host and judge them.
+- [ ] Every recommendation explains why it fits.
+- [ ] Manual and verified progress are distinct.
+- [ ] No click is called a solve.
 
 ## Frontend
 
-- [ ] Routes work after direct refresh.
-- [ ] Loading, empty, error, and success states exist.
-- [ ] Monaco is lazy-loaded.
-- [ ] Drafts persist.
-- [ ] Server data uses TanStack Query.
-- [ ] UI state is not mixed with server cache.
-- [ ] Accessibility basics work.
-- [ ] Mocks remain available for tests.
+- [ ] Responsive shell works.
+- [ ] Catalog filters persist in the URL.
+- [ ] Provider attribution is visible.
+- [ ] External actions are accessible and correctly labelled.
+- [ ] Loading, empty, stale, partial, and error states exist.
+- [ ] No embedded editor/workspace remains.
+
+## Provider gateway
+
+- [ ] At least one official permitted provider is integrated.
+- [ ] Raw responses are validated.
+- [ ] Metadata is normalized.
+- [ ] URLs are constructed or allowlisted server-side.
+- [ ] Rate limits, timeouts, cache, and retries are tested.
+- [ ] No scraping is used.
 
 ## Express
 
-- [ ] JWT verification works.
-- [ ] Ownership checks exist.
-- [ ] Zod validates requests.
-- [ ] Problems and profiles persist.
-- [ ] Submission history persists.
-- [ ] Judge0 status mapping is stable.
-- [ ] Rate limits and timeouts exist.
-- [ ] Central error format is used.
+- [ ] Authentication and ownership checks work.
+- [ ] Provider secrets remain server-side.
+- [ ] Bookmarks, outbound events, and progress persist.
+- [ ] Recommendation orchestration validates AI output.
+- [ ] Deterministic fallback works.
 
 ## FastAPI
 
-- [ ] Pydantic validates requests.
-- [ ] AI provider is behind a client interface.
-- [ ] Streaming supports completion/error/cancel.
-- [ ] Hint levels are evaluated.
-- [ ] Memory retrieval is user-scoped.
-- [ ] AI failure does not break ordinary features.
-- [ ] Token/cost limits exist.
+- [ ] AI ranks only supplied candidates.
+- [ ] Structured output is validated.
+- [ ] Reasons are concise and relevant.
+- [ ] Model failures activate fallback.
+- [ ] Learner memories are evidence-backed and user-controlled.
 
 ## Database
 
-- [ ] Prisma owns only `core`.
-- [ ] Alembic owns only `ai`.
-- [ ] Migrations work on an empty database.
-- [ ] Seed data exists.
-- [ ] Important indexes exist.
-- [ ] Backups are enabled in production.
-- [ ] Users can inspect/delete memories.
+- [ ] Core and AI migration ownership is separate.
+- [ ] `(provider, externalId)` deduplicates metadata.
+- [ ] No statements, tests, source code, drafts, or submissions are stored.
+- [ ] Provider account consent and deletion are represented.
 
-## Security
+## Security and compliance
 
-- [ ] No secrets in Git.
-- [ ] No service-role key in React.
-- [ ] Learner code never runs on application servers.
-- [ ] Hidden test cases never reach React.
-- [ ] CORS is restricted.
-- [ ] Payloads are size-limited.
-- [ ] Logs exclude tokens and keys.
-- [ ] Production uses HTTPS.
+- [ ] No open redirect is possible.
+- [ ] Only approved HTTPS provider hosts are used.
+- [ ] Provider terms and attribution are documented.
+- [ ] No secrets are exposed or committed.
+- [ ] AI cannot introduce arbitrary URLs.
+- [ ] Cross-user access tests pass.
 
 ## Quality
 
-- [ ] Type checking passes.
-- [ ] Linting passes.
-- [ ] Unit/integration tests pass.
-- [ ] Critical Playwright flows pass.
-- [ ] No P0/P1 bugs remain.
-- [ ] README setup works from a fresh clone.
-- [ ] Production smoke test passes.
-
-## Beta
-
-- [ ] Feedback form exists.
-- [ ] Error tracking exists.
-- [ ] Privacy explanation exists.
-- [ ] Five to ten users are invited.
-- [ ] Metrics focus on the learning loop.
-- [ ] Post-beta improvement list is prioritized.
-
----
+- [ ] Type-check passes.
+- [ ] Lint passes.
+- [ ] Format check passes.
+- [ ] Tests pass.
+- [ ] Production build passes.
+- [ ] Browser acceptance checks pass.
+- [ ] Documentation matches the implementation.
 
 ## Closing advice
 
-The fastest way to finish AlgoMemtor is to keep it boring where boring is good:
-
-- normal React components;
-- normal REST endpoints;
-- normal database tables;
-- plain service classes;
-- one external judge;
-- one AI provider;
-- clear tests.
-
-The innovation is the learner experience and the persistent mentor—not the number of infrastructure tools. Finish the core loop, deploy it, learn from users, and scale only the parts that prove valuable.
+Build the smallest trustworthy loop first. A single reliable provider, clear
+recommendation reason, safe external link, and honest progress signal are more
+valuable than a large catalog built on copied content or unsupported scraping.

@@ -6,7 +6,7 @@ function ProblemsPage() {
   return (
     <PageContainer>
       <PageHeader
-        description="Choose a coding problem to start practising."
+        description="Discover recommended problems and solve them on their original platforms."
         title="Problems"
       />
 
@@ -17,7 +17,10 @@ function ProblemsPage() {
         >
           Problem List
         </h2>
-        <EmptyState title="No problems are available yet." />
+        <EmptyState
+          description="External problem metadata and provider links will appear here."
+          title="No external problems are available yet."
+        />
       </section>
     </PageContainer>
   )

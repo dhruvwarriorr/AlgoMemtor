@@ -2,7 +2,7 @@
   "name": "algomemtor",
   "version": "0.1.0",
   "private": true,
-  "description": "A persistent AI coding coach for DSA and competitive programming.",
+  "description": "An AI-guided navigator for discovering external DSA and competitive-programming problems.",
   "workspaces": [
     "apps/web",
     "apps/core-api",

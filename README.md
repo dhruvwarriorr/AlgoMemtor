@@ -1,111 +1,170 @@
 # AlgoMemtor
 
-> From first line of code to contest legend — a coach that never forgets.
+AlgoMemtor is an AI-assisted learning planner for Data Structures and Algorithms,
+competitive programming, coding interviews, and algorithmic thinking.
 
-AlgoMemtor is a learning platform for Data Structures and Algorithms,
-competitive programming, coding interviews, and algorithmic thinking. Its core
-idea is a persistent AI mentor that uses evidence from attempts, submissions,
-hints, and goals to make future guidance more relevant.
+Its central job is to understand a learner's goals and history, discover suitable
+problems from supported external platforms, explain why each problem is useful,
+and send the learner to the original platform to solve it.
 
-The project is currently in the repository and UI foundation phase. The first
-delivery target is a polished, mock-first React experience. Real authentication,
-database persistence, Judge0 execution, and AI capabilities are introduced only
-after the primary frontend flows and contracts are stable.
+AlgoMemtor is **not** a problem-hosting or code-execution platform. It does not
+copy or persist external problem statements, examples, constraints, starter code,
+editorials, hidden tests, or judge data. It does not embed Monaco, compile learner
+code, or replace the source platform's editor and judge.
+
+The repository is currently in the frontend and contract-foundation stage. Its
+problem contracts and development mocks use external metadata only; the visible
+catalog and live provider gateway remain later roadmap work.
 
 ## Product principles
 
-- Teach before revealing: hints should preserve independent thinking.
-- Remember with evidence: learner memories must be inspectable and correctable.
-- Stay useful without AI: ordinary practice and submissions must degrade safely.
-- Keep one owner per capability: Express owns core behavior; FastAPI owns AI.
-- Add infrastructure only after a measured requirement justifies it.
+- Recommend with a reason: every suggestion should say why it fits the learner.
+- Respect the source: show attribution and open the canonical external URL.
+- Store metadata, not copied problem content.
+- Prefer official or explicitly permitted APIs; do not scrape unsupported sites.
+- Be honest about evidence: opening a problem is not the same as solving it.
+- Keep AI optional: filtering and outbound links must still work if AI is down.
+- Add providers through adapters so one provider cannot define the whole product.
 
 ## MVP scope
 
 The MVP will support:
 
 - registration, login, and learner onboarding;
-- a searchable, filterable problem catalog;
-- a Monaco-based problem workspace;
-- safe run and submit workflows through hosted Judge0;
-- submission history and progress;
-- progressive AI hints;
-- evidence-backed learner memory; and
-- personalized problem recommendations.
+- a normalized catalog of external problem metadata;
+- search and filters for provider, difficulty, topic, and status;
+- AI-ranked recommendations with short, user-facing reasons;
+- canonical outbound links that open problems on their source platforms;
+- outbound-click history, bookmarks, and manual completion status;
+- optional provider-account linking when an official API permits public activity
+  verification;
+- evidence-backed learner preferences and progress; and
+- graceful provider and AI failure states.
 
-Real-time duels, public leaderboards, advanced contests, custom code-execution
-infrastructure, separate vector databases, agent frameworks, Kubernetes, and
-native mobile applications are intentionally deferred.
+The MVP will not include:
+
+- copied or locally authored problem statements and test cases;
+- an embedded code editor or compiler;
+- Judge0 or another code-execution service;
+- code drafts or submission storage;
+- scraping, browser automation, or unofficial private APIs;
+- claims that a redirect proves a problem was solved; or
+- real-time contests, duels, payments, or a marketplace.
+
+## Core user flow
+
+```text
+Learner profile and goals
+          |
+          v
+Express provider gateway ----> Supported external provider APIs
+          |                         |
+          |                         +-- metadata only
+          v
+Normalized candidate problems
+          |
+          v
+FastAPI recommendation service
+          |
+          v
+Ranked problem cards + explanations
+          |
+          v
+Canonical external problem URL
+          |
+          v
+Learner solves on the source platform
+```
+
+At product level, AlgoMemtor uses AI to find appropriate problems. At the
+technical level, deterministic provider adapters fetch and normalize metadata;
+the AI service ranks those candidates. The LLM does not invent URLs or call
+arbitrary websites directly.
 
 ## Architecture
 
 ```text
-React + TypeScript + Vite
-    |
-    +-- /api/* ----> Express + TypeScript
-    |                   |
-    |                   +-- PostgreSQL (core schema)
-    |                   +-- Hosted Judge0
-    |
-    +-- /ai/* -----> FastAPI + Python
-                        |
-                        +-- PostgreSQL + pgvector (ai schema)
-                        +-- LLM and embedding provider
+Browser
+  |
+  +-- /api/* --> Express + TypeScript
+  |                |
+  |                +-- provider adapters and metadata cache
+  |                +-- profiles, bookmarks, outbound events, progress
+  |                +-- PostgreSQL (core schema)
+  |
+  +-- /ai/* --> FastAPI + Python
+                   |
+                   +-- recommendation ranking and explanations
+                   +-- learner memory and embeddings
+                   +-- PostgreSQL + pgvector (ai schema)
 ```
 
-AlgoMemtor starts as one product with two specialized backend services:
+| Component         | Ownership                                                                                          |
+| ----------------- | -------------------------------------------------------------------------------------------------- |
+| React             | Accessible catalog UI, filters, recommendations, and safe outbound navigation                      |
+| Express           | Authentication-aware product APIs, provider adapters, normalization, caching, and progress records |
+| FastAPI           | Recommendation ranking, explanations, learner memory, and embeddings                               |
+| PostgreSQL        | Learner data, normalized metadata cache, bookmarks, recommendation history, and outbound events    |
+| External provider | Canonical statement, examples, editor, submissions, judging, and authoritative solve status        |
 
-| Component     | Ownership                                                        |
-| ------------- | ---------------------------------------------------------------- |
-| React         | Routes, accessible UI, API consumption, and mock-first workflows |
-| Express       | Profiles, problems, attempts, submissions, progress, and Judge0  |
-| FastAPI       | Hints, AI streaming, memories, embeddings, and recommendations   |
-| PostgreSQL    | Durable source of truth with separate `core` and `ai` schemas    |
-| Supabase Auth | Managed identity and access tokens                               |
+The first provider should be one with a documented, permitted metadata API.
+Codeforces is the reference integration because its official
+`problemset.problems` endpoint exposes identifiers, names, ratings, tags, and
+statistics that can be normalized into redirect cards. Additional providers are
+added only after confirming their current API and usage terms.
 
-Prisma will own migrations for `core` tables. SQLAlchemy and Alembic will own
-`ai` tables. They must never manage the same table.
+## Data boundary
 
-The rationale is recorded in
-[ADR 0001](docs/adr/0001-foundational-architecture.md).
+AlgoMemtor may cache:
+
+- provider key and external problem identifier;
+- title, difficulty/rating, tags, and public statistics;
+- canonical source URL;
+- availability and last-fetched timestamps; and
+- learner-owned bookmark, recommendation, open, and manual-status records.
+
+AlgoMemtor must not cache:
+
+- full problem statements, examples, constraints, or editorials;
+- starter code, visible tests, or hidden tests;
+- copied community solutions; or
+- learner source code submitted on another platform.
+
+Provider metadata remains attributed to its source and should be refreshed or
+expired according to provider-specific policy.
 
 ## Repository structure
 
 ```text
 .
 ├── apps/
-│   ├── web/                 # React, Vite, TypeScript
-│   ├── core-api/            # Express, TypeScript
-│   └── ai-api/              # FastAPI, Python, uv
+│   ├── web/                  # React + Vite frontend
+│   ├── core-api/             # Express product and provider-integration API
+│   └── ai-api/               # FastAPI recommendation and memory service
 ├── packages/
-│   └── shared-contracts/    # Stable cross-application API contracts
+│   └── shared-contracts/     # Shared TypeScript request/response schemas
 ├── docs/
-│   ├── adr/                 # Architecture decisions
-│   ├── api/                 # API documentation
-│   └── diagrams/            # Architecture and flow diagrams
-├── docker-compose.yml       # Local PostgreSQL + pgvector
-└── package.json             # Root development and quality scripts
+│   ├── PROJECT_DOCUMENTATION.md
+│   ├── ROADMAP.md
+│   ├── AlgoMemtor_MVP_Blueprint.md
+│   ├── CP_Mentor_AI_Project_Vision.md
+│   └── adr/
+├── docker-compose.yml
+└── package.json
 ```
-
-Frontend code is organized by product feature. Server data belongs in TanStack
-Query; temporary interface state belongs in component state or Zustand.
 
 ## Prerequisites
 
-Install:
-
-- Git;
-- Node.js 22 or newer;
-- npm;
-- Python 3.14, matching `apps/ai-api/pyproject.toml`;
+- Node.js 24.x;
+- npm 11.x;
+- Python 3.14;
 - [uv](https://docs.astral.sh/uv/);
 - Docker with Docker Compose; and
-- VS Code or another editor with TypeScript and Python support.
+- an editor with TypeScript and Python support.
 
 Verify the tools:
 
 ```bash
-git --version
 node --version
 npm --version
 python3 --version
@@ -118,23 +177,15 @@ docker compose version
 
 ### 1. Install JavaScript dependencies
 
-From the repository root:
-
 ```bash
 npm install
 ```
 
-The npm workspace includes the web app, core API, and shared contracts package.
-
 ### 2. Install Python dependencies
 
 ```bash
-cd apps/ai-api
-uv sync
-cd ../..
+uv sync --project apps/ai-api
 ```
-
-VS Code is configured to use `apps/ai-api/.venv/bin/python`.
 
 ### 3. Create local environment files
 
@@ -144,28 +195,30 @@ cp apps/core-api/.env.example apps/core-api/.env
 cp apps/ai-api/.env.example apps/ai-api/.env
 ```
 
-The committed examples contain development defaults and placeholders only.
-Never commit real credentials. Variables beginning with `VITE_` are exposed to
-browser code and must always be treated as public.
+Never commit real secrets. Provider credentials, when required, belong in the
+core API environment only. LLM credentials belong in the AI API environment
+only.
 
 ### 4. Start PostgreSQL
 
 ```bash
-docker compose up -d
-docker compose ps
+npm run db:up
+npm run db:logs
 ```
 
-The local database uses PostgreSQL 16 with pgvector on port `5432`.
+Stop it with:
+
+```bash
+npm run db:down
+```
 
 ### 5. Start development
-
-Start all three applications:
 
 ```bash
 npm run dev
 ```
 
-Or start one service:
+Or start services independently:
 
 ```bash
 npm run dev:web
@@ -173,97 +226,56 @@ npm run dev:core
 npm run dev:ai
 ```
 
-| Service                   | URL                            |
-| ------------------------- | ------------------------------ |
-| React                     | `http://localhost:5173`        |
-| Express health check      | `http://localhost:3001/health` |
-| FastAPI health check      | `http://localhost:8000/health` |
-| FastAPI API documentation | `http://localhost:8000/docs`   |
+| Service              | URL                            |
+| -------------------- | ------------------------------ |
+| React                | `http://localhost:5173`        |
+| Express health check | `http://localhost:3001/health` |
+| FastAPI health check | `http://localhost:8000/health` |
 
-Set `VITE_USE_MOCKS=true` in `apps/web/.env` to start Mock Service Worker during
-frontend development. Unhandled requests currently pass through until feature
-handlers are added.
+## Mock-first development
 
-## Application providers
-
-`apps/web/src/app/AppProviders.tsx` is the single composition root for:
-
-- TanStack Query;
-- React Router;
-- authentication context;
-- theme state;
-- notifications; and
-- development-only MSW startup.
-
-The authentication provider is intentionally provider-neutral during the UI
-foundation. Supabase session integration is introduced in the authentication
-phase without changing the application composition point.
+Frontend mocks should represent normalized external metadata, provider outages,
+rate limits, stale cache states, AI fallback ranking, and outbound-link behavior.
+Mocks must never contain copied problem statements or hidden tests.
 
 ## Quality commands
-
-Run from the repository root:
 
 ```bash
 npm run typecheck
 npm run lint
 npm run format:check
 npm run build
+uv run --project apps/ai-api ruff check apps/ai-api
+uv run --project apps/ai-api ruff format --check apps/ai-api
 ```
-
-Apply frontend formatting with:
-
-```bash
-npm run format
-```
-
-The frontend uses strict TypeScript, ESLint flat configuration, Prettier, and
-EditorConfig. Continuous integration runs frontend type-checking, linting,
-format verification, and the production build.
-
-## Git workflow
-
-Keep `main` runnable, use short-lived feature branches, and use semantic commit
-messages:
-
-```text
-feat(web): add problem catalog filters
-fix(core): enforce submission ownership
-docs: explain local authentication setup
-chore(web): update lint configuration
-ci: add frontend checks
-```
-
-Pull requests should explain what changed, why it changed, how it was tested,
-and whether they introduce migrations or environment variables.
 
 ## Documentation
 
 - [Project documentation](docs/PROJECT_DOCUMENTATION.md)
-- [Development roadmap](docs/ROADMAP.md)
-- [MVP technical blueprint](docs/AlgoMemtor_MVP_Blueprint.md)
-- [Product vision](docs/CP_Mentor_AI_Project_Vision.md)
-- [Architecture decisions](docs/adr/)
+- [Beginner roadmap](docs/ROADMAP.md)
+- [MVP blueprint](docs/AlgoMemtor_MVP_Blueprint.md)
+- [Long-term product vision](docs/CP_Mentor_AI_Project_Vision.md)
+- [Foundational architecture ADR](docs/adr/0001-foundational-architecture.md)
 
-The implementation order is intentionally frontend-first:
+## Security and compliance boundaries
 
-1. repository and UI foundation;
-2. mocked catalog and coding workspace;
-3. authentication and onboarding;
-4. Express and PostgreSQL;
-5. Judge0 submissions;
-6. FastAPI hints;
-7. learner memory, recommendations, and progress;
-8. hardening and deployment.
+- Do not scrape providers or use undocumented private endpoints.
+- Confirm API terms, attribution rules, rate limits, and caching rules per provider.
+- Construct or validate canonical URLs on the server; never trust an arbitrary URL
+  supplied by the browser or an LLM.
+- Allow only `https` links to approved provider hosts.
+- Use `noopener` and `noreferrer` for new-tab navigation where appropriate.
+- Never treat an outbound click as proof of completion.
+- Never expose provider, database, Supabase, or LLM secrets to React.
+- Validate browser, provider, and AI data at service boundaries.
+- Keep AI-generated explanations clearly separate from provider-owned metadata.
 
-## Security boundaries
+## Official provider reference
 
-- Never execute learner code inside Express or FastAPI.
-- Never expose Supabase service-role, database, Judge0, or LLM secrets to React.
-- Validate browser input again at API boundaries.
-- Scope every learner record to the authenticated user.
-- Treat problem statements, editorials, and retrieved content as untrusted.
-- Keep mock mode disabled in production.
+- [Codeforces API](https://codeforces.com/apiHelp)
+- [Codeforces `problemset.problems`](https://codeforces.com/apiHelp/methods#problemset.problems)
 
 ## License
 
-This repository is licensed under the MIT License.
+Add a repository license before public distribution. External problem content and
+metadata remain subject to their originating platforms' terms.

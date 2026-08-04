@@ -1,28 +1,38 @@
-# AlgoMemtor: Persistent AI Coding Coach
+# AlgoMemtor: AI-Guided External Problem Discovery
 
 ## Scalable MVP Product and Technical Blueprint
 
-**Version 1.0 · July 2026**  
-**Tagline:** *From first line of code to contest legend — a coach that never forgets.*
+This blueprint defines the approved MVP direction. If older source code or
+historical notes describe an internal problem workspace, Monaco, stored problem
+statements, hidden test cases, or Judge0, this document takes precedence for
+future work.
 
 ---
 
 ## 1. Executive Summary
 
-AlgoMemtor is a personalized learning platform for students and developers practicing Data Structures and Algorithms (DSA), competitive programming, coding interviews, debugging, and algorithmic thinking.
+AlgoMemtor is a personalized learning companion for Data Structures and
+Algorithms, competitive programming, and coding interviews. It learns what a
+user wants to improve, fetches problem metadata from supported external-platform
+APIs, ranks appropriate candidates with AI, explains each recommendation, and
+redirects the user to the original platform.
 
-Its central idea is a **persistent AI mentor**. Instead of treating every interaction as a fresh conversation, AlgoMemtor gradually builds a learner profile from attempts, submissions, hint requests, mistakes, topic mastery, solving speed, and long-term goals. It uses that profile to recommend suitable problems, provide progressive hints, and show meaningful progress.
+AlgoMemtor is a discovery, planning, and mentorship layer. The source platform
+continues to own the complete problem statement, examples, constraints, code
+editor, compiler, test cases, submissions, verdicts, and authoritative solve
+history.
 
-The first release should validate this core promise without building a complex distributed system. The recommended approach is a **frontend-first modular application** with:
+The MVP uses:
 
-- React, TypeScript, and Vite for the user interface.
-- Express.js for core application APIs, code submissions, contests, and future real-time features.
-- FastAPI for AI hints, memory, recommendations, and streaming responses.
-- One PostgreSQL database with pgvector.
-- Supabase Auth for managed authentication.
-- Hosted Judge0 for untrusted code execution.
+- React and Vite for the web application;
+- Express and TypeScript for core product APIs and provider integrations;
+- FastAPI and Python for recommendation ranking and learner intelligence;
+- PostgreSQL for user-owned data and permitted normalized metadata;
+- pgvector only when semantic learner-memory retrieval becomes useful;
+- Supabase Auth for identity; and
+- official or explicitly permitted external problem APIs.
 
-The MVP deliberately avoids Kubernetes, Kafka, NATS, a separate vector database, custom code-execution infrastructure, and multi-agent frameworks. Each chosen component has a clear upgrade path, so simplicity now does not prevent scale later.
+There is no embedded Monaco editor and no Judge0 integration.
 
 ---
 
@@ -30,36 +40,38 @@ The MVP deliberately avoids Kubernetes, Kafka, NATS, a separate vector database,
 
 ### 2.1 The problem
 
-Current coding-learning tools have three recurring weaknesses:
+Learners waste time moving between large problem libraries without knowing:
 
-1. **They forget the learner.** Guidance is useful in the moment but does not compound into a long-term understanding of strengths, weaknesses, or repeated mistakes.
-2. **They provide generic learning paths.** Beginners and experienced learners often receive similar recommendations despite having very different needs.
-3. **They can undermine authentic learning.** Complete generated solutions are easy to copy, while progressive guidance that preserves independent thinking is less common.
+- what to solve next;
+- whether a problem matches their current ability;
+- how a problem connects to a weak topic or goal;
+- when to revise an older skill; or
+- how to build a balanced routine across platforms.
+
+Existing platforms are excellent places to read, code, submit, and receive
+verdicts. AlgoMemtor should complement them instead of duplicating them.
 
 ### 2.2 The solution
 
-AlgoMemtor turns learner activity into an evolving, inspectable profile. The system remembers evidence-backed patterns such as:
+AlgoMemtor builds a learner profile from explicit goals and trustworthy activity
+evidence. It then:
 
-> The learner often selects the correct prefix-sum approach but misses integer-overflow edge cases.
+1. requests fresh metadata from supported provider adapters;
+2. normalizes provider-specific fields into one internal contract;
+3. applies deterministic eligibility and safety filters;
+4. asks the AI service to rank the remaining candidates;
+5. displays transparent recommendation reasons; and
+6. opens the selected problem at its canonical external URL.
 
-The mentor then uses these memories to adapt:
-
-- problem recommendations;
-- hint depth and wording;
-- revision suggestions;
-- contest preparation;
-- progress summaries; and
-- future learning roadmaps.
-
-The product principle is **“learning that remembers you.”**
+The AI does not invent problem URLs, scrape webpages, or decide which provider
+hosts are safe. Those responsibilities stay in deterministic backend code.
 
 ### 2.3 Target users
 
-**Complete beginner.** Needs a clear starting point, patient explanations, structured practice, and protection from information overload.
-
-**Intermediate practitioner.** Can solve basic problems but needs targeted improvement, interview preparation, and diagnosis of recurring failure patterns.
-
-**Serious competitive programmer.** Needs contest analysis, pressure practice, advanced recommendations, and insight into hidden weaknesses.
+- Beginners who need a structured next step.
+- Intermediate learners preparing for interviews.
+- Competitive programmers targeting specific topics and ratings.
+- Returning learners who need revision and consistency.
 
 ---
 
@@ -67,481 +79,452 @@ The product principle is **“learning that remembers you.”**
 
 ### 3.1 Essential features
 
-1. User registration, login, and onboarding.
-2. Learner profile with goals, experience, and preferred language.
-3. Searchable problem catalog with topic and difficulty filters.
-4. Problem workspace with Monaco Editor.
-5. Run and submit through Judge0.
-6. Submission results and history.
-7. Progressive AI hints that avoid revealing the full answer too early.
-8. Basic long-term learner memory.
-9. Personalized problem recommendations.
-10. Basic progress dashboard.
+1. Registration, login, and onboarding.
+2. Learner goals, experience, preferred providers, topics, and difficulty range.
+3. Provider adapter interface and one production provider integration.
+4. Normalized external problem metadata catalog.
+5. Search and filters for source, topic, difficulty, and learner status.
+6. AI-ranked recommendations with concise reasons.
+7. Canonical outbound links with provider attribution.
+8. Bookmarks, dismissed recommendations, outbound-open history, and manual
+   completion status.
+9. Optional linked-provider activity where an official API and user consent allow
+   it.
+10. Recommendation history and basic progress based on clearly labelled evidence.
+11. Loading, empty, stale, provider-error, AI-error, and retry states.
 
-### 3.2 Explicitly deferred
+### 3.2 Explicitly excluded
 
-- Head-to-head duels.
-- Public leaderboards.
-- Complex virtual-contest generation.
-- Advanced authenticity or keystroke analysis.
-- Multi-agent orchestration.
-- Native mobile applications.
-- Kubernetes and microservices.
-- NATS, Kafka, or RabbitMQ.
-- Qdrant or another separate vector database.
-- Custom code-execution containers.
-- Advanced organization, mentor, or recruiter portals.
+- Storing or rendering full external problem statements.
+- Storing examples, constraints, starter code, editorials, or test cases.
+- Monaco or any embedded code editor.
+- Compiling or executing learner code.
+- Judge0 or a custom judge.
+- Storing drafts, source code, submissions, or verdicts.
+- Scraping HTML or using undocumented/private provider APIs.
+- Marking a problem solved merely because the user opened it.
+- Real-time contests, duels, payments, and marketplaces.
 
-Deferred features should appear in the roadmap and data model only when a present requirement depends on them. Do not build speculative infrastructure.
+### 3.3 What may be cached
 
----
+The core service may cache provider-permitted metadata:
 
-## 4. Frontend-First Delivery Strategy
+- `provider`;
+- `externalId`;
+- `title`;
+- `canonicalUrl`;
+- provider difficulty/rating;
+- normalized difficulty;
+- provider tags and normalized topics;
+- public solve/acceptance statistics when supplied;
+- availability; and
+- `fetchedAt` and `expiresAt`.
 
-The first milestone is a polished, navigable React application using realistic mock data. Backend work begins only after the primary flows, contracts, and UI states are stable.
-
-### Phase A — Frontend prototype
-
-- Implement all main routes and responsive layouts.
-- Use Mock Service Worker (MSW) for API simulation.
-- Create reusable components and typed fixtures.
-- Include loading, empty, error, disabled, and success states.
-- Simulate code runs, submissions, hints, and recommendations.
-- Validate complete flows with Playwright.
-
-### Phase B — Core backend integration
-
-- Add authentication.
-- Replace mock problem, profile, submission, and progress endpoints with Express APIs.
-- Integrate hosted Judge0.
-- Persist core records in PostgreSQL.
-- Keep the existing frontend API interface unchanged.
-
-### Phase C — AI integration
-
-- Add FastAPI endpoints for hints, memory, and recommendations.
-- Stream AI output to React.
-- Store learner memories with embeddings in PostgreSQL and pgvector.
-- Add clear failure handling and AI request budgets.
-
-### Phase D — Real-time and social features
-
-- Add Socket.IO only when contests, presence, or duels require it.
-- Begin with one Express instance and no Redis.
-- Add a Redis adapter only when multiple Express instances are deployed.
+It must not cache the statement or any content required to solve the problem.
 
 ---
 
-## 5. Recommended Technology Stack
+## 4. Primary User Experience
 
-| Area | MVP choice | Responsibility |
-|---|---|---|
-| Frontend | React + TypeScript + Vite | Application UI |
-| Routing | React Router | Client-side navigation |
-| UI system | Tailwind CSS + shadcn/ui | Styling and accessible components |
-| Server state | TanStack Query | API caching, mutations, invalidation |
-| Local UI state | Zustand | Editor and workspace state |
-| Code editor | Monaco Editor | Coding workspace |
-| Core backend | Express.js + TypeScript | Product and submission APIs |
-| AI backend | FastAPI + Python | Hints, memory, recommendations |
-| Database | PostgreSQL | Durable product data |
-| Vector search | pgvector | Learner-memory similarity search |
-| Core ORM | Prisma | Express-owned schema and queries |
-| AI ORM | SQLAlchemy + Alembic | FastAPI-owned schema and migrations |
-| Authentication | Supabase Auth | Managed identity and JWTs |
-| Execution | Hosted Judge0 | Sandboxed code execution |
-| AI streaming | Fetch streaming or SSE | Progressive mentor output |
-| Real-time later | Socket.IO | Contest and duel events |
-| Local environment | Docker Compose | Reproducible development |
-| Testing | Vitest, Pytest, Playwright | Unit, API, and end-to-end tests |
+### 4.1 Routes
+
+| Route              | Purpose                                                  |
+| ------------------ | -------------------------------------------------------- |
+| `/`                | Product introduction                                     |
+| `/login`           | Authentication                                           |
+| `/onboarding`      | Goals, level, topics, and provider preferences           |
+| `/dashboard`       | Recommended next actions and recent learning activity    |
+| `/problems`        | External problem discovery and filtering                 |
+| `/recommendations` | AI-ranked feed with reasons                              |
+| `/progress`        | Manual and provider-verified progress, clearly separated |
+| `/profile`         | Learner profile and linked-provider settings             |
+| `/settings`        | Privacy, provider, and recommendation controls           |
+
+The MVP does not require an internal `/problems/:problemId` solving workspace.
+A future metadata preview route may exist, but its main action must still open the
+canonical source URL.
+
+### 4.2 Problem card
+
+Each card contains only permitted metadata:
+
+- problem title;
+- provider name and attribution;
+- external rating/difficulty;
+- normalized difficulty;
+- tags/topics;
+- public statistics when available;
+- the AI recommendation reason;
+- bookmark/dismiss actions; and
+- a clear **Solve on Provider** link.
+
+The link should normally open in a new tab so the learner can return to their
+plan. It must use an allowlisted, server-validated HTTPS URL.
+
+### 4.3 Completion evidence
+
+AlgoMemtor distinguishes:
+
+- `recommended`: AlgoMemtor suggested the problem;
+- `opened`: the learner followed the outbound link;
+- `in_progress`: manually reported by the learner;
+- `completed_manual`: manually reported as completed;
+- `solved_verified`: confirmed through a supported provider API; and
+- `dismissed`: removed from the learner's active feed.
+
+Only `solved_verified` is provider-confirmed. The UI must never blur these states.
+
+### 4.4 AI interaction
+
+The learner can ask for a new recommendation using requests such as:
+
+- “Give me an easier binary-search problem.”
+- “I have 30 minutes and want Codeforces practice.”
+- “Recommend a graph problem slightly above my current level.”
+
+The backend converts the request into structured criteria, fetches candidates
+through provider adapters, and lets AI rank the safe candidate set. If the AI is
+unavailable, deterministic sorting still produces a usable list.
+
+Problem-specific debugging is not an MVP promise because AlgoMemtor does not own
+the statement or code. A later transient help flow may accept user-provided
+context without persisting provider-owned content or learner source code.
 
 ---
 
-## 6. System Architecture
+## 5. System Architecture
 
 ```text
-React + Vite
+React browser
     |
-    +-- /api/* ------> Express.js
-    |                    |
-    |                    +-- PostgreSQL (core schema)
-    |                    +-- Hosted Judge0
-    |                    +-- Socket.IO (later)
-    |
-    +-- /ai/* -------> FastAPI
-                         |
-                         +-- PostgreSQL + pgvector (ai schema)
-                         +-- LLM provider
+    +-- GET /api/problems ----------------------+
+    |                                           |
+    +-- POST /api/recommendations --------------|----> Express core API
+    |                                           |          |
+    +-- POST /api/outbound-events --------------+          +-- provider gateway
+                                                           |      |
+                                                           |      +-- Codeforces adapter
+                                                           |      +-- future permitted adapters
+                                                           |
+                                                           +-- metadata cache
+                                                           +-- PostgreSQL core schema
+                                                           +-- FastAPI internal call
+                                                                  |
+                                                                  +-- candidate ranking
+                                                                  +-- explanations
+                                                                  +-- learner memory
 ```
 
-Development ports:
+### 5.1 React ownership
 
-```text
-React:   http://localhost:5173
-Express: http://localhost:3001
-FastAPI: http://localhost:8000
-```
+- catalog and recommendation UI;
+- URL-based filters;
+- safe outbound-link presentation;
+- authentication-aware screens;
+- explicit evidence labels; and
+- error, retry, stale, and fallback states.
 
-Vite should proxy `/api` and `/socket.io` to Express and `/ai` to FastAPI. The browser therefore calls stable relative paths rather than environment-specific hostnames.
+React must not call provider APIs directly. Doing so would duplicate
+normalization, expose provider credentials, complicate rate limiting, and make
+provider failure behavior inconsistent.
 
-### 6.1 Express ownership
+### 5.2 Express ownership
 
-Express is the main application backend. It owns:
+- authentication and authorization;
+- learner profiles and preferences;
+- provider adapter interface;
+- provider API calls, timeouts, retries, and rate-limit handling;
+- metadata normalization and topic mapping;
+- canonical-URL construction and host allowlisting;
+- metadata caching;
+- bookmarks, recommendation history, outbound events, and progress evidence;
+- deterministic candidate filtering; and
+- internal FastAPI orchestration.
 
-- users and learner-profile records;
-- problems, topics, and test cases;
-- attempts and submissions;
-- Judge0 integration and verdict persistence;
-- progress statistics;
-- contests, future duels, and social features; and
-- Socket.IO connections when real-time features are introduced.
+### 5.3 FastAPI ownership
 
-Representative endpoints:
-
-```http
-GET    /api/problems
-GET    /api/problems/:problemId
-POST   /api/submissions/run
-POST   /api/submissions
-GET    /api/submissions/:submissionId
-GET    /api/users/me/progress
-GET    /api/users/me/submissions
-```
-
-### 6.2 FastAPI ownership
-
-FastAPI is the AI intelligence service. It owns:
-
-- progressive hints;
+- ranking a bounded candidate set;
+- generating short recommendation explanations;
 - learner-memory extraction and retrieval;
-- embeddings;
-- personalized recommendations;
-- mistake classification;
-- roadmap generation; and
-- streamed AI responses.
+- semantic matching when justified; and
+- returning structured output with confidence and reasons.
 
-Representative endpoints:
+FastAPI receives normalized metadata, not complete external statements. It must
+return provider keys and external IDs chosen from the supplied candidate set.
 
-```http
-POST /ai/hints/stream
-POST /ai/submissions/analyze
-POST /ai/memories/extract
-GET  /ai/memories/search
-GET  /ai/recommendations
-POST /ai/roadmaps/generate
-```
+### 5.4 External provider ownership
 
-### 6.3 Service communication
-
-For the MVP, services communicate through ordinary authenticated HTTP requests.
-
-```text
-Express saves Judge0 verdict
-    -> Express calls POST /ai/submissions/analyze
-    -> FastAPI identifies mistake patterns
-    -> FastAPI creates or updates learner memories
-```
-
-Slow analysis can later move to a background queue without changing the public frontend contract.
+- complete and canonical problem content;
+- code editor and supported languages;
+- compilation and execution;
+- tests, submissions, and verdicts;
+- accounts, contests, and platform-specific rules; and
+- authoritative solve status.
 
 ---
 
-## 7. Data Ownership and Core Model
+## 6. Provider Integration Contract
 
-Use one managed PostgreSQL database with two schemas:
+### 6.1 Adapter interface
 
-| Schema | Owner | Example tables |
-|---|---|---|
-| `core` | Express + Prisma | users, learner_profiles, problems, topics, submissions, attempts |
-| `ai` | FastAPI + SQLAlchemy/Alembic | learner_memories, memory_evidence, recommendations, ai_requests |
+```ts
+type ProviderKey = 'codeforces'
 
-**Migration rule:** Express and FastAPI must never manage migrations for the same table.
+type ExternalProblem = {
+  provider: ProviderKey
+  externalId: string
+  title: string
+  canonicalUrl: string
+  providerDifficulty?: number | string
+  normalizedDifficulty?: 'easy' | 'medium' | 'hard'
+  providerTags: string[]
+  topics: string[]
+  solvedCount?: number
+  fetchedAt: string
+}
 
-FastAPI may read selected `core` tables, while Express may read published AI recommendations. Writes remain with the owning service.
+type ProblemQuery = {
+  search?: string
+  providers?: ProviderKey[]
+  topics?: string[]
+  difficultyMin?: number
+  difficultyMax?: number
+  page?: number
+  pageSize?: number
+}
 
-### Learner-memory record
-
-```sql
-CREATE EXTENSION IF NOT EXISTS vector;
-
-CREATE TABLE ai.learner_memories (
-    id UUID PRIMARY KEY,
-    user_id UUID NOT NULL,
-    memory_type VARCHAR(50) NOT NULL,
-    content TEXT NOT NULL,
-    topic VARCHAR(100),
-    confidence REAL NOT NULL DEFAULT 0.5,
-    evidence_count INTEGER NOT NULL DEFAULT 1,
-    embedding VECTOR(1536),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+interface ProblemProvider {
+  readonly key: ProviderKey
+  search(query: ProblemQuery): Promise<ExternalProblem[]>
+  getUserActivity?(externalHandle: string): Promise<ProviderActivity[]>
+}
 ```
 
-Every memory should link to evidence, include confidence, and be correctable by the learner. Low-confidence observations must not be presented as facts.
+Production schemas use Zod at the Express boundary and equivalent Pydantic models
+for FastAPI calls.
+
+### 6.2 Initial provider
+
+Codeforces is the reference first integration because its official API provides a
+machine-readable problem set. Its `Problem` object supplies contest/problem
+identifiers, name, rating, and tags; `ProblemStatistics` supplies solved count.
+The adapter constructs a canonical Codeforces URL from trusted identifiers.
+
+The official API is rate-limited, so the provider gateway must cache results,
+deduplicate refreshes, and back off when the provider rejects requests.
+
+### 6.3 Adding another provider
+
+Before adding a provider, document:
+
+1. the official or explicitly permitted API/feed;
+2. the fields it legally permits AlgoMemtor to display and cache;
+3. attribution requirements;
+4. rate limits and authentication;
+5. canonical URL rules;
+6. whether user activity can be verified with consent;
+7. deletion or refresh obligations; and
+8. fallback behavior when the provider is unavailable.
+
+If these questions cannot be answered, the provider is not enabled. Do not
+replace a missing API with scraping.
 
 ---
 
-## 8. Primary User Experience
+## 7. Data Model
 
-### 8.1 Main routes
+### Core-owned records
 
-```text
-/
-/login
-/onboarding
-/dashboard
-/problems
-/problems/:problemId
-/submissions
-/progress
-/profile
-/settings
-```
+- users and learner profiles;
+- provider-account links and consent state;
+- normalized metadata cache;
+- bookmarks and dismissed recommendations;
+- recommendation batches and reasons;
+- outbound events;
+- manual progress; and
+- provider-verified activity evidence.
 
-### 8.2 Problem workspace
+### AI-owned records
 
-The problem workspace is the core screen. It should include:
+- learner memories;
+- memory evidence;
+- recommendation explanations and model metadata; and
+- embeddings when justified.
 
-- problem statement and examples;
-- topic and difficulty metadata;
-- Monaco Editor with language selector;
-- Run and Submit actions;
-- console output and verdict details;
-- progressive hint panel;
-- previous attempts; and
-- responsive mobile/tablet behavior.
+### Deliberately absent
 
-Required states:
-
-- initial editor;
-- unsaved draft;
-- running;
-- compiling;
-- accepted;
-- wrong answer;
-- time limit exceeded;
-- runtime error;
-- Judge0 unavailable;
-- hint streaming;
-- hint complete;
-- AI unavailable; and
-- authentication expired.
-
-### 8.3 Progressive hint policy
-
-Hints should preserve independent thinking:
-
-1. **Level 1 — Direction:** identify the relevant concept or question.
-2. **Level 2 — Strategy:** outline an approach without implementation.
-3. **Level 3 — Pseudocode:** provide structured steps.
-4. **Level 4 — Debug assistance:** inspect the learner’s current code.
-5. **Level 5 — Explanation:** reveal a complete approach only after explicit confirmation.
-
-The system records hint depth so later recommendations can distinguish independent solutions from heavily assisted ones.
+- internal problem statement tables;
+- problem examples or constraints;
+- starter-code and test-bundle tables;
+- code drafts;
+- submissions and judge tokens; and
+- learner source-code storage.
 
 ---
 
-## 9. Frontend Structure and Contracts
+## 8. API Surface
 
 ```text
-algomemtor/
-├── apps/
-│   ├── web/
-│   │   └── src/
-│   │       ├── components/
-│   │       ├── features/
-│   │       ├── pages/
-│   │       ├── routes/
-│   │       ├── api/
-│   │       ├── hooks/
-│   │       ├── stores/
-│   │       └── mocks/
-│   ├── core-api/
-│   │   ├── src/
-│   │   └── prisma/
-│   └── ai-api/
-│       ├── app/
-│       └── alembic/
-├── packages/
-│   └── shared-contracts/
-├── docker-compose.yml
-└── README.md
+GET    /api/providers
+GET    /api/problems
+POST   /api/recommendations
+GET    /api/recommendations/history
+POST   /api/bookmarks
+DELETE /api/bookmarks/:provider/:externalId
+POST   /api/outbound-events
+PUT    /api/progress/:provider/:externalId
+POST   /api/provider-accounts/:provider/link
+DELETE /api/provider-accounts/:provider
+POST   /internal/ai/recommendations/rank
 ```
 
-Feature folders:
+`GET /api/problems` returns normalized metadata. It never returns a statement,
+starter code, or tests.
 
-```text
-features/
-├── auth/
-├── onboarding/
-├── dashboard/
-├── problems/
-├── editor/
-├── submissions/
-├── hints/
-├── recommendations/
-└── progress/
-```
-
-Use TanStack Query for server data and Zustand for temporary UI state.
-
-```text
-Server state -> TanStack Query
-UI state     -> Zustand
-```
-
-Do not copy fetched API responses into Zustand. Define all API request and response types in `shared-contracts`, or generate the TypeScript client from OpenAPI once the APIs stabilize.
+`POST /api/recommendations` returns selected candidates and reasons. It does not
+return an AI-invented URL; Express attaches the validated canonical URL after the
+AI response is checked.
 
 ---
 
-## 10. Authentication and Security
+## 9. Frontend-First Delivery
 
-React obtains a Supabase access token and sends it to both backends:
+### Phase A — Contract and UI prototype
 
-```http
-Authorization: Bearer <access-token>
-```
+- define normalized metadata and provider schemas;
+- create fictional metadata-only fixtures;
+- mock catalog, provider failures, and AI fallback;
+- build filters and problem cards;
+- build safe outbound navigation; and
+- test evidence labels.
 
-Both services validate the token and derive the user identity from its claims.
+### Phase B — Provider gateway
 
-Security requirements:
+- implement the adapter interface;
+- add the first official provider API;
+- normalize tags and difficulty;
+- add caching, timeouts, and rate-limit handling; and
+- replace provider mocks without changing React contracts.
 
-- Never expose the Supabase service-role key in React.
-- Never execute user code inside Express or FastAPI containers.
-- Send code only to hosted Judge0.
-- Apply per-user and per-IP rate limits.
-- Limit source size, output size, runtime, memory, and supported languages.
-- Do not send secrets or database credentials to Judge0.
-- Store only the telemetry required for learning features.
-- Require explicit consent before collecting sensitive authenticity signals.
-- Treat retrieved editorials and community content as untrusted input.
+### Phase C — Learner accounts and progress
 
-Initial languages should be limited to C++17/20, Python 3, Java, and JavaScript.
+- add authentication and onboarding;
+- persist preferences, bookmarks, opens, and manual status;
+- optionally link a provider account; and
+- clearly separate manual and verified evidence.
+
+### Phase D — AI recommendations
+
+- rank safe candidate sets;
+- generate concise reasons;
+- add learner memory with user controls;
+- test deterministic fallback; and
+- measure recommendation quality.
 
 ---
 
-## 11. Testing and Quality
+## 10. Testing and Quality
 
 ### Frontend
 
-- Vitest and React Testing Library for components and hooks.
-- MSW for deterministic API scenarios.
-- Playwright for onboarding, problem solving, submission, hints, and progress flows.
-- Automated accessibility checks for forms, dialogs, keyboard navigation, and color contrast.
+- combined filters and URL persistence;
+- provider attribution and outbound-link labels;
+- allowlisted links and new-tab behavior;
+- loading, empty, stale, partial, and error states;
+- AI fallback results; and
+- distinct open/manual/verified status labels.
 
 ### Express
 
-- Unit tests for services and validation.
-- Integration tests for routes and Prisma queries.
-- Contract tests for Judge0 mapping and FastAPI calls.
+- provider response validation;
+- normalization and topic mapping;
+- canonical URL construction;
+- rate-limit, timeout, retry, and cache behavior;
+- rejection of unknown provider hosts;
+- deduplication by `(provider, externalId)`;
+- authorization for learner-owned records; and
+- AI output constrained to supplied candidate IDs.
 
 ### FastAPI
 
-- Pytest for memory retrieval, prompt assembly, and endpoint behavior.
-- Evaluation datasets for hint helpfulness, answer leakage, and mistake classification.
-- Deterministic tests using mocked LLM responses.
+- structured ranking output;
+- invalid or hallucinated candidate rejection;
+- explanation length and relevance;
+- cold-start recommendations;
+- unavailable-model fallback; and
+- memory privacy controls.
 
-### Required mock scenarios
+### End-to-end
 
-```text
-beginner-new-user
-intermediate-stagnating
-accepted-first-attempt
-wrong-answer-edge-case
-judge-timeout
-ai-stream-interrupted
-no-recommendations
-expired-session
-```
+- onboarding to recommendation to outbound navigation;
+- provider outage with cached or partial results;
+- AI outage with deterministic ranking;
+- manual status update; and
+- provider-verified activity when supported.
 
 ---
 
-## 12. Delivery Plan
+## 11. Security, Privacy, and Compliance
 
-| Milestone | Deliverable | Exit criterion |
-|---|---|---|
-| 1. UI foundation | Design system, routing, layouts, mock services | All primary routes work responsively |
-| 2. Core learning flow | Catalog, editor, simulated run/submit, history | Complete mocked problem-solving journey |
-| 3. Core backend | Auth, Express APIs, PostgreSQL, Judge0 | Real submissions persist with verdicts |
-| 4. AI mentor | FastAPI hints, memory, recommendations | Personalized streamed hints work end to end |
-| 5. Progress | Dashboard and topic analytics | Learner can understand improvement areas |
-| 6. Beta hardening | Tests, monitoring, rate limits, deployment | Stable closed beta with measurable usage |
+- Provider credentials live only in Express.
+- LLM credentials live only in FastAPI.
+- Provider responses and AI outputs are untrusted input.
+- URLs are constructed or validated server-side against approved HTTPS hosts.
+- Redirect endpoints must not become open redirects.
+- Rate-limit both public search and provider refresh operations.
+- Store the least learner activity required for personalization.
+- Require explicit consent before linking or polling a provider account.
+- Allow users to disconnect providers and delete learner-owned history.
+- Attribute every external problem to its source.
+- Do not imply partnership or endorsement without permission.
+- Do not scrape around an unavailable API.
 
-### Suggested first four development sprints
+---
 
-1. **Foundation:** repository, React shell, navigation, design tokens, MSW, authentication screens.
-2. **Practice flow:** catalog, filters, problem page, Monaco Editor, result panels, responsive states.
-3. **Data integration:** Express, Prisma, PostgreSQL, real authentication, core API contracts.
-4. **Submission and mentor:** Judge0 integration, FastAPI streaming hints, first memory and recommendation loop.
+## 12. Success Measures
+
+- percentage of recommendation cards opened;
+- percentage manually marked useful or completed;
+- verified solve rate where supported;
+- repeat practice days per learner;
+- recommendation explanation helpfulness;
+- provider API success, latency, and stale-cache rates;
+- AI fallback rate; and
+- number of unsafe or broken outbound URLs detected.
+
+Clicks measure discovery, not learning success. Verified solves and deliberate
+user feedback are stronger evidence.
 
 ---
 
 ## 13. Scale-Up Path
 
-| MVP design | Upgrade trigger | Later change |
-|---|---|---|
-| One PostgreSQL database | Vector queries measurably hurt OLTP | Add Qdrant |
-| Hosted Judge0 | Cost, limits, or latency become material | Self-host isolated Judge0 workers |
-| Direct HTTP between services | Slow jobs affect request latency | Add a background task queue |
-| One Express instance | Multiple real-time instances required | Add Redis and Socket.IO adapter |
-| Direct Python AI services | Workflows need branching and recovery | Introduce LangGraph selectively |
-| PostgreSQL analytics | Reporting workloads affect product queries | Add read replica or ClickHouse |
-| Managed deployments | Operational demands justify orchestration | Consider containers/Kubernetes |
+Scale only after measurement:
 
-The interfaces between React, Express, FastAPI, PostgreSQL, and Judge0 are intentional boundaries. Scaling should happen behind these boundaries rather than through a rewrite.
+- add Redis when provider-cache coordination needs it;
+- add a background refresh worker when request-time fetching becomes too slow;
+- add more providers only after an integration review;
+- add event queues only when asynchronous work becomes durable and substantial;
+- add a separate vector store only if PostgreSQL plus pgvector is insufficient;
+- never add a code runner unless the product direction is explicitly changed by
+  a new ADR.
 
 ---
 
-## 14. Success Measures
+## 14. Final Architecture Decision
 
-The MVP succeeds if learners repeatedly use the core loop and report that guidance becomes more relevant over time.
+AlgoMemtor begins as one product with two specialized backends:
 
-Track:
+- Express owns deterministic product behavior and external-provider access.
+- FastAPI owns AI ranking, explanations, and learner intelligence.
+- External platforms own problems and solving.
 
-- weekly active learners;
-- problems attempted and completed;
-- independent acceptance rate;
-- hint requests per solved problem;
-- return rate after seven and thirty days;
-- recommendation click and completion rate;
-- AI time to first token;
-- Judge0 submission latency and failure rate;
-- memory retrieval latency; and
-- learner correction or deletion of memories.
+This boundary keeps the MVP focused: AlgoMemtor helps the learner choose the
+right problem; the source platform remains the place where the problem is read
+and solved.
 
-Avoid vanity metrics that do not demonstrate learning value.
+## Official reference
 
----
-
-## 15. Final Architecture Decision
-
-```text
-Frontend
-  React + TypeScript + Vite
-  React Router
-  Tailwind CSS + shadcn/ui
-  Monaco Editor
-  TanStack Query
-  Zustand
-
-Core application
-  Express.js + TypeScript
-  Prisma
-  Judge0 integration
-  Socket.IO later
-
-AI intelligence
-  FastAPI
-  Pydantic
-  SQLAlchemy + Alembic
-  Direct LLM SDK calls
-  Streaming responses
-
-Data and identity
-  PostgreSQL
-  pgvector
-  Supabase Auth
-```
-
-AlgoMemtor should begin as **one product with two specialized backend services**, not as a microservice platform. This is small enough for a beginner team to understand, practical enough for a polished MVP, and structured enough to evolve when real usage proves which parts need to scale.
+- [Codeforces API introduction](https://codeforces.com/apiHelp)
+- [Codeforces API methods](https://codeforces.com/apiHelp/methods)
+- [Codeforces API objects](https://codeforces.com/apiHelp/objects)
