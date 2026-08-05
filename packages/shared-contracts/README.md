@@ -59,3 +59,12 @@ API only.
 npm run typecheck
 npm run build
 ```
+
+
+## problem-catalog.ts
+    ├── validates request query parameters
+    ├── validates individual problem objects
+    ├── validates topic and provider objects
+    ├── validates complete API responses
+    ├── validates API error responses
+    └── provides TypeScript types
