@@ -3,6 +3,8 @@ import {
   ExternalProblemCatalogQueryParamsSchema,
   ExternalProblemCatalogResponseSchema,
   ExternalProblemSummarySchema,
+  OutboundEventRequestSchema,
+  OutboundEventResponseSchema,
   ProvidersResponseSchema,
   TopicsResponseSchema,
 } from '@algomemtor/shared-contracts'
@@ -62,8 +64,17 @@ export const handlers: RequestHandler[] = [
       return HttpResponse.json(errorResponse, { status: 400 })
     }
 
-    const { search, provider, difficulty, topic, status, page, pageSize } =
-      queryResult.data
+    const {
+      search,
+      provider,
+      difficulty,
+      topic,
+      status,
+      minRating,
+      maxRating,
+      page,
+      pageSize,
+    } = queryResult.data
     let filteredProblems = problemFixtures
 
     if (search) {
@@ -99,6 +110,18 @@ export const handlers: RequestHandler[] = [
       )
     }
 
+    if (minRating !== undefined || maxRating !== undefined) {
+      filteredProblems = filteredProblems.filter((problem) => {
+        const rating = problem.providerDifficulty
+
+        return (
+          typeof rating === 'number' &&
+          (minRating === undefined || rating >= minRating) &&
+          (maxRating === undefined || rating <= maxRating)
+        )
+      })
+    }
+
     const total = filteredProblems.length
     const totalPages = Math.ceil(total / pageSize)
     const startIndex = (page - 1) * pageSize
@@ -119,5 +142,62 @@ export const handlers: RequestHandler[] = [
     })
 
     return HttpResponse.json(catalogResponse)
+  }),
+  http.post('/api/outbound-events', async ({ request }) => {
+    await delay(mockDelayMs)
+
+    let requestBody: unknown
+
+    try {
+      requestBody = await request.json()
+    } catch {
+      const errorResponse = createApiError(
+        'INVALID_OUTBOUND_EVENT',
+        'The outbound event request body must be valid JSON.',
+        [],
+      )
+
+      return HttpResponse.json(errorResponse, { status: 400 })
+    }
+
+    const eventResult = OutboundEventRequestSchema.safeParse(requestBody)
+
+    if (!eventResult.success) {
+      const errorResponse = createApiError(
+        'INVALID_OUTBOUND_EVENT',
+        'The outbound event request body is invalid.',
+        eventResult.error.issues,
+      )
+
+      return HttpResponse.json(errorResponse, { status: 400 })
+    }
+
+    const referencedProblem = problemFixtures.find(
+      (problem) =>
+        problem.provider === eventResult.data.provider &&
+        problem.externalId === eventResult.data.externalId,
+    )
+
+    if (!referencedProblem) {
+      const errorResponse = createApiError(
+        'PROBLEM_NOT_FOUND',
+        'The referenced external problem does not exist.',
+        {
+          provider: eventResult.data.provider,
+          externalId: eventResult.data.externalId,
+        },
+      )
+
+      return HttpResponse.json(errorResponse, { status: 404 })
+    }
+
+    const outboundEventResponse = OutboundEventResponseSchema.parse({
+      data: {
+        ...eventResult.data,
+        recordedAt: new Date().toISOString(),
+      },
+    })
+
+    return HttpResponse.json(outboundEventResponse, { status: 201 })
   }),
 ]

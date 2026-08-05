@@ -285,6 +285,7 @@ export const problemFixtures = ExternalProblemFixturesSchema.parse([
     providerTags: ['implementation', 'strings'],
     topics: ['strings', 'two-pointers'],
     fetchedAt,
+    learnerStatus: 'attempted',
   },
   {
     provider: 'codeforces',
@@ -307,6 +308,7 @@ export const problemFixtures = ExternalProblemFixturesSchema.parse([
     providerTags: ['implementation', 'strings'],
     topics: ['strings', 'two-pointers'],
     fetchedAt,
+    learnerStatus: 'solved',
   },
   {
     provider: 'codeforces',
@@ -318,6 +320,7 @@ export const problemFixtures = ExternalProblemFixturesSchema.parse([
     providerTags: ['binary search', 'implementation'],
     topics: ['arrays', 'binary-search'],
     fetchedAt,
+    learnerStatus: 'attempted',
   },
   {
     provider: 'codeforces',
@@ -329,6 +332,7 @@ export const problemFixtures = ExternalProblemFixturesSchema.parse([
     providerTags: ['dfs and similar', 'graphs', 'implementation'],
     topics: ['graphs'],
     fetchedAt,
+    learnerStatus: 'unsolved',
   },
   {
     provider: 'codeforces',
@@ -362,5 +366,6 @@ export const problemFixtures = ExternalProblemFixturesSchema.parse([
     providerTags: ['graphs', 'shortest paths'],
     topics: ['graphs', 'queues'],
     fetchedAt,
+    learnerStatus: 'unsolved',
   },
 ])
