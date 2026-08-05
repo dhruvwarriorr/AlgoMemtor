@@ -14,9 +14,10 @@ The package uses an external metadata model. Its schemas cover:
 - provider tags and normalized topics;
 - permitted public statistics;
 - metadata freshness;
-- catalog queries, pagination, and provider warnings;
+- catalog queries with validated rating ranges, pagination, and provider warnings;
+- outbound navigation events that record only `opened` actions;
 - recommendation reasons; and
-- learner evidence states.
+- the three question statuses: `unsolved`, `attempted`, and `solved`.
 
 The target contract must not contain:
 
@@ -52,6 +53,9 @@ const catalog: ExternalProblemCatalogResponse = result.data
 Provider-specific raw DTOs do not belong in this package. They remain inside
 their Express provider adapter. Shared contracts describe AlgoMemtor's normalized
 API only.
+
+Outbound-event contracts record navigation only. They do not represent learner
+progress and do not change a question's status.
 
 ## Commands
 

@@ -26,12 +26,9 @@ export const NormalizedDifficultySchema = z.enum(['easy', 'medium', 'hard'])
 export type NormalizedDifficulty = z.infer<typeof NormalizedDifficultySchema>
 
 export const LearnerProblemStatusSchema = z.enum([
-  'recommended',
-  'opened',
-  'in_progress',
-  'completed_manual',
-  'solved_verified',
-  'dismissed',
+  'unsolved',
+  'attempted',
+  'solved',
 ])
 
 export type LearnerProblemStatus = z.infer<typeof LearnerProblemStatusSchema>
@@ -73,19 +70,48 @@ export const TopicSchema = z.object({
 
 export type Topic = z.infer<typeof TopicSchema>
 
-export const ExternalProblemCatalogQueryParamsSchema = z.object({
-  search: nonEmptyStringSchema.optional(),
-  provider: ProviderKeySchema.optional(),
-  difficulty: NormalizedDifficultySchema.optional(),
-  topic: nonEmptyStringSchema.optional(),
-  status: LearnerProblemStatusSchema.optional(),
-  page: z.coerce.number().int().positive().default(1),
-  pageSize: z.coerce.number().int().positive().max(100).default(10),
-})
+export const ExternalProblemCatalogQueryParamsSchema = z
+  .object({
+    search: nonEmptyStringSchema.optional(),
+    provider: ProviderKeySchema.optional(),
+    difficulty: NormalizedDifficultySchema.optional(),
+    topic: nonEmptyStringSchema.optional(),
+    status: LearnerProblemStatusSchema.optional(),
+    minRating: z.coerce.number().finite().nonnegative().optional(),
+    maxRating: z.coerce.number().finite().nonnegative().optional(),
+    page: z.coerce.number().int().positive().default(1),
+    pageSize: z.coerce.number().int().positive().max(100).default(10),
+  })
+  .refine(
+    ({ minRating, maxRating }) =>
+      minRating === undefined ||
+      maxRating === undefined ||
+      minRating <= maxRating,
+    {
+      message: 'Minimum rating must not exceed maximum rating.',
+      path: ['maxRating'],
+    },
+  )
 
 export type ExternalProblemCatalogQueryParams = z.infer<
   typeof ExternalProblemCatalogQueryParamsSchema
 >
+
+export const OutboundEventRequestSchema = z.object({
+  provider: ProviderKeySchema,
+  externalId: nonEmptyStringSchema,
+  event: z.literal('opened'),
+})
+
+export type OutboundEventRequest = z.infer<typeof OutboundEventRequestSchema>
+
+export const OutboundEventResponseSchema = z.object({
+  data: OutboundEventRequestSchema.extend({
+    recordedAt: z.iso.datetime(),
+  }),
+})
+
+export type OutboundEventResponse = z.infer<typeof OutboundEventResponseSchema>
 
 export const PaginationMetadataSchema = z.object({
   page: z.number().int().positive(),

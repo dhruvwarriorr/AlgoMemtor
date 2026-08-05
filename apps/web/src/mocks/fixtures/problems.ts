@@ -61,7 +61,7 @@ export const problemFixtures = ExternalProblemFixturesSchema.parse([
     providerTags: ['brute force', 'math'],
     topics: ['arrays'],
     fetchedAt,
-    learnerStatus: 'solved_verified',
+    learnerStatus: 'solved',
   },
   {
     provider: 'codeforces',
@@ -73,7 +73,7 @@ export const problemFixtures = ExternalProblemFixturesSchema.parse([
     providerTags: ['strings'],
     topics: ['strings'],
     fetchedAt,
-    learnerStatus: 'completed_manual',
+    learnerStatus: 'solved',
   },
   {
     provider: 'codeforces',
@@ -85,7 +85,7 @@ export const problemFixtures = ExternalProblemFixturesSchema.parse([
     providerTags: ['special problem', 'implementation'],
     topics: ['arrays'],
     fetchedAt,
-    learnerStatus: 'opened',
+    learnerStatus: 'attempted',
   },
   {
     provider: 'codeforces',
@@ -97,7 +97,7 @@ export const problemFixtures = ExternalProblemFixturesSchema.parse([
     providerTags: ['brute force', 'greedy'],
     topics: ['arrays'],
     fetchedAt,
-    learnerStatus: 'recommended',
+    learnerStatus: 'unsolved',
   },
   {
     provider: 'codeforces',

@@ -100,18 +100,16 @@ PostgreSQL stores learner-owned data and permitted metadata cache:
 The target model deliberately excludes internal statement, draft, submission,
 test-bundle, and judge-token tables.
 
-### Keep evidence types distinct
+### Keep question status simple
 
-The data model and UI distinguish:
+The data model and UI expose exactly three question statuses:
 
-- recommended;
-- opened;
-- manually in progress;
-- manually completed;
-- provider-verified solved; and
-- dismissed.
+- `unsolved`;
+- `attempted`; and
+- `solved`.
 
-An outbound click is never treated as a solve.
+Recommendations, dismissals, outbound opens, and evidence provenance remain
+separate records. An outbound click never changes question status.
 
 ## Consequences
 

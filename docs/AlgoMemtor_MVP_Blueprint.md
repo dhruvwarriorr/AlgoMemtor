@@ -86,8 +86,8 @@ hosts are safe. Those responsibilities stay in deterministic backend code.
 5. Search and filters for source, topic, difficulty, and learner status.
 6. AI-ranked recommendations with concise reasons.
 7. Canonical outbound links with provider attribution.
-8. Bookmarks, dismissed recommendations, outbound-open history, and manual
-   completion status.
+8. Bookmarks, dismissed recommendations, outbound-open history, and the three
+   question statuses.
 9. Optional linked-provider activity where an official API and user consent allow
    it.
 10. Recommendation history and basic progress based on clearly labelled evidence.
@@ -161,18 +161,17 @@ Each card contains only permitted metadata:
 The link should normally open in a new tab so the learner can return to their
 plan. It must use an allowlisted, server-validated HTTPS URL.
 
-### 4.3 Completion evidence
+### 4.3 Question status
 
-AlgoMemtor distinguishes:
+Every question has one of three statuses:
 
-- `recommended`: AlgoMemtor suggested the problem;
-- `opened`: the learner followed the outbound link;
-- `in_progress`: manually reported by the learner;
-- `completed_manual`: manually reported as completed;
-- `solved_verified`: confirmed through a supported provider API; and
-- `dismissed`: removed from the learner's active feed.
+- `unsolved`: the learner has not started or completed the question;
+- `attempted`: the learner has tried the question but has not solved it; or
+- `solved`: the learner has completed the question.
 
-Only `solved_verified` is provider-confirmed. The UI must never blur these states.
+Recommendation, dismissal, outbound-open history, and evidence provenance are
+separate from question status. Opening a provider link does not change the
+question status.
 
 ### 4.4 AI interaction
 
@@ -409,7 +408,7 @@ AI response is checked.
 ### Phase C — Learner accounts and progress
 
 - add authentication and onboarding;
-- persist preferences, bookmarks, opens, and manual status;
+- persist preferences, bookmarks, outbound events, and question status;
 - optionally link a provider account; and
 - clearly separate manual and verified evidence.
 
@@ -432,7 +431,8 @@ AI response is checked.
 - allowlisted links and new-tab behavior;
 - loading, empty, stale, partial, and error states;
 - AI fallback results; and
-- distinct open/manual/verified status labels.
+- consistent `unsolved`, `attempted`, and `solved` labels with separate evidence
+  provenance.
 
 ### Express
 
@@ -459,7 +459,7 @@ AI response is checked.
 - onboarding to recommendation to outbound navigation;
 - provider outage with cached or partial results;
 - AI outage with deterministic ranking;
-- manual status update; and
+- question-status update; and
 - provider-verified activity when supported.
 
 ---

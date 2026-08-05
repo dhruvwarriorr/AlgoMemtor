@@ -170,13 +170,12 @@ Understand exactly what AlgoMemtor owns and what external platforms own.
 5. Select one candidate provider with an official metadata API.
 6. Review its fields, attribution, rate limit, caching, and URL format.
 7. Record unavailable fields explicitly.
-8. Define the evidence states:
-   - recommended;
-   - opened;
-   - in progress;
-   - completed manually;
-   - solved verified; and
-   - dismissed.
+8. Define the three question statuses:
+   - `unsolved`;
+   - `attempted`; and
+   - `solved`.
+   Keep recommendations, dismissals, outbound events, and evidence provenance
+   separate from question status.
 9. Define success metrics that do not count clicks as solves.
 
 ### Acceptance checks
@@ -185,7 +184,7 @@ Understand exactly what AlgoMemtor owns and what external platforms own.
 - [ ] No statement/editor/compiler is part of the MVP.
 - [ ] The initial provider has a documented permitted API.
 - [ ] Required attribution and rate limits are recorded.
-- [ ] Evidence states are unambiguous.
+- [ ] Question statuses are limited to `unsolved`, `attempted`, and `solved`.
 - [ ] AI is not responsible for URL safety or provider access.
 
 ### Deliverable
@@ -342,7 +341,7 @@ type ExternalProblemSummary = {
 ### Build tasks
 
 1. Define Zod schemas for provider keys, problems, queries, pagination, provider
-   warnings, and evidence status.
+   warnings, and the three question statuses.
 2. Create 20–30 fictional metadata fixtures.
 3. Implement MSW endpoints:
    - `GET /api/providers`;
@@ -365,7 +364,7 @@ type ExternalProblemSummary = {
 - [ ] Every card displays a provider.
 - [ ] Every outbound action names its destination provider.
 - [ ] Links use approved HTTPS fixtures.
-- [ ] Opening a link records only `opened`.
+- [ ] Opening a link records an outbound event without changing question status.
 - [ ] No fixture contains a full statement or test case.
 - [ ] Cards work on mobile.
 
@@ -541,7 +540,7 @@ Create a useful recommendation feed before adding an LLM.
 ### Build tasks
 
 1. Fetch candidates through the provider gateway.
-2. Exclude dismissed and recently completed problems.
+2. Exclude dismissed recommendations and recently solved problems.
 3. Score topic match.
 4. Score difficulty-range match.
 5. Score provider preference.
@@ -647,16 +646,16 @@ Track what AlgoMemtor genuinely knows after external navigation.
 
 1. Record recommendation impressions separately from opens.
 2. Record outbound opens without blocking navigation.
-3. Add manual in-progress and completion actions.
+3. Add actions for the `attempted` and `solved` statuses.
 4. Add perceived difficulty and time-spent reflection.
-5. Show manual status labels everywhere.
+5. Show the three question-status labels consistently everywhere.
 6. Keep append-only evidence history where practical.
 7. Update recommendation exclusions and revision rules.
 
 ### Acceptance checks
 
 - [ ] Opening never becomes completion.
-- [ ] Manual completion is labelled manual.
+- [ ] Question status is always `unsolved`, `attempted`, or `solved`.
 - [ ] Back navigation preserves the recommendation/catalog state.
 - [ ] Reflection data changes later recommendations.
 
@@ -675,7 +674,8 @@ consented user activity access.
 4. Fetch activity through Express.
 5. Normalize and deduplicate provider events.
 6. Store last successful sync and errors.
-7. Mark confirmed solves as `solved_verified`.
+7. Mark confirmed solves as `solved` and retain provider verification as
+   separate evidence.
 8. Add disconnect and learner-data deletion.
 9. Rate-limit manual sync.
 10. Add reconciliation tests.
@@ -686,8 +686,8 @@ provider verification as deferred. Do not fake it.
 ### Acceptance checks
 
 - [ ] User consent is explicit.
-- [ ] Verified state comes only from provider evidence.
-- [ ] Manual and verified states remain separate.
+- [ ] Confirmed provider evidence can set the question status to `solved`.
+- [ ] Evidence provenance remains separate from the three question statuses.
 - [ ] Sync failures do not erase previous evidence.
 - [ ] Disconnect and deletion work.
 
@@ -990,7 +990,7 @@ boundaries, evidence meaning, or AI safety.
 | AI hallucinates IDs      | unknown candidate returned      | reject and fallback              | stronger constrained decoding              |
 | AI adds little value     | baseline performs equally       | keep baseline/default            | revise evaluation/prompt                   |
 | Redirect vulnerability   | arbitrary host accepted         | server mapping and allowlist     | security review automation                 |
-| False progress claims    | opens counted as solves         | evidence-state separation        | more provider verification                 |
+| False progress claims    | opens counted as solves         | separate events and status       | more provider verification                 |
 | Stale metadata           | broken links/difficulty         | freshness labels and expiry      | background reconciliation                  |
 | Too many providers       | adapter inconsistency           | one provider first               | provider certification checklist           |
 | Privacy overreach        | users distrust account linking  | optional consent and deletion    | privacy review                             |

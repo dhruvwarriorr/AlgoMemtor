@@ -54,7 +54,7 @@ duplicating judges.
 - metadata normalization;
 - AI ranking and recommendation explanations;
 - learning plans and revision schedules;
-- bookmarks, dismissals, outbound opens, and manual status;
+- bookmarks, dismissals, outbound opens, and three-value question status;
 - linked-provider evidence where supported; and
 - persistent, user-controlled learner memory.
 
@@ -211,16 +211,14 @@ problem must still come from a validated provider response.
 
 ### Feature 6 — Progress and evidence
 
-Progress is divided into evidence levels:
+Every question uses one of three statuses:
 
-1. recommended;
-2. opened externally;
-3. manually marked in progress;
-4. manually marked completed; and
-5. provider-verified solved.
+1. `unsolved`;
+2. `attempted`; or
+3. `solved`.
 
-Dashboards must not count all five as equivalent. This keeps the AI mentor honest
-about what it actually knows.
+Recommendations, outbound opens, dismissals, and manual or provider evidence are
+tracked separately. An outbound open never changes a question's status.
 
 ### Feature 7 — Cross-platform practice planning
 

@@ -153,7 +153,7 @@ Onboard learner
 
 - Recommendation history.
 - Outbound-open history.
-- Manual in-progress and completion status.
+- Question status limited to `unsolved`, `attempted`, and `solved`.
 - Provider-verified solves only when a supported API makes this reliable.
 - Explicit labels for every evidence type.
 
@@ -471,13 +471,7 @@ type ExternalProblemSummary = {
   topics: string[]
   solvedCount?: number
   fetchedAt: string
-  learnerStatus?:
-    | 'recommended'
-    | 'opened'
-    | 'in_progress'
-    | 'completed_manual'
-    | 'solved_verified'
-    | 'dismissed'
+  learnerStatus?: 'unsolved' | 'attempted' | 'solved'
   recommendationReason?: string
 }
 ```
@@ -526,8 +520,8 @@ into a metadata-only preview only if research shows that preview adds real value
 - provider;
 - normalized topic;
 - provider rating/difficulty range;
-- learner status; and
-- exclude previously dismissed or completed problems.
+- question status (`unsolved`, `attempted`, or `solved`); and
+- exclude dismissed recommendations or solved problems.
 
 Keep filters in URL query parameters:
 
@@ -544,7 +538,7 @@ The card must show:
 - rating or difficulty with its meaning;
 - tags/topics;
 - AI reason, labelled as AlgoMemtor-generated;
-- evidence status; and
+- question status; and
 - **Solve on Provider** action.
 
 It must not render copied statement text.
@@ -871,8 +865,9 @@ examples, constraints, starter-code, editorial, or test-case columns.
 
 ### `core.problem_actions`
 
-Stores bookmark, dismissed, opened, in-progress, and manual-completion events.
-Keep append-only evidence where practical.
+Stores bookmarks, recommendation dismissals, outbound opens, status changes,
+and supporting evidence. Question status is always `unsolved`, `attempted`, or
+`solved`. Keep append-only evidence where practical.
 
 ### `core.verified_activity`
 
@@ -922,35 +917,27 @@ The target database does not need:
 ## 15.1 State model
 
 ```text
-recommended
-    |
-    v
-opened ---------------------> dismissed
-    |
-    +----> in_progress
-              |
-              +----> completed_manual
-              |
-              +----> solved_verified
+unsolved ----> attempted ----> solved
+    |              |
+    +--------------+----------> solved
 ```
 
-Verified activity may arrive independently of an AlgoMemtor open event.
+Outbound opens, recommendations, and dismissals are separate events and never
+become question statuses. Manual or provider evidence can support a status
+change without adding another status value.
 
-## 15.2 Evidence hierarchy
+## 15.2 Status meanings
 
-| State              | Source         | Meaning                                   |
-| ------------------ | -------------- | ----------------------------------------- |
-| `recommended`      | AlgoMemtor     | Suggested to learner                      |
-| `opened`           | Outbound event | Source page opened                        |
-| `in_progress`      | Learner        | Learner reports active work               |
-| `completed_manual` | Learner        | Learner reports completion                |
-| `solved_verified`  | Provider API   | Provider confirms accepted activity       |
-| `dismissed`        | Learner        | Learner does not want this recommendation |
+| Status      | Meaning                                             |
+| ----------- | --------------------------------------------------- |
+| `unsolved`  | The learner has not solved the question             |
+| `attempted` | The learner tried the question but has not solved it |
+| `solved`    | The learner completed the question                  |
 
 ## 15.3 Metrics
 
-Do not combine these into a misleading “problems solved” number. Show manual and
-verified completions separately.
+Count only questions with status `solved` as solved. Evidence provenance may
+separately indicate whether the status was manually reported or provider verified.
 
 ---
 
@@ -1082,7 +1069,7 @@ must not expose fields that a live permitted provider cannot supply.
 - onboarding to recommendation;
 - recommendation to external navigation;
 - outbound event recorded without false completion;
-- manual status path;
+- question-status update path;
 - supported provider verification path;
 - provider outage; and
 - AI outage.
@@ -1212,7 +1199,7 @@ Track:
 - auth tokens validated;
 - no obsolete code-execution secrets;
 - privacy and provider-disconnect controls work; and
-- manual versus verified states remain distinct.
+- manual versus provider-verified evidence remains distinguishable.
 
 ---
 
@@ -1230,7 +1217,7 @@ Track:
 - Strict mode.
 - Zod validation at boundaries.
 - Provider-specific DTOs stay inside provider adapters.
-- Use discriminated unions for provider and evidence states.
+- Use discriminated unions for provider and evidence types where appropriate.
 - Avoid `any` and non-null assertions without proof.
 
 ## 22.3 Python
@@ -1293,7 +1280,8 @@ content.
 
 ## Treating opened as solved
 
-An outbound event proves navigation only. Use manual or provider-verified status.
+An outbound event proves navigation only. Question status remains `unsolved`,
+`attempted`, or `solved` and changes independently.
 
 ## Assuming every provider uses the same difficulty scale
 
@@ -1333,8 +1321,8 @@ navigate to an AI-only URL or ID.
 
 ## Progress says solved after a click
 
-This is a data-model bug. The outbound event must map only to `opened`; verify the
-status reducer and dashboard aggregation.
+This is a data-model bug. Recording an outbound event must not update the
+question status; verify the status reducer and dashboard aggregation.
 
 ## Linked-provider sync is stale
 
