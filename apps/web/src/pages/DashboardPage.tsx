@@ -18,10 +18,10 @@ function DashboardPage() {
         </h2>
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
           <p className="min-w-0 flex-1 rounded-lg border border-border bg-card p-4 text-foreground sm:min-w-48">
-            Recommendations opened: 0
+            Problems attempted: 0
           </p>
           <p className="min-w-0 flex-1 rounded-lg border border-border bg-card p-4 text-foreground sm:min-w-48">
-            Verified solves: 0
+            Problems solved: 0
           </p>
         </div>
       </section>

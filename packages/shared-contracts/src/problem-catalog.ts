@@ -97,22 +97,6 @@ export type ExternalProblemCatalogQueryParams = z.infer<
   typeof ExternalProblemCatalogQueryParamsSchema
 >
 
-export const OutboundEventRequestSchema = z.object({
-  provider: ProviderKeySchema,
-  externalId: nonEmptyStringSchema,
-  event: z.literal('opened'),
-})
-
-export type OutboundEventRequest = z.infer<typeof OutboundEventRequestSchema>
-
-export const OutboundEventResponseSchema = z.object({
-  data: OutboundEventRequestSchema.extend({
-    recordedAt: z.iso.datetime(),
-  }),
-})
-
-export type OutboundEventResponse = z.infer<typeof OutboundEventResponseSchema>
-
 export const PaginationMetadataSchema = z.object({
   page: z.number().int().positive(),
   pageSize: z.number().int().positive(),

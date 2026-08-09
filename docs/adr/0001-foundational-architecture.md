@@ -72,7 +72,7 @@ Express owns:
 - provider adapters, caching, normalization, and rate-limit handling;
 - canonical URL safety;
 - deterministic candidate filtering and fallback ranking;
-- bookmarks, outbound events, recommendation history, and progress evidence;
+- bookmarks, recommendation history, and progress evidence;
 - provider-account consent and activity synchronization; and
 - internal calls to FastAPI.
 

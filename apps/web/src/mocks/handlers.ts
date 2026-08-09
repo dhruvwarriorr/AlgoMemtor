@@ -3,8 +3,6 @@ import {
   ExternalProblemCatalogQueryParamsSchema,
   ExternalProblemCatalogResponseSchema,
   ExternalProblemSummarySchema,
-  OutboundEventRequestSchema,
-  OutboundEventResponseSchema,
   ProvidersResponseSchema,
   TopicsResponseSchema,
 } from '@algomemtor/shared-contracts'
@@ -14,6 +12,7 @@ import { problemFixtures } from './fixtures/problems'
 import { topicFixtures } from './fixtures/topics'
 
 const mockDelayMs = 300
+const transientScenarioFailureCounts = new Map<string, number>()
 
 const providersResponse = ProvidersResponseSchema.parse({
   data: [
@@ -51,6 +50,7 @@ export const handlers: RequestHandler[] = [
 
     const url = new URL(request.url)
     const rawQuery = Object.fromEntries(url.searchParams)
+    const mockScenario = url.searchParams.get('scenario')
     const queryResult =
       ExternalProblemCatalogQueryParamsSchema.safeParse(rawQuery)
 
@@ -62,6 +62,42 @@ export const handlers: RequestHandler[] = [
       )
 
       return HttpResponse.json(errorResponse, { status: 400 })
+    }
+
+    if (mockScenario === 'error') {
+      const failureCount =
+        (transientScenarioFailureCounts.get(mockScenario) ?? 0) + 1
+      transientScenarioFailureCounts.set(mockScenario, failureCount)
+
+      if (failureCount <= 2) {
+        const errorResponse = createApiError(
+          'CATALOG_REQUEST_FAILED',
+          'The problem catalog could not be loaded.',
+          { scenario: mockScenario },
+        )
+
+        return HttpResponse.json(errorResponse, { status: 500 })
+      }
+    }
+
+    if (mockScenario === 'rate-limited') {
+      const errorResponse = createApiError(
+        'PROVIDER_RATE_LIMITED',
+        'Codeforces is temporarily rate limiting catalog requests.',
+        { provider: 'codeforces' },
+      )
+
+      return HttpResponse.json(errorResponse, { status: 429 })
+    }
+
+    if (mockScenario === 'unavailable') {
+      const errorResponse = createApiError(
+        'PROVIDER_UNAVAILABLE',
+        'Codeforces is temporarily unavailable.',
+        { provider: 'codeforces' },
+      )
+
+      return HttpResponse.json(errorResponse, { status: 503 })
     }
 
     const {
@@ -129,6 +165,26 @@ export const handlers: RequestHandler[] = [
     const summaries = filteredProblems
       .slice(startIndex, endIndex)
       .map((problem) => ExternalProblemSummarySchema.parse(problem))
+    const warnings =
+      mockScenario === 'partial'
+        ? [
+            {
+              provider: 'codeforces' as const,
+              code: 'PARTIAL_RESULTS',
+              message:
+                'Codeforces returned only part of the catalog. Available problems are shown.',
+            },
+          ]
+        : mockScenario === 'stale'
+          ? [
+              {
+                provider: 'codeforces' as const,
+                code: 'STALE_DATA',
+                message:
+                  'Showing the most recent cached Codeforces catalog while fresh data is unavailable.',
+              },
+            ]
+          : []
     const catalogResponse = ExternalProblemCatalogResponseSchema.parse({
       data: summaries,
       meta: {
@@ -136,68 +192,11 @@ export const handlers: RequestHandler[] = [
         pageSize,
         total,
         totalPages,
-        partial: false,
-        warnings: [],
+        partial: mockScenario === 'partial',
+        warnings,
       },
     })
 
     return HttpResponse.json(catalogResponse)
-  }),
-  http.post('/api/outbound-events', async ({ request }) => {
-    await delay(mockDelayMs)
-
-    let requestBody: unknown
-
-    try {
-      requestBody = await request.json()
-    } catch {
-      const errorResponse = createApiError(
-        'INVALID_OUTBOUND_EVENT',
-        'The outbound event request body must be valid JSON.',
-        [],
-      )
-
-      return HttpResponse.json(errorResponse, { status: 400 })
-    }
-
-    const eventResult = OutboundEventRequestSchema.safeParse(requestBody)
-
-    if (!eventResult.success) {
-      const errorResponse = createApiError(
-        'INVALID_OUTBOUND_EVENT',
-        'The outbound event request body is invalid.',
-        eventResult.error.issues,
-      )
-
-      return HttpResponse.json(errorResponse, { status: 400 })
-    }
-
-    const referencedProblem = problemFixtures.find(
-      (problem) =>
-        problem.provider === eventResult.data.provider &&
-        problem.externalId === eventResult.data.externalId,
-    )
-
-    if (!referencedProblem) {
-      const errorResponse = createApiError(
-        'PROBLEM_NOT_FOUND',
-        'The referenced external problem does not exist.',
-        {
-          provider: eventResult.data.provider,
-          externalId: eventResult.data.externalId,
-        },
-      )
-
-      return HttpResponse.json(errorResponse, { status: 404 })
-    }
-
-    const outboundEventResponse = OutboundEventResponseSchema.parse({
-      data: {
-        ...eventResult.data,
-        recordedAt: new Date().toISOString(),
-      },
-    })
-
-    return HttpResponse.json(outboundEventResponse, { status: 201 })
   }),
 ]

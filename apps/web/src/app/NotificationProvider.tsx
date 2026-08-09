@@ -42,7 +42,7 @@ export function NotificationProvider({ children }: PropsWithChildren) {
       {children}
       <div
         aria-live="polite"
-        className="fixed right-4 bottom-4 z-50 flex w-full max-w-sm flex-col gap-2"
+        className="fixed right-4 bottom-4 left-4 z-50 flex w-auto max-w-sm flex-col gap-2 sm:left-auto sm:w-full"
       >
         {notifications.map((notification) => (
           <div
@@ -52,11 +52,11 @@ export function NotificationProvider({ children }: PropsWithChildren) {
             key={notification.id}
             role={notification.tone === 'error' ? 'alert' : 'status'}
           >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="font-medium">{notification.title}</p>
+            <div className="flex min-w-0 items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="break-words font-medium">{notification.title}</p>
                 {notification.description ? (
-                  <p className="mt-1 text-sm opacity-80">
+                  <p className="mt-1 break-words text-sm opacity-80">
                     {notification.description}
                   </p>
                 ) : null}

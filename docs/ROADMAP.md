@@ -98,7 +98,7 @@ flowchart TD
     A["Product and provider clarity"] --> B["Repository and UI foundation"]
     B --> C["Remove old workspace assumptions"]
     C --> D["Mock external metadata contracts"]
-    D --> E["Catalog and outbound links"]
+    D --> E["Catalog and provider links"]
     E --> F["Live provider gateway"]
     F --> G["Authentication and onboarding"]
     G --> H["Learner database"]
@@ -174,8 +174,8 @@ Understand exactly what AlgoMemtor owns and what external platforms own.
    - `unsolved`;
    - `attempted`; and
    - `solved`.
-   Keep recommendations, dismissals, outbound events, and evidence provenance
-   separate from question status.
+   Keep recommendations, dismissals, and evidence provenance separate from
+   question status. Provider-link clicks do not change status.
 9. Define success metrics that do not count clicks as solves.
 
 ### Acceptance checks
@@ -312,7 +312,7 @@ before building more features.
 
 # 7. Phase 3 — Mocked External Problem Catalog
 
-## Week 5: Contracts, MSW, catalog, and outbound links
+## Week 5: Contracts, MSW, catalog, and provider links
 
 ### Goal
 
@@ -345,8 +345,7 @@ type ExternalProblemSummary = {
 2. Create 20–30 fictional metadata fixtures.
 3. Implement MSW endpoints:
    - `GET /api/providers`;
-   - `GET /api/problems`;
-   - `POST /api/outbound-events`.
+   - `GET /api/problems`.
 4. Add a central API client and TanStack Query hooks.
 5. Build problem cards or a table.
 6. Add search, provider, topic, rating/difficulty, and status filters.
@@ -364,7 +363,7 @@ type ExternalProblemSummary = {
 - [ ] Every card displays a provider.
 - [ ] Every outbound action names its destination provider.
 - [ ] Links use approved HTTPS fixtures.
-- [ ] Opening a link records an outbound event without changing question status.
+- [ ] Following a provider link does not change question status.
 - [ ] No fixture contains a full statement or test case.
 - [ ] Cards work on mobile.
 
@@ -1029,7 +1028,7 @@ boundaries, evidence meaning, or AI safety.
 
 - [ ] Authentication and ownership checks work.
 - [ ] Provider secrets remain server-side.
-- [ ] Bookmarks, outbound events, and progress persist.
+- [ ] Bookmarks and progress persist.
 - [ ] Recommendation orchestration validates AI output.
 - [ ] Deterministic fallback works.
 

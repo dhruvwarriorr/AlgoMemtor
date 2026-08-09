@@ -86,8 +86,7 @@ hosts are safe. Those responsibilities stay in deterministic backend code.
 5. Search and filters for source, topic, difficulty, and learner status.
 6. AI-ranked recommendations with concise reasons.
 7. Canonical outbound links with provider attribution.
-8. Bookmarks, dismissed recommendations, outbound-open history, and the three
-   question statuses.
+8. Bookmarks, dismissed recommendations, and the three question statuses.
 9. Optional linked-provider activity where an official API and user consent allow
    it.
 10. Recommendation history and basic progress based on clearly labelled evidence.
@@ -102,7 +101,7 @@ hosts are safe. Those responsibilities stay in deterministic backend code.
 - Judge0 or a custom judge.
 - Storing drafts, source code, submissions, or verdicts.
 - Scraping HTML or using undocumented/private provider APIs.
-- Marking a problem solved merely because the user opened it.
+- Changing question status merely because the user followed its provider link.
 - Real-time contests, duels, payments, and marketplaces.
 
 ### 3.3 What may be cached
@@ -169,9 +168,8 @@ Every question has one of three statuses:
 - `attempted`: the learner has tried the question but has not solved it; or
 - `solved`: the learner has completed the question.
 
-Recommendation, dismissal, outbound-open history, and evidence provenance are
-separate from question status. Opening a provider link does not change the
-question status.
+Recommendation, dismissal, and evidence provenance are separate from question
+status. Following a provider link does not change the question status.
 
 ### 4.4 AI interaction
 
@@ -200,7 +198,7 @@ React browser
     |                                           |
     +-- POST /api/recommendations --------------|----> Express core API
     |                                           |          |
-    +-- POST /api/outbound-events --------------+          +-- provider gateway
+    +-- provider links -------------------------+          +-- provider gateway
                                                            |      |
                                                            |      +-- Codeforces adapter
                                                            |      +-- future permitted adapters
@@ -236,7 +234,7 @@ provider failure behavior inconsistent.
 - metadata normalization and topic mapping;
 - canonical-URL construction and host allowlisting;
 - metadata caching;
-- bookmarks, recommendation history, outbound events, and progress evidence;
+- bookmarks, recommendation history, and progress evidence;
 - deterministic candidate filtering; and
 - internal FastAPI orchestration.
 
@@ -339,7 +337,6 @@ replace a missing API with scraping.
 - normalized metadata cache;
 - bookmarks and dismissed recommendations;
 - recommendation batches and reasons;
-- outbound events;
 - manual progress; and
 - provider-verified activity evidence.
 
@@ -370,7 +367,6 @@ POST   /api/recommendations
 GET    /api/recommendations/history
 POST   /api/bookmarks
 DELETE /api/bookmarks/:provider/:externalId
-POST   /api/outbound-events
 PUT    /api/progress/:provider/:externalId
 POST   /api/provider-accounts/:provider/link
 DELETE /api/provider-accounts/:provider
@@ -408,7 +404,7 @@ AI response is checked.
 ### Phase C — Learner accounts and progress
 
 - add authentication and onboarding;
-- persist preferences, bookmarks, outbound events, and question status;
+- persist preferences, bookmarks, and question status;
 - optionally link a provider account; and
 - clearly separate manual and verified evidence.
 
@@ -483,7 +479,7 @@ AI response is checked.
 
 ## 12. Success Measures
 
-- percentage of recommendation cards opened;
+- percentage of recommendations marked useful;
 - percentage manually marked useful or completed;
 - verified solve rate where supported;
 - repeat practice days per learner;

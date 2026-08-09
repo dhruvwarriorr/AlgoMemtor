@@ -65,7 +65,7 @@ Project rules:
 - Let AI rank only backend-supplied candidates.
 - Store metadata and learner evidence, not copied problem content.
 - Treat all external data and AI output as untrusted.
-- Distinguish an opened link from a solved problem.
+- Do not infer learning progress from external-link clicks.
 - Keep the product usable if AI or one provider is unavailable.
 - Do not push branches or commits unless explicitly requested.
 
@@ -152,7 +152,6 @@ Onboard learner
 ### Progress
 
 - Recommendation history.
-- Outbound-open history.
 - Question status limited to `unsolved`, `attempted`, and `solved`.
 - Provider-verified solves only when a supported API makes this reliable.
 - Explicit labels for every evidence type.
@@ -243,9 +242,9 @@ in the candidate list, then attaches trusted URLs from its own data.
 
 ## 4.7 Evidence
 
-Evidence describes how AlgoMemtor knows something. “Opened,” “manual completion,”
-and “provider-verified solve” are different facts and must remain different in
-the data model and UI.
+Evidence describes how AlgoMemtor knows something. Manual completion and a
+provider-verified solve are different facts and must remain different in the
+data model and UI. Following an external link is not progress evidence.
 
 ## 4.8 Cache
 
@@ -316,7 +315,6 @@ React
 
 ```text
 Learner selects Solve on Codeforces
-  -> AlgoMemtor records an opened event
   -> server resolves known provider + external ID
   -> learner navigates to the canonical provider URL
 ```
@@ -487,9 +485,8 @@ The component should:
 - use only server-supplied canonical URLs;
 - open in a new tab when that best preserves the learning plan;
 - add `rel="noopener noreferrer"` where applicable;
-- record an outbound event without blocking navigation indefinitely;
 - remain keyboard accessible; and
-- never mark the problem solved.
+- never change question status because the link was followed.
 
 ---
 
@@ -547,7 +544,6 @@ It must not render copied statement text.
 
 Use precise copy:
 
-- “Opened on Codeforces” rather than “Attempted” when only a click is known.
 - “Marked complete by you” for manual evidence.
 - “Verified from Codeforces” only after a successful provider check.
 - “Last refreshed 2 hours ago” when cached metadata might be stale.
@@ -636,7 +632,6 @@ Use:
 - provider preferences and consent;
 - problem discovery orchestration;
 - bookmarks and dismissals;
-- outbound events;
 - manual and verified progress;
 - recommendation orchestration;
 - provider gateway; and
@@ -668,7 +663,6 @@ POST /api/recommendations/:id/feedback
 ```text
 POST   /api/bookmarks
 DELETE /api/bookmarks/:provider/:externalId
-POST   /api/outbound-events
 PUT    /api/progress/:provider/:externalId
 ```
 
@@ -1068,7 +1062,7 @@ must not expose fields that a live permitted provider cannot supply.
 
 - onboarding to recommendation;
 - recommendation to external navigation;
-- outbound event recorded without false completion;
+- external navigation without a question-status change;
 - question-status update path;
 - supported provider verification path;
 - provider outage; and
@@ -1278,10 +1272,10 @@ A missing permitted API means the provider is deferred, not scraped.
 Fixtures should model metadata contracts and states, not reproduce problem
 content.
 
-## Treating opened as solved
+## Treating a provider-link click as progress
 
-An outbound event proves navigation only. Question status remains `unsolved`,
-`attempted`, or `solved` and changes independently.
+Following a provider link is not progress evidence. Question status remains
+`unsolved`, `attempted`, or `solved` and changes independently.
 
 ## Assuming every provider uses the same difficulty scale
 
@@ -1321,8 +1315,8 @@ navigate to an AI-only URL or ID.
 
 ## Progress says solved after a click
 
-This is a data-model bug. Recording an outbound event must not update the
-question status; verify the status reducer and dashboard aggregation.
+This is a data-model bug. Following a provider link must not update question
+status; verify the status reducer and dashboard aggregation.
 
 ## Linked-provider sync is stale
 
@@ -1348,7 +1342,6 @@ Confirm Express uses deterministic ranking and returns a clear fallback marker.
 | External ID            | Provider-owned problem identifier                             |
 | Canonical URL          | Approved source-platform URL for a problem                    |
 | Metadata               | Identification and selection fields, not full solving content |
-| Outbound event         | Record that a learner opened an external link                 |
 | Manual completion      | Learner-reported completion                                   |
 | Verified solve         | Solve confirmed through a supported provider API              |
 | Candidate set          | Backend-validated problems the AI may rank                    |
