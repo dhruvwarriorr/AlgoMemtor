@@ -21,6 +21,17 @@ export const ProviderAvailabilitySchema = z.enum([
 
 export type ProviderAvailability = z.infer<typeof ProviderAvailabilitySchema>
 
+export const ProviderFreshnessSchema = z.object({
+  provider: ProviderKeySchema,
+  availability: ProviderAvailabilitySchema,
+  stale: z.boolean(),
+  fetchedAt: z.iso.datetime().optional(),
+  expiresAt: z.iso.datetime().optional(),
+  lastErrorCode: nonEmptyStringSchema.optional(),
+})
+
+export type ProviderFreshness = z.infer<typeof ProviderFreshnessSchema>
+
 export const NormalizedDifficultySchema = z.enum(['easy', 'medium', 'hard'])
 
 export type NormalizedDifficulty = z.infer<typeof NormalizedDifficultySchema>
@@ -58,6 +69,7 @@ export const ProviderSummarySchema = z.object({
   key: ProviderKeySchema,
   label: nonEmptyStringSchema,
   availability: ProviderAvailabilitySchema,
+  freshness: ProviderFreshnessSchema.optional(),
 })
 
 export type ProviderSummary = z.infer<typeof ProviderSummarySchema>
@@ -118,7 +130,9 @@ export const ExternalProblemCatalogResponseSchema = z.object({
   data: z.array(ExternalProblemSummarySchema),
   meta: PaginationMetadataSchema.extend({
     partial: z.boolean().default(false),
+    stale: z.boolean().default(false),
     warnings: z.array(ProviderWarningSchema).default([]),
+    providers: z.array(ProviderFreshnessSchema).default([]),
   }),
 })
 
@@ -142,6 +156,7 @@ export const ApiErrorResponseSchema = z.object({
   error: z.object({
     code: nonEmptyStringSchema,
     message: nonEmptyStringSchema,
+    retryable: z.boolean().optional(),
     details: z.unknown().optional(),
   }),
 })

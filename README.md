@@ -12,9 +12,10 @@ copy or persist external problem statements, examples, constraints, starter code
 editorials, hidden tests, or judge data. It does not embed Monaco, compile learner
 code, or replace the source platform's editor and judge.
 
-The repository is currently in the frontend and contract-foundation stage. Its
-problem contracts and development mocks use external metadata only; the visible
-catalog and live provider gateway remain later roadmap work.
+The repository now includes the external-metadata catalog and the first live
+Codeforces provider gateway. React consumes the same normalized `/api/*`
+contract in mocked and live modes; Express owns provider validation,
+normalization, safe URLs, filtering, caching, rate handling, and freshness.
 
 ## Product principles
 
@@ -242,6 +243,7 @@ Mocks must never contain copied problem statements or hidden tests.
 
 ```bash
 npm run typecheck
+npm run test
 npm run lint
 npm run format:check
 npm run build

@@ -21,6 +21,8 @@
     "typecheck:contracts": "npm --prefix packages/shared-contracts run typecheck",
     "typecheck:web": "npm --prefix apps/web run typecheck",
     "typecheck:core": "npm --prefix apps/core-api run typecheck",
+    "test": "npm run test:core",
+    "test:core": "npm --prefix apps/core-api test",
     "lint": "npm --prefix apps/web run lint",
     "format": "npm --prefix apps/web run format",
     "format:check": "npm --prefix apps/web run format:check"

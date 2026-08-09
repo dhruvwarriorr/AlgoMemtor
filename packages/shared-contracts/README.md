@@ -13,7 +13,7 @@ The package uses an external metadata model. Its schemas cover:
 - provider-native and normalized difficulty;
 - provider tags and normalized topics;
 - permitted public statistics;
-- metadata freshness;
+- metadata freshness and provider availability;
 - catalog queries with validated rating ranges, pagination, and provider warnings;
 - recommendation reasons; and
 - the three question statuses: `unsolved`, `attempted`, and `solved`.

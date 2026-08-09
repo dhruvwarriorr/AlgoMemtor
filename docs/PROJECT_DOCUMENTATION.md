@@ -402,6 +402,9 @@ AI_API_URL=http://localhost:8000
 INTERNAL_SERVICE_TOKEN=
 CODEFORCES_API_BASE_URL=https://codeforces.com/api
 PROVIDER_CACHE_TTL_SECONDS=
+PROVIDER_TIMEOUT_MS=8000
+PROVIDER_MAX_ATTEMPTS=2
+CODEFORCES_MIN_REQUEST_INTERVAL_MS=2100
 ```
 
 AI API variables may include:
@@ -593,6 +596,30 @@ The provider adapter should:
 6. cache the normalized response; and
 7. respect the documented request limit and failure responses.
 
+The initial implementation uses the anonymous `problemset.problems` method, so
+it does not require or store a Codeforces API key or secret. It validates the
+outer `OK`/`FAILED` envelope first, then validates `Problem` and
+`ProblemStatistics` records individually so malformed records cannot enter the
+normalized catalog.
+
+Current normalization rules are deterministic:
+
+- contest problems use `${contestId}${index}` as the external ID;
+- provider tags are trimmed, lowercased, and deduplicated;
+- normalized topics are safe slugs, with documented aliases such as
+  `dfs and similar`, `shortest paths`, and `graph matchings` to `graphs`;
+- Codeforces rating is preserved as `providerDifficulty`;
+- ratings through `800` are `easy`, `900` through `1800` are `medium`, and
+  ratings from `1900` are `hard`, matching the Week 5 mock convention;
+- statistics join on contest ID and normalized problem index; and
+- only a positive contest ID and alphanumeric problem index can produce
+  `https://codeforces.com/problemset/problem/{contestId}/{index}`.
+
+Valid custom-problemset records without a contest ID are not exposed because the
+current canonical URL policy cannot construct the required contest/index URL
+safely. They are reported as unsupported partial records rather than malformed
+provider data.
+
 ## 10.4 Provider approval checklist
 
 Before enabling any additional provider:
@@ -621,6 +648,15 @@ Use:
 - request deduplication;
 - exponential backoff with jitter; and
 - a circuit breaker only after repeated failures justify it.
+
+The initial Codeforces policy uses a one-hour in-process TTL, one shared
+in-flight refresh promise, and a 2.1-second minimum interval between provider
+requests. Timeout, network, and `5xx` failures may receive one retry with backoff.
+HTTP `429` and Codeforces `Call limit exceeded` failures are classified as
+`PROVIDER_RATE_LIMITED` and are not retried immediately. When an expired cache
+exists and refresh fails, the API returns it with degraded/stale freshness and a
+structured warning. A short refresh-failure cooldown prevents every filter
+request from attempting another provider refresh during the outage.
 
 ---
 
@@ -1049,6 +1085,14 @@ must not expose fields that a live permitted provider cannot supply.
 - learner record authorization; and
 - verified activity deduplication.
 
+The Week 6 provider suite uses mocked HTTP responses and covers successful
+normalization, malformed records, safe canonical URLs, combined filters,
+unrated-range behavior, timeout/rate-limit/unavailable classification, retry
+limits, provider request spacing, TTL hits and expiry, concurrent refresh
+deduplication, stale fallback, safe logging, provider health/freshness, and the
+shared catalog/error response contracts. Mocked tests run before live provider
+smoke testing.
+
 ## 18.3 FastAPI tests
 
 - ranking schema;
@@ -1159,6 +1203,11 @@ Track:
 - manual and verified completion separately;
 - AI latency and fallback rate; and
 - recommendation feedback.
+
+Provider logs use an explicit safe-field allowlist. They record request ID,
+provider, cache state, latency, result/rejection counts, attempt number, and
+stable error code; they do not record provider response bodies, credentials,
+authorization headers, or arbitrary error details.
 
 ---
 

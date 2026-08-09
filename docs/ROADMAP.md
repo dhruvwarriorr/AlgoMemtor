@@ -409,14 +409,39 @@ contract.
 
 ### Acceptance checks
 
-- [ ] React never calls Codeforces directly.
-- [ ] Provider payloads are validated before use.
-- [ ] Invalid records are skipped or rejected safely.
-- [ ] Canonical URLs resolve to the expected Codeforces host and problem.
-- [ ] Documented rate limits are respected.
-- [ ] Cached results reduce provider calls.
-- [ ] Provider errors produce stable internal codes.
-- [ ] The catalog contract matches Week 5 mocks.
+- [x] React never calls Codeforces directly.
+- [x] Provider payloads are validated before use.
+- [x] Invalid records are skipped or rejected safely.
+- [x] Canonical URLs resolve to the expected Codeforces host and problem.
+- [x] Documented rate limits are respected.
+- [x] Cached results reduce provider calls.
+- [x] Provider errors produce stable internal codes.
+- [x] The catalog contract matches Week 5 mocks.
+
+### Implemented provider policy
+
+- `problemset.problems` is requested anonymously; catalog access does not need a
+  Codeforces API key or secret.
+- Provider requests are separated by at least 2.1 seconds, while a one-hour
+  in-process metadata TTL and concurrent-refresh deduplication avoid unnecessary
+  calls.
+- Retryable timeouts, network failures, and `5xx` responses receive at most one
+  retry with backoff. Rate-limit failures are returned without an immediate
+  retry.
+- Valid records without a safe contest/index URL are skipped and reported as
+  partial results. Malformed fields are rejected before normalization.
+- Difficulty bands preserve the Week 5 mock convention: rating `800` and below
+  is `easy`, `900` through `1800` is `medium`, and `1900` and above is `hard`.
+- Provider freshness includes availability, fetch time, expiry time, stale
+  state, and the last stable provider error code when applicable.
+- A refresh-failure cooldown serves the stale cache without making a provider
+  request for every filter change during an outage.
+
+Automated provider tests and an anonymous live API smoke test passed on
+2026-08-09. The live catalog was also exercised through Vite's `/api` proxy and
+served by Express. Browser-rendered acceptance remains to be repeated when a
+browser-control session is available; no browser was available during this
+checkpoint.
 
 ### Common mistakes
 
