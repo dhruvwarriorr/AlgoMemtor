@@ -1,18 +1,16 @@
 import { createContext } from 'react'
+import type { Session, User } from '@supabase/supabase-js'
 
-export type AuthUser = {
-  id: string
-  email: string
-  displayName?: string
-}
+export type AuthUser = User
 
-export type AuthStatus = 'authenticated' | 'unauthenticated'
+export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated'
 
 export type AuthContextValue = {
   user: AuthUser | null
   status: AuthStatus
-  setUser: (user: AuthUser | null) => void
-  signOut: () => void
+  signIn: (email: string, password: string) => Promise<void>
+  signUp: (email: string, password: string) => Promise<Session | null>
+  signOut: () => Promise<void>
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null)
