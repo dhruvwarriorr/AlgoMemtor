@@ -476,10 +476,33 @@ Add real identity and protected learner routes.
 
 ### Acceptance checks
 
-- [ ] Protected routes redirect correctly.
-- [ ] APIs reject invalid tokens.
+- [x] Protected routes redirect correctly.
+- [x] APIs reject invalid tokens.
 - [ ] Refresh restores valid sessions.
-- [ ] Service-role keys never enter React.
+- [x] Service-role keys never enter React.
+
+### Implemented authentication policy
+
+- Supabase email/password signup, login, logout, persisted-session restoration,
+  and auth-state subscriptions are owned by the React auth provider.
+- All documented learner routes are behind one loading-aware route guard.
+  Recommendation and bookmark pages remain explicit non-persistent placeholders
+  until their later roadmap phases.
+- Protected frontend requests attach the current access token, refresh once after
+  a `401`, and clear unrecoverable sessions with a user-facing login message.
+- Express and FastAPI verify the JWT signature, issuer, `authenticated` audience,
+  expiry, subject, and authenticated role through the project's JWKS endpoint.
+  Express catalog endpoints and both `/api/me` endpoints require a bearer token.
+- Signup confirmation redirects are derived from `VITE_SITE_URL` and use the
+  exact `/dashboard` path. Local and production URLs must also be allowlisted in
+  the Supabase project's external URL Configuration.
+
+Frontend, Express, and FastAPI auth tests passed on 2026-08-10. All eight learner
+routes redirected to login in a real browser, both APIs rejected live
+unauthenticated requests, and no browser-console errors were present. A real
+login followed by browser refresh and the external Supabase callback allowlist
+still require an authenticated Supabase dashboard/test-user session before the
+remaining acceptance check can be marked complete.
 
 ## Week 8: Learner onboarding
 

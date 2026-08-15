@@ -8,6 +8,8 @@ import cors from 'cors'
 import express from 'express'
 import helmet from 'helmet'
 
+import { requireAuth } from './auth/require-auth.js'
+import type { SupabaseJwtVerifier } from './auth/supabase-jwt.js'
 import { readCodeforcesProviderConfig } from './config/provider-config.js'
 import { ProviderError } from './errors/provider-error.js'
 import { CodeforcesProvider } from './integrations/codeforces/codeforces-provider.js'
@@ -19,6 +21,7 @@ import {
 } from './utils/structured-logger.js'
 
 export type CreateAppOptions = {
+  jwtVerifier?: SupabaseJwtVerifier
   problemProvider?: ProblemProvider
   logger?: StructuredLogger
   webOrigin?: string
@@ -77,9 +80,15 @@ const defaultProvider = () => {
   })
 }
 
+const denyUnconfiguredAuthentication: SupabaseJwtVerifier = async () => {
+  throw new Error('Supabase JWT verification is not configured.')
+}
+
 export const createApp = (options: CreateAppOptions = {}) => {
   const logger = options.logger ?? structuredLogger
   const provider = options.problemProvider ?? defaultProvider()
+  const jwtVerifier = options.jwtVerifier ?? denyUnconfiguredAuthentication
+  const requireAuthenticated = requireAuth(jwtVerifier)
   const catalogService = new ProblemCatalogService(provider)
   const app = express()
 
@@ -112,11 +121,20 @@ export const createApp = (options: CreateAppOptions = {}) => {
     })
   })
 
-  app.get('/api/providers', (_request, response) => {
+  app.get('/api/providers', requireAuthenticated, (_request, response) => {
     response.json(catalogService.getProviders())
   })
 
-  app.get('/api/topics', async (_request, response) => {
+  app.get('/api/me', requireAuthenticated, (_request, response) => {
+    response.json({
+      user: {
+        id: (response.locals.auth as Awaited<ReturnType<SupabaseJwtVerifier>>)
+          .subject,
+      },
+    })
+  })
+
+  app.get('/api/topics', requireAuthenticated, async (_request, response) => {
     try {
       response.json(
         await catalogService.getTopics(response.locals.requestId as string),
@@ -136,7 +154,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
     }
   })
 
-  app.get('/api/problems', async (request, response) => {
+  app.get('/api/problems', requireAuthenticated, async (request, response) => {
     const queryResult = ExternalProblemCatalogQueryParamsSchema.safeParse(
       request.query,
     )

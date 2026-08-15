@@ -9,6 +9,7 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createApp } from './app.js'
+import type { SupabaseJwtVerifier } from './auth/supabase-jwt.js'
 import { CodeforcesProvider } from './integrations/codeforces/codeforces-provider.js'
 
 const payload = {
@@ -40,6 +41,17 @@ const payload = {
 }
 
 const servers: ReturnType<ReturnType<typeof createApp>['listen']>[] = []
+const authorization = { authorization: 'Bearer test-access-token' }
+const testJwtVerifier: SupabaseJwtVerifier = async (token) => {
+  if (token !== 'test-access-token') {
+    throw new Error('Invalid test access token.')
+  }
+
+  return {
+    subject: '00000000-0000-4000-8000-000000000001',
+    claims: { role: 'authenticated' },
+  }
+}
 
 afterEach(async () => {
   await Promise.all(
@@ -55,7 +67,10 @@ afterEach(async () => {
 })
 
 const startApp = (provider: CodeforcesProvider) => {
-  const server = createApp({ problemProvider: provider }).listen(0)
+  const server = createApp({
+    jwtVerifier: testJwtVerifier,
+    problemProvider: provider,
+  }).listen(0)
   servers.push(server)
   const address = server.address() as AddressInfo
 
@@ -79,6 +94,7 @@ describe('core catalog API', () => {
 
     const response = await fetch(
       `${baseUrl}/api/problems?minRating=1000&maxRating=1300&page=1&pageSize=10`,
+      { headers: authorization },
     )
     const catalog = ExternalProblemCatalogResponseSchema.parse(
       await response.json(),
@@ -100,7 +116,9 @@ describe('core catalog API', () => {
     })
 
     const topics = TopicsResponseSchema.parse(
-      await (await fetch(`${baseUrl}/api/topics`)).json(),
+      await (
+        await fetch(`${baseUrl}/api/topics`, { headers: authorization })
+      ).json(),
     )
     expect(topics.data.map((topic) => topic.slug)).toEqual([
       'graphs',
@@ -108,7 +126,9 @@ describe('core catalog API', () => {
     ])
 
     const providers = ProvidersResponseSchema.parse(
-      await (await fetch(`${baseUrl}/api/providers`)).json(),
+      await (
+        await fetch(`${baseUrl}/api/providers`, { headers: authorization })
+      ).json(),
     )
     expect(providers.data[0]?.freshness?.fetchedAt).toBeDefined()
     expect(fetchMock).toHaveBeenCalledOnce()
@@ -123,6 +143,7 @@ describe('core catalog API', () => {
     const baseUrl = startApp(provider)
     const response = await fetch(
       `${baseUrl}/api/problems?minRating=1300&maxRating=1000`,
+      { headers: authorization },
     )
     const error = ApiErrorResponseSchema.parse(await response.json())
 
@@ -138,7 +159,9 @@ describe('core catalog API', () => {
       minRequestIntervalMs: 0,
     })
     const baseUrl = startApp(provider)
-    const response = await fetch(`${baseUrl}/api/problems`)
+    const response = await fetch(`${baseUrl}/api/problems`, {
+      headers: authorization,
+    })
     const error = ApiErrorResponseSchema.parse(await response.json())
 
     expect(response.status).toBe(429)
@@ -147,5 +170,19 @@ describe('core catalog API', () => {
       retryable: true,
       details: { provider: 'codeforces' },
     })
+  })
+
+  it('rejects unauthenticated catalog requests before calling the provider', async () => {
+    const fetchMock = vi.fn()
+    const provider = new CodeforcesProvider({
+      baseUrl: 'https://mock.codeforces.test/api',
+      fetchImpl: fetchMock,
+      minRequestIntervalMs: 0,
+    })
+    const response = await fetch(`${startApp(provider)}/api/problems`)
+
+    expect(response.status).toBe(401)
+    expect(response.headers.get('www-authenticate')).toBe('Bearer')
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

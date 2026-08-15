@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Menu } from 'lucide-react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 
+import { useNotification } from '@/app/useNotification'
 import { Button, buttonVariants } from '@/components/ui/button'
+import { useAuth } from '@/features/auth/useAuth'
 import { cn } from '@/lib/utils'
 
 import MobileSidebar from './MobileSidebar'
@@ -15,13 +17,43 @@ const navigationItems = [
 ] as const
 
 function Topbar() {
+  const navigate = useNavigate()
+  const { notify } = useNotification()
+  const { signOut, status } = useAuth()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [isSigningOut, setIsSigningOut] = useState(false)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
 
   const closeMobileMenu = useCallback(() => {
     setIsMobileMenuOpen(false)
     window.requestAnimationFrame(() => menuButtonRef.current?.focus())
   }, [])
+
+  const handleSignOut = useCallback(() => {
+    if (isSigningOut) {
+      return
+    }
+
+    setIsSigningOut(true)
+    void navigate('/', { replace: true })
+
+    void signOut().then(
+      () => {
+        setIsSigningOut(false)
+      },
+      (error: unknown) => {
+        setIsSigningOut(false)
+        notify({
+          title: 'Unable to sign out',
+          description:
+            error instanceof Error
+              ? error.message
+              : 'Please try signing out again.',
+          tone: 'error',
+        })
+      },
+    )
+  }, [isSigningOut, navigate, notify, signOut])
 
   useEffect(() => {
     const desktopViewport = window.matchMedia('(min-width: 64rem)')
@@ -72,16 +104,27 @@ function Topbar() {
               </ul>
             </nav>
 
-            <NavLink
-              className={({ isActive }) =>
-                buttonVariants({
-                  variant: isActive ? 'default' : 'outline',
-                })
-              }
-              to="/login"
-            >
-              Login / Sign Up
-            </NavLink>
+            {status === 'authenticated' ? (
+              <Button
+                disabled={isSigningOut}
+                onClick={handleSignOut}
+                type="button"
+                variant="outline"
+              >
+                {isSigningOut ? 'Signing out…' : 'Logout'}
+              </Button>
+            ) : status === 'unauthenticated' ? (
+              <NavLink
+                className={({ isActive }) =>
+                  buttonVariants({
+                    variant: isActive ? 'default' : 'outline',
+                  })
+                }
+                to="/login"
+              >
+                Login / Sign Up
+              </NavLink>
+            ) : null}
           </div>
 
           <Button
@@ -101,9 +144,12 @@ function Topbar() {
       </header>
 
       <MobileSidebar
+        authStatus={status}
         items={navigationItems}
         isOpen={isMobileMenuOpen}
+        isSigningOut={isSigningOut}
         onClose={closeMobileMenu}
+        onSignOut={handleSignOut}
       />
     </>
   )

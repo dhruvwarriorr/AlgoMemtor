@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 import PageContainer from '@/components/layout/PageContainer'
 import PageHeader from '@/components/layout/PageHeader'
@@ -7,6 +7,34 @@ import { Button } from '@/components/ui/button'
 import { useAuth } from '@/features/auth/useAuth'
 
 type AuthMode = 'sign-in' | 'sign-up'
+
+function requestedDestination(state: unknown): string {
+  if (!state || typeof state !== 'object' || !('from' in state)) {
+    return '/dashboard'
+  }
+
+  const { from } = state
+
+  if (!from || typeof from !== 'object' || !('pathname' in from)) {
+    return '/dashboard'
+  }
+
+  const { pathname } = from
+
+  if (
+    typeof pathname !== 'string' ||
+    !pathname.startsWith('/') ||
+    pathname.startsWith('//')
+  ) {
+    return '/dashboard'
+  }
+
+  const search =
+    'search' in from && typeof from.search === 'string' ? from.search : ''
+  const hash = 'hash' in from && typeof from.hash === 'string' ? from.hash : ''
+
+  return `${pathname}${search}${hash}`
+}
 
 function authErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) {
@@ -23,8 +51,9 @@ function formString(formData: FormData, name: string): string {
 }
 
 function LoginPage() {
+  const location = useLocation()
   const navigate = useNavigate()
-  const { signIn, signUp } = useAuth()
+  const { clearSessionMessage, sessionMessage, signIn, signUp } = useAuth()
   const [mode, setMode] = useState<AuthMode>('sign-in')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -76,7 +105,7 @@ function LoginPage() {
       return
     }
 
-    void navigate('/dashboard', { replace: true })
+    void navigate(requestedDestination(location.state), { replace: true })
   }
 
   return (
@@ -95,6 +124,12 @@ function LoginPage() {
         className="flex w-full min-w-0 flex-col gap-5 rounded-xl border border-border bg-card p-4 sm:p-6"
         onSubmit={(event) => void handleSubmit(event)}
       >
+        {sessionMessage ? (
+          <p className="text-sm text-destructive" role="alert">
+            {sessionMessage}
+          </p>
+        ) : null}
+
         <div className="flex min-w-0 flex-col gap-2">
           <label
             className="text-sm font-medium text-foreground"
@@ -188,6 +223,7 @@ function LoginPage() {
           disabled={isSubmitting}
           onClick={() => {
             setMode(isSignUp ? 'sign-in' : 'sign-up')
+            clearSessionMessage()
             setErrorMessage(null)
             setSuccessMessage(null)
           }}

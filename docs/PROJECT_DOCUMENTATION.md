@@ -386,6 +386,9 @@ Frontend variables may include:
 ```text
 VITE_CORE_API_URL=/api
 VITE_AI_API_URL=/ai
+VITE_SITE_URL=http://localhost:5173
+VITE_SUPABASE_URL=
+VITE_SUPABASE_PUBLISHABLE_KEY=
 VITE_USE_MOCKS=true
 ```
 
@@ -413,6 +416,8 @@ AI API variables may include:
 APP_ENV=development
 PORT=8000
 DATABASE_URL=
+SUPABASE_URL=
+SUPABASE_JWT_ISSUER=
 LLM_API_KEY=
 LLM_MODEL=
 INTERNAL_SERVICE_TOKEN=
@@ -835,6 +840,13 @@ The user must see what will be read and how to disconnect it.
 
 Authentication callback redirects and external problem navigation are different
 features. Maintain separate allowlists and tests for each.
+
+The browser constructs confirmation redirects from `VITE_SITE_URL` and uses the
+exact `/dashboard` callback. Supabase Auth URL Configuration must allow
+`http://localhost:5173/dashboard` locally and the corresponding HTTPS URL for
+the deployed frontend. The Site URL should be the production frontend origin
+once deployment exists. Callback configuration is external project state and
+must be verified in the Supabase dashboard for every environment.
 
 ---
 

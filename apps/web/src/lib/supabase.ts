@@ -16,5 +16,33 @@ const supabasePublishableKey = requireEnvironmentVariable(
   'VITE_SUPABASE_PUBLISHABLE_KEY',
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
 )
+const siteUrl = requireEnvironmentVariable(
+  'VITE_SITE_URL',
+  import.meta.env.VITE_SITE_URL,
+)
+
+function requireSiteOrigin(value: string): string {
+  const url = new URL(value)
+  const isLoopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+
+  if (
+    (url.protocol !== 'https:' && !(url.protocol === 'http:' && isLoopback)) ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error(
+      'VITE_SITE_URL must be an HTTPS URL, or an HTTP loopback URL for local development, without credentials, query parameters, or fragments.',
+    )
+  }
+
+  return url.origin
+}
+
+export const authRedirectUrl = new URL(
+  '/dashboard',
+  requireSiteOrigin(siteUrl),
+).toString()
 
 export const supabase = createClient(supabaseUrl, supabasePublishableKey)

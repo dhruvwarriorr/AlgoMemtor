@@ -200,7 +200,31 @@ Never commit real secrets. Provider credentials, when required, belong in the
 core API environment only. LLM credentials belong in the AI API environment
 only.
 
-### 4. Start PostgreSQL
+### 4. Configure Supabase authentication
+
+Create a Supabase project with email/password authentication enabled, then set:
+
+- `VITE_SITE_URL`, `VITE_SUPABASE_URL`, and
+  `VITE_SUPABASE_PUBLISHABLE_KEY` in `apps/web/.env`;
+- `SUPABASE_URL` and `SUPABASE_JWT_ISSUER` in both API environment files; and
+- `SUPABASE_JWT_ISSUER` to `<SUPABASE_URL>/auth/v1`.
+
+In **Supabase Dashboard → Authentication → URL Configuration**:
+
+1. set **Site URL** to the production frontend origin when it exists;
+2. add `http://localhost:5173/dashboard` as a local redirect URL; and
+3. add `https://<production-frontend-host>/dashboard` as the exact production
+   redirect URL.
+
+During local-only development, the Site URL can be `http://localhost:5173`.
+`VITE_SITE_URL` must use the matching frontend origin in each environment. The
+signup confirmation flow explicitly redirects to its `/dashboard` path.
+
+Only a Supabase publishable key belongs in the Vite environment. Secret and
+service-role keys must remain server-side and are not required for JWT
+verification.
+
+### 5. Start PostgreSQL
 
 ```bash
 npm run db:up
@@ -213,7 +237,7 @@ Stop it with:
 npm run db:down
 ```
 
-### 5. Start development
+### 6. Start development
 
 ```bash
 npm run dev

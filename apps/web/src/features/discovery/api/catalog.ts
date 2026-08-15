@@ -64,6 +64,7 @@ export function buildProblemCatalogSearchParams(
 
 export function fetchProviders({ signal }: RequestOptions = {}) {
   return requestJson<ProvidersResponse>('/api/providers', {
+    authentication: 'required',
     schema: ProvidersResponseSchema,
     signal,
   })
@@ -71,6 +72,7 @@ export function fetchProviders({ signal }: RequestOptions = {}) {
 
 export function fetchTopics({ signal }: RequestOptions = {}) {
   return requestJson<TopicsResponse>('/api/topics', {
+    authentication: 'required',
     schema: TopicsResponseSchema,
     signal,
   })
@@ -85,6 +87,7 @@ export function fetchProblemCatalog(
   const url = queryString ? `/api/problems?${queryString}` : '/api/problems'
 
   return requestJson<ExternalProblemCatalogResponse>(url, {
+    authentication: 'required',
     schema: ExternalProblemCatalogResponseSchema,
     signal,
   })

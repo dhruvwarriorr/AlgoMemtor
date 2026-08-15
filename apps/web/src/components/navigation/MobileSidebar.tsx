@@ -3,18 +3,29 @@ import { X } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 
 import { Button, buttonVariants } from '@/components/ui/button'
+import type { AuthStatus } from '@/features/auth/auth-context'
 import { cn } from '@/lib/utils'
 
 type MobileSidebarProps = {
+  authStatus: AuthStatus
   items: ReadonlyArray<{
     label: string
     to: string
   }>
   isOpen: boolean
+  isSigningOut: boolean
   onClose: () => void
+  onSignOut: () => void
 }
 
-function MobileSidebar({ items, isOpen, onClose }: MobileSidebarProps) {
+function MobileSidebar({
+  authStatus,
+  items,
+  isOpen,
+  isSigningOut,
+  onClose,
+  onSignOut,
+}: MobileSidebarProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
@@ -100,18 +111,33 @@ function MobileSidebar({ items, isOpen, onClose }: MobileSidebarProps) {
           </ul>
 
           <div className="mt-auto border-t border-border pt-4">
-            <NavLink
-              className={({ isActive }) =>
-                buttonVariants({
-                  className: 'min-h-11 w-full',
-                  variant: isActive ? 'default' : 'outline',
-                })
-              }
-              onClick={onClose}
-              to="/login"
-            >
-              Login / Sign Up
-            </NavLink>
+            {authStatus === 'authenticated' ? (
+              <Button
+                className="min-h-11 w-full"
+                disabled={isSigningOut}
+                onClick={() => {
+                  onClose()
+                  onSignOut()
+                }}
+                type="button"
+                variant="outline"
+              >
+                {isSigningOut ? 'Signing out…' : 'Logout'}
+              </Button>
+            ) : authStatus === 'unauthenticated' ? (
+              <NavLink
+                className={({ isActive }) =>
+                  buttonVariants({
+                    className: 'min-h-11 w-full',
+                    variant: isActive ? 'default' : 'outline',
+                  })
+                }
+                onClick={onClose}
+                to="/login"
+              >
+                Login / Sign Up
+              </NavLink>
+            ) : null}
           </div>
         </nav>
       </aside>

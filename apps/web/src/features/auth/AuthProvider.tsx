@@ -7,7 +7,12 @@ import {
 } from 'react'
 import type { Session } from '@supabase/supabase-js'
 
-import { supabase } from '@/lib/supabase'
+import { authRedirectUrl, supabase } from '@/lib/supabase'
+
+import {
+  sessionExpiredEventName,
+  sessionExpiredMessage,
+} from './authenticated-fetch'
 
 import {
   AuthContext,
@@ -32,6 +37,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     user: null,
     status: 'loading',
   })
+  const [sessionMessage, setSessionMessage] = useState<string | null>(null)
 
   useEffect(() => {
     let isMounted = true
@@ -71,6 +77,18 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
   }, [])
 
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      setSessionMessage(sessionExpiredMessage)
+      setAuthState(stateFromSession(null))
+    }
+
+    window.addEventListener(sessionExpiredEventName, handleSessionExpired)
+
+    return () =>
+      window.removeEventListener(sessionExpiredEventName, handleSessionExpired)
+  }, [])
+
   const signIn = useCallback(async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -80,19 +98,27 @@ export function AuthProvider({ children }: PropsWithChildren) {
     if (error) {
       throw error
     }
+
+    setSessionMessage(null)
   }, [])
 
   const signUp = useCallback(async (email: string, password: string) => {
-    const { data, error } = await supabase.auth.signUp({ email, password })
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: authRedirectUrl },
+    })
 
     if (error) {
       throw error
     }
 
+    setSessionMessage(null)
     return data.session
   }, [])
 
   const signOut = useCallback(async () => {
+    setSessionMessage(null)
     const { error } = await supabase.auth.signOut()
 
     if (error) {
@@ -100,14 +126,18 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
   }, [])
 
+  const clearSessionMessage = useCallback(() => setSessionMessage(null), [])
+
   const value = useMemo<AuthContextValue>(
     () => ({
       ...authState,
+      sessionMessage,
+      clearSessionMessage,
       signIn,
       signUp,
       signOut,
     }),
-    [authState, signIn, signOut, signUp],
+    [authState, clearSessionMessage, sessionMessage, signIn, signOut, signUp],
   )
 
   return <AuthContext value={value}>{children}</AuthContext>

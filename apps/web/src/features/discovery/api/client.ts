@@ -1,5 +1,7 @@
 import { ApiErrorResponseSchema } from '@algomemtor/shared-contracts'
 
+import { authenticatedFetch } from '@/features/auth/authenticated-fetch'
+
 type ValidationResult<T> =
   { success: true; data: T } | { success: false; error: { issues: unknown } }
 
@@ -8,6 +10,7 @@ type ResponseSchema<T> = {
 }
 
 type JsonRequestOptions<T> = Omit<RequestInit, 'signal'> & {
+  authentication?: 'required'
   schema: ResponseSchema<T>
   signal?: AbortSignal
 }
@@ -48,12 +51,13 @@ function fallbackHttpMessage(status: number) {
 
 export async function requestJson<T>(
   input: RequestInfo | URL,
-  { schema, signal, ...init }: JsonRequestOptions<T>,
+  { authentication, schema, signal, ...init }: JsonRequestOptions<T>,
 ): Promise<T> {
   let response: Response
 
   try {
-    response = await fetch(input, { ...init, signal })
+    const request = authentication === 'required' ? authenticatedFetch : fetch
+    response = await request(input, { ...init, signal })
   } catch (error) {
     if (signal?.aborted) {
       throw error
