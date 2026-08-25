@@ -102,11 +102,11 @@ export const normalizeCodeforcesDifficulty = (
     return undefined
   }
 
-  if (rating <= 800) {
+  if (rating <= 1000) {
     return 'easy'
   }
 
-  if (rating <= 1800) {
+  if (rating <= 1500) {
     return 'medium'
   }
 
