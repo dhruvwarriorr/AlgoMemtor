@@ -253,7 +253,7 @@ check.
 
 ## Current implementation snapshot
 
-Last reconciled with this working tree on 2026-08-14. Re-check the roadmap,
+Last reconciled with this working tree on 2026-08-26. Re-check the roadmap,
 source, tests, and `git status` before relying on it.
 
 - Weeks 1–5: product boundary, monorepo/UI foundation, architecture migration,
@@ -263,8 +263,10 @@ source, tests, and `git status` before relying on it.
   caching, rate/error handling, freshness, and provider tests are present.
 - Week 7: Supabase frontend auth, protected learner routes, authenticated fetch,
   Express/FastAPI JWT verification, and protected catalog/API endpoints are
-  present locally. Real Supabase refresh/session restoration and external
-  callback configuration remain acceptance gaps.
+  present locally. Real login, browser refresh/session restoration, protected
+  catalog access, logout, and the exact local `/dashboard` callback were
+  verified on 2026-08-26. The production callback remains a Week 16 deployment
+  task because no production frontend URL exists yet.
 - Week 8 and later phases are not complete. Onboarding persistence, database
   migrations, durable bookmarks/progress, deterministic recommendation feeds, AI
   ranking, provider-account verification, learner memory, hardening, and

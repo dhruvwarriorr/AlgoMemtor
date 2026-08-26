@@ -7,12 +7,11 @@ from typing import Any
 
 import jwt
 import pytest
-from cryptography.hazmat.primitives.asymmetric import rsa
-from fastapi.testclient import TestClient
-
 from app import auth
 from app.auth import SupabaseJwtVerifier
 from app.main import app
+from cryptography.hazmat.primitives.asymmetric import rsa
+from fastapi.testclient import TestClient
 
 SUBJECT = "00000000-0000-4000-8000-000000000001"
 KEY_ID = "test-signing-key"

@@ -478,7 +478,7 @@ Add real identity and protected learner routes.
 
 - [x] Protected routes redirect correctly.
 - [x] APIs reject invalid tokens.
-- [ ] Refresh restores valid sessions.
+- [x] Refresh restores valid sessions.
 - [x] Service-role keys never enter React.
 
 ### Implemented authentication policy
@@ -494,15 +494,19 @@ Add real identity and protected learner routes.
   expiry, subject, and authenticated role through the project's JWKS endpoint.
   Express catalog endpoints and both `/api/me` endpoints require a bearer token.
 - Signup confirmation redirects are derived from `VITE_SITE_URL` and use the
-  exact `/dashboard` path. Local and production URLs must also be allowlisted in
-  the Supabase project's external URL Configuration.
+  exact `/dashboard` path. The local
+  `http://localhost:5173/dashboard` redirect is allowlisted in the Supabase
+  project's external URL Configuration. Add the exact production `/dashboard`
+  redirect during Week 16 when a production URL exists.
 
 Frontend, Express, and FastAPI auth tests passed on 2026-08-10. All eight learner
 routes redirected to login in a real browser, both APIs rejected live
-unauthenticated requests, and no browser-console errors were present. A real
-login followed by browser refresh and the external Supabase callback allowlist
-still require an authenticated Supabase dashboard/test-user session before the
-remaining acceptance check can be marked complete.
+unauthenticated requests, and no browser-console errors were present. On
+2026-08-26, a confirmed Supabase user completed the live login flow, browser
+refresh preserved the authenticated dashboard session, the protected Codeforces
+catalog loaded through Express, logout cleared the local session, and revisiting
+the dashboard redirected to login. The local callback allowlist was also saved
+and verified in the Supabase Dashboard.
 
 ## Week 8: Learner onboarding
 
