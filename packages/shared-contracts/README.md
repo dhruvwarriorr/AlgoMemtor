@@ -53,18 +53,40 @@ Provider-specific raw DTOs do not belong in this package. They remain inside
 their Express provider adapter. Shared contracts describe AlgoMemtor's normalized
 API only.
 
+## Learner-profile contract
+
+`learner-profile.ts` validates the editable answers from the Week 8 onboarding
+questionnaire: experience, difficulty comfort, goal and optional target, topic
+focus, practice availability, platform preferences and optional standings,
+learning preferences, and optional planning notes.
+
+Practice-platform preferences are intentionally separate from `ProviderKey`.
+They can record that a learner uses or is interested in a platform without
+claiming that AlgoMemtor currently has an approved integration for it. Provider
+linking, credentials, later diagnostic questions, and recommendation feedback
+are outside this profile contract.
+
 ## Commands
 
 ```bash
 npm run typecheck
 npm run build
+npm test
 ```
 
-
 ## problem-catalog.ts
+
     ├── validates request query parameters
     ├── validates individual problem objects
     ├── validates topic and provider objects
     ├── validates complete API responses
     ├── validates API error responses
     └── provides TypeScript types
+
+## learner-profile.ts
+
+    ├── validates first-time onboarding answers
+    ├── separates selected topics from automatic topic suggestions
+    ├── validates optional platform ratings and rankings
+    ├── permits onboarding without a linked or selected platform
+    └── provides save-request, stored-profile, and response types
