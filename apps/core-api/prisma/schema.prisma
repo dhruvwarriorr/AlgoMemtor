@@ -1,0 +1,58 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["core"]
+}
+
+model CoreUser {
+  id               String            @id @default(uuid()) @db.Uuid
+  authUserId       String            @unique @map("auth_user_id") @db.Uuid
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  learnerProfile   LearnerProfile?
+  providerAccounts ProviderAccount[]
+
+  @@map("users")
+  @@schema("core")
+}
+
+model LearnerProfile {
+  id                  String   @id @default(uuid()) @db.Uuid
+  userId              String   @unique @map("user_id") @db.Uuid
+  answers             Json     @db.JsonB
+  onboardingCompleted Boolean  @default(true) @map("onboarding_completed")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user                CoreUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("learner_profiles")
+  @@schema("core")
+}
+
+model ProviderAccount {
+  id                   String    @id @default(uuid()) @db.Uuid
+  userId               String    @map("user_id") @db.Uuid
+  provider             String    @db.VarChar(32)
+  externalHandle       String    @map("external_handle") @db.VarChar(64)
+  consentScope         String    @map("consent_scope") @db.VarChar(64)
+  verificationStatus   String    @default("not_verified") @map("verification_status") @db.VarChar(32)
+  activityAccess       String    @default("not_enabled") @map("activity_access") @db.VarChar(32)
+  publicStatsConsentAt DateTime? @map("public_stats_consent_at") @db.Timestamptz(3)
+  solvedCount          Int?      @map("solved_count")
+  statsComplete        Boolean?  @map("stats_complete")
+  statsSource          String?   @map("stats_source") @db.VarChar(64)
+  statsFetchedAt       DateTime? @map("stats_fetched_at") @db.Timestamptz(3)
+  statsAttemptedAt     DateTime? @map("stats_attempted_at") @db.Timestamptz(3)
+  statsErrorCode       String?   @map("stats_error_code") @db.VarChar(64)
+  statsErrorRetryable  Boolean?  @map("stats_error_retryable")
+  linkedAt             DateTime  @default(now()) @map("linked_at") @db.Timestamptz(3)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user                 CoreUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@map("provider_accounts")
+  @@schema("core")
+}

@@ -1,10 +1,23 @@
 import {
   ApiErrorResponseSchema,
+  DisconnectProviderAccountResponseSchema,
   ExternalProblemCatalogQueryParamsSchema,
   ExternalProblemCatalogResponseSchema,
   ExternalProblemSummarySchema,
+  LearnerProfileResponseSchema,
+  LearnerProfileSchema,
+  LinkableProviderSchema,
+  LinkProviderAccountRequestSchema,
+  ProviderAccountResponseSchema,
+  ProviderAccountSchema,
+  ProviderAccountsResponseSchema,
   ProvidersResponseSchema,
+  SaveLearnerProfileRequestSchema,
+  RefreshProviderPublicStatsRequestSchema,
   TopicsResponseSchema,
+  type LearnerProfile,
+  type LinkableProvider,
+  type ProviderAccount,
 } from '@algomemtor/shared-contracts'
 import { delay, http, HttpResponse, type RequestHandler } from 'msw'
 
@@ -13,6 +26,34 @@ import { topicFixtures } from './fixtures/topics'
 
 const mockDelayMs = 300
 const transientScenarioFailureCounts = new Map<string, number>()
+let learnerProfile: LearnerProfile | null = null
+let providerAccounts: ProviderAccount[] = []
+
+const profileUrl = (provider: LinkableProvider, handle: string) => {
+  const encodedHandle = encodeURIComponent(handle)
+
+  if (provider === 'codeforces') {
+    return `https://codeforces.com/profile/${encodedHandle}`
+  }
+
+  if (provider === 'codechef') {
+    return `https://www.codechef.com/users/${encodedHandle}`
+  }
+
+  return `https://leetcode.com/u/${encodedHandle}/`
+}
+
+const mockSolvedCounts: Record<LinkableProvider, number> = {
+  codeforces: 245,
+  codechef: 118,
+  leetcode: 176,
+}
+
+const mockStatsSources = {
+  codeforces: 'codeforces_api',
+  codechef: 'codechef_public_profile_html',
+  leetcode: 'leetcode_website_graphql',
+} as const
 
 const providersResponse = ProvidersResponseSchema.parse({
   data: [
@@ -43,6 +84,181 @@ function normalizeSearchText(value: string) {
 }
 
 export const handlers: RequestHandler[] = [
+  http.get('/api/learner-profile', () =>
+    HttpResponse.json(
+      LearnerProfileResponseSchema.parse({ data: learnerProfile }),
+    ),
+  ),
+  http.put('/api/learner-profile', async ({ request }) => {
+    const profileResult = SaveLearnerProfileRequestSchema.safeParse(
+      await request.json().catch(() => null),
+    )
+
+    if (!profileResult.success) {
+      return HttpResponse.json(
+        createApiError(
+          'INVALID_LEARNER_PROFILE',
+          'The learner profile is invalid.',
+          profileResult.error.issues,
+        ),
+        { status: 400 },
+      )
+    }
+
+    learnerProfile = LearnerProfileSchema.parse({
+      ...profileResult.data,
+      onboardingCompleted: true,
+    })
+
+    return HttpResponse.json(
+      LearnerProfileResponseSchema.parse({ data: learnerProfile }),
+    )
+  }),
+  http.get('/api/provider-accounts', () =>
+    HttpResponse.json(
+      ProviderAccountsResponseSchema.parse({ data: providerAccounts }),
+    ),
+  ),
+  http.put('/api/provider-accounts/:provider', async ({ params, request }) => {
+    const providerResult = LinkableProviderSchema.safeParse(params.provider)
+    const accountResult = LinkProviderAccountRequestSchema.safeParse(
+      await request.json().catch(() => null),
+    )
+
+    if (!providerResult.success || !accountResult.success) {
+      return HttpResponse.json(
+        createApiError(
+          'INVALID_PROVIDER_ACCOUNT',
+          'The provider account link is invalid or consent is missing.',
+          accountResult.success ? [] : accountResult.error.issues,
+        ),
+        { status: 400 },
+      )
+    }
+
+    const now = new Date().toISOString()
+    const existing = providerAccounts.find(
+      ({ provider }) => provider === providerResult.data,
+    )
+    const preserveStats =
+      existing?.handle === accountResult.data.handle && existing !== undefined
+    const account = ProviderAccountSchema.parse({
+      provider: providerResult.data,
+      handle: accountResult.data.handle,
+      profileUrl: profileUrl(providerResult.data, accountResult.data.handle),
+      consentScope: 'store_public_profile_reference',
+      verification: 'not_verified',
+      ...(preserveStats
+        ? {
+            activityAccess: existing.activityAccess,
+            ...(existing.publicStatsConsentAt === undefined
+              ? {}
+              : {
+                  publicStatsConsentAt: existing.publicStatsConsentAt,
+                }),
+            publicStats: existing.publicStats,
+          }
+        : {
+            activityAccess: 'not_enabled',
+            publicStats: { status: 'not_synced' },
+          }),
+      linkedAt: existing?.linkedAt ?? now,
+      updatedAt: now,
+    })
+    providerAccounts = [
+      ...providerAccounts.filter(
+        ({ provider }) => provider !== providerResult.data,
+      ),
+      account,
+    ]
+
+    return HttpResponse.json(
+      ProviderAccountResponseSchema.parse({ data: account }),
+    )
+  }),
+  http.delete('/api/provider-accounts/:provider', ({ params }) => {
+    const providerResult = LinkableProviderSchema.safeParse(params.provider)
+
+    if (!providerResult.success) {
+      return HttpResponse.json(
+        createApiError(
+          'UNSUPPORTED_LINK_PROVIDER',
+          'That provider cannot be disconnected.',
+          [],
+        ),
+        { status: 400 },
+      )
+    }
+
+    providerAccounts = providerAccounts.filter(
+      ({ provider }) => provider !== providerResult.data,
+    )
+
+    return HttpResponse.json(
+      DisconnectProviderAccountResponseSchema.parse({
+        data: { provider: providerResult.data },
+      }),
+    )
+  }),
+  http.post(
+    '/api/provider-accounts/:provider/public-stats/refresh',
+    async ({ params, request }) => {
+      const providerResult = LinkableProviderSchema.safeParse(params.provider)
+      const consentResult = RefreshProviderPublicStatsRequestSchema.safeParse(
+        await request.json().catch(() => null),
+      )
+      const account = providerResult.success
+        ? providerAccounts.find(
+            ({ provider }) => provider === providerResult.data,
+          )
+        : undefined
+
+      if (!providerResult.success || !consentResult.success) {
+        return HttpResponse.json(
+          createApiError(
+            'PUBLIC_STATS_CONSENT_REQUIRED',
+            'Explicit consent is required before public statistics are fetched.',
+            [],
+          ),
+          { status: 400 },
+        )
+      }
+
+      if (account === undefined) {
+        return HttpResponse.json(
+          createApiError(
+            'PROVIDER_ACCOUNT_NOT_LINKED',
+            'Link this provider account before refreshing its public statistics.',
+            { provider: providerResult.data },
+          ),
+          { status: 404 },
+        )
+      }
+
+      const now = new Date().toISOString()
+      const updatedAccount = ProviderAccountSchema.parse({
+        ...account,
+        activityAccess: 'public_solved_count',
+        publicStatsConsentAt: account.publicStatsConsentAt ?? now,
+        publicStats: {
+          status: 'available',
+          solvedCount: mockSolvedCounts[providerResult.data],
+          complete: true,
+          source: mockStatsSources[providerResult.data],
+          fetchedAt: now,
+          stale: false,
+        },
+        updatedAt: now,
+      })
+      providerAccounts = providerAccounts.map((candidate) =>
+        candidate.provider === providerResult.data ? updatedAccount : candidate,
+      )
+
+      return HttpResponse.json(
+        ProviderAccountResponseSchema.parse({ data: updatedAccount }),
+      )
+    },
+  ),
   http.get('/api/providers', () => HttpResponse.json(providersResponse)),
   http.get('/api/topics', () => HttpResponse.json(topicsResponse)),
   http.get('/api/problems', async ({ request }) => {

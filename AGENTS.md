@@ -74,9 +74,12 @@ learner profile
   statements, examples, constraints, starter code, editorials, or test cases.
 - Do not add Monaco, an embedded IDE, code execution, Judge0, internal judging,
   learner source-code storage, drafts, submissions, or verdict storage.
-- Use only official or explicitly permitted provider APIs or feeds. A missing or
-  unsuitable API means the provider is deferred; never replace it with scraping,
-  browser automation, or undocumented private endpoints.
+- Use official or explicitly permitted provider APIs or feeds for catalog data.
+  The Week 8 public solved-count exception in ADR 0002 permits the backend to
+  read the public CodeChef profile page and LeetCode website GraphQL response
+  after explicit learner consent. Never scrape problem content, use browser
+  automation, request credentials, or bypass authentication, CAPTCHA, access
+  controls, or provider blocks.
 - React never calls provider APIs directly. External access, normalization,
   caching, rate handling, and URL safety belong to Express.
 - AI ranks only a bounded candidate set supplied by deterministic backend code.
@@ -163,7 +166,9 @@ Conventions:
 - Respect timeout, retry, cache, deduplication, request-spacing, stale fallback,
   and safe-logging policies. Do not immediately retry rate-limit failures.
 - Do not log tokens, authorization headers, credentials, full provider payloads,
-  or arbitrary sensitive error details.
+  or arbitrary sensitive error details. Public-profile adapters may log only
+  provider, status, retryability, and safe aggregate counts; never log handles
+  or raw HTML/GraphQL/API responses.
 - There is no broad local barrel-export convention; do not create one for a
   single feature.
 
@@ -267,10 +272,14 @@ source, tests, and `git status` before relying on it.
   catalog access, logout, and the exact local `/dashboard` callback were
   verified on 2026-08-26. The production callback remains a Week 16 deployment
   task because no production frontend URL exists yet.
-- Week 8 and later phases are not complete. Onboarding persistence, database
-  migrations, durable bookmarks/progress, deterministic recommendation feeds, AI
-  ranking, provider-account verification, learner memory, hardening, and
-  deployment remain roadmap work unless the current source proves otherwise.
+- Week 8 is implemented locally: the editable learner profile is persisted,
+  onboarding gates protected routes, and optional Codeforces, CodeChef, and
+  LeetCode public-profile links and explicitly consented solved-count refreshes
+  are available. Real browser and provider acceptance still need to be checked
+  after any environment-specific setup. Database-backed bookmarks/progress,
+  deterministic recommendation feeds, AI ranking, provider-account
+  verification, learner memory, hardening, and deployment remain later-roadmap
+  work unless the current source proves otherwise.
 - `/recommendations` and `/bookmarks` are intentionally honest placeholders; do
   not describe them as persisted features.
 

@@ -87,8 +87,8 @@ hosts are safe. Those responsibilities stay in deterministic backend code.
 6. AI-ranked recommendations with concise reasons.
 7. Canonical outbound links with provider attribution.
 8. Bookmarks, dismissed recommendations, and the three question statuses.
-9. Optional linked-provider activity where an official API and user consent allow
-   it.
+9. Optional linked-provider public solved-count snapshots with explicit user
+   consent, using the approved narrow exception in ADR 0002.
 10. Recommendation history and basic progress based on clearly labelled evidence.
 11. Loading, empty, stale, provider-error, AI-error, and retry states.
 
@@ -100,7 +100,6 @@ hosts are safe. Those responsibilities stay in deterministic backend code.
 - Compiling or executing learner code.
 - Judge0 or a custom judge.
 - Storing drafts, source code, submissions, or verdicts.
-- Scraping HTML or using undocumented/private provider APIs.
 - Changing question status merely because the user followed its provider link.
 - Real-time contests, duels, payments, and marketplaces.
 
@@ -323,8 +322,9 @@ Before adding a provider, document:
 7. deletion or refresh obligations; and
 8. fallback behavior when the provider is unavailable.
 
-If these questions cannot be answered, the provider is not enabled. Do not
-replace a missing API with scraping.
+If these questions cannot be answered, the provider is not enabled for catalog
+or problem-content access. The public solved-count exception is separately
+documented in ADR 0002 and must remain user-triggered.
 
 ---
 
@@ -361,6 +361,8 @@ replace a missing API with scraping.
 ## 8. API Surface
 
 ```text
+GET    /api/learner-profile
+PUT    /api/learner-profile
 GET    /api/providers
 GET    /api/problems
 POST   /api/recommendations
@@ -368,7 +370,9 @@ GET    /api/recommendations/history
 POST   /api/bookmarks
 DELETE /api/bookmarks/:provider/:externalId
 PUT    /api/progress/:provider/:externalId
-POST   /api/provider-accounts/:provider/link
+GET    /api/provider-accounts
+PUT    /api/provider-accounts/:provider
+POST   /api/provider-accounts/:provider/public-stats/refresh
 DELETE /api/provider-accounts/:provider
 POST   /internal/ai/recommendations/rank
 ```
@@ -473,7 +477,6 @@ AI response is checked.
 - Allow users to disconnect providers and delete learner-owned history.
 - Attribute every external problem to its source.
 - Do not imply partnership or endorsement without permission.
-- Do not scrape around an unavailable API.
 
 ---
 

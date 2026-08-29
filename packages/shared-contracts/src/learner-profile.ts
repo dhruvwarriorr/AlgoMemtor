@@ -1,6 +1,5 @@
 import { z } from 'zod'
 
-const shortTextSchema = z.string().trim().min(1).max(160)
 const optionalNotesSchema = z.string().trim().min(1).max(1_000).optional()
 const positiveIntegerSchema = z.number().int().positive()
 
@@ -77,24 +76,13 @@ const SelectedTopicPreferenceSchema = z
       .array(OnboardingTopicSchema)
       .max(5)
       .refine(hasUniqueValues, 'Topics must not contain duplicates.'),
-    otherTopic: z.string().trim().min(1).max(80).optional(),
   })
   .strict()
-  .superRefine(({ otherTopic, topics }, context) => {
-    const selectionCount = topics.length + (otherTopic === undefined ? 0 : 1)
-
-    if (selectionCount === 0) {
+  .superRefine(({ topics }, context) => {
+    if (topics.length === 0) {
       context.addIssue({
         code: 'custom',
         message: 'Choose a topic or let AlgoMemtor suggest a starting path.',
-        path: ['topics'],
-      })
-    }
-
-    if (selectionCount > 5) {
-      context.addIssue({
-        code: 'custom',
-        message: 'Choose no more than five topics in total.',
         path: ['topics'],
       })
     }
@@ -112,25 +100,6 @@ export const TopicPreferenceSchema = z.union([
 ])
 
 export type TopicPreference = z.infer<typeof TopicPreferenceSchema>
-
-export const PracticeFrequencySchema = z.enum([
-  'one_or_two_days',
-  'three_or_four_days',
-  'five_or_six_days',
-  'every_day',
-  'varies',
-])
-
-export type PracticeFrequency = z.infer<typeof PracticeFrequencySchema>
-
-export const PracticeAvailabilitySchema = z
-  .object({
-    frequency: PracticeFrequencySchema,
-    sessionLengthMinutes: z.number().int().min(10).max(480).optional(),
-  })
-  .strict()
-
-export type PracticeAvailability = z.infer<typeof PracticeAvailabilitySchema>
 
 // These values describe learner preferences, not implemented provider adapters.
 // ProviderKeySchema remains the source of truth for integrations AlgoMemtor can use.
@@ -208,29 +177,27 @@ export const PlatformPreferencesSchema = z
 
 export type PlatformPreferences = z.infer<typeof PlatformPreferencesSchema>
 
-export const RatingTargetSchema = z
+export const PreferredTopicsSchema = z
+  .array(OnboardingTopicSchema)
+  .max(5)
+  .refine(hasUniqueValues, 'Preferred topics must not contain duplicates.')
+  .default([])
+
+export type PreferredTopics = z.infer<typeof PreferredTopicsSchema>
+
+export const RatingComfortRangeSchema = z
   .object({
     platform: RatedPracticePlatformSchema,
-    value: positiveIntegerSchema,
+    min: positiveIntegerSchema,
+    max: positiveIntegerSchema,
   })
   .strict()
-
-export type RatingTarget = z.infer<typeof RatingTargetSchema>
-
-export const LearnerTargetSchema = z
-  .object({
-    rating: RatingTargetSchema.optional(),
-    event: shortTextSchema.optional(),
-    date: z.iso.date().optional(),
+  .refine(({ max, min }) => min <= max, {
+    message: 'Minimum rating cannot be greater than maximum rating.',
+    path: ['max'],
   })
-  .strict()
-  .refine(
-    ({ date, event, rating }) =>
-      date !== undefined || event !== undefined || rating !== undefined,
-    'A target must include a rating, event, or date.',
-  )
 
-export type LearnerTarget = z.infer<typeof LearnerTargetSchema>
+export type RatingComfortRange = z.infer<typeof RatingComfortRangeSchema>
 
 export const LearningPreferenceSchema = z.enum([
   'solve_problems_directly',
@@ -249,10 +216,10 @@ const learnerProfileAnswersShape = {
   experience: ExperienceLevelSchema,
   difficultyComfort: DifficultyComfortSchema,
   goal: LearnerGoalSchema,
-  target: LearnerTargetSchema.optional(),
   topicPreference: TopicPreferenceSchema,
-  practiceAvailability: PracticeAvailabilitySchema,
+  preferredTopics: PreferredTopicsSchema,
   platformPreferences: PlatformPreferencesSchema,
+  ratingComfortRange: RatingComfortRangeSchema.optional(),
   learningPreferences: z
     .array(LearningPreferenceSchema)
     .min(1)

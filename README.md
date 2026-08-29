@@ -22,7 +22,8 @@ normalization, safe URLs, filtering, caching, rate handling, and freshness.
 - Recommend with a reason: every suggestion should say why it fits the learner.
 - Respect the source: show attribution and open the canonical external URL.
 - Store metadata, not copied problem content.
-- Prefer official or explicitly permitted APIs; do not scrape unsupported sites.
+- Prefer official or explicitly permitted APIs for problem metadata. The narrow
+  public solved-count exception is documented in ADR 0002.
 - Be honest about evidence: opening a problem is not the same as solving it.
 - Keep AI optional: filtering and outbound links must still work if AI is down.
 - Add providers through adapters so one provider cannot define the whole product.
@@ -37,8 +38,8 @@ The MVP will support:
 - AI-ranked recommendations with short, user-facing reasons;
 - canonical outbound links that open problems on their source platforms;
 - outbound-click history, bookmarks, and manual completion status;
-- optional provider-account linking when an official API permits public activity
-  verification;
+- optional provider-account linking and explicitly consented public solved-count
+  refreshes for Codeforces, CodeChef, and LeetCode;
 - evidence-backed learner preferences and progress; and
 - graceful provider and AI failure states.
 
@@ -48,7 +49,7 @@ The MVP will not include:
 - an embedded code editor or compiler;
 - Judge0 or another code-execution service;
 - code drafts or submission storage;
-- scraping, browser automation, or unofficial private APIs;
+- scraping problem content, browser automation, or unofficial private APIs;
 - claims that a redirect proves a problem was solved; or
 - real-time contests, duels, payments, or a marketplace.
 
@@ -228,6 +229,7 @@ verification.
 
 ```bash
 npm run db:up
+npm run db:migrate
 npm run db:logs
 ```
 
@@ -282,10 +284,13 @@ uv run --project apps/ai-api ruff format --check apps/ai-api
 - [MVP blueprint](docs/AlgoMemtor_MVP_Blueprint.md)
 - [Long-term product vision](docs/CP_Mentor_AI_Project_Vision.md)
 - [Foundational architecture ADR](docs/adr/0001-foundational-architecture.md)
+- [Public provider statistics ADR](docs/adr/0002-public-provider-profile-statistics.md)
 
 ## Security and compliance boundaries
 
-- Do not scrape providers or use undocumented private endpoints.
+- Do not scrape problem content or use undocumented private endpoints. The
+  narrow public solved-count exception is documented in ADR 0002 and remains
+  user-triggered, size-limited, and subject to provider review.
 - Confirm API terms, attribution rules, rate limits, and caching rules per provider.
 - Construct or validate canonical URLs on the server; never trust an arbitrary URL
   supplied by the browser or an LLM.

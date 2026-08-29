@@ -6,35 +6,9 @@ import PageHeader from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/features/auth/useAuth'
 
+import { safeReturnTo } from '@/routes/return-to'
+
 type AuthMode = 'sign-in' | 'sign-up'
-
-function requestedDestination(state: unknown): string {
-  if (!state || typeof state !== 'object' || !('from' in state)) {
-    return '/dashboard'
-  }
-
-  const { from } = state
-
-  if (!from || typeof from !== 'object' || !('pathname' in from)) {
-    return '/dashboard'
-  }
-
-  const { pathname } = from
-
-  if (
-    typeof pathname !== 'string' ||
-    !pathname.startsWith('/') ||
-    pathname.startsWith('//')
-  ) {
-    return '/dashboard'
-  }
-
-  const search =
-    'search' in from && typeof from.search === 'string' ? from.search : ''
-  const hash = 'hash' in from && typeof from.hash === 'string' ? from.hash : ''
-
-  return `${pathname}${search}${hash}`
-}
 
 function authErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) {
@@ -105,7 +79,7 @@ function LoginPage() {
       return
     }
 
-    void navigate(requestedDestination(location.state), { replace: true })
+    void navigate(safeReturnTo(location.state), { replace: true })
   }
 
   return (

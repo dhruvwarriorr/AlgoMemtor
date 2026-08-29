@@ -47,20 +47,11 @@ _Choose one._
 - Learn advanced algorithms
 - Build a consistent practice habit
 
-### 4. Do you have a specific target?
-
-_Optional. Choose any that apply._
-
-- Target rating: `__________`
-- Target contest, interview, or ICPC event: `__________`
-- Target date: `__________`
-- No specific target yet
-
 ---
 
 ## Screen 3 — Topics
 
-### 5. Which topics would you like to improve first?
+### 4. Which topics would you like to improve first?
 
 _Choose up to five. You can skip this and let AlgoMemtor suggest a starting
 path._
@@ -91,29 +82,12 @@ path._
 - Geometry
 - Combinatorics
 - Let AlgoMemtor suggest topics for me
-- Other: `__________`
 
 ---
 
-## Screen 4 — Practice availability
+## Screen 4 — Platforms and optional ratings
 
-### 6. How often do you practice problem solving per week
-
-_Choose one._
-
-- 1–2 days
-- 3–4 days
-- 5–6 days
-- Every day
-- It varies from week to week
-
-
-
----
-
-## Screen 5 — Platforms and optional ratings
-
-### 8. Which platforms do you currently use or want recommendations from? (Give the link account option)
+### 5. Which platforms do you currently use or want recommendations from?
 
 _Choose any that apply._
 
@@ -125,7 +99,7 @@ _Choose any that apply._
 - HackerRank
 - I do not use a platform yet
 
-### 9. What is your current rating on the platforms you selected?
+### 6. What is your current rating on the platforms you selected?
 
 _Optional. Show only the fields for selected platforms._
 
@@ -138,11 +112,18 @@ _Optional. Show only the fields for selected platforms._
 > Provider-profile linking is optional. A learner can finish onboarding and
 > receive recommendations without connecting an external account.
 
+If a learner chooses to link a profile, collect the provider and public handle
+only. Ask for separate consent before fetching and storing a public solved-
+problem count. Never request a password, session cookie, API key, source code,
+or private activity. Counts are provider-reported snapshots; a bounded
+Codeforces response may be shown as “at least N”, and a refresh can fail or
+become stale.
+
 ---
 
-## Screen 6 — Learning preference
+## Screen 5 — Learning preference
 
-### 10. How do you prefer to learn?
+### 7. How do you prefer to learn?
 
 _Choose any that apply._
 
@@ -155,7 +136,7 @@ _Choose any that apply._
 - Practice based on my weak areas
 - Use a mixed approach
 
-### 11. Is there anything else we should consider when planning your practice?
+### 8. Is there anything else we should consider when planning your practice?
 
 _Optional._
 

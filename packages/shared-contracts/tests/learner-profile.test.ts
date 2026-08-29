@@ -12,25 +12,22 @@ const validAnswers = {
   experience: 'intermediate',
   difficultyComfort: 'medium',
   goal: 'improve_contest_rating',
-  target: {
-    rating: { platform: 'codeforces', value: 1_600 },
-    event: 'Codeforces Round practice target',
-    date: '2026-12-31',
-  },
   topicPreference: {
     mode: 'selected',
     topics: ['graphs', 'dynamic-programming'],
   },
-  practiceAvailability: {
-    frequency: 'three_or_four_days',
-    sessionLengthMinutes: 60,
-  },
+  preferredTopics: ['strings', 'implementation'],
   platformPreferences: {
     platforms: ['codeforces', 'leetcode'],
     standings: [
       { platform: 'codeforces', metric: 'rating', value: 1_350 },
       { platform: 'leetcode', metric: 'ranking', value: 85_000 },
     ],
+  },
+  ratingComfortRange: {
+    platform: 'codeforces',
+    min: 1_200,
+    max: 1_500,
   },
   learningPreferences: ['learn_concept_then_solve', 'practice_weak_areas'],
   additionalConsiderations: 'Keep weekday sessions short.',
@@ -44,9 +41,8 @@ describe('learner profile contracts', () => {
   })
 
   it('supports topic suggestions and onboarding without a platform account', () => {
-    const { target: _target, ...answersWithoutTarget } = validAnswers
     const result = LearnerProfileAnswersSchema.parse({
-      ...answersWithoutTarget,
+      ...validAnswers,
       topicPreference: { mode: 'let_algomemtor_suggest' },
       platformPreferences: { platforms: [] },
     })
@@ -72,7 +68,7 @@ describe('learner profile contracts', () => {
           'binary-search',
           'graphs',
         ],
-        otherTopic: 'Game theory',
+        anotherTopic: 'Game theory',
       }).success,
     ).toBe(false)
   })
@@ -125,13 +121,21 @@ describe('learner profile contracts', () => {
     ).toBe(false)
   })
 
-  it('validates availability and optional text boundaries', () => {
+  it('rejects removed onboarding fields and validates optional text boundaries', () => {
+    expect(
+      LearnerProfileAnswersSchema.safeParse({
+        ...validAnswers,
+        target: { event: 'No longer collected' },
+      }).success,
+    ).toBe(false)
+
     expect(
       LearnerProfileAnswersSchema.safeParse({
         ...validAnswers,
         practiceAvailability: {
           frequency: 'every_day',
-          sessionLengthMinutes: 0,
+          weeklyMinutes: 120,
+          sessionLengthMinutes: 30,
         },
       }).success,
     ).toBe(false)

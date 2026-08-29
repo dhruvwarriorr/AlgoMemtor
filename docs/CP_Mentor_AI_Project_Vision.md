@@ -69,7 +69,6 @@ duplicating judges.
 
 ### AlgoMemtor will not
 
-- scrape unsupported sites;
 - copy or store complete problem content;
 - embed a coding editor;
 - execute user code;
@@ -223,9 +222,7 @@ tracked separately. An outbound open never changes a question's status.
 ### Feature 7 — Cross-platform practice planning
 
 As integrations mature, AlgoMemtor can balance problems across supported
-platforms. Platform diversity is valuable only when each source has a permitted,
-reliable integration. A provider is not added through scraping merely to make the
-list look larger.
+platforms.
 
 ### Feature 8 — Contest preparation and upsolving
 
@@ -322,8 +319,7 @@ statements.
 Other platforms may be desirable, including LeetCode, CodeChef, AtCoder, and
 CSES, but desire is not an integration contract. Each provider requires a current
 review of official API availability, terms, attribution, rate limits, caching,
-and user-activity access. Unsupported providers remain future candidates rather
-than being accessed through unofficial scraping.
+and user-activity access. 
 
 ---
 
@@ -334,7 +330,6 @@ than being accessed through unofficial scraping.
 - Never manufacture a completion signal.
 - Let users inspect and delete personalization data.
 - Keep recommendations explainable.
-- Prefer a smaller lawful provider set over a broad brittle scraper.
 - Keep the ordinary filter-and-redirect experience useful without AI.
 
 ---

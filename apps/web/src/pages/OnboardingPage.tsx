@@ -1,28 +1,64 @@
+import { useLocation, useNavigate } from 'react-router-dom'
+import type { SaveLearnerProfileRequest } from '@algomemtor/shared-contracts'
+
 import PageContainer from '@/components/layout/PageContainer'
 import PageHeader from '@/components/layout/PageHeader'
+import { useNotification } from '@/app/useNotification'
+import { learnerProfileErrorMessage } from '@/features/profile/api/learner-profile'
+import { LearnerProfileForm } from '@/features/profile/components/LearnerProfileForm'
+import { ProviderAccountLinks } from '@/features/profile/components/ProviderAccountLinks'
+import {
+  useLearnerProfile,
+  useSaveLearnerProfile,
+} from '@/features/profile/hooks/useLearnerProfile'
+
+import { postOnboardingDestination } from '@/routes/return-to'
 
 function OnboardingPage() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const { notify } = useNotification()
+  const profileQuery = useLearnerProfile()
+  const saveProfile = useSaveLearnerProfile()
+
+  async function handleSubmit(profile: SaveLearnerProfileRequest) {
+    await saveProfile.mutateAsync(profile)
+    notify({
+      title: 'Learner profile saved',
+      description: 'Your dashboard is ready.',
+      tone: 'success',
+    })
+    void navigate(postOnboardingDestination(location.state), { replace: true })
+  }
+
   return (
     <PageContainer>
       <PageHeader
-        description="Tell us about your goals, experience, topics, and preferred problem platforms."
-        title="Onboarding"
+        description="Tell us enough to make your first recommendations useful. You can change every answer later."
+        title="Set up your learner profile"
       />
 
-      <section
-        aria-labelledby="learning-setup-heading"
-        className="space-y-2 rounded-lg border border-border bg-card p-4 sm:p-6"
-      >
-        <h2
-          className="text-xl font-semibold tracking-tight text-foreground"
-          id="learning-setup-heading"
-        >
-          Learning Setup
-        </h2>
-        <p className="text-muted-foreground">
-          The preference-based onboarding flow will be added here later.
-        </p>
-      </section>
+      <LearnerProfileForm
+        idPrefix="onboarding-profile"
+        initialProfile={profileQuery.data?.data ?? null}
+        isLoading={profileQuery.isPending}
+        isSaving={saveProfile.isPending}
+        loadError={
+          profileQuery.isError
+            ? learnerProfileErrorMessage(profileQuery.error)
+            : null
+        }
+        onChange={() => saveProfile.reset()}
+        onRetryLoad={() => void profileQuery.refetch()}
+        onSubmit={handleSubmit}
+        saveError={
+          saveProfile.isError
+            ? learnerProfileErrorMessage(saveProfile.error)
+            : null
+        }
+        submitLabel="Complete setup"
+      />
+      <ProviderAccountLinks idPrefix="onboarding" />
     </PageContainer>
   )
 }

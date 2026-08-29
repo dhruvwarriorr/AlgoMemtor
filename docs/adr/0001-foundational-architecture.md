@@ -47,8 +47,7 @@ adapter validates the provider response, normalizes metadata, constructs or
 validates canonical URLs, respects rate and cache policy, and returns stable
 internal errors.
 
-Only official or explicitly permitted APIs/feeds may be used. A missing API is a
-reason to defer a provider, not scrape it.
+
 
 Codeforces is the reference initial adapter because its official API exposes
 problem identifiers, names, ratings, tags, and statistics suitable for
@@ -134,7 +133,6 @@ separate records. An outbound click never changes question status.
 
 ### Constraints
 
-- No HTML scraping or undocumented private APIs.
 - No open redirect accepting arbitrary destinations.
 - Canonical URLs must be constructed or allowlisted by deterministic server code.
 - Provider responses and AI outputs are untrusted.
@@ -161,10 +159,7 @@ rate-limit coordination, stable caching, response normalization, and URL safety.
 Rejected because model-selected URLs may be hallucinated, unsafe, unlicensed, or
 inconsistent. Deterministic adapters must define the candidate set.
 
-### Scrape platforms without suitable APIs
 
-Rejected because it is brittle and may violate provider rules. Such providers
-remain deferred until permitted access exists.
 
 ### A single backend service
 

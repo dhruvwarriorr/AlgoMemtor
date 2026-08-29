@@ -430,8 +430,9 @@ contract.
   retry.
 - Valid records without a safe contest/index URL are skipped and reported as
   partial results. Malformed fields are rejected before normalization.
-- Difficulty bands preserve the Week 5 mock convention: rating `800` and below
-  is `easy`, `900` through `1800` is `medium`, and `1900` and above is `hard`.
+- Difficulty bands are deterministic: an absent rating remains absent, ratings
+  at or below `1000` are `easy`, ratings above `1000` through `1500` are
+  `medium`, and ratings above `1500` are `hard`.
 - Provider freshness includes availability, fetch time, expiry time, stale
   state, and the last stable provider error code when applicable.
 - A refresh-failure cooldown serves the stale cache without making a provider
@@ -518,19 +519,30 @@ Collect enough preference data for a useful first recommendation.
 
 1. Collect goal and experience.
 2. Collect preferred/weak topics.
-3. Collect weekly time and session length.
-4. Collect preferred providers.
-5. Collect rating/difficulty comfort range.
-6. Explain optional provider linking without requiring it.
-7. Validate and persist the profile.
-8. Allow later editing.
+3. Collect preferred providers.
+4. Collect rating/difficulty comfort range.
+5. Explain optional provider linking without requiring it.
+6. Validate and persist the profile.
+7. Allow later editing.
 
 ### Acceptance checks
 
-- [ ] Onboarding works without a linked external account.
-- [ ] Required fields are understandable.
-- [ ] Completion leads to the dashboard.
-- [ ] Settings can correct the profile later.
+- [x] Onboarding works without a linked external account. The provider-linking
+  section is optional and the profile API accepts a completed profile without
+  any linked provider.
+- [x] Required fields are understandable. The shared contract validates the
+  required goal, experience, provider, and comfort inputs, while the form
+  explains the fields and validation messages.
+- [x] Completion leads to the dashboard. A saved complete profile clears the
+  onboarding gate and the form navigates to `/dashboard`.
+- [x] Settings can correct the profile later. Settings loads and saves the
+  authenticated learner's profile, and the PostgreSQL repository preserves it
+  across a disconnect/reconnect integration check.
+
+The checks above have automated and local integration evidence. A fresh
+authenticated browser pass for the updated onboarding/settings UI remains a
+manual follow-up because no signed-in Supabase browser session was available
+during this implementation run.
 
 ### Deliverable
 

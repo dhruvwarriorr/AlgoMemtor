@@ -1,92 +1,61 @@
+import { useState } from 'react'
+import type { SaveLearnerProfileRequest } from '@algomemtor/shared-contracts'
+
 import PageContainer from '@/components/layout/PageContainer'
 import PageHeader from '@/components/layout/PageHeader'
-import { Button } from '@/components/ui/button'
+import { learnerProfileErrorMessage } from '@/features/profile/api/learner-profile'
+import { LearnerProfileForm } from '@/features/profile/components/LearnerProfileForm'
+import { ProviderAccountLinks } from '@/features/profile/components/ProviderAccountLinks'
+import {
+  useLearnerProfile,
+  useSaveLearnerProfile,
+} from '@/features/profile/hooks/useLearnerProfile'
 
 function SettingPage() {
+  const profileQuery = useLearnerProfile()
+  const saveProfile = useSaveLearnerProfile()
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
+
+  async function handleSubmit(profile: SaveLearnerProfileRequest) {
+    setSuccessMessage(null)
+    await saveProfile.mutateAsync(profile)
+    setSuccessMessage('Your learner profile changes have been saved.')
+  }
+
+  function handleChange() {
+    setSuccessMessage(null)
+    saveProfile.reset()
+  }
+
   return (
     <PageContainer>
       <PageHeader
-        description="Manage your profile and preferences."
+        description="Update the answers AlgoMemtor uses to personalize recommendations. Your sign-in email is managed separately by Supabase Auth."
         title="Settings"
       />
 
-      <form
-        className="flex w-full max-w-2xl min-w-0 flex-col gap-6"
-        onSubmit={(event) => event.preventDefault()}
-      >
-        <section
-          aria-labelledby="settings-profile-heading"
-          className="flex min-w-0 flex-col gap-4 rounded-lg border border-border bg-card p-4 sm:p-6"
-        >
-          <h2
-            className="text-xl font-semibold tracking-tight text-foreground"
-            id="settings-profile-heading"
-          >
-            Profile
-          </h2>
-
-          <div className="flex min-w-0 flex-col gap-2">
-            <label
-              className="text-sm font-medium text-foreground"
-              htmlFor="name"
-            >
-              Name
-            </label>
-            <input
-              autoComplete="name"
-              className="h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 text-base text-foreground outline-none transition-shadow focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
-              id="name"
-              name="name"
-              type="text"
-            />
-          </div>
-
-          <div className="flex min-w-0 flex-col gap-2">
-            <label
-              className="text-sm font-medium text-foreground"
-              htmlFor="settings-email"
-            >
-              Email
-            </label>
-            <input
-              autoComplete="email"
-              className="h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 text-base text-foreground outline-none transition-shadow focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
-              id="settings-email"
-              name="email"
-              type="email"
-            />
-          </div>
-        </section>
-
-        <section
-          aria-labelledby="preferences-heading"
-          className="flex min-w-0 flex-col gap-4 rounded-lg border border-border bg-card p-4 sm:p-6"
-        >
-          <h2
-            className="text-xl font-semibold tracking-tight text-foreground"
-            id="preferences-heading"
-          >
-            Preferences
-          </h2>
-          <label className="flex min-w-0 items-start gap-3 text-sm text-foreground">
-            <input
-              className="mt-0.5 size-4 shrink-0 rounded border-input accent-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-              name="emailNotifications"
-              type="checkbox"
-            />
-            <span className="min-w-0 break-words">
-              Receive email notifications
-            </span>
-          </label>
-        </section>
-
-        <Button
-          className="min-h-11 w-full sm:w-auto sm:self-start"
-          type="submit"
-        >
-          Save changes
-        </Button>
-      </form>
+      <LearnerProfileForm
+        idPrefix="settings-profile"
+        initialProfile={profileQuery.data?.data ?? null}
+        isLoading={profileQuery.isPending}
+        isSaving={saveProfile.isPending}
+        loadError={
+          profileQuery.isError
+            ? learnerProfileErrorMessage(profileQuery.error)
+            : null
+        }
+        onChange={handleChange}
+        onRetryLoad={() => void profileQuery.refetch()}
+        onSubmit={handleSubmit}
+        saveError={
+          saveProfile.isError
+            ? learnerProfileErrorMessage(saveProfile.error)
+            : null
+        }
+        submitLabel="Save profile changes"
+        successMessage={successMessage}
+      />
+      <ProviderAccountLinks idPrefix="settings" />
     </PageContainer>
   )
 }

@@ -95,7 +95,7 @@ AlgoMemtor is not:
 - an online IDE;
 - a compiler or judge;
 - a submission proxy; or
-- a scraper for platforms without a permitted API.
+
 
 ## 2.3 Core product loop
 
@@ -129,9 +129,10 @@ Onboard learner
 ### Account and onboarding
 
 - Email registration and login.
-- Goal, experience, preferred topics, and weekly target.
+- Goal, experience, preferred topics, and learning preferences.
 - Preferred providers and difficulty range.
-- Optional public handle or provider authorization with consent.
+- Optional public handle with consent, plus a separate user-triggered public
+  solved-count refresh.
 
 ### Problem discovery
 
@@ -163,7 +164,6 @@ Onboard learner
 - Draft and source-code storage.
 - Internal submissions or verdicts.
 - Hidden test cases.
-- HTML scraping and unofficial private endpoints.
 - Recreated contests or platform judges.
 - Automatic verification based only on a click.
 - Payments, marketplaces, duels, and complex multi-agent orchestration.
@@ -614,8 +614,11 @@ Current normalization rules are deterministic:
 - normalized topics are safe slugs, with documented aliases such as
   `dfs and similar`, `shortest paths`, and `graph matchings` to `graphs`;
 - Codeforces rating is preserved as `providerDifficulty`;
-- ratings through `800` are `easy`, `900` through `1800` are `medium`, and
-  ratings from `1900` are `hard`, matching the Week 5 mock convention;
+- normalized difficulty is derived deterministically from the provider rating:
+  - an absent rating remains absent (`undefined`);
+  - ratings less than or equal to `1000` are `easy`;
+  - ratings greater than `1000` and less than or equal to `1500` are `medium`;
+  - ratings greater than `1500` are `hard`;
 - statistics join on contest ID and normalized problem index; and
 - only a positive contest ID and alphanumeric problem index can produce
   `https://codeforces.com/problemset/problem/{contestId}/{index}`.
@@ -680,6 +683,23 @@ request from attempting another provider refresh during the outage.
 
 ## 11.2 Endpoints
 
+### Learner profile
+
+```text
+GET /api/learner-profile
+PUT /api/learner-profile
+```
+
+Both endpoints require a verified Supabase bearer token. Express derives profile
+ownership from the verified JWT subject and never accepts a learner ID from the
+request body. `GET` returns `data: null` until a profile exists; `PUT` validates
+the shared learner-profile contract and returns the saved profile.
+
+The production server uses Prisma against the PostgreSQL `core` schema. The
+app factory still defaults to process-local storage for fast API tests; that
+test double does not survive a core API restart. The migration and reconnect
+acceptance test cover the durable path.
+
 ### Providers and discovery
 
 ```text
@@ -710,8 +730,9 @@ PUT    /api/progress/:provider/:externalId
 ### Provider accounts
 
 ```text
-POST   /api/provider-accounts/:provider/link
-POST   /api/provider-accounts/:provider/sync
+GET    /api/provider-accounts
+PUT    /api/provider-accounts/:provider
+POST   /api/provider-accounts/:provider/public-stats/refresh
 DELETE /api/provider-accounts/:provider
 ```
 
@@ -753,7 +774,6 @@ async function recommend(input, userId) {
 FastAPI and the LLM must not:
 
 - browse arbitrary problem sites;
-- scrape statements;
 - invent or transform untrusted outbound URLs;
 - execute learner code;
 - claim an unverified solve; or
@@ -870,8 +890,8 @@ Use one PostgreSQL database with separate ownership:
 
 ### `core.learner_profiles`
 
-Stores goal, experience, preferred topics/providers, difficulty range, weekly
-target, and onboarding completion.
+Stores goal, experience, preferred topics/providers, difficulty range, learning
+preferences, and onboarding completion.
 
 ### `core.provider_accounts`
 
@@ -1149,11 +1169,9 @@ smoke testing.
 
 ## 19.2 Provider rules
 
-- Use official or explicitly permitted APIs.
 - Review terms before implementation and periodically afterward.
 - Respect attribution, rate, caching, and deletion requirements.
 - Identify AlgoMemtor appropriately when a provider requires it.
-- Do not bypass restrictions by scraping, proxying, or browser automation.
 - Disable a provider if continued use becomes non-compliant.
 
 ## 19.3 AI safety
@@ -1323,10 +1341,6 @@ and normalization inconsistent. Call through Express.
 
 The model may hallucinate or return unsafe destinations. Give it validated
 candidates and attach URLs after validation.
-
-## Scraping because a provider lacks an API
-
-A missing permitted API means the provider is deferred, not scraped.
 
 ## Copying statements into fixtures
 

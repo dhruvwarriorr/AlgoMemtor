@@ -12,6 +12,11 @@ import {
   structuredLogger,
   type StructuredLogger,
 } from '../../utils/structured-logger.js'
+import {
+  RequestGate,
+  sleepWithSignal,
+  type RequestGateSleep,
+} from '../../utils/request-gate.js'
 import { filterProblems } from '../providers/problem-filters.js'
 import type {
   ProblemProvider,
@@ -31,8 +36,6 @@ import {
   type CodeforcesProblemStatistics,
 } from './codeforces-schemas.js'
 import { createCodeforcesProblemUrl } from './codeforces-url.js'
-
-type Sleep = (milliseconds: number, signal?: AbortSignal) => Promise<void>
 
 type CacheEntry = {
   problems: ExternalProblemSummary[]
@@ -59,27 +62,9 @@ export type CodeforcesProviderOptions = {
   logger?: StructuredLogger
   now?: () => number
   random?: () => number
-  sleep?: Sleep
+  sleep?: RequestGateSleep
+  requestGate?: RequestGate
 }
-
-const defaultSleep: Sleep = (milliseconds, signal) =>
-  new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(signal.reason)
-      return
-    }
-
-    const timeout = setTimeout(resolve, milliseconds)
-
-    signal?.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timeout)
-        reject(signal.reason)
-      },
-      { once: true },
-    )
-  })
 
 const invalidResponseError = () =>
   new ProviderError('Codeforces returned an invalid response.', {
@@ -102,18 +87,17 @@ export class CodeforcesProvider implements ProblemProvider {
   private readonly cacheTtlMs: number
   private readonly timeoutMs: number
   private readonly maxAttempts: number
-  private readonly minRequestIntervalMs: number
   private readonly retryBaseDelayMs: number
   private readonly failureCooldownMs: number
   private readonly fetchImpl: typeof fetch
   private readonly logger: StructuredLogger
   private readonly now: () => number
   private readonly random: () => number
-  private readonly sleep: Sleep
+  private readonly sleep: RequestGateSleep
+  private readonly requestGate: RequestGate
 
   private cache?: CacheEntry
   private refreshPromise: Promise<CacheEntry> | undefined
-  private nextRequestAtMs = 0
   private refreshBlockedUntilMs = 0
   private lastRefreshErrorCode: string | undefined
   private health: ProviderFreshness = {
@@ -132,21 +116,28 @@ export class CodeforcesProvider implements ProblemProvider {
     this.cacheTtlMs = options.cacheTtlMs ?? 3_600_000
     this.timeoutMs = options.timeoutMs ?? 8000
     this.maxAttempts = options.maxAttempts ?? 2
-    this.minRequestIntervalMs = options.minRequestIntervalMs ?? 2100
+    const minRequestIntervalMs = options.minRequestIntervalMs ?? 2100
     this.retryBaseDelayMs = options.retryBaseDelayMs ?? 250
     this.failureCooldownMs = options.failureCooldownMs ?? 30_000
     this.fetchImpl = options.fetchImpl ?? fetch
     this.logger = options.logger ?? structuredLogger
     this.now = options.now ?? Date.now
     this.random = options.random ?? Math.random
-    this.sleep = options.sleep ?? defaultSleep
+    this.sleep = options.sleep ?? sleepWithSignal
+    this.requestGate =
+      options.requestGate ??
+      new RequestGate({
+        minIntervalMs: minRequestIntervalMs,
+        now: this.now,
+        sleep: this.sleep,
+      })
 
     if (
       this.endpoint.protocol !== 'https:' ||
       this.cacheTtlMs <= 0 ||
       this.timeoutMs <= 0 ||
       this.maxAttempts < 1 ||
-      this.minRequestIntervalMs < 0 ||
+      minRequestIntervalMs < 0 ||
       this.retryBaseDelayMs < 0 ||
       this.failureCooldownMs < 0
     ) {
@@ -429,21 +420,11 @@ export class CodeforcesProvider implements ProblemProvider {
   }
 
   private async waitForProviderSlot(signal?: AbortSignal) {
-    if (signal?.aborted) {
+    try {
+      await this.requestGate.wait(signal)
+    } catch {
       throw requestAbortedError()
     }
-
-    const waitMs = Math.max(0, this.nextRequestAtMs - this.now())
-
-    if (waitMs > 0) {
-      try {
-        await this.sleep(waitMs, signal)
-      } catch {
-        throw requestAbortedError()
-      }
-    }
-
-    this.nextRequestAtMs = this.now() + this.minRequestIntervalMs
   }
 
   private async fetchOnce(signal?: AbortSignal) {
