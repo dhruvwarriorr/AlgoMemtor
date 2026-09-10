@@ -1,13 +1,22 @@
-import { useCallback, useMemo, useState, type PropsWithChildren } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PropsWithChildren,
+} from 'react'
 
 import {
   NotificationContext,
   type NotificationInput,
 } from './notification-context'
-
-type Notification = NotificationInput & {
-  id: string
-}
+import {
+  appendNotification,
+  removeNotification,
+  scheduleNotificationExpiry,
+  type Notification,
+} from './notification-utils'
 
 const toneClasses = {
   info: 'border-border bg-background text-foreground',
@@ -17,22 +26,68 @@ const toneClasses = {
 
 export function NotificationProvider({ children }: PropsWithChildren) {
   const [notifications, setNotifications] = useState<Notification[]>([])
+  const timers = useRef(
+    new Map<string, ReturnType<typeof scheduleNotificationExpiry>>(),
+  )
 
   const remove = useCallback((id: string) => {
-    setNotifications((current) =>
-      current.filter((notification) => notification.id !== id),
-    )
+    const timer = timers.current.get(id)
+
+    if (timer !== undefined) {
+      clearTimeout(timer)
+      timers.current.delete(id)
+    }
+
+    setNotifications((current) => removeNotification(current, id))
   }, [])
 
   const notify = useCallback((notification: NotificationInput) => {
-    setNotifications((current) => [
-      ...current,
-      {
-        ...notification,
-        id: crypto.randomUUID(),
-        tone: notification.tone ?? 'info',
-      },
-    ])
+    const nextNotification: Notification = {
+      ...notification,
+      id: crypto.randomUUID(),
+      tone: notification.tone ?? 'info',
+    }
+
+    setNotifications((current) => appendNotification(current, nextNotification))
+  }, [])
+
+  useEffect(() => {
+    const activeIds = new Set(
+      notifications.map((notification) => notification.id),
+    )
+
+    for (const notification of notifications) {
+      if (timers.current.has(notification.id)) {
+        continue
+      }
+
+      const timer = scheduleNotificationExpiry(() => {
+        timers.current.delete(notification.id)
+        setNotifications((current) =>
+          removeNotification(current, notification.id),
+        )
+      })
+
+      timers.current.set(notification.id, timer)
+    }
+
+    for (const [id, timer] of timers.current) {
+      if (!activeIds.has(id)) {
+        clearTimeout(timer)
+        timers.current.delete(id)
+      }
+    }
+  }, [notifications])
+
+  useEffect(() => {
+    const activeTimers = timers.current
+
+    return () => {
+      for (const timer of activeTimers.values()) {
+        clearTimeout(timer)
+      }
+      activeTimers.clear()
+    }
   }, [])
 
   const value = useMemo(() => ({ notify }), [notify])

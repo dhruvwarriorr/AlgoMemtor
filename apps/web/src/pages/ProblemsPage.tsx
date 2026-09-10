@@ -88,7 +88,6 @@ function ProblemsPage() {
       <div className="min-w-0 space-y-4">
         <ProblemCatalog
           isFetching={catalogQuery.isFetching}
-          isPartial={catalog.meta.partial}
           problems={catalog.data}
           warnings={catalog.meta.warnings}
         />
