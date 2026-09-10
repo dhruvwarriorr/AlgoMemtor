@@ -11,6 +11,12 @@ import {
   ProviderAccountResponseSchema,
   ProviderAccountSchema,
   ProviderAccountsResponseSchema,
+  RecommendationDismissalResponseSchema,
+  RecommendationDismissalsResponseSchema,
+  RecommendationFeedbackInputSchema,
+  RecommendationFeedbackResponseSchema,
+  RecommendationFeedResponseSchema,
+  RecommendationRestorationResponseSchema,
   ProvidersResponseSchema,
   SaveLearnerProfileRequestSchema,
   RefreshProviderPublicStatsRequestSchema,
@@ -28,6 +34,15 @@ const mockDelayMs = 300
 const transientScenarioFailureCounts = new Map<string, number>()
 let learnerProfile: LearnerProfile | null = null
 let providerAccounts: ProviderAccount[] = []
+const dismissedRecommendationIds = new Set<string>()
+const recommendationFeedback = new Map<
+  string,
+  {
+    usefulness?: 'useful' | 'not_useful'
+    perceivedDifficulty?: 'too_easy' | 'about_right' | 'too_hard'
+  }
+>()
+let recommendationGeneration = 0
 
 const profileUrl = (provider: LinkableProvider, handle: string) => {
   const encodedHandle = encodeURIComponent(handle)
@@ -68,6 +83,68 @@ const providersResponse = ProvidersResponseSchema.parse({
 const topicsResponse = TopicsResponseSchema.parse({
   data: topicFixtures,
 })
+
+const recommendationItemId = (index: number) =>
+  `00000000-0000-4000-8000-${String(index + 100).padStart(12, '0')}`
+
+const recommendationProblems = () =>
+  problemFixtures.filter(
+    (problem) =>
+      problem.learnerStatus !== 'solved' &&
+      !dismissedRecommendationIds.has(
+        `${problem.provider}:${problem.externalId}`,
+      ),
+  )
+
+const recommendationResponse = () => {
+  const generatedAt = new Date().toISOString()
+  const items = recommendationProblems()
+    .slice(0, 10)
+    .map((problem, index) => {
+      const id = recommendationItemId(index)
+      const feedback = recommendationFeedback.get(id)
+
+      return {
+        id,
+        provider: problem.provider,
+        externalId: problem.externalId,
+        position: index + 1,
+        score: Number((0.9 - index * 0.01).toFixed(6)),
+        reason:
+          index % 2 === 0
+            ? 'Practises a topic from your current recommendation path.'
+            : 'Fits the difficulty range selected for your practice.',
+        problem,
+        ...(feedback === undefined
+          ? {}
+          : {
+              feedback: {
+                id,
+                recommendationItemId: id,
+                ...feedback,
+                createdAt: generatedAt,
+                updatedAt: generatedAt,
+              },
+            }),
+      }
+    })
+
+  return RecommendationFeedResponseSchema.parse({
+    data: {
+      id: `00000000-0000-4000-8000-${String(500 + recommendationGeneration).padStart(12, '0')}`,
+      generatedAt,
+      rankingMode: 'deterministic',
+      rankingVersion: 'deterministic-v1',
+      items,
+    },
+    meta: {
+      partial: false,
+      stale: false,
+      warnings: [],
+      providers: [],
+    },
+  })
+}
 
 function createApiError(code: string, message: string, details: unknown) {
   return ApiErrorResponseSchema.parse({
@@ -261,6 +338,117 @@ export const handlers: RequestHandler[] = [
   ),
   http.get('/api/providers', () => HttpResponse.json(providersResponse)),
   http.get('/api/topics', () => HttpResponse.json(topicsResponse)),
+  http.get('/api/recommendations', async () => {
+    await delay(mockDelayMs)
+    return HttpResponse.json(recommendationResponse())
+  }),
+  http.post('/api/recommendations/refresh', async () => {
+    await delay(mockDelayMs)
+    recommendationGeneration += 1
+    return HttpResponse.json(recommendationResponse())
+  }),
+  http.patch(
+    '/api/recommendation-items/:itemId/feedback',
+    async ({ params, request }) => {
+      const itemId = String(params.itemId)
+      const inputResult = RecommendationFeedbackInputSchema.safeParse(
+        await request.json().catch(() => null),
+      )
+
+      if (!inputResult.success) {
+        return HttpResponse.json(
+          createApiError(
+            'INVALID_RECOMMENDATION_FEEDBACK',
+            'The recommendation feedback is invalid.',
+            inputResult.error.issues,
+          ),
+          { status: 400 },
+        )
+      }
+
+      const current = recommendationFeedback.get(itemId) ?? {}
+      const next = { ...current, ...inputResult.data }
+      recommendationFeedback.set(itemId, next)
+      const now = new Date().toISOString()
+
+      return HttpResponse.json(
+        RecommendationFeedbackResponseSchema.parse({
+          data: {
+            id: itemId,
+            recommendationItemId: itemId,
+            ...next,
+            createdAt: now,
+            updatedAt: now,
+          },
+        }),
+      )
+    },
+  ),
+  http.post('/api/recommendation-items/:itemId/dismiss', ({ params }) => {
+    const item = recommendationProblems().find(
+      (problem) =>
+        recommendationItemId(recommendationProblems().indexOf(problem)) ===
+        params.itemId,
+    )
+
+    if (item === undefined) {
+      return HttpResponse.json(
+        createApiError(
+          'RECOMMENDATION_ITEM_NOT_FOUND',
+          'The recommendation item could not be found.',
+          {},
+        ),
+        { status: 404 },
+      )
+    }
+
+    dismissedRecommendationIds.add(`${item.provider}:${item.externalId}`)
+    return HttpResponse.json(
+      RecommendationDismissalResponseSchema.parse({
+        data: {
+          provider: item.provider,
+          externalId: item.externalId,
+          dismissedAt: new Date().toISOString(),
+          problem: item,
+        },
+      }),
+    )
+  }),
+  http.get('/api/recommendation-dismissals', () =>
+    HttpResponse.json(
+      RecommendationDismissalsResponseSchema.parse({
+        data: [...dismissedRecommendationIds].map((key) => {
+          const separator = key.indexOf(':')
+          const provider = key.slice(0, separator)
+          const externalId = key.slice(separator + 1)
+          const problem = problemFixtures.find(
+            (candidate) =>
+              `${candidate.provider}:${candidate.externalId}` === key,
+          )
+
+          return {
+            provider,
+            externalId,
+            dismissedAt: new Date().toISOString(),
+            ...(problem === undefined ? {} : { problem }),
+          }
+        }),
+      }),
+    ),
+  ),
+  http.delete(
+    '/api/recommendation-dismissals/:provider/:externalId',
+    ({ params }) => {
+      const provider = String(params.provider)
+      const externalId = String(params.externalId)
+      dismissedRecommendationIds.delete(`${provider}:${externalId}`)
+      return HttpResponse.json(
+        RecommendationRestorationResponseSchema.parse({
+          data: { provider, externalId, restored: true },
+        }),
+      )
+    },
+  ),
   http.get('/api/problems', async ({ request }) => {
     await delay(mockDelayMs)
 

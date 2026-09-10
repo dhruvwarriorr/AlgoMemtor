@@ -9,6 +9,8 @@ import {
   LinkProviderAccountRequestSchema,
   ProviderAccountResponseSchema,
   ProviderAccountsResponseSchema,
+  RecommendationFeedbackInputSchema,
+  RecommendationRestorationResponseSchema,
   RefreshProviderPublicStatsRequestSchema,
   SaveLearnerProfileRequestSchema,
 } from '@algomemtor/shared-contracts'
@@ -19,6 +21,7 @@ import express, {
   type Response,
 } from 'express'
 import helmet from 'helmet'
+import { z } from 'zod'
 
 import { requireAuth } from './auth/require-auth.js'
 import type {
@@ -41,10 +44,23 @@ import {
   type LearnerProfileRepository,
 } from './repositories/learner-profile-repository.js'
 import {
+  InMemoryProblemActionRepository,
+  type ProblemActionRepository,
+} from './repositories/problem-action-repository.js'
+import {
+  InMemoryRecommendationRepository,
+  RecommendationOwnershipError,
+  type RecommendationRepository,
+} from './repositories/recommendation-repository.js'
+import {
   InMemoryProviderAccountRepository,
   type ProviderAccountRepository,
 } from './repositories/provider-account-repository.js'
 import { ProblemCatalogService } from './services/problem-catalog-service.js'
+import {
+  RecommendationNotFoundError,
+  RecommendationService,
+} from './services/recommendation-service.js'
 import {
   ProviderAccountChangedError,
   ProviderAccountNotLinkedError,
@@ -59,6 +75,8 @@ import {
 export type CreateAppOptions = {
   jwtVerifier?: SupabaseJwtVerifier
   learnerProfileRepository?: LearnerProfileRepository
+  problemActionRepository?: ProblemActionRepository
+  recommendationRepository?: RecommendationRepository
   providerAccountRepository?: ProviderAccountRepository
   providerPublicStatsFetchers?: readonly ProviderPublicStatsFetcher[]
   problemProvider?: ProblemProvider
@@ -94,6 +112,20 @@ const providerMessage = (error: ProviderError) => {
   return 'Codeforces is temporarily unavailable.'
 }
 
+const respondWithProviderError = (error: unknown, response: Response) => {
+  if (!(error instanceof ProviderError)) {
+    return false
+  }
+
+  response.status(providerStatusCode(error)).json(
+    createApiError(error.code, providerMessage(error), {
+      retryable: error.retryable,
+      details: { provider: error.provider },
+    }),
+  )
+  return true
+}
+
 const createApiError = (
   code: string,
   message: string,
@@ -109,6 +141,20 @@ const createApiError = (
       ...(options.details === undefined ? {} : { details: options.details }),
     },
   })
+
+const pathParam = (request: Request, name: string) => {
+  const value = request.params[name]
+
+  return typeof value === 'string' ? value : undefined
+}
+
+const recommendationItemIdSchema = z.uuid()
+const recommendationExternalIdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(128)
+  .regex(/^\S+$/)
 
 const defaultProvider = () => {
   const config = readCodeforcesProviderConfig()
@@ -185,6 +231,16 @@ export const createApp = (options: CreateAppOptions = {}) => {
     options.learnerProfileRepository ?? new InMemoryLearnerProfileRepository()
   const providerAccountRepository =
     options.providerAccountRepository ?? new InMemoryProviderAccountRepository()
+  const problemActionRepository =
+    options.problemActionRepository ?? new InMemoryProblemActionRepository()
+  const recommendationRepository =
+    options.recommendationRepository ?? new InMemoryRecommendationRepository()
+  const recommendationService = new RecommendationService({
+    provider,
+    learnerProfileRepository,
+    problemActionRepository,
+    recommendationRepository,
+  })
   const providerAccountStatsService = new ProviderAccountStatsService({
     repository: providerAccountRepository,
     fetchers:
@@ -529,6 +585,252 @@ export const createApp = (options: CreateAppOptions = {}) => {
       throw error
     }
   })
+
+  app.get(
+    '/api/recommendations',
+    requireAuthenticated,
+    async (_request, response) => {
+      try {
+        response.json(
+          await recommendationService.getFeed(authenticatedSubject(response)),
+        )
+      } catch (error) {
+        if (!respondWithProviderError(error, response)) {
+          throw error
+        }
+      }
+    },
+  )
+
+  app.post(
+    '/api/recommendations/refresh',
+    requireAuthenticated,
+    async (_request, response) => {
+      try {
+        response.json(
+          await recommendationService.getFeed(
+            authenticatedSubject(response),
+            true,
+          ),
+        )
+      } catch (error) {
+        if (!respondWithProviderError(error, response)) {
+          throw error
+        }
+      }
+    },
+  )
+
+  app.patch(
+    '/api/recommendation-items/:itemId/feedback',
+    requireAuthenticated,
+    async (request, response) => {
+      const inputResult = RecommendationFeedbackInputSchema.safeParse(
+        request.body,
+      )
+
+      if (!inputResult.success) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'INVALID_RECOMMENDATION_FEEDBACK',
+              'The recommendation feedback is invalid.',
+              { details: inputResult.error.issues },
+            ),
+          )
+        return
+      }
+
+      const itemId = pathParam(request, 'itemId')
+
+      if (
+        itemId === undefined ||
+        !recommendationItemIdSchema.safeParse(itemId).success
+      ) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'INVALID_RECOMMENDATION_ITEM',
+              'The recommendation item ID is invalid.',
+            ),
+          )
+        return
+      }
+
+      try {
+        response.json(
+          await recommendationService.saveFeedback(
+            authenticatedSubject(response),
+            itemId,
+            inputResult.data,
+          ),
+        )
+      } catch (error) {
+        if (respondWithProviderError(error, response)) {
+          return
+        }
+
+        if (error instanceof RecommendationOwnershipError) {
+          response
+            .status(404)
+            .json(
+              createApiError(
+                'RECOMMENDATION_ITEM_NOT_FOUND',
+                'The recommendation item could not be found for this learner.',
+              ),
+            )
+          return
+        }
+
+        if (error instanceof RecommendationNotFoundError) {
+          response
+            .status(404)
+            .json(
+              createApiError('RECOMMENDATION_ITEM_NOT_FOUND', error.message),
+            )
+          return
+        }
+
+        throw error
+      }
+    },
+  )
+
+  app.post(
+    '/api/recommendation-items/:itemId/dismiss',
+    requireAuthenticated,
+    async (request, response) => {
+      const itemId = pathParam(request, 'itemId')
+
+      if (
+        itemId === undefined ||
+        !recommendationItemIdSchema.safeParse(itemId).success
+      ) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'INVALID_RECOMMENDATION_ITEM',
+              'The recommendation item ID is invalid.',
+            ),
+          )
+        return
+      }
+
+      try {
+        response.json(
+          await recommendationService.dismiss(
+            authenticatedSubject(response),
+            itemId,
+          ),
+        )
+      } catch (error) {
+        if (respondWithProviderError(error, response)) {
+          return
+        }
+
+        if (error instanceof RecommendationNotFoundError) {
+          response
+            .status(404)
+            .json(
+              createApiError('RECOMMENDATION_ITEM_NOT_FOUND', error.message),
+            )
+          return
+        }
+
+        throw error
+      }
+    },
+  )
+
+  app.get(
+    '/api/recommendation-dismissals',
+    requireAuthenticated,
+    async (_request, response) => {
+      try {
+        response.json(
+          await recommendationService.listDismissals(
+            authenticatedSubject(response),
+          ),
+        )
+      } catch (error) {
+        if (!respondWithProviderError(error, response)) {
+          throw error
+        }
+      }
+    },
+  )
+
+  app.delete(
+    '/api/recommendation-dismissals/:provider/:externalId',
+    requireAuthenticated,
+    async (request, response) => {
+      const providerResult = LinkableProviderSchema.safeParse(
+        request.params.provider,
+      )
+
+      if (!providerResult.success || providerResult.data !== 'codeforces') {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'UNSUPPORTED_RECOMMENDATION_PROVIDER',
+              'That provider cannot be restored from recommendations.',
+            ),
+          )
+        return
+      }
+
+      const externalId = pathParam(request, 'externalId')
+
+      if (
+        externalId === undefined ||
+        !recommendationExternalIdSchema.safeParse(externalId).success
+      ) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'INVALID_RECOMMENDATION_ITEM',
+              'The recommendation problem ID is invalid.',
+            ),
+          )
+        return
+      }
+
+      try {
+        response.json(
+          RecommendationRestorationResponseSchema.parse({
+            data: await recommendationService.restore(
+              authenticatedSubject(response),
+              providerResult.data,
+              externalId,
+            ),
+          }),
+        )
+      } catch (error) {
+        if (respondWithProviderError(error, response)) {
+          return
+        }
+
+        if (error instanceof RecommendationNotFoundError) {
+          response
+            .status(404)
+            .json(
+              createApiError(
+                'RECOMMENDATION_DISMISSAL_NOT_FOUND',
+                error.message,
+              ),
+            )
+          return
+        }
+
+        throw error
+      }
+    },
+  )
 
   app.use(
     (

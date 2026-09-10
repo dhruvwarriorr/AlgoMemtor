@@ -639,12 +639,19 @@ Weights are a starting hypothesis, not truth. Record them and measure feedback.
 
 ### Acceptance checks
 
-- [ ] Recommendations work without FastAPI or an LLM.
-- [ ] Every item has an understandable reason.
-- [ ] Dismissed items do not immediately return.
-- [ ] Difficulty preferences affect ranking.
-- [ ] Cold-start users receive safe starter problems.
-- [ ] Results are reproducible for the same inputs.
+- [x] Recommendations work without FastAPI or an LLM.
+- [x] Every item has an understandable reason.
+- [x] Dismissed items do not immediately return.
+- [x] Difficulty preferences affect ranking.
+- [x] Cold-start users receive safe starter problems.
+- [x] Results are reproducible for the same inputs.
+
+The Week 10 baseline is implemented as `deterministic-v1`. Shared contract
+validation, ranking unit tests, API ownership/feedback/dismissal tests, the
+Codeforces topic-alias tests, and the recommendation card test pass locally.
+Live PostgreSQL migration deployment and authenticated browser QA remain
+environment-dependent follow-ups when the local database and Supabase session
+are available.
 
 ### Deliverable
 

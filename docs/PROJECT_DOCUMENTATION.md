@@ -303,13 +303,21 @@ React
 
 ```text
 React
-  -> POST /api/recommendations
+  -> GET /api/recommendations
   -> Express loads profile and candidate metadata
-  -> deterministic filters remove unsuitable candidates
-  -> FastAPI ranks candidate IDs and writes reasons
-  -> Express validates AI output and attaches canonical URLs
+  -> deterministic-v1 filters and ranks candidates
+  -> Express validates persisted batch IDs and attaches current metadata
   -> React renders attributed cards
 ```
+
+The Week 10 baseline also exposes `POST /api/recommendations/refresh` for an
+explicit new batch. Feedback is recorded through
+`PATCH /api/recommendation-items/:itemId/feedback`. Dismissal state is
+append-only: `POST /api/recommendation-items/:itemId/dismiss` records a
+dismissal, `GET /api/recommendation-dismissals` lists active dismissals, and
+`DELETE /api/recommendation-dismissals/:provider/:externalId` restores one.
+The persisted ranking version is `deterministic-v1`; no FastAPI or LLM is
+required for this flow.
 
 ## 6.3 Outbound navigation
 
@@ -714,9 +722,12 @@ accepts an arbitrary destination URL.
 ### Recommendations
 
 ```text
-POST /api/recommendations
-GET  /api/recommendations/history
-POST /api/recommendations/:id/feedback
+GET    /api/recommendations
+POST   /api/recommendations/refresh
+PATCH  /api/recommendation-items/:itemId/feedback
+POST   /api/recommendation-items/:itemId/dismiss
+GET    /api/recommendation-dismissals
+DELETE /api/recommendation-dismissals/:provider/:externalId
 ```
 
 ### Learner actions

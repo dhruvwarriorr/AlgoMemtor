@@ -64,6 +64,29 @@ describe('normalizeCodeforcesProblems', () => {
     ])
   })
 
+  it('maps Codeforces aliases to the onboarding topic vocabulary', () => {
+    const result = CodeforcesProblemsetResultSchema.parse({
+      problems: [
+        {
+          contestId: 3000,
+          index: 'C',
+          name: 'Alias topics',
+          type: 'PROGRAMMING',
+          tags: ['dp', 'bitmasks', 'dfs and similar', 'shortest paths'],
+        },
+      ],
+      problemStatistics: [],
+    })
+
+    expect(normalizeCodeforcesProblems(result)[0]?.topics).toEqual([
+      'dynamic-programming',
+      'bit-manipulation',
+      'graphs',
+      'bfs-and-dfs',
+      'shortest-paths',
+    ])
+  })
+
   it('normalizes custom problemset IDs and joins index-only statistics', () => {
     const result = CodeforcesProblemsetResultSchema.parse({
       problems: [

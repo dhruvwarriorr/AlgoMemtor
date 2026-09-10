@@ -30,6 +30,7 @@ export const RecommendationRequestCriteriaSchema = z
     minRating: z.number().finite().nonnegative().optional(),
     maxRating: z.number().finite().nonnegative().optional(),
     pageSize: z.number().int().positive().max(100).optional(),
+    profileSignature: z.string().trim().min(1).max(128).optional(),
   })
   .strict()
   .refine(
@@ -183,6 +184,10 @@ export interface RecommendationRepository {
   listBatchesByAuthUserId(
     authUserId: string,
   ): Promise<RecommendationBatchRecord[]>
+  findItemByAuthUserId(
+    authUserId: string,
+    recommendationItemId: string,
+  ): Promise<RecommendationItemOwnershipRecord | null>
   saveFeedbackByAuthUserId(
     authUserId: string,
     recommendationItemId: string,
@@ -191,6 +196,13 @@ export interface RecommendationRepository {
   listFeedbackByAuthUserId(
     authUserId: string,
   ): Promise<RecommendationFeedbackRecord[]>
+}
+
+export type RecommendationItemOwnershipRecord = {
+  id: string
+  batchId: string
+  provider: 'codeforces'
+  externalId: string
 }
 
 const requestCriteriaToDatabase = (
@@ -208,6 +220,9 @@ const requestCriteriaToDatabase = (
     ? {}
     : { maxRating: criteria.maxRating }),
   ...(criteria.pageSize === undefined ? {} : { pageSize: criteria.pageSize }),
+  ...(criteria.profileSignature === undefined
+    ? {}
+    : { profileSignature: criteria.profileSignature }),
 })
 
 const recommendationBatchFromDatabase = (record: {
@@ -320,6 +335,25 @@ export class InMemoryRecommendationRepository implements RecommendationRepositor
       .map((batch) => recommendationBatchRecordSchema.parse(batch))
   }
 
+  async findItemByAuthUserId(authUserId: string, recommendationItemId: string) {
+    const ownerId = authUserIdSchema.parse(authUserId)
+    const itemId = identifierSchema.parse(recommendationItemId)
+    const item = (this.batchesByAuthUserId.get(ownerId) ?? [])
+      .flatMap((batch) =>
+        batch.items.map((candidate) => ({ batch, candidate })),
+      )
+      .find(({ candidate }) => candidate.id === itemId)
+
+    return item === undefined
+      ? null
+      : {
+          id: item.candidate.id,
+          batchId: item.batch.id,
+          provider: item.candidate.provider,
+          externalId: item.candidate.externalId,
+        }
+  }
+
   async saveFeedbackByAuthUserId(
     authUserId: string,
     recommendationItemId: string,
@@ -345,12 +379,20 @@ export class InMemoryRecommendationRepository implements RecommendationRepositor
       id: existing?.id ?? randomUUID(),
       recommendationItemId: itemId,
       ...(parsed.usefulness === undefined
-        ? {}
+        ? existing?.usefulness === undefined
+          ? {}
+          : { usefulness: existing.usefulness }
         : { usefulness: parsed.usefulness }),
       ...(parsed.perceivedDifficulty === undefined
-        ? {}
+        ? existing?.perceivedDifficulty === undefined
+          ? {}
+          : { perceivedDifficulty: existing.perceivedDifficulty }
         : { perceivedDifficulty: parsed.perceivedDifficulty }),
-      ...(parsed.notes === undefined ? {} : { notes: parsed.notes }),
+      ...(parsed.notes === undefined
+        ? existing?.notes === undefined
+          ? {}
+          : { notes: existing.notes }
+        : { notes: parsed.notes }),
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     })
@@ -426,6 +468,34 @@ export class PrismaRecommendationRepository implements RecommendationRepository 
     return records.map(recommendationBatchFromDatabase)
   }
 
+  async findItemByAuthUserId(authUserId: string, recommendationItemId: string) {
+    const ownerId = authUserIdSchema.parse(authUserId)
+    const itemId = identifierSchema.parse(recommendationItemId)
+    const item = await this.prisma.recommendationItem.findFirst({
+      where: {
+        id: itemId,
+        batch: { user: { authUserId: ownerId } },
+      },
+      select: {
+        id: true,
+        batchId: true,
+        provider: true,
+        externalId: true,
+      },
+    })
+
+    if (item === null) {
+      return null
+    }
+
+    return {
+      id: item.id,
+      batchId: item.batchId,
+      provider: ProviderKeySchema.parse(item.provider),
+      externalId: item.externalId,
+    }
+  }
+
   async saveFeedbackByAuthUserId(
     authUserId: string,
     recommendationItemId: string,
@@ -447,6 +517,20 @@ export class PrismaRecommendationRepository implements RecommendationRepository 
         throw new RecommendationOwnershipError()
       }
 
+      const existing = await transaction.recommendationFeedback.findUnique({
+        where: {
+          userId_recommendationItemId: {
+            userId: item.batch.userId,
+            recommendationItemId: item.id,
+          },
+        },
+        select: {
+          usefulness: true,
+          perceivedDifficulty: true,
+          notes: true,
+        },
+      })
+
       return transaction.recommendationFeedback.upsert({
         where: {
           userId_recommendationItemId: {
@@ -462,9 +546,10 @@ export class PrismaRecommendationRepository implements RecommendationRepository 
           notes: parsed.notes ?? null,
         },
         update: {
-          usefulness: parsed.usefulness ?? null,
-          perceivedDifficulty: parsed.perceivedDifficulty ?? null,
-          notes: parsed.notes ?? null,
+          usefulness: parsed.usefulness ?? existing?.usefulness ?? null,
+          perceivedDifficulty:
+            parsed.perceivedDifficulty ?? existing?.perceivedDifficulty ?? null,
+          notes: parsed.notes ?? existing?.notes ?? null,
         },
       })
     })

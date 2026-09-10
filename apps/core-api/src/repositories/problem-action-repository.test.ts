@@ -57,6 +57,22 @@ describe('InMemoryProblemActionRepository', () => {
     })
   })
 
+  it('records a dismissal restoration as an append-only action', async () => {
+    const repository = new InMemoryProblemActionRepository()
+
+    const action = await repository.appendByAuthUserId(firstUserId, {
+      provider: 'codeforces',
+      externalId: '1900D',
+      actionType: 'dismissal_restored',
+    })
+
+    expect(action).toMatchObject({
+      actionType: 'dismissal_restored',
+      provider: 'codeforces',
+      externalId: '1900D',
+    })
+  })
+
   it.each([
     {
       actionType: 'status_changed',

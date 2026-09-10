@@ -9,6 +9,9 @@ const prismaSchema = readWorkspaceFile('../../prisma/schema.prisma')
 const coreMigration = readWorkspaceFile(
   '../../prisma/migrations/20260910010000_week9_core_schema/migration.sql',
 )
+const week10Migration = readWorkspaceFile(
+  '../../prisma/migrations/20260910020000_week10_recommendation_actions/migration.sql',
+)
 const seedSource = readWorkspaceFile('../../prisma/seed.ts')
 const alembicEnvironment = readWorkspaceFile('../../../ai-api/alembic/env.py')
 const aiBaseline = readWorkspaceFile(
@@ -98,6 +101,18 @@ describe('Week 9 database schema boundaries', () => {
     )
     expect(coreMigration).toMatch(
       /evidence_source IN \('manual', 'provider_verified'\)/,
+    )
+  })
+
+  it('allows dismissal restoration without deleting action history', () => {
+    expect(week10Migration).toContain(
+      "'dismissal_restored'",
+    )
+    expect(week10Migration).toContain(
+      'DROP CONSTRAINT problem_actions_action_type_check',
+    )
+    expect(week10Migration).toContain(
+      'ADD CONSTRAINT problem_actions_action_type_check',
     )
   })
 

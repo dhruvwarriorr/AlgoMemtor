@@ -19,6 +19,7 @@ export const ProblemActionTypeSchema = z.enum([
   'bookmarked',
   'unbookmarked',
   'dismissed',
+  'dismissal_restored',
   'status_changed',
 ])
 

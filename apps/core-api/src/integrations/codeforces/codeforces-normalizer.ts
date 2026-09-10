@@ -75,12 +75,17 @@ const toTopicSlug = (tag: string) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
 
-const codeforcesTopicAliases: Readonly<Record<string, string>> = {
+const codeforcesTopicAliases: Readonly<
+  Record<string, string | readonly string[]>
+> = {
   'binary-search': 'binary-search',
-  'dfs-and-similar': 'graphs',
+  bitmasks: 'bit-manipulation',
+  'dfs-and-similar': ['graphs', 'bfs-and-dfs'],
+  dp: 'dynamic-programming',
+  dsu: 'disjoint-set-union',
   'graph-matchings': 'graphs',
   graphs: 'graphs',
-  'shortest-paths': 'graphs',
+  'shortest-paths': ['graphs', 'shortest-paths'],
   'string-suffix-structures': 'strings',
   strings: 'strings',
   trees: 'trees',
@@ -92,7 +97,8 @@ export const normalizeCodeforcesTopics = (tags: string[]) =>
     normalizeCodeforcesTags(tags)
       .map(toTopicSlug)
       .filter(Boolean)
-      .map((topic) => codeforcesTopicAliases[topic] ?? topic),
+      .flatMap((topic) => codeforcesTopicAliases[topic] ?? topic)
+      .flatMap((topic) => (Array.isArray(topic) ? topic : [topic])),
   )
 
 export const normalizeCodeforcesDifficulty = (

@@ -12,8 +12,10 @@ import { CodeChefPublicStatsFetcher } from './integrations/provider-accounts/cod
 import { CodeforcesPublicStatsFetcher } from './integrations/provider-accounts/codeforces-public-stats.js'
 import { LeetCodePublicStatsFetcher } from './integrations/provider-accounts/leetcode-public-stats.js'
 import { PrismaLearnerProfileRepository } from './repositories/learner-profile-repository.js'
+import { PrismaProblemActionRepository } from './repositories/problem-action-repository.js'
 import { PrismaExternalProblemCacheRepository } from './repositories/external-problem-cache-repository.js'
 import { PrismaProviderAccountRepository } from './repositories/provider-account-repository.js'
+import { PrismaRecommendationRepository } from './repositories/recommendation-repository.js'
 import { RequestGate } from './utils/request-gate.js'
 import { structuredLogger } from './utils/structured-logger.js'
 
@@ -37,6 +39,8 @@ const app = createApp({
     logger: structuredLogger,
   }),
   learnerProfileRepository: new PrismaLearnerProfileRepository(prisma),
+  problemActionRepository: new PrismaProblemActionRepository(prisma),
+  recommendationRepository: new PrismaRecommendationRepository(prisma),
   providerAccountRepository: new PrismaProviderAccountRepository(prisma),
   providerPublicStatsFetchers: [
     new CodeforcesPublicStatsFetcher({

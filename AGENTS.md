@@ -281,14 +281,20 @@ source, tests, and `git status` before relying on it.
   Alembic has a separate `ai` schema baseline, normalized-topic seeding is
   idempotent, the Codeforces metadata cache is durable, and owner-scoped
   repositories cover bookmarks, actions, recommendation history, and feedback.
-  Bookmark/progress APIs and UI, deterministic recommendation feeds, AI ranking,
-  provider-account verification, learner memory, hardening, and deployment
-  remain later-roadmap work unless the current source proves otherwise.
-- `/recommendations` and `/bookmarks` are intentionally honest placeholders; do
-  not describe them as persisted features.
+  The PostgreSQL migration and reconnect checks pass locally; deployment still
+  requires an available database.
+- Week 10 is implemented locally: `deterministic-v1` ranking fetches through
+  the provider gateway, persists ten-item batches, explains score factors,
+  supports feedback, and maintains append-only dismissal/restore actions.
+  The recommendations page has refresh, stale/partial/empty/error states,
+  feedback controls, and a managed dismissed-problem list. Authenticated
+  browser QA remains environment-dependent when a Supabase session is absent.
+- Bookmark/progress APIs and UI, AI ranking, provider-account verification,
+  learner memory, hardening, and deployment remain later-roadmap work unless
+  the current source proves otherwise.
 
 Important: this snapshot describes the working tree, which currently contains
-uncommitted Week 6/7 work. It is context, not permission to commit or rewrite it.
+uncommitted Week 10 work. It is context, not permission to commit or rewrite it.
 
 ## Environment and local development
 
