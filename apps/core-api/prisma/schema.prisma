@@ -9,18 +9,22 @@ datasource db {
 }
 
 model CoreUser {
-  id               String            @id @default(uuid()) @db.Uuid
-  authUserId       String            @unique @map("auth_user_id") @db.Uuid
-  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
-  learnerProfile   LearnerProfile?
-  providerAccounts ProviderAccount[]
+  id                     String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  authUserId             String                   @unique @map("auth_user_id") @db.Uuid
+  createdAt              DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  learnerProfile         LearnerProfile?
+  providerAccounts       ProviderAccount[]
+  bookmarks              Bookmark[]
+  recommendationBatches  RecommendationBatch[]
+  problemActions         ProblemAction[]
+  recommendationFeedback RecommendationFeedback[]
 
   @@map("users")
   @@schema("core")
 }
 
 model LearnerProfile {
-  id                  String   @id @default(uuid()) @db.Uuid
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId              String   @unique @map("user_id") @db.Uuid
   answers             Json     @db.JsonB
   onboardingCompleted Boolean  @default(true) @map("onboarding_completed")
@@ -33,7 +37,7 @@ model LearnerProfile {
 }
 
 model ProviderAccount {
-  id                   String    @id @default(uuid()) @db.Uuid
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId               String    @map("user_id") @db.Uuid
   provider             String    @db.VarChar(32)
   externalHandle       String    @map("external_handle") @db.VarChar(64)
@@ -54,5 +58,130 @@ model ProviderAccount {
 
   @@unique([userId, provider])
   @@map("provider_accounts")
+  @@schema("core")
+}
+
+model NormalizedTopic {
+  id        String   @id @db.VarChar(96)
+  slug      String   @unique @db.VarChar(64)
+  name      String   @db.VarChar(128)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("normalized_topics")
+  @@schema("core")
+}
+
+model ExternalProblemCache {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  provider             String   @db.VarChar(32)
+  externalId           String   @map("external_id") @db.VarChar(128)
+  title                String   @db.VarChar(512)
+  canonicalUrl         String   @map("canonical_url") @db.VarChar(2048)
+  providerDifficulty   Json?    @map("provider_difficulty") @db.JsonB
+  normalizedDifficulty String?  @map("normalized_difficulty") @db.VarChar(16)
+  providerTags         String[] @map("provider_tags")
+  normalizedTopics     String[] @map("normalized_topics")
+  publicStats          Json?    @map("public_stats") @db.JsonB
+  availability         String   @db.VarChar(16)
+  fetchedAt            DateTime @map("fetched_at") @db.Timestamptz(3)
+  expiresAt            DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([provider, externalId])
+  @@index([expiresAt])
+  @@index([provider, expiresAt])
+  @@index([normalizedTopics], type: Gin)
+  @@index([providerTags], type: Gin)
+  @@map("external_problem_cache")
+  @@schema("core")
+}
+
+model Bookmark {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  provider   String   @db.VarChar(32)
+  externalId String   @map("external_id") @db.VarChar(128)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  user       CoreUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider, externalId])
+  @@index([userId, createdAt])
+  @@map("bookmarks")
+  @@schema("core")
+}
+
+model RecommendationBatch {
+  id              String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String               @map("user_id") @db.Uuid
+  requestCriteria Json                 @map("request_criteria") @db.JsonB
+  rankingMode     String               @map("ranking_mode") @db.VarChar(24)
+  rankingVersion  String?              @map("ranking_version") @db.VarChar(64)
+  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  user            CoreUser             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items           RecommendationItem[]
+  actions         ProblemAction[]
+
+  @@index([userId, createdAt])
+  @@map("recommendation_batches")
+  @@schema("core")
+}
+
+model RecommendationItem {
+  id         String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  batchId    String                   @map("batch_id") @db.Uuid
+  provider   String                   @db.VarChar(32)
+  externalId String                   @map("external_id") @db.VarChar(128)
+  position   Int
+  score      Float?
+  reason     String                   @db.VarChar(512)
+  createdAt  DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  batch      RecommendationBatch      @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  feedback   RecommendationFeedback[]
+
+  @@unique([batchId, provider, externalId], map: "recommendation_items_batch_provider_external_id_key")
+  @@unique([batchId, position], map: "recommendation_items_batch_position_key")
+  @@index([provider, externalId])
+  @@map("recommendation_items")
+  @@schema("core")
+}
+
+model ProblemAction {
+  id                    String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                String               @map("user_id") @db.Uuid
+  provider              String               @db.VarChar(32)
+  externalId            String               @map("external_id") @db.VarChar(128)
+  actionType            String               @map("action_type") @db.VarChar(32)
+  learnerStatus         String?              @map("learner_status") @db.VarChar(16)
+  evidenceSource        String?              @map("evidence_source") @db.VarChar(32)
+  recommendationBatchId String?              @map("recommendation_batch_id") @db.Uuid
+  occurredAt            DateTime             @default(now()) @map("occurred_at") @db.Timestamptz(3)
+  user                  CoreUser             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recommendationBatch   RecommendationBatch? @relation(fields: [recommendationBatchId], references: [id], onDelete: SetNull)
+
+  @@index([userId, provider, externalId, occurredAt])
+  @@index([userId, actionType, occurredAt])
+  @@index([recommendationBatchId])
+  @@map("problem_actions")
+  @@schema("core")
+}
+
+model RecommendationFeedback {
+  id                   String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId               String             @map("user_id") @db.Uuid
+  recommendationItemId String             @map("recommendation_item_id") @db.Uuid
+  usefulness           String?            @db.VarChar(16)
+  perceivedDifficulty  String?            @map("perceived_difficulty") @db.VarChar(24)
+  notes                String?            @db.Text
+  createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user                 CoreUser           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recommendationItem   RecommendationItem @relation(fields: [recommendationItemId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, recommendationItemId], map: "recommendation_feedback_user_item_key")
+  @@index([userId, createdAt])
+  @@index([recommendationItemId])
+  @@map("recommendation_feedback")
   @@schema("core")
 }

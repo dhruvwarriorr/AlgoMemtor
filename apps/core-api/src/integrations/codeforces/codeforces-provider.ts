@@ -24,6 +24,7 @@ import type {
   ProblemProviderSearchResult,
   ProviderProblemQuery,
 } from '../providers/problem-provider.js'
+import type { ProblemMetadataCache } from '../providers/problem-metadata-cache.js'
 import {
   normalizeCodeforcesDifficulty,
   normalizeCodeforcesProblems,
@@ -64,6 +65,7 @@ export type CodeforcesProviderOptions = {
   random?: () => number
   sleep?: RequestGateSleep
   requestGate?: RequestGate
+  metadataCache?: ProblemMetadataCache
 }
 
 const invalidResponseError = () =>
@@ -95,8 +97,11 @@ export class CodeforcesProvider implements ProblemProvider {
   private readonly random: () => number
   private readonly sleep: RequestGateSleep
   private readonly requestGate: RequestGate
+  private readonly metadataCache: ProblemMetadataCache | undefined
 
   private cache?: CacheEntry
+  private metadataCacheLoaded = false
+  private metadataCacheLoadPromise: Promise<void> | undefined
   private refreshPromise: Promise<CacheEntry> | undefined
   private refreshBlockedUntilMs = 0
   private lastRefreshErrorCode: string | undefined
@@ -131,6 +136,7 @@ export class CodeforcesProvider implements ProblemProvider {
         now: this.now,
         sleep: this.sleep,
       })
+    this.metadataCache = options.metadataCache
 
     if (
       this.endpoint.protocol !== 'https:' ||
@@ -163,6 +169,7 @@ export class CodeforcesProvider implements ProblemProvider {
   }
 
   private async loadCatalog(request: ProblemProviderRequest) {
+    await this.loadPersistedCatalog(request)
     const now = this.now()
 
     if (this.cache !== undefined && now < this.cache.expiresAtMs) {
@@ -226,6 +233,7 @@ export class CodeforcesProvider implements ProblemProvider {
       this.refreshBlockedUntilMs = 0
       this.lastRefreshErrorCode = undefined
       this.health = this.createFreshness(cache, false)
+      this.persistCatalog(cache, request)
       return cache
     })
 
@@ -236,6 +244,93 @@ export class CodeforcesProvider implements ProblemProvider {
     } finally {
       this.refreshPromise = undefined
     }
+  }
+
+  private async loadPersistedCatalog(request: ProblemProviderRequest) {
+    if (this.metadataCacheLoaded || this.metadataCache === undefined) {
+      return
+    }
+
+    if (this.metadataCacheLoadPromise === undefined) {
+      this.metadataCacheLoadPromise = this.metadataCache
+        .findByProvider(this.key)
+        .then((persisted) => {
+          if (persisted === null || this.cache !== undefined) {
+            return
+          }
+
+          this.cache = {
+            problems: persisted.problems,
+            warnings:
+              persisted.availability !== 'available'
+                ? [
+                    ProviderWarningSchema.parse({
+                      provider: this.key,
+                      code: 'PARTIAL_DATA',
+                      message:
+                        'Showing cached Codeforces metadata with partial provider results.',
+                    }),
+                  ]
+                : [],
+            fetchedAtMs: persisted.fetchedAtMs,
+            expiresAtMs:
+              persisted.availability === 'unavailable'
+                ? Math.min(persisted.expiresAtMs, this.now())
+                : persisted.expiresAtMs,
+          }
+
+          this.logger.info('provider_persistent_cache_loaded', {
+            provider: this.key,
+            cacheStatus: this.now() < persisted.expiresAtMs ? 'fresh' : 'stale',
+            resultCount: persisted.problems.length,
+            ...(request.requestId === undefined
+              ? {}
+              : { requestId: request.requestId }),
+          })
+        })
+        .catch(() => {
+          this.logger.warn('provider_persistent_cache_read_failed', {
+            provider: this.key,
+            ...(request.requestId === undefined
+              ? {}
+              : { requestId: request.requestId }),
+          })
+        })
+        .finally(() => {
+          this.metadataCacheLoaded = true
+          this.metadataCacheLoadPromise = undefined
+        })
+    }
+
+    await this.metadataCacheLoadPromise
+  }
+
+  private persistCatalog(cache: CacheEntry, request: ProblemProviderRequest) {
+    if (this.metadataCache === undefined) {
+      return
+    }
+
+    const metadataCache = this.metadataCache
+
+    void Promise.resolve()
+      .then(() =>
+        metadataCache.replaceProviderCatalog({
+          provider: this.key,
+          problems: cache.problems,
+          availability: this.health.availability,
+          fetchedAtMs: cache.fetchedAtMs,
+          expiresAtMs: cache.expiresAtMs,
+        }),
+      )
+      .catch(() => {
+        this.logger.warn('provider_persistent_cache_write_failed', {
+          provider: this.key,
+          cacheStatus: 'fresh',
+          ...(request.requestId === undefined
+            ? {}
+            : { requestId: request.requestId }),
+        })
+      })
   }
 
   private async refresh(
@@ -356,6 +451,10 @@ export class CodeforcesProvider implements ProblemProvider {
 
     const validatedProblems =
       ExternalProblemSummarySchema.array().parse(normalizedProblems)
+
+    if (validatedProblems.length === 0) {
+      throw invalidResponseError()
+    }
 
     this.logger.info('provider_refresh_succeeded', {
       provider: this.key,

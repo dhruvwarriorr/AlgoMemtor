@@ -580,11 +580,22 @@ problem content.
 
 ### Acceptance checks
 
-- [ ] No table stores statements, tests, drafts, or submissions.
-- [ ] Prisma and Alembic never own the same table.
-- [ ] Learners can access only their own records.
-- [ ] Metadata rows deduplicate correctly.
-- [ ] Seed scripts can run safely more than once.
+- [x] No table stores statements, tests, drafts, or submissions.
+- [x] Prisma and Alembic never own the same table.
+- [x] Learners can access only their own records.
+- [x] Metadata rows deduplicate correctly.
+- [x] Seed scripts can run safely more than once.
+
+The Week 9 migration and repository checks passed on 2026-09-10. Prisma owns
+the `core` tables and Alembic has a separate baseline for the `ai` schema with a
+distinct version table. Owner-scoped repository tests cover bookmarks, actions,
+recommendation history, and feedback, including rejected cross-learner
+references. A disposable PostgreSQL database verified fresh migration order,
+repeat migration safety, metadata replacement without duplicate identities,
+durability across reconnects, and two consecutive normalized-topic seed runs.
+The provider gateway now hydrates and refreshes the permitted metadata cache;
+failed cache reads or writes remain non-fatal and stale data is identified
+honestly.
 
 ### Deliverable
 

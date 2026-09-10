@@ -120,10 +120,11 @@ describe('normalizeCodeforcesDifficulty', () => {
   it.each([
     [undefined, undefined],
     [800, 'easy'],
-    [900, 'medium'],
+    [1000, 'easy'],
+    [1001, 'medium'],
     [1200, 'medium'],
-    [1800, 'medium'],
-    [1900, 'hard'],
+    [1500, 'medium'],
+    [1501, 'hard'],
   ] as const)('maps %s to %s', (rating, expected) => {
     expect(normalizeCodeforcesDifficulty(rating)).toBe(expected)
   })

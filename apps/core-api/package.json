@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "prisma:generate": "prisma generate",
+    "prisma:seed": "prisma db seed",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "postinstall": "prisma generate",

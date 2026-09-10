@@ -230,8 +230,15 @@ verification.
 ```bash
 npm run db:up
 npm run db:migrate
+npm run db:seed
 npm run db:logs
 ```
+
+`db:migrate` applies Prisma's `core` migrations first, then Alembic's `ai`
+baseline. Keep that order for a new database. Prisma records its history in
+`public._prisma_migrations`; Alembic uses the distinct
+`public.ai_alembic_version` table and owns only objects in the `ai` schema.
+`db:seed` safely upserts the normalized topic vocabulary and can be run again.
 
 Stop it with:
 
@@ -273,6 +280,7 @@ npm run test
 npm run lint
 npm run format:check
 npm run build
+uv run --project apps/ai-api pytest apps/ai-api/tests
 uv run --project apps/ai-api ruff check apps/ai-api
 uv run --project apps/ai-api ruff format --check apps/ai-api
 ```

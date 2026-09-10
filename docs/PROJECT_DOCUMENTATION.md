@@ -893,16 +893,25 @@ Use one PostgreSQL database with separate ownership:
 Stores goal, experience, preferred topics/providers, difficulty range, learning
 preferences, and onboarding completion.
 
+### `core.normalized_topics`
+
+Stores the stable normalized topic vocabulary used by filtering, profiles, and
+later recommendation logic. The seed uses deterministic IDs and upserts by slug,
+so repeating it does not create duplicates.
+
 ### `core.provider_accounts`
 
-| Column            | Purpose                                 |
-| ----------------- | --------------------------------------- |
-| `user_id`         | Owner                                   |
-| `provider`        | Approved provider key                   |
-| `external_handle` | Public or authorized account identifier |
-| `consent_scope`   | What AlgoMemtor may read                |
-| `last_synced_at`  | Last successful activity sync           |
-| `status`          | active/error/disconnected               |
+| Column                    | Purpose                                       |
+| ------------------------- | --------------------------------------------- |
+| `user_id`                 | Owner                                         |
+| `provider`                | Approved provider key                         |
+| `external_handle`         | Public account identifier                     |
+| `consent_scope`           | What AlgoMemtor may retain                    |
+| `activity_access`         | Whether public solved-count access is enabled |
+| `public_stats_consent_at` | Time of explicit public-statistics consent    |
+| `solved_count`            | Last permitted public solved count            |
+| `stats_fetched_at`        | Last successful statistics refresh            |
+| `stats_error_code`        | Stable provider error, when present           |
 
 Never store provider secrets in plaintext columns.
 
@@ -919,31 +928,45 @@ Never store provider secrets in plaintext columns.
 | `provider_tags`         | Provider-native tags              |
 | `normalized_topics`     | AlgoMemtor topics                 |
 | `public_stats`          | Permitted public metadata         |
+| `availability`          | available/degraded/unavailable    |
 | `fetched_at`            | Retrieval time                    |
 | `expires_at`            | Cache expiry                      |
 
 Primary uniqueness is `(provider, external_id)`. There are no statement,
 examples, constraints, starter-code, editorial, or test-case columns.
 
+### `core.bookmarks`
+
+Stores the learner's current saved-problem set. Uniqueness on
+`(user_id, provider, external_id)` makes repeated saves idempotent.
+
 ### `core.problem_actions`
 
-Stores bookmarks, recommendation dismissals, outbound opens, status changes,
-and supporting evidence. Question status is always `unsolved`, `attempted`, or
-`solved`. Keep append-only evidence where practical.
+Stores append-only recommendation impressions, bookmark/dismiss events,
+outbound opens, and status changes. Question status is always `unsolved`,
+`attempted`, or `solved`; status changes require a separate `manual` or
+`provider_verified` evidence source. An outbound open remains only an `opened`
+event.
 
-### `core.verified_activity`
+### `core.verified_activity` (planned for Week 13)
 
 Stores provider-confirmed activity with provider event ID or another deduplication
 key, verification time, and minimal evidence required for audit.
 
 ### `core.recommendation_batches`
 
-Stores request criteria, selected external IDs, ranking mode (AI or fallback), and
-creation time.
+Stores validated request criteria, ranking mode/version, and creation time.
+`core.recommendation_items` stores the bounded ordered external problem IDs,
+scores, and concise reasons for each batch.
 
 ### `core.recommendation_feedback`
 
 Stores useful/not-useful, too-easy/too-hard, and optional learner notes.
+
+Every learner-owned repository resolves the verified Supabase subject to an
+internal `core.users.id` and scopes reads and mutations to that owner. Feedback
+and action references to recommendation records are accepted only when the
+referenced record belongs to the same learner.
 
 ## 14.2 AI tables
 
@@ -960,6 +983,11 @@ learner event.
 
 Stores model/version, supplied candidate IDs, returned IDs, fallback state, and
 latency. Avoid storing unnecessary private prompt text.
+
+The AI tables above are later-roadmap work. Week 9 establishes only the `ai`
+schema and Alembic history. Prisma applies `core` migrations before Alembic on a
+fresh database. Their bookkeeping tables are also distinct:
+`public._prisma_migrations` and `public.ai_alembic_version`.
 
 ## 14.3 Removed old-model concepts
 

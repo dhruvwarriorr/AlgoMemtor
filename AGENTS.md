@@ -258,7 +258,7 @@ check.
 
 ## Current implementation snapshot
 
-Last reconciled with this working tree on 2026-08-26. Re-check the roadmap,
+Last reconciled with this working tree on 2026-09-10. Re-check the roadmap,
 source, tests, and `git status` before relying on it.
 
 - Weeks 1–5: product boundary, monorepo/UI foundation, architecture migration,
@@ -276,10 +276,14 @@ source, tests, and `git status` before relying on it.
   onboarding gates protected routes, and optional Codeforces, CodeChef, and
   LeetCode public-profile links and explicitly consented solved-count refreshes
   are available. Real browser and provider acceptance still need to be checked
-  after any environment-specific setup. Database-backed bookmarks/progress,
-  deterministic recommendation feeds, AI ranking, provider-account
-  verification, learner memory, hardening, and deployment remain later-roadmap
-  work unless the current source proves otherwise.
+  after any environment-specific setup.
+- Week 9 is implemented locally: Prisma owns the expanded `core` schema,
+  Alembic has a separate `ai` schema baseline, normalized-topic seeding is
+  idempotent, the Codeforces metadata cache is durable, and owner-scoped
+  repositories cover bookmarks, actions, recommendation history, and feedback.
+  Bookmark/progress APIs and UI, deterministic recommendation feeds, AI ranking,
+  provider-account verification, learner memory, hardening, and deployment
+  remain later-roadmap work unless the current source proves otherwise.
 - `/recommendations` and `/bookmarks` are intentionally honest placeholders; do
   not describe them as persisted features.
 

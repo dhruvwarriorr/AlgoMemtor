@@ -12,6 +12,7 @@ import { CodeChefPublicStatsFetcher } from './integrations/provider-accounts/cod
 import { CodeforcesPublicStatsFetcher } from './integrations/provider-accounts/codeforces-public-stats.js'
 import { LeetCodePublicStatsFetcher } from './integrations/provider-accounts/leetcode-public-stats.js'
 import { PrismaLearnerProfileRepository } from './repositories/learner-profile-repository.js'
+import { PrismaExternalProblemCacheRepository } from './repositories/external-problem-cache-repository.js'
 import { PrismaProviderAccountRepository } from './repositories/provider-account-repository.js'
 import { RequestGate } from './utils/request-gate.js'
 import { structuredLogger } from './utils/structured-logger.js'
@@ -23,6 +24,7 @@ const codeforcesConfig = readCodeforcesProviderConfig()
 const codeforcesRequestGate = new RequestGate({
   minIntervalMs: codeforcesConfig.minRequestIntervalMs,
 })
+const problemMetadataCache = new PrismaExternalProblemCacheRepository(prisma)
 
 await prisma.$connect()
 
@@ -31,6 +33,7 @@ const app = createApp({
   problemProvider: new CodeforcesProvider({
     ...codeforcesConfig,
     requestGate: codeforcesRequestGate,
+    metadataCache: problemMetadataCache,
     logger: structuredLogger,
   }),
   learnerProfileRepository: new PrismaLearnerProfileRepository(prisma),

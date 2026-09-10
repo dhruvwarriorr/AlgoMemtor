@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { ProviderError } from '../../errors/provider-error.js'
 import type { StructuredLogger } from '../../utils/structured-logger.js'
+import type { ProblemMetadataCache } from '../providers/problem-metadata-cache.js'
 import { CodeforcesProvider } from './codeforces-provider.js'
 
 const validPayload = {
@@ -71,6 +72,19 @@ const createProvider = (
     ...overrides,
   })
 
+const persistedProblem = {
+  provider: 'codeforces' as const,
+  externalId: '4A',
+  title: 'Watermelon',
+  canonicalUrl: 'https://codeforces.com/problemset/problem/4/A',
+  providerDifficulty: 800,
+  normalizedDifficulty: 'easy' as const,
+  providerTags: ['brute force', 'math'],
+  topics: ['brute-force', 'math'],
+  solvedCount: 300_000,
+  fetchedAt: '2026-09-10T00:00:00.000Z',
+}
+
 describe('CodeforcesProvider', () => {
   it('validates, normalizes, joins statistics, and constructs safe URLs', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () =>
@@ -95,7 +109,7 @@ describe('CodeforcesProvider', () => {
       topics: ['brute-force', 'math'],
       solvedCount: 300_000,
     })
-    expect(result.problems[1]?.normalizedDifficulty).toBe('medium')
+    expect(result.problems[1]?.normalizedDifficulty).toBe('hard')
     expect(result.freshness).toMatchObject({
       provider: 'codeforces',
       availability: 'available',
@@ -111,7 +125,7 @@ describe('CodeforcesProvider', () => {
     const result = await provider.search({
       search: 'shortest',
       topic: 'graphs',
-      difficulty: 'medium',
+      difficulty: 'hard',
       minRating: 1500,
       maxRating: 1700,
     })
@@ -184,6 +198,22 @@ describe('CodeforcesProvider', () => {
             problems: [{ unexpected: true }],
             problemStatistics: [],
           },
+        }),
+      ),
+    )
+
+    await expect(provider.search({})).rejects.toMatchObject({
+      code: 'PROVIDER_INVALID_RESPONSE',
+      retryable: false,
+    })
+  })
+
+  it('rejects an unexpectedly empty provider catalog', async () => {
+    const provider = createProvider(
+      vi.fn(async () =>
+        jsonResponse({
+          status: 'OK',
+          result: { problems: [], problemStatistics: [] },
         }),
       ),
     )
@@ -268,6 +298,131 @@ describe('CodeforcesProvider', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(waits).toContain(1099)
+  })
+
+  it('hydrates a fresh catalog from durable metadata without a provider request', async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+    const replaceProviderCatalog = vi.fn()
+    const metadataCache: ProblemMetadataCache = {
+      findByProvider: vi.fn(async () => ({
+        provider: 'codeforces' as const,
+        problems: [persistedProblem],
+        availability: 'available' as const,
+        fetchedAtMs: 1_000,
+        expiresAtMs: 2_000,
+      })),
+      replaceProviderCatalog,
+    }
+    const provider = createProvider(fetchMock, {
+      now: () => 1_500,
+      metadataCache,
+    })
+
+    await expect(provider.search({ topic: 'math' })).resolves.toMatchObject({
+      problems: [expect.objectContaining({ externalId: '4A' })],
+      freshness: { stale: false, availability: 'available' },
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(replaceProviderCatalog).not.toHaveBeenCalled()
+  })
+
+  it('persists a successful provider refresh with its expiry window', async () => {
+    const replaceProviderCatalog = vi.fn()
+    const metadataCache: ProblemMetadataCache = {
+      findByProvider: vi.fn(async () => null),
+      replaceProviderCatalog,
+    }
+    const provider = createProvider(
+      vi.fn(async () => jsonResponse(validPayload)),
+      {
+        now: () => 1_000,
+        cacheTtlMs: 500,
+        metadataCache,
+      },
+    )
+
+    await provider.search({})
+
+    expect(replaceProviderCatalog).toHaveBeenCalledOnce()
+    expect(replaceProviderCatalog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'codeforces' as const,
+        fetchedAtMs: 1_000,
+        expiresAtMs: 1_500,
+      }),
+    )
+  })
+
+  it('does not block a provider response on durable-cache persistence', async () => {
+    const metadataCache: ProblemMetadataCache = {
+      findByProvider: vi.fn(async () => null),
+      replaceProviderCatalog: vi.fn(
+        async () => new Promise<void>(() => undefined),
+      ),
+    }
+    const provider = createProvider(
+      vi.fn(async () => jsonResponse(validPayload)),
+      { metadataCache },
+    )
+
+    await expect(provider.search({})).resolves.toMatchObject({
+      problems: expect.any(Array),
+    })
+  })
+
+  it('refreshes rather than trusting an unavailable durable catalog', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(validPayload))
+    const metadataCache: ProblemMetadataCache = {
+      findByProvider: vi.fn(async () => ({
+        provider: 'codeforces' as const,
+        problems: [persistedProblem],
+        availability: 'unavailable' as const,
+        fetchedAtMs: 1_000,
+        expiresAtMs: 3_000,
+      })),
+      replaceProviderCatalog: vi.fn(),
+    }
+    const provider = createProvider(fetchMock, {
+      now: () => 2_000,
+      metadataCache,
+    })
+
+    await expect(provider.search({})).resolves.toMatchObject({
+      freshness: { availability: 'available', stale: false },
+    })
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
+  it('uses expired durable metadata as a stale fallback', async () => {
+    const metadataCache: ProblemMetadataCache = {
+      findByProvider: vi.fn(async () => ({
+        provider: 'codeforces' as const,
+        problems: [persistedProblem],
+        availability: 'available' as const,
+        fetchedAtMs: 1_000,
+        expiresAtMs: 1_500,
+      })),
+      replaceProviderCatalog: vi.fn(),
+    }
+    const provider = createProvider(
+      vi.fn(async () => {
+        throw new TypeError('network unavailable')
+      }),
+      {
+        now: () => 2_000,
+        metadataCache,
+      },
+    )
+
+    await expect(provider.search({})).resolves.toMatchObject({
+      problems: [expect.objectContaining({ externalId: '4A' })],
+      freshness: {
+        stale: true,
+        availability: 'degraded',
+        lastErrorCode: 'PROVIDER_UNAVAILABLE',
+      },
+      warnings: [expect.objectContaining({ code: 'STALE_DATA' })],
+    })
   })
 
   it('deduplicates concurrent cache refreshes', async () => {
