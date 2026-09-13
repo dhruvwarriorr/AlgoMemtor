@@ -28,6 +28,7 @@ export type NormalizedRankingProfile = {
   ratingBand: RatingBand
   providerPreferred: boolean
   profileSource: 'profile' | 'cold_start'
+  recommendationPreference?: string
 }
 
 export type RecommendationHistory = {
@@ -161,6 +162,9 @@ export const deriveRankingProfile = (
       profile.platformPreferences.platforms.length === 0 ||
       profile.platformPreferences.platforms.includes('codeforces'),
     profileSource: 'profile',
+    ...(profile.recommendationPreference === undefined
+      ? {}
+      : { recommendationPreference: profile.recommendationPreference }),
   }
 }
 
@@ -428,11 +432,13 @@ export const rankRecommendations = ({
   history,
   profile,
   preferNewItems = false,
+  limit = RECOMMENDATION_BATCH_SIZE,
 }: {
   candidates: readonly ExternalProblemSummary[]
   history: RecommendationHistory
   profile: NormalizedRankingProfile
   preferNewItems?: boolean
+  limit?: number
 }): RankedRecommendation[] => {
   const uniqueCandidates = new Map<string, ExternalProblemSummary>()
 
@@ -460,7 +466,7 @@ export const rankRecommendations = ({
   const selected: ExternalProblemSummary[] = []
   const results: RankedRecommendation[] = []
 
-  while (selected.length < RECOMMENDATION_BATCH_SIZE && scored.length > 0) {
+  while (selected.length < limit && scored.length > 0) {
     const selectedIdentities = new Set(selected.map(problemIdentity))
     const priorityPool = preferNewItems
       ? newItems.some(

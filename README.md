@@ -15,7 +15,9 @@ code, or replace the source platform's editor and judge.
 The repository now includes the external-metadata catalog and the first live
 Codeforces provider gateway. React consumes the same normalized `/api/*`
 contract in mocked and live modes; Express owns provider validation,
-normalization, safe URLs, filtering, caching, rate handling, and freshness.
+normalization, safe URLs, filtering, caching, rate handling, and freshness. The
+current Week 11 slice optionally adds bounded Gemini ranking through FastAPI,
+with deterministic fallback when the AI path is unavailable.
 
 ## Product principles
 
@@ -66,7 +68,10 @@ Express provider gateway ----> Supported external provider APIs
 Normalized candidate problems
           |
           v
-FastAPI recommendation service
+Express -> FastAPI internal ranking call
+          |
+          v
+FastAPI -> Gemini (bounded metadata only)
           |
           v
 Ranked problem cards + explanations
@@ -93,19 +98,19 @@ Browser
   |                +-- provider adapters and metadata cache
   |                +-- profiles, bookmarks, outbound events, progress
   |                +-- PostgreSQL (core schema)
-  |
-  +-- /ai/* --> FastAPI + Python
-                   |
-                   +-- recommendation ranking and explanations
-                   +-- learner memory and embeddings
-                   +-- PostgreSQL + pgvector (ai schema)
+                   +-- POST /internal/recommendations/rank
+                        -> FastAPI over a server-side token
+                             |
+                             +-- Gemini ranking and explanations
+                             +-- PostgreSQL (ai schema; ranking audits)
+                             +-- learner memory and embeddings remain later scope
 ```
 
 | Component         | Ownership                                                                                          |
 | ----------------- | -------------------------------------------------------------------------------------------------- |
 | React             | Accessible catalog UI, filters, recommendations, and safe outbound navigation                      |
 | Express           | Authentication-aware product APIs, provider adapters, normalization, caching, and progress records |
-| FastAPI           | Recommendation ranking, explanations, learner memory, and embeddings                               |
+| FastAPI           | Internal bounded Gemini ranking, explanations, and ranking audits; learner memory/embeddings remain later |
 | PostgreSQL        | Learner data, normalized metadata cache, bookmarks, recommendation history, and outbound events    |
 | External provider | Canonical statement, examples, editor, submissions, judging, and authoritative solve status        |
 
@@ -114,6 +119,54 @@ Codeforces is the reference integration because its official
 `problemset.problems` endpoint exposes identifiers, names, ratings, tags, and
 statistics that can be normalized into redirect cards. Additional providers are
 added only after confirming their current API and usage terms.
+
+## Week 11 AI ranking (current local implementation)
+
+For an authenticated recommendation request, Express obtains the normalized
+Codeforces snapshot, applies the deterministic Week 10 rules, and sends at most
+40 unique metadata candidates to FastAPI. The browser never calls FastAPI. The
+core service calls `POST /internal/recommendations/rank` with the shared
+`X-Internal-Service-Token` only when its AI client is configured. FastAPI uses
+`langchain-google-genai` and the configured Gemini model with Pydantic structured
+output. It returns up to ten allowlisted provider IDs, scores, concise reasons,
+fallback state, measured latency, optional token usage, estimated cost, and an
+optional audit ID. Express validates the response again and resolves canonical
+Codeforces URLs from its own provider snapshot.
+
+The model payload contains only the expected count, structured learner fields,
+the optional profile-scoped recommendation note, and provider metadata such as
+Codeforces ID, title, rating, normalized difficulty, topics, and solved count.
+It excludes request/learner service identifiers, canonical URLs,
+`additionalConsiderations`, full problem content, and raw prompts. The note is
+optional, trimmed, capped at 500 characters, and not used by the deterministic
+fallback; structured profile choices remain authoritative.
+
+If `INTERNAL_SERVICE_TOKEN` is empty in core, the HTTP client is replaced by a
+local unavailable client. If FastAPI has no `LLM_API_KEY`, it returns a
+`not_configured` fallback. Timeouts, provider errors, invalid model output,
+unavailable HTTP responses, invalid JSON, and invalid response schemas all keep
+the deterministic recommendation feed available. AI batches use
+`ai-gemini-v1`; fallback batches use
+`ai-v1-fallback-deterministic-v1`.
+
+The internal endpoint requires the same non-empty token in the AI service. A
+missing AI token configuration returns `503`, while a missing or wrong supplied
+token returns `401`. Its audit repository is enabled only with AI-side
+`DATABASE_URL`; it stores IDs, model/version, fallback state, latency, optional
+pricing version, token/cost fields, and a keyed HMAC-SHA256 fingerprint of the
+recommendation note, never raw prompts or note text. Audit persistence is
+bounded so a slow database cannot block ranking. Generated reasons also reject
+URLs, contact-like strings, UUIDs, and repeated four-word slices of the
+preference note. Audit failures are non-fatal.
+
+The evaluation dataset and runner live in `apps/core-api/evaluation/`. Use
+`npx tsx apps/core-api/evaluation/run.ts --validate-only` to validate the 24
+scenarios without calling Gemini. A live comparison is explicitly opt-in with
+`ALGOMEMTOR_EVALUATION_ENABLED=true` plus an AI URL and internal token; it
+reports relevance, difficulty, diversity, preference, p95 latency, and average
+estimated cost against the deterministic baseline. The local harness does not
+by itself establish live Gemini quality, latency, cost, or authenticated browser
+acceptance.
 
 ## Data boundary
 
@@ -201,6 +254,39 @@ Never commit real secrets. Provider credentials, when required, belong in the
 core API environment only. LLM credentials belong in the AI API environment
 only.
 
+For the Week 11 local AI path, set these server-side variables (the example
+files contain local defaults/placeholders):
+
+Core API:
+
+```text
+AI_API_URL=http://localhost:8000
+AI_RANKING_TIMEOUT_MS=8000
+INTERNAL_SERVICE_TOKEN=
+```
+
+AI API:
+
+```text
+LLM_API_KEY=
+LLM_MODEL=gemini-3.5-flash
+LLM_TIMEOUT_SECONDS=7
+LLM_MAX_OUTPUT_TOKENS=2048
+LLM_INPUT_PRICE_PER_MILLION_USD=1.50
+LLM_OUTPUT_PRICE_PER_MILLION_USD=9.00
+LLM_PRICING_VERSION=gemini-3.5-flash-standard-2026-09
+DATABASE_URL=postgresql+psycopg://algomemtor:algomemtor_local@localhost:5432/algomemtor
+AI_AUDIT_TIMEOUT_SECONDS=0.5
+INTERNAL_SERVICE_TOKEN=
+```
+
+The core URL must be HTTPS or an HTTP loopback URL and cannot contain
+credentials, query parameters, or fragments. `LLM_API_KEY` enables Gemini; the
+two price variables calculate an estimate from reported token usage and are not
+live billing data. `LLM_PRICING_VERSION` labels the price assumptions in audit
+rows. `DATABASE_URL` enables `ai.ranking_audits`. `EMBEDDING_MODEL` is retained
+for later learner-memory work and is not used by Week 11.
+
 ### 4. Configure Supabase authentication
 
 Create a Supabase project with email/password authentication enabled, then set:
@@ -284,6 +370,21 @@ uv run --project apps/ai-api pytest apps/ai-api/tests
 uv run --project apps/ai-api ruff check apps/ai-api
 uv run --project apps/ai-api ruff format --check apps/ai-api
 ```
+
+Week 11 focused checks are:
+
+```bash
+uv run --project apps/ai-api pytest apps/ai-api/tests/test_internal_ranking.py
+npm --prefix apps/core-api exec vitest run \
+  src/config/ai-config.test.ts \
+  src/integrations/ai/ai-recommendation-client.test.ts \
+  src/recommendation-api.test.ts
+npx tsx apps/core-api/evaluation/run.ts --validate-only
+```
+
+The evaluation validation is local-only. A live AI-vs-baseline run is opt-in and
+requires a configured Gemini-backed AI service; these checks do not replace
+authenticated browser acceptance.
 
 ## Documentation
 

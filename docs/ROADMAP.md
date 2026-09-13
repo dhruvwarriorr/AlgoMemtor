@@ -692,14 +692,74 @@ and fallback behavior.
     quality.
 11. Add natural-language preference input.
 
+### Current implementation and evidence
+
+The current Week 11 slice is implemented locally across the Express core API,
+FastAPI AI API, shared contracts, and focused tests. Express still owns provider
+access and deterministic filtering. It creates a maximum 40-item Codeforces
+shortlist, sends normalized metadata and learner context to FastAPI through the
+internal ranking client, validates the returned IDs and reasons again, and only
+then attaches the provider-owned canonical URLs. A successful batch is stored as
+`rankingMode: "ai"` with version `ai-gemini-v1`; every fallback is stored as
+`rankingMode: "deterministic"` with version
+`ai-v1-fallback-deterministic-v1`.
+
+FastAPI exposes `POST /internal/recommendations/rank`, protected by the shared
+`X-Internal-Service-Token`. With `LLM_API_KEY` configured it uses the configured
+Gemini model through `langchain-google-genai` and Pydantic structured output. The
+request is capped at 40 unique Codeforces metadata candidates and the response
+must contain the expected number of unique, allowlisted IDs, scores from 0 to 1,
+and reasons no longer than 240 characters. Canonical URLs, request IDs, and
+learner IDs are not sent to Gemini; the optional saved recommendation note is
+bounded to 500 characters, while structured profile choices remain authoritative.
+
+The AI service returns stable fallback reasons for missing configuration,
+timeouts, provider errors, and invalid output. The core client also falls back
+for transport, non-success HTTP, timeout, invalid JSON, or invalid response
+schema failures. Audit writes are best-effort: when the AI `DATABASE_URL` is
+configured, `ai.ranking_audits` records model/version, candidate and returned
+IDs, pricing version, fallback state, latency, token usage, estimated cost, and a
+keyed HMAC-SHA256 fingerprint of the optional recommendation note; raw prompts
+and note text are not stored. Audit writes have a bounded timeout, use a no-op
+repository when no database is configured, and an audit write failure does not
+make ranking unavailable.
+
+The checked acceptance items below are supported by local unit and API tests,
+including invalid-ID, duplicate-ID, invalid-count, unsafe-reason, timeout,
+provider-error, missing-configuration, outage-fallback, and trusted-URL cases.
+They are not evidence of live Gemini quality, production latency or cost, or
+browser acceptance.
+
 ### Acceptance checks
 
-- [ ] AI cannot introduce an unknown problem or URL.
-- [ ] Invalid output activates deterministic fallback.
-- [ ] Recommendations remain available during AI outage.
+- [x] AI cannot introduce an unknown problem or URL.
+- [x] Invalid output activates deterministic fallback.
+- [x] Recommendations remain available during AI outage.
 - [ ] Reasons do not expose private learner data.
 - [ ] Latency and cost are measured.
 - [ ] An evaluation compares AI against the baseline.
+
+The 24-scenario evaluation dataset and runner are present in
+`apps/core-api/evaluation/dataset.json` and `apps/core-api/evaluation/run.ts`.
+`npx tsx apps/core-api/evaluation/run.ts --validate-only` validates the dataset
+without contacting Gemini. A live AI-vs-baseline run is explicitly opt-in and
+requires a configured AI URL and internal token; it gates on allowlist/schema
+safety, at least five percentage points of weighted improvement, p95 latency
+below eight seconds, and average estimated cost at or below $0.02. The local
+validation is not live quality, latency, cost, or authenticated browser
+evidence, so those release checks remain pending.
+
+### Deferred Week 11 scope
+
+- Live Gemini latency, cost, and quality measurements with a representative
+  evaluation set.
+- Browser verification with a real authenticated session and live Gemini
+  credentials.
+- Learner memory, RAG, embeddings, and vector retrieval; `EMBEDDING_MODEL`
+  remains unused configuration.
+- General conversational preference handling; the implemented input is one
+  optional, profile-scoped recommendation note rather than a chat or memory
+  system.
 
 ### Common mistakes
 

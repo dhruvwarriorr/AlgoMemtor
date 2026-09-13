@@ -148,6 +148,30 @@ describe('learner profile API', () => {
     })
   })
 
+  it('persists an optional recommendation note separately and clears it by omission', async () => {
+    const baseUrl = startApp()
+    const withPreference = await saveProfile(baseUrl, {
+      ...validProfile,
+      additionalConsiderations: 'Keep weekday sessions short.',
+      recommendationPreference: 'Prefer graph revision this week.',
+    })
+    const saved = LearnerProfileResponseSchema.parse(
+      await withPreference.json(),
+    )
+
+    expect(saved.data).toMatchObject({
+      additionalConsiderations: 'Keep weekday sessions short.',
+      recommendationPreference: 'Prefer graph revision this week.',
+    })
+
+    const clearedResponse = await saveProfile(baseUrl, validProfile)
+    const cleared = LearnerProfileResponseSchema.parse(
+      await clearedResponse.json(),
+    )
+    expect(cleared.data).not.toHaveProperty('recommendationPreference')
+    expect(cleared.data).not.toHaveProperty('additionalConsiderations')
+  })
+
   it('returns a stable validation error and rejects browser-supplied ownership', async () => {
     const baseUrl = startApp()
     const response = await saveProfile(baseUrl, {

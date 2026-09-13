@@ -119,6 +119,10 @@ function ProfilePage() {
             label="Learning style"
             value={profile.learningPreferences.map(readableLabel).join(', ')}
           />
+          <SummaryItem
+            label="Saved recommendation note"
+            value={profile.recommendationPreference ?? 'No saved note'}
+          />
         </dl>
       </section>
 

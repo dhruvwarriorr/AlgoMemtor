@@ -2,11 +2,17 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { SaveLearnerProfileRequest } from '@algomemtor/shared-contracts'
 
 import { useAuth } from '@/features/auth/useAuth'
+import { recommendationsQueryKey } from '@/features/recommendations/hooks/useRecommendations'
 
 import { fetchLearnerProfile, saveLearnerProfile } from '../api/learner-profile'
 
 export const learnerProfileQueryKey = (authUserId: string) =>
   ['learner-profile', authUserId] as const
+
+export const learnerProfileInvalidationKeys = (authUserId: string) => [
+  learnerProfileQueryKey(authUserId),
+  recommendationsQueryKey(authUserId),
+]
 
 export function useLearnerProfile() {
   const { user } = useAuth()
@@ -30,11 +36,14 @@ export function useSaveLearnerProfile() {
         return
       }
 
-      const queryKey = learnerProfileQueryKey(user.id)
+      const [queryKey, recommendationQueryKey] = learnerProfileInvalidationKeys(
+        user.id,
+      )
       queryClient.setQueryData(queryKey, response)
-      await queryClient.invalidateQueries({
-        queryKey,
-      })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey }),
+        queryClient.invalidateQueries({ queryKey: recommendationQueryKey }),
+      ])
     },
   })
 }

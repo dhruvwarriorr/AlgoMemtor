@@ -54,6 +54,26 @@ describe('recommendation contracts', () => {
     ).toBeNull()
   })
 
+  it('accepts AI-ranked recommendation batches', () => {
+    const result = RecommendationFeedResponseSchema.parse({
+      data: {
+        id: '00000000-0000-4000-8000-000000000002',
+        generatedAt: '2026-09-10T00:00:00.000Z',
+        rankingMode: 'ai',
+        rankingVersion: 'ai-gemini-v1',
+        items: [item],
+      },
+      meta: {
+        partial: false,
+        stale: false,
+        warnings: [],
+        providers: [],
+      },
+    })
+
+    expect(result.data?.rankingMode).toBe('ai')
+  })
+
   it('requires at least one feedback dimension', () => {
     expect(RecommendationFeedbackInputSchema.safeParse({}).success).toBe(false)
     expect(

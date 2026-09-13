@@ -229,6 +229,7 @@ const learnerProfileAnswersShape = {
       'Learning preferences must not contain duplicates.',
     ),
   additionalConsiderations: optionalNotesSchema,
+  recommendationPreference: z.string().trim().min(1).max(500).optional(),
 }
 
 export const LearnerProfileAnswersSchema = z

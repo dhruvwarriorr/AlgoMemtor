@@ -374,7 +374,7 @@ GET    /api/provider-accounts
 PUT    /api/provider-accounts/:provider
 POST   /api/provider-accounts/:provider/public-stats/refresh
 DELETE /api/provider-accounts/:provider
-POST   /internal/ai/recommendations/rank
+POST   /internal/recommendations/rank
 ```
 
 `GET /api/problems` returns normalized metadata. It never returns a statement,

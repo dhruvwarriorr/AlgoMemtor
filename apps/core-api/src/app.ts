@@ -23,6 +23,10 @@ import express, {
 import helmet from 'helmet'
 import { z } from 'zod'
 
+import {
+  type AiRecommendationClient,
+  UnavailableAiRecommendationClient,
+} from './integrations/ai/ai-recommendation-client.js'
 import { requireAuth } from './auth/require-auth.js'
 import type {
   SupabaseJwtVerifier,
@@ -81,6 +85,7 @@ export type CreateAppOptions = {
   providerPublicStatsFetchers?: readonly ProviderPublicStatsFetcher[]
   problemProvider?: ProblemProvider
   logger?: StructuredLogger
+  aiRecommendationClient?: AiRecommendationClient
   webOrigin?: string
 }
 
@@ -221,6 +226,25 @@ const denyUnconfiguredAuthentication: SupabaseJwtVerifier = async () => {
 const authenticatedSubject = (response: Response) =>
   (response.locals.auth as VerifiedAccessToken).subject
 
+const abortSignalForResponse = (request: Request, response: Response) => {
+  const controller = new AbortController()
+  const abort = () => {
+    if (!response.writableEnded) {
+      controller.abort(new Error('The client disconnected.'))
+    }
+  }
+  request.once('aborted', abort)
+  response.once('close', abort)
+
+  return {
+    signal: controller.signal,
+    detach: () => {
+      request.off('aborted', abort)
+      response.off('close', abort)
+    },
+  }
+}
+
 export const createApp = (options: CreateAppOptions = {}) => {
   const logger = options.logger ?? structuredLogger
   const provider = options.problemProvider ?? defaultProvider()
@@ -236,10 +260,13 @@ export const createApp = (options: CreateAppOptions = {}) => {
   const recommendationRepository =
     options.recommendationRepository ?? new InMemoryRecommendationRepository()
   const recommendationService = new RecommendationService({
+    aiRecommendationClient:
+      options.aiRecommendationClient ?? new UnavailableAiRecommendationClient(),
     provider,
     learnerProfileRepository,
     problemActionRepository,
     recommendationRepository,
+    logger,
   })
   const providerAccountStatsService = new ProviderAccountStatsService({
     repository: providerAccountRepository,
@@ -589,15 +616,23 @@ export const createApp = (options: CreateAppOptions = {}) => {
   app.get(
     '/api/recommendations',
     requireAuthenticated,
-    async (_request, response) => {
+    async (request, response) => {
+      const cancellation = abortSignalForResponse(request, response)
       try {
         response.json(
-          await recommendationService.getFeed(authenticatedSubject(response)),
+          await recommendationService.getFeed(
+            authenticatedSubject(response),
+            false,
+            response.locals.requestId as string,
+            cancellation.signal,
+          ),
         )
       } catch (error) {
         if (!respondWithProviderError(error, response)) {
           throw error
         }
+      } finally {
+        cancellation.detach()
       }
     },
   )
@@ -605,18 +640,23 @@ export const createApp = (options: CreateAppOptions = {}) => {
   app.post(
     '/api/recommendations/refresh',
     requireAuthenticated,
-    async (_request, response) => {
+    async (request, response) => {
+      const cancellation = abortSignalForResponse(request, response)
       try {
         response.json(
           await recommendationService.getFeed(
             authenticatedSubject(response),
             true,
+            response.locals.requestId as string,
+            cancellation.signal,
           ),
         )
       } catch (error) {
         if (!respondWithProviderError(error, response)) {
           throw error
         }
+      } finally {
+        cancellation.detach()
       }
     },
   )

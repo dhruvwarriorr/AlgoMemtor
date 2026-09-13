@@ -28,13 +28,13 @@ def render_sql(
     return output.getvalue()
 
 
-def test_upgrade_creates_only_the_ai_schema(
+def test_upgrade_creates_only_the_ai_schema_and_ranking_audits(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     sql = render_sql(monkeypatch, "upgrade", "head")
 
     assert "CREATE SCHEMA IF NOT EXISTS ai;" in sql
-    assert "CREATE TABLE ai." not in sql
+    assert "CREATE TABLE ai.ranking_audits" in sql
     assert "CREATE TABLE core." not in sql
     assert "CREATE TABLE ai_alembic_version" in sql
     assert "CREATE TABLE alembic_version" not in sql
@@ -46,6 +46,7 @@ def test_downgrade_removes_only_the_ai_schema(
     sql = render_sql(monkeypatch, "downgrade", "head:base")
 
     assert "DROP SCHEMA IF EXISTS ai;" in sql
+    assert "DROP TABLE ai.ranking_audits" in sql
     assert "DROP TABLE core." not in sql
 
 

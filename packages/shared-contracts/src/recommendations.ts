@@ -10,7 +10,7 @@ import {
 const identifierSchema = z.uuid()
 const nonEmptyStringSchema = z.string().trim().min(1)
 
-export const RecommendationRankingModeSchema = z.literal('deterministic')
+export const RecommendationRankingModeSchema = z.enum(['deterministic', 'ai'])
 export type RecommendationRankingMode = z.infer<
   typeof RecommendationRankingModeSchema
 >

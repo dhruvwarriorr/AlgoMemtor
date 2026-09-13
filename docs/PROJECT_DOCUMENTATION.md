@@ -282,7 +282,8 @@ flowchart LR
     P --> CF["Codeforces API"]
     P --> FP["Future permitted provider APIs"]
     C --> DB[("PostgreSQL core schema")]
-    C --> A["FastAPI AI service"]
+    C -->|"internal service token"| A["FastAPI AI service"]
+    A --> G["Gemini via langchain-google-genai"]
     A --> AIDB[("PostgreSQL ai schema + optional pgvector")]
     C --> B
     B -->|"validated outbound link"| EXT["Source problem page"]
@@ -305,10 +306,22 @@ React
 React
   -> GET /api/recommendations
   -> Express loads profile and candidate metadata
-  -> deterministic-v1 filters and ranks candidates
-  -> Express validates persisted batch IDs and attaches current metadata
+  -> deterministic-v1 excludes ineligible problems and creates a 40-item shortlist
+  -> FastAPI ranks the shortlist when the internal AI client is configured
+  -> Express validates returned IDs/reasons and attaches current metadata and URLs
+  -> Express saves the batch with its ranking mode and version
   -> React renders attributed cards
 ```
+
+The Week 10 deterministic baseline remains the first filter and fallback. The
+current Week 11 integration sends at most 40 unique normalized Codeforces
+metadata candidates to FastAPI. The browser never calls FastAPI directly. The
+core API calls `POST /internal/recommendations/rank` with
+`X-Internal-Service-Token` when `AI_API_URL` and `INTERNAL_SERVICE_TOKEN` are
+configured; otherwise it uses the deterministic fallback client. A successful
+AI batch is persisted as `ai-gemini-v1`. Any AI fallback or client failure is
+persisted as `ai-v1-fallback-deterministic-v1` and keeps the recommendation feed
+available.
 
 The Week 10 baseline also exposes `POST /api/recommendations/refresh` for an
 explicit new batch. Feedback is recorded through
@@ -316,8 +329,8 @@ explicit new batch. Feedback is recorded through
 append-only: `POST /api/recommendation-items/:itemId/dismiss` records a
 dismissal, `GET /api/recommendation-dismissals` lists active dismissals, and
 `DELETE /api/recommendation-dismissals/:provider/:externalId` restores one.
-The persisted ranking version is `deterministic-v1`; no FastAPI or LLM is
-required for this flow.
+The persisted ranking version is `deterministic-v1` for the standalone Week 10
+baseline and the two Week 11 versions above when the AI path is used.
 
 ## 6.3 Outbound navigation
 
@@ -333,6 +346,11 @@ and judging.
 ## 6.4 Failure boundaries
 
 - If AI fails, use deterministic ranking.
+- If the core-to-AI request times out, returns a non-success response, or fails
+  response validation, use deterministic ranking.
+- If Gemini is not configured, FastAPI returns a `not_configured` fallback; if
+  the core internal token is not configured, Express skips the HTTP call and
+  uses the same deterministic path locally.
 - If one provider fails, return partial results from others.
 - If cached metadata is still allowed but stale, show a stale label.
 - If no provider is available, show bookmarks and a retry state.
@@ -392,13 +410,17 @@ npm run dev
 Frontend variables may include:
 
 ```text
-VITE_CORE_API_URL=/api
-VITE_AI_API_URL=/ai
+VITE_CORE_API_URL=http://localhost:3001
+VITE_AI_API_URL=http://localhost:8000
 VITE_SITE_URL=http://localhost:5173
 VITE_SUPABASE_URL=
 VITE_SUPABASE_PUBLISHABLE_KEY=
 VITE_USE_MOCKS=true
 ```
+
+`VITE_AI_API_URL` remains in the frontend example for compatibility but is not
+used by the Week 11 browser flow. The browser calls Express; Express uses the
+server-side `AI_API_URL` and internal token to reach FastAPI.
 
 Core API variables may include:
 
@@ -410,6 +432,7 @@ DATABASE_URL=
 SUPABASE_URL=
 SUPABASE_JWT_ISSUER=
 AI_API_URL=http://localhost:8000
+AI_RANKING_TIMEOUT_MS=8000
 INTERNAL_SERVICE_TOKEN=
 CODEFORCES_API_BASE_URL=https://codeforces.com/api
 PROVIDER_CACHE_TTL_SECONDS=
@@ -427,9 +450,31 @@ DATABASE_URL=
 SUPABASE_URL=
 SUPABASE_JWT_ISSUER=
 LLM_API_KEY=
-LLM_MODEL=
+LLM_MODEL=gemini-3.5-flash
+LLM_TIMEOUT_SECONDS=7
+LLM_MAX_OUTPUT_TOKENS=2048
+LLM_INPUT_PRICE_PER_MILLION_USD=1.50
+LLM_OUTPUT_PRICE_PER_MILLION_USD=9.00
+LLM_PRICING_VERSION=gemini-3.5-flash-standard-2026-09
+EMBEDDING_MODEL=
+AI_AUDIT_TIMEOUT_SECONDS=0.5
 INTERNAL_SERVICE_TOKEN=
 ```
+
+The Week 11 core-to-AI variables are `AI_API_URL` (default
+`http://localhost:8000`), `AI_RANKING_TIMEOUT_MS` (default `8000`), and
+`INTERNAL_SERVICE_TOKEN`. Core accepts an HTTPS AI URL or an HTTP loopback URL
+only, rejects credentials/query strings/fragments, and sends the shared token in
+the `X-Internal-Service-Token` header. FastAPI's ranking settings use
+`LLM_API_KEY`, `LLM_MODEL`, `LLM_TIMEOUT_SECONDS` (7 seconds, maximum 30),
+`LLM_MAX_OUTPUT_TOKENS` (2048, maximum 8192), and the two configured
+per-million token prices. `LLM_PRICING_VERSION` labels those price assumptions
+in audit rows and defaults to `gemini-3.5-flash-standard-2026-09`.
+`AI_RANKING_VERSION` is also accepted by FastAPI's settings and defaults to
+`ai-gemini-v1`, although it is not needed in the example file. `DATABASE_URL`
+enables the AI audit repository; without it, audit writes are no-ops.
+`EMBEDDING_MODEL` is present for later work and is not read by the current
+ranking service.
 
 Remove obsolete Judge0 variables during implementation migration. Never expose
 provider or LLM credentials through `VITE_*` variables.
@@ -750,35 +795,56 @@ DELETE /api/provider-accounts/:provider
 ## 11.3 Recommendation orchestration pseudocode
 
 ```ts
-async function recommend(input, userId) {
+async function recommend(userId, requestId, forceRefresh = false) {
   const profile = await learnerRepository.getProfile(userId)
-  const candidates = await providerGateway.search(input.filters)
-  const eligible = applyDeterministicRules(candidates, profile)
+  const snapshot = await providerGateway.search({})
+  const history = await loadRecommendationHistory(userId, snapshot.problems)
+  const shortlist = deterministicRank({
+    candidates: snapshot.problems,
+    history,
+    profile: deriveRankingProfile(profile),
+    preferNewItems: forceRefresh,
+    limit: 40,
+  })
 
-  let ranking
+  let ranking = shortlist.slice(0, 10)
   try {
-    ranking = await aiClient.rank({ profile, candidates: eligible })
-    assertCandidateIds(ranking, eligible)
+    const aiResponse = await aiClient.rank({
+      requestId,
+      learnerId: userId,
+      expectedCount: Math.min(10, shortlist.length),
+      learner: toBoundedLearnerContext(profile),
+      candidates: toMetadataOnlyCandidates(shortlist),
+    })
+    ranking = validateAllowlistedAiResponse(aiResponse, shortlist) ?? ranking
   } catch {
-    ranking = deterministicRank(eligible, profile)
+    // Keep the deterministic shortlist when the internal AI call fails.
   }
 
-  return attachTrustedUrlsAndSaveHistory(ranking, eligible, userId)
+  return attachTrustedUrlsAndSaveHistory(ranking, snapshot.problems, userId)
 }
 ```
+
+The production implementation keeps the same boundary: the model receives no
+canonical URLs, and Express resolves them from its own validated provider
+snapshot after allowlisting the model's IDs. A non-AI result is saved with the
+deterministic fallback version.
 
 ---
 
 # 12. AI Recommendation Service
 
-## 12.1 Responsibilities
+## 12.1 Current Week 11 responsibilities
 
-- interpret a learner's natural-language preference;
-- rank supplied candidates;
-- explain selections concisely;
-- identify useful learner patterns;
-- retrieve relevant learner memories; and
-- return structured, validated output.
+- accept a bounded, authenticated internal ranking request;
+- rank supplied Codeforces metadata candidates through the configured Gemini
+  model;
+- interpret the optional profile-scoped recommendation preference;
+- explain selections concisely; and
+- return structured, validated output with usage and latency metadata.
+
+Learner-pattern extraction and memory retrieval remain later-roadmap work; this
+slice does not implement RAG, embeddings, or vector retrieval.
 
 ## 12.2 Non-responsibilities
 
@@ -788,32 +854,58 @@ FastAPI and the LLM must not:
 - invent or transform untrusted outbound URLs;
 - execute learner code;
 - claim an unverified solve; or
-- return a problem outside the supplied candidate IDs.
+- return a problem outside the supplied candidate IDs;
+- receive canonical URLs, full statements, examples, constraints, editorials,
+  starter code, tests, or learner source code.
 
-## 12.3 Ranking request
+## 12.3 Internal ranking endpoint and request
+
+FastAPI exposes the service-only endpoint:
+
+```text
+POST /internal/recommendations/rank
+X-Internal-Service-Token: <shared server-side token>
+```
+
+The route is not a browser-facing `/api/*` route and uses the shared internal
+token rather than a learner Supabase bearer token. A missing FastAPI token
+configuration returns `503`; a missing or incorrect supplied token returns
+`401`.
 
 ```json
 {
+  "requestId": "request_123",
+  "learnerId": "00000000-0000-4000-8000-000000000001",
+  "expectedCount": 1,
   "learner": {
-    "goal": "competitive_programming",
-    "weakTopics": ["graphs"],
-    "preferredDifficulty": { "min": 1000, "max": 1300 }
+    "goal": "improve_problem_solving",
+    "experience": "beginner",
+    "focusTopics": ["graphs"],
+    "preferredTopics": ["strings"],
+    "preferredDifficulty": { "min": 1000, "max": 1300 },
+    "learningPreferences": ["solve_problems_directly"],
+    "recommendationPreference": "Prefer a focused graph revision problem."
   },
-  "request": "I have 30 minutes and want one graph problem",
   "candidates": [
     {
       "provider": "codeforces",
       "externalId": "1234A",
       "title": "Example metadata title",
       "rating": 1100,
+      "normalizedDifficulty": "medium",
       "topics": ["graphs"]
     }
   ]
 }
 ```
 
-Canonical URLs are deliberately absent from the AI decision payload when not
-needed.
+The request schema is strict: candidates are unique, Codeforces-only metadata,
+bounded to 40 records; `expectedCount` is 1–10 and equals the candidate count
+when fewer than ten candidates are supplied. Learner topics are normalized
+slugs, and the optional recommendation note is trimmed and capped at 500
+characters. The Gemini payload keeps `expectedCount`, bounded learner context,
+and candidate metadata, but omits `requestId`, `learnerId`, and all canonical
+URLs. The account-level `additionalConsiderations` field is not forwarded.
 
 ## 12.4 Ranking response
 
@@ -827,23 +919,65 @@ needed.
       "reason": "Matches your graph goal and current rating range."
     }
   ],
-  "model": "configured-model",
-  "fallback": false
+  "model": "gemini-3.5-flash",
+  "fallback": false,
+  "latencyMs": 180,
+  "inputTokens": 900,
+  "outputTokens": 180,
+  "estimatedCostUsd": 0.00297,
+  "auditId": "00000000-0000-4000-8000-000000000099"
 }
 ```
 
-Express validates IDs and attaches trusted URLs afterward.
+`fallbackReason` is required on fallback responses and absent on successful
+responses. Current fallback reasons are `not_configured`, `timeout`,
+`provider_error`, `invalid_output`, and `service_unavailable` (the final value is
+used by the Express client for transport, HTTP, invalid-JSON, or invalid-schema
+failures). The AI service
+measures its request latency and calculates an estimated cost only when token
+usage is returned, using the configured input/output prices; these values are
+instrumentation, not live billing or quality evidence. Express validates the
+response again, rejects unknown or duplicate IDs and unsafe reasons, and attaches
+trusted URLs afterward.
 
 ## 12.5 Recommendation safeguards
 
-- cap the candidate count;
-- require JSON-structured output;
-- validate with Pydantic and Zod;
-- reject unknown IDs;
-- cap explanation length;
-- exclude sensitive learner details from explanations;
-- store model/version for audits; and
-- fall back deterministically.
+- cap the candidate count at 40;
+- require Gemini JSON-schema structured output through LangChain;
+- validate requests and responses with Pydantic and the Express Zod contract;
+- require the exact expected count, unique IDs, allowlisted IDs, scores from 0
+  to 1, and reasons of at most 240 characters;
+- reject reasons containing URLs, email addresses, phone-like strings, UUIDs,
+  or handle-like `@names`;
+- reject a reason that repeats any four-word sequence from the optional
+  recommendation note;
+- exclude canonical URLs, account-level considerations, and raw prompts from
+  the Gemini payload and audit record; request and learner IDs are retained only
+  in the internal request/audit for traceability;
+- store model/version, pricing version, IDs, fallback, latency, usage, and
+  estimated cost for audits; and
+- fall back deterministically on any AI failure.
+
+## 12.6 Fallback, privacy, and audit behavior
+
+When `LLM_API_KEY` is empty, FastAPI returns an empty item list with
+`fallbackReason: "not_configured"`. A model timeout returns `"timeout"`; a
+provider exception returns `"provider_error"`; and malformed, incomplete,
+duplicate, unknown-ID, or unsafe-reason output returns `"invalid_output"`.
+The Express client maps an unavailable AI service, non-success response, invalid
+JSON, or invalid response contract to a core fallback and keeps the deterministic
+ranking. The recommendation batch therefore remains usable even when the AI
+service or Gemini is unavailable.
+
+The FastAPI audit repository is enabled only when its `DATABASE_URL` is set. The
+`ai.ranking_audits` row stores the request/learner identifiers for traceability,
+candidate and returned ID arrays, model and ranking version, fallback fields,
+latency, pricing version, optional token counts, optional estimated cost, and a
+keyed HMAC-SHA256 fingerprint of the recommendation note. It does not store the
+raw request, prompt, note, or provider problem content. Audit persistence has a
+bounded timeout; if no database is configured, a no-op repository returns no
+`auditId`. If an insert fails, the ranking response remains non-fatal and the
+service emits only a safe audit-failure event.
 
 ---
 
@@ -992,12 +1126,24 @@ learner event.
 
 ### `ai.ranking_audits`
 
-Stores model/version, supplied candidate IDs, returned IDs, fallback state, and
-latency. Avoid storing unnecessary private prompt text.
+Added by the Week 11 Alembic migration
+`apps/ai-api/alembic/versions/202609120000_ranking_audits.py`. It stores the
+request and learner identifiers, model and ranking version, supplied and
+returned provider-ID arrays, fallback state/reason, measured latency,
+pricing version, optional input/output token counts, optional estimated cost, a
+keyed HMAC-SHA256 fingerprint of the optional recommendation preference, and
+creation time.
+Indexes support learner history and request lookup. It never stores raw prompts
+or the preference text.
 
-The AI tables above are later-roadmap work. Week 9 establishes only the `ai`
-schema and Alembic history. Prisma applies `core` migrations before Alembic on a
-fresh database. Their bookkeeping tables are also distinct:
+The repository is best-effort and is enabled only when the AI service has a
+`DATABASE_URL`; otherwise it uses a no-op repository and the response omits
+`auditId`. An audit insert failure does not fail ranking.
+
+`ai.learner_memories` and `ai.memory_evidence` remain later-roadmap tables. Week
+9 establishes the `ai` schema and Alembic history, while Week 11 adds
+`ai.ranking_audits`. Prisma applies `core` migrations before Alembic on a fresh
+database. Their bookkeeping tables are also distinct:
 `public._prisma_migrations` and `public.ai_alembic_version`.
 
 ## 14.3 Removed old-model concepts
@@ -1164,14 +1310,47 @@ deduplication, stale fallback, safe logging, provider health/freshness, and the
 shared catalog/error response contracts. Mocked tests run before live provider
 smoke testing.
 
+Week 11 local Express checks are in
+`apps/core-api/src/config/ai-config.test.ts`,
+`apps/core-api/src/integrations/ai/ai-recommendation-client.test.ts`, and
+`apps/core-api/src/recommendation-api.test.ts`. They cover safe AI service URL
+configuration, the internal token header, strict request/response validation,
+timeout and cancellation, no retry after an unavailable response, bounded
+40-candidate requests, trusted URL attachment, invalid AI output fallback, and
+profile-preference regeneration.
+
 ## 18.3 FastAPI tests
 
-- ranking schema;
-- no unknown candidate IDs;
-- relevant and bounded explanations;
-- cold-start ranking;
-- memory evidence and user corrections; and
-- model failure behavior.
+- `apps/ai-api/tests/test_internal_ranking.py` covers strict request schemas,
+  allowlisted/unique IDs, bounded reasons, prompt redaction, token/cost
+  extraction, timeout/provider/missing-configuration fallback, token-protected
+  endpoint behavior, and non-fatal audit failures.
+- `apps/ai-api/tests/test_alembic_baseline.py` checks that the AI migration
+  creates only the `ai` schema objects expected for the audit table.
+- `apps/ai-api/tests/test_ranking_audit_integration.py` verifies the migration
+  and repository against PostgreSQL when `TEST_DATABASE_URL` is configured; it
+  is skipped when that environment variable is absent.
+
+Run the focused local checks with:
+
+```bash
+uv run --project apps/ai-api pytest apps/ai-api/tests/test_internal_ranking.py
+npm --prefix apps/core-api exec vitest run \
+  src/config/ai-config.test.ts \
+  src/integrations/ai/ai-recommendation-client.test.ts \
+  src/recommendation-api.test.ts
+```
+
+The 24-scenario evaluation dataset and runner are in
+`apps/core-api/evaluation/dataset.json` and
+`apps/core-api/evaluation/run.ts`. Run
+`npx tsx apps/core-api/evaluation/run.ts --validate-only` for local dataset
+validation. A live AI-vs-baseline comparison is explicitly opt-in and requires a
+configured AI URL and internal token; it gates on allowlist/schema safety, at
+least five percentage points of weighted improvement, p95 latency below eight
+seconds, and average estimated cost at or below $0.02. Local validation and
+tests are not evidence of live Gemini quality, latency, cost, or browser
+acceptance.
 
 ## 18.4 End-to-end tests
 
@@ -1220,6 +1399,12 @@ smoke testing.
 - Give the model no secret-bearing network tools.
 - Validate candidate IDs and explanations.
 - Keep AI prose separate from provider-owned metadata.
+- Send no canonical URLs, request IDs, learner IDs, account-level
+  `additionalConsiderations`, or copied problem content to Gemini.
+- Treat the optional 500-character recommendation preference as untrusted input;
+  structured profile choices remain authoritative.
+- Reject URL-, email-, phone-, and UUID-like strings in generated reasons before
+  they reach the recommendation batch.
 
 ## 19.4 Learner privacy
 
@@ -1277,6 +1462,14 @@ Provider logs use an explicit safe-field allowlist. They record request ID,
 provider, cache state, latency, result/rejection counts, attempt number, and
 stable error code; they do not record provider response bodies, credentials,
 authorization headers, or arbitrary error details.
+
+Week 11 core logs use the same allowlist for AI events such as
+`ai_ranking_completed` and `ai_ranking_fallback`: request ID, route, model,
+fallback reason, candidate/returned IDs, counts, latency, token counts, and
+estimated cost. FastAPI audit-failure logs include only the request ID and
+fallback flag. Neither service logs the raw recommendation preference, prompt,
+LLM key, internal token, or full provider payload. Live collection and analysis
+of these metrics remains a pending acceptance task.
 
 ---
 

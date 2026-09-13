@@ -49,14 +49,21 @@ describe('learner profile API', () => {
   })
 
   it('saves the profile with an authenticated JSON PUT request', async () => {
+    const answersWithPreference = {
+      ...answers,
+      recommendationPreference:
+        'Prefer short graph problems for weekday practice.',
+    }
     const responseBody = {
-      data: { ...answers, onboardingCompleted: true },
+      data: { ...answersWithPreference, onboardingCompleted: true },
     }
     authenticatedFetchMock.mockResolvedValue(
       Response.json(responseBody, { status: 200 }),
     )
 
-    await expect(saveLearnerProfile(answers)).resolves.toEqual(responseBody)
+    await expect(saveLearnerProfile(answersWithPreference)).resolves.toEqual(
+      responseBody,
+    )
 
     const requestInit = authenticatedFetchMock.mock.calls[0]?.[1]
     expect(authenticatedFetchMock.mock.calls[0]?.[0]).toBe(
@@ -73,7 +80,7 @@ describe('learner profile API', () => {
       expect.unreachable('Expected a serialized JSON request body.')
     }
 
-    expect(JSON.parse(requestBody)).toEqual(answers)
+    expect(JSON.parse(requestBody)).toEqual(answersWithPreference)
   })
 
   it('rejects a successful response that violates the shared contract', async () => {

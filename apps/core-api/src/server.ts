@@ -5,9 +5,14 @@ import {
   createSupabaseJwtVerifier,
   readSupabaseJwtConfig,
 } from './auth/supabase-jwt.js'
+import { readAiRecommendationConfig } from './config/ai-config.js'
 import { readCodeforcesProviderConfig } from './config/provider-config.js'
 import { createPrismaClient, readDatabaseConfig } from './database/prisma.js'
 import { CodeforcesProvider } from './integrations/codeforces/codeforces-provider.js'
+import {
+  HttpAiRecommendationClient,
+  UnavailableAiRecommendationClient,
+} from './integrations/ai/ai-recommendation-client.js'
 import { CodeChefPublicStatsFetcher } from './integrations/provider-accounts/codechef-public-stats.js'
 import { CodeforcesPublicStatsFetcher } from './integrations/provider-accounts/codeforces-public-stats.js'
 import { LeetCodePublicStatsFetcher } from './integrations/provider-accounts/leetcode-public-stats.js'
@@ -23,6 +28,7 @@ const port = Number(process.env.PORT ?? 3001)
 const jwtVerifier = createSupabaseJwtVerifier(readSupabaseJwtConfig())
 const prisma = createPrismaClient(readDatabaseConfig())
 const codeforcesConfig = readCodeforcesProviderConfig()
+const aiConfig = readAiRecommendationConfig()
 const codeforcesRequestGate = new RequestGate({
   minIntervalMs: codeforcesConfig.minRequestIntervalMs,
 })
@@ -31,6 +37,9 @@ const problemMetadataCache = new PrismaExternalProblemCacheRepository(prisma)
 await prisma.$connect()
 
 const app = createApp({
+  aiRecommendationClient: aiConfig.configured
+    ? new HttpAiRecommendationClient(aiConfig)
+    : new UnavailableAiRecommendationClient(),
   jwtVerifier,
   problemProvider: new CodeforcesProvider({
     ...codeforcesConfig,

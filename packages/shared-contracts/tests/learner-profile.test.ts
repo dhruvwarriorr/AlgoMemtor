@@ -33,6 +33,12 @@ const validAnswers = {
   additionalConsiderations: 'Keep weekday sessions short.',
 } as const
 
+const answersWithPreference = {
+  ...validAnswers,
+  recommendationPreference:
+    'Prefer graph practice that fits into a focused study session.',
+} as const
+
 describe('learner profile contracts', () => {
   it('accepts the complete onboarding questionnaire data', () => {
     expect(LearnerProfileAnswersSchema.parse(validAnswers)).toEqual(
@@ -51,6 +57,36 @@ describe('learner profile contracts', () => {
       platforms: [],
       standings: [],
     })
+  })
+
+  it('keeps the saved recommendation preference optional and bounded', () => {
+    const withoutPreference = LearnerProfileAnswersSchema.parse(validAnswers)
+
+    expect(withoutPreference).not.toHaveProperty('recommendationPreference')
+    expect(
+      LearnerProfileAnswersSchema.parse({
+        ...validAnswers,
+        recommendationPreference: '  Prefer shorter graph problems.  ',
+      }).recommendationPreference,
+    ).toBe('Prefer shorter graph problems.')
+    expect(
+      LearnerProfileAnswersSchema.safeParse({
+        ...validAnswers,
+        recommendationPreference: 'x'.repeat(500),
+      }).success,
+    ).toBe(true)
+    expect(
+      LearnerProfileAnswersSchema.safeParse({
+        ...validAnswers,
+        recommendationPreference: '   ',
+      }).success,
+    ).toBe(false)
+    expect(
+      LearnerProfileAnswersSchema.safeParse({
+        ...validAnswers,
+        recommendationPreference: 'x'.repeat(501),
+      }).success,
+    ).toBe(false)
   })
 
   it('rejects an empty or oversized selected-topic choice', () => {
@@ -158,5 +194,11 @@ describe('learner profile contracts', () => {
         data: { ...validAnswers, onboardingCompleted: true },
       }).data?.onboardingCompleted,
     ).toBe(true)
+
+    expect(
+      LearnerProfileResponseSchema.parse({
+        data: { ...answersWithPreference, onboardingCompleted: true },
+      }).data?.recommendationPreference,
+    ).toBe(answersWithPreference.recommendationPreference)
   })
 })

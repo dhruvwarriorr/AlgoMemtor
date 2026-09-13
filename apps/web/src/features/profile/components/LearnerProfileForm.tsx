@@ -18,6 +18,8 @@ import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { Button } from '@/components/ui/button'
 
+import { recommendationPreferenceForRequest } from './recommendation-preference'
+
 type Option<T extends string> = {
   value: T
   label: string
@@ -163,6 +165,7 @@ type FormState = {
   ratingRangeMax: string
   learningPreferences: LearningPreference[]
   additionalConsiderations: string
+  recommendationPreference: string
 }
 
 type FormErrorKey =
@@ -177,6 +180,7 @@ type FormErrorKey =
   | 'ratingComfortRange'
   | 'learningPreferences'
   | 'additionalConsiderations'
+  | 'recommendationPreference'
 
 type FormErrors = Partial<Record<FormErrorKey, string>>
 
@@ -225,6 +229,7 @@ function initialFormState(profile: LearnerProfile | null): FormState {
       ratingRangeMax: '',
       learningPreferences: [],
       additionalConsiderations: '',
+      recommendationPreference: '',
     }
   }
 
@@ -254,6 +259,7 @@ function initialFormState(profile: LearnerProfile | null): FormState {
     ratingRangeMax: String(profile.ratingComfortRange?.max ?? ''),
     learningPreferences: [...profile.learningPreferences],
     additionalConsiderations: profile.additionalConsiderations ?? '',
+    recommendationPreference: profile.recommendationPreference ?? '',
   }
 }
 
@@ -262,6 +268,9 @@ function buildProfileRequest(state: FormState) {
   const ratingRangeMax = state.ratingRangeMax.trim()
   const hasRatingRange = Boolean(ratingRangeMin || ratingRangeMax)
   const additionalConsiderations = state.additionalConsiderations.trim()
+  const recommendationPreference = recommendationPreferenceForRequest(
+    state.recommendationPreference,
+  )
   const standings = ratedPlatformOptions.flatMap(({ value: platform }) => {
     const standing = state.standings[platform]
 
@@ -305,6 +314,9 @@ function buildProfileRequest(state: FormState) {
       : {}),
     learningPreferences: state.learningPreferences,
     ...(additionalConsiderations ? { additionalConsiderations } : {}),
+    ...(recommendationPreference === undefined
+      ? {}
+      : { recommendationPreference }),
   })
 }
 
@@ -342,6 +354,10 @@ function errorKey(path: readonly PropertyKey[]): FormErrorKey {
 
   if (section === 'additionalConsiderations') {
     return 'additionalConsiderations'
+  }
+
+  if (section === 'recommendationPreference') {
+    return 'recommendationPreference'
   }
 
   return 'form'
@@ -1058,9 +1074,52 @@ function LearnerProfileFormFields({
         <div className="flex min-w-0 flex-col gap-2">
           <label
             className="text-sm font-medium text-foreground"
+            htmlFor={`${idPrefix}-recommendation-preference`}
+          >
+            What should we keep in mind for your next recommendations?
+          </label>
+          <textarea
+            aria-describedby={`${idPrefix}-recommendation-preference-help${
+              errors.recommendationPreference
+                ? ` ${idPrefix}-recommendation-preference-error`
+                : ''
+            }`}
+            aria-invalid={Boolean(errors.recommendationPreference)}
+            className="min-h-24 w-full min-w-0 resize-y rounded-md border border-input bg-background px-3 py-2 text-base text-foreground outline-none transition-shadow focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={isSaving}
+            id={`${idPrefix}-recommendation-preference`}
+            maxLength={500}
+            onChange={(event) =>
+              setField(
+                'recommendationPreference',
+                event.currentTarget.value,
+                'recommendationPreference',
+              )
+            }
+            placeholder="For example: Prefer graph problems I can finish in one focused session."
+            value={state.recommendationPreference}
+          />
+          <p
+            className="text-sm text-muted-foreground"
+            id={`${idPrefix}-recommendation-preference-help`}
+          >
+            Optional, up to 500 characters. Your structured profile choices
+            remain authoritative. The standard fallback ignores this note when
+            AI recommendations are unavailable. Do not include personal or
+            sensitive information.
+          </p>
+          <FieldError
+            id={`${idPrefix}-recommendation-preference-error`}
+            message={errors.recommendationPreference}
+          />
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-2">
+          <label
+            className="text-sm font-medium text-foreground"
             htmlFor={`${idPrefix}-considerations`}
           >
-            Anything else we should consider?
+            Other practice considerations
           </label>
           <textarea
             aria-describedby={`${idPrefix}-considerations-help${

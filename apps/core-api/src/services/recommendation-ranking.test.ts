@@ -216,4 +216,24 @@ describe('deterministic recommendation ranking', () => {
       refreshed.slice(0, 2).map(({ problem: item }) => item.externalId),
     ).toEqual(['310A', '311A'])
   })
+
+  it('can produce the bounded forty-candidate AI shortlist', () => {
+    const candidates = Array.from({ length: 50 }, (_, index) =>
+      problem(
+        `${400 + index}A`,
+        800 + (index % 8) * 100,
+        index % 2 === 0 ? ['graphs'] : ['strings'],
+        1_000 - index,
+      ),
+    )
+
+    expect(
+      rankRecommendations({
+        candidates,
+        history: deriveRecommendationHistory([], [], candidates),
+        profile: deriveRankingProfile(profile),
+        limit: 40,
+      }),
+    ).toHaveLength(40)
+  })
 })

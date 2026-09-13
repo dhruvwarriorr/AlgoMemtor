@@ -1,4 +1,5 @@
-export type SafeLogValue = string | number | boolean | null | undefined
+export type SafeLogValue =
+  string | number | boolean | readonly string[] | null | undefined
 
 export type SafeLogFields = Record<string, SafeLogValue>
 
@@ -24,6 +25,16 @@ const permittedFields = new Set([
   'errorCode',
   'retryable',
   'stale',
+  'model',
+  'fallback',
+  'fallbackReason',
+  'candidateIds',
+  'returnedIds',
+  'candidateCount',
+  'selectedCount',
+  'inputTokens',
+  'outputTokens',
+  'estimatedCostUsd',
 ])
 
 const sanitizeFields = (fields: SafeLogFields = {}) =>

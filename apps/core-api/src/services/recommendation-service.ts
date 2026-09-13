@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 
 import {
   RecommendationDismissalResponseSchema,
@@ -6,11 +6,18 @@ import {
   RecommendationFeedResponseSchema,
   RecommendationFeedbackResponseSchema,
   type ExternalProblemSummary,
+  type LearnerProfile,
   type RecommendationBatch,
   type RecommendationDismissal,
   type RecommendationFeedResponse,
 } from '@algomemtor/shared-contracts'
 
+import {
+  AiRecommendationClientError,
+  type AiRecommendationClient,
+  type AiRankingRequest,
+  type AiRankingResponse,
+} from '../integrations/ai/ai-recommendation-client.js'
 import type { ProblemProvider } from '../integrations/providers/problem-provider.js'
 import type {
   ProblemActionRecord,
@@ -22,6 +29,7 @@ import {
   type RecommendationRepository,
 } from '../repositories/recommendation-repository.js'
 import type { LearnerProfileRepository } from '../repositories/learner-profile-repository.js'
+import type { StructuredLogger } from '../utils/structured-logger.js'
 import {
   DETERMINISTIC_RANKING_VERSION,
   deriveRankingProfile,
@@ -36,6 +44,8 @@ type RecommendationServiceOptions = {
   learnerProfileRepository: LearnerProfileRepository
   recommendationRepository: RecommendationRepository
   problemActionRepository: ProblemActionRepository
+  aiRecommendationClient: AiRecommendationClient
+  logger: StructuredLogger
 }
 
 type ProviderSnapshot = Awaited<ReturnType<ProblemProvider['search']>>
@@ -43,14 +53,31 @@ type ProviderSnapshot = Awaited<ReturnType<ProblemProvider['search']>>
 const identity = (provider: string, externalId: string) =>
   `${provider}:${externalId}`
 
-const profileSignature = (profile: ReturnType<typeof deriveRankingProfile>) =>
+export const AI_RANKING_VERSION = 'ai-gemini-v1'
+export const AI_FALLBACK_RANKING_VERSION = 'ai-v1-fallback-deterministic-v1'
+export const AI_CANDIDATE_LIMIT = 40
+const AI_POLICY_VERSION = 'week11-v1'
+const reusableRankingVersions = new Set([
+  AI_RANKING_VERSION,
+  AI_FALLBACK_RANKING_VERSION,
+])
+
+const profileSignature = (
+  profile: ReturnType<typeof deriveRankingProfile>,
+  source: LearnerProfile | null,
+) =>
   createHash('sha256')
     .update(
       JSON.stringify({
+        policyVersion: AI_POLICY_VERSION,
         focusTopics: profile.focusTopics,
         preferredTopics: profile.preferredTopics,
         ratingBand: profile.ratingBand,
         providerPreferred: profile.providerPreferred,
+        goal: source?.goal ?? null,
+        experience: source?.experience ?? null,
+        learningPreferences: source?.learningPreferences ?? [],
+        recommendationPreference: profile.recommendationPreference ?? null,
       }),
     )
     .digest('hex')
@@ -134,14 +161,56 @@ const recommendationProblem = (
   }
 }
 
-const criteriaFor = (profile: ReturnType<typeof deriveRankingProfile>) => ({
+const criteriaFor = (
+  profile: ReturnType<typeof deriveRankingProfile>,
+  source: LearnerProfile | null,
+) => ({
   provider: 'codeforces' as const,
   topics: profile.focusTopics,
   minRating: profile.ratingBand.min,
   maxRating: profile.ratingBand.max,
   pageSize: RECOMMENDATION_BATCH_SIZE,
-  profileSignature: profileSignature(profile),
+  profileSignature: profileSignature(profile, source),
 })
+
+const unsafeReasonPatterns = [
+  /\b(?:https?:\/\/|www\.)/i,
+  /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i,
+  /@[A-Z0-9_]{2,}/i,
+  /(?:\+?\d[\d\s().-]{7,}\d)/,
+  /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i,
+]
+
+export const isSafeRecommendationReason = (reason: string) =>
+  !unsafeReasonPatterns.some((pattern) => pattern.test(reason))
+
+export const repeatsRecommendationPreferenceText = (
+  recommendationPreference: string | undefined,
+  reason: string,
+) => {
+  if (recommendationPreference === undefined) {
+    return false
+  }
+
+  const preferenceWords = recommendationPreference
+    .toLowerCase()
+    .match(/[a-z0-9]+/g)
+  if (preferenceWords === null || preferenceWords.length < 4) {
+    return false
+  }
+  const normalizedReason = (
+    reason.toLowerCase().match(/[a-z0-9]+/g) ?? []
+  ).join(' ')
+
+  return preferenceWords.some((_, index) => {
+    if (index > preferenceWords.length - 4) {
+      return false
+    }
+    return normalizedReason.includes(
+      preferenceWords.slice(index, index + 4).join(' '),
+    )
+  })
+}
 
 const metaFor = (snapshot: ProviderSnapshot) => ({
   partial: snapshot.warnings.some((warning) => warning.code !== 'STALE_DATA'),
@@ -167,6 +236,90 @@ export class RecommendationService {
 
   private async loadSnapshot() {
     return this.options.provider.search({})
+  }
+
+  private buildAiRequest(
+    authUserId: string,
+    requestId: string,
+    profile: LearnerProfile | null,
+    rankingProfile: ReturnType<typeof deriveRankingProfile>,
+    shortlist: readonly { problem: ExternalProblemSummary }[],
+  ): AiRankingRequest {
+    return {
+      requestId,
+      learnerId: authUserId,
+      expectedCount: Math.min(RECOMMENDATION_BATCH_SIZE, shortlist.length),
+      learner: {
+        goal: profile?.goal ?? 'start_competitive_programming',
+        experience: profile?.experience ?? 'complete_beginner',
+        focusTopics: rankingProfile.focusTopics,
+        preferredTopics: rankingProfile.preferredTopics,
+        preferredDifficulty: rankingProfile.ratingBand,
+        learningPreferences: profile?.learningPreferences ?? [
+          'solve_problems_directly',
+        ],
+        ...(rankingProfile.recommendationPreference === undefined
+          ? {}
+          : {
+              recommendationPreference: rankingProfile.recommendationPreference,
+            }),
+      },
+      candidates: shortlist.map(({ problem }) => ({
+        provider: problem.provider,
+        externalId: problem.externalId,
+        title: problem.title,
+        ...(typeof problem.providerDifficulty === 'number'
+          ? { rating: problem.providerDifficulty }
+          : {}),
+        ...(problem.normalizedDifficulty === undefined
+          ? {}
+          : { normalizedDifficulty: problem.normalizedDifficulty }),
+        topics: problem.topics,
+        ...(problem.solvedCount === undefined
+          ? {}
+          : { solvedCount: problem.solvedCount }),
+      })),
+    }
+  }
+
+  private validateAiResponse(
+    response: AiRankingResponse,
+    shortlist: readonly { problem: ExternalProblemSummary }[],
+    expectedCount: number,
+    recommendationPreference: string | undefined,
+  ) {
+    if (response.fallback || response.items.length !== expectedCount) {
+      return null
+    }
+
+    const candidatesByIdentity = new Map(
+      shortlist.map(({ problem }) => [
+        identity(problem.provider, problem.externalId),
+        problem,
+      ]),
+    )
+    const returnedIdentities = new Set<string>()
+    const ranked = response.items.flatMap((item) => {
+      const itemIdentity = identity(item.provider, item.externalId)
+      const problem = candidatesByIdentity.get(itemIdentity)
+
+      if (
+        problem === undefined ||
+        returnedIdentities.has(itemIdentity) ||
+        !isSafeRecommendationReason(item.reason) ||
+        repeatsRecommendationPreferenceText(
+          recommendationPreference,
+          item.reason,
+        )
+      ) {
+        return []
+      }
+
+      returnedIdentities.add(itemIdentity)
+      return [{ problem, score: item.score, reason: item.reason }]
+    })
+
+    return ranked.length === expectedCount ? ranked : null
   }
 
   private toBatchView(
@@ -224,7 +377,7 @@ export class RecommendationService {
     return {
       id: batch.id,
       generatedAt: batch.createdAt.toISOString(),
-      rankingMode: 'deterministic',
+      rankingMode: batch.rankingMode,
       rankingVersion: batch.rankingVersion ?? DETERMINISTIC_RANKING_VERSION,
       items,
     }
@@ -233,6 +386,8 @@ export class RecommendationService {
   private async generate(
     authUserId: string,
     forceRefresh: boolean,
+    requestId: string,
+    signal?: AbortSignal,
   ): Promise<RecommendationFeedResponse> {
     const [profile, actions, batches, feedback, snapshot] = await Promise.all([
       this.options.learnerProfileRepository.findByAuthUserId(authUserId),
@@ -244,7 +399,7 @@ export class RecommendationService {
       this.loadSnapshot(),
     ])
     const rankingProfile = deriveRankingProfile(profile)
-    const criteria = criteriaFor(rankingProfile)
+    const criteria = criteriaFor(rankingProfile, profile)
     const latestBatch = batches[0]
     const latestAction = latestRelevantActionAt(actions)
     const availableProblemIds = new Set(
@@ -259,7 +414,8 @@ export class RecommendationService {
     const reusable =
       !forceRefresh &&
       latestBatch !== undefined &&
-      latestBatch.rankingVersion === DETERMINISTIC_RANKING_VERSION &&
+      latestBatch.rankingVersion !== undefined &&
+      reusableRankingVersions.has(latestBatch.rankingVersion) &&
       latestBatch.requestCriteria.profileSignature ===
         criteria.profileSignature &&
       latestBatchProblemsAvailable &&
@@ -281,17 +437,106 @@ export class RecommendationService {
       batches,
       snapshot.problems,
     )
-    const ranked = rankRecommendations({
+    const shortlist = rankRecommendations({
       candidates: snapshot.problems,
       history,
       profile: rankingProfile,
       preferNewItems: forceRefresh,
+      limit: AI_CANDIDATE_LIMIT,
     })
 
-    if (ranked.length === 0) {
+    if (shortlist.length === 0) {
       return RecommendationFeedResponseSchema.parse({
         data: null,
         meta: metaFor(snapshot),
+      })
+    }
+
+    const aiRequest = this.buildAiRequest(
+      authUserId,
+      requestId,
+      profile,
+      rankingProfile,
+      shortlist,
+    )
+    const candidateIds = aiRequest.candidates.map((candidate) =>
+      identity(candidate.provider, candidate.externalId),
+    )
+    let ranked = shortlist.slice(0, RECOMMENDATION_BATCH_SIZE)
+    let rankingMode: 'deterministic' | 'ai' = 'deterministic'
+    let rankingVersion = AI_FALLBACK_RANKING_VERSION
+
+    try {
+      const response = await this.options.aiRecommendationClient.rank(
+        aiRequest,
+        signal,
+      )
+      const aiRanked = this.validateAiResponse(
+        response,
+        shortlist,
+        aiRequest.expectedCount,
+        rankingProfile.recommendationPreference,
+      )
+      const fallback = aiRanked === null
+      const fallbackReason = response.fallbackReason ?? 'invalid_output'
+
+      if (aiRanked !== null) {
+        ranked = aiRanked
+        rankingMode = 'ai'
+        rankingVersion = AI_RANKING_VERSION
+      }
+
+      this.options.logger.info(
+        fallback ? 'ai_ranking_fallback' : 'ai_ranking_completed',
+        {
+          requestId,
+          service: 'core-api',
+          route: '/api/recommendations',
+          model: response.model,
+          fallback,
+          ...(fallback ? { fallbackReason } : {}),
+          candidateIds,
+          returnedIds: response.items.map((item) =>
+            identity(item.provider, item.externalId),
+          ),
+          candidateCount: candidateIds.length,
+          selectedCount: response.items.length,
+          latencyMs: response.latencyMs,
+          ...(response.inputTokens === undefined
+            ? {}
+            : { inputTokens: response.inputTokens }),
+          ...(response.outputTokens === undefined
+            ? {}
+            : { outputTokens: response.outputTokens }),
+          ...(response.estimatedCostUsd === undefined
+            ? {}
+            : { estimatedCostUsd: response.estimatedCostUsd }),
+        },
+      )
+    } catch (error) {
+      if (
+        error instanceof AiRecommendationClientError &&
+        error.code === 'AI_CANCELLED'
+      ) {
+        throw error
+      }
+      const fallbackReason =
+        error instanceof AiRecommendationClientError &&
+        error.code === 'AI_TIMEOUT'
+          ? 'timeout'
+          : 'service_unavailable'
+
+      this.options.logger.warn('ai_ranking_fallback', {
+        requestId,
+        service: 'core-api',
+        route: '/api/recommendations',
+        model: 'unavailable',
+        fallback: true,
+        fallbackReason,
+        candidateIds,
+        returnedIds: [],
+        candidateCount: candidateIds.length,
+        selectedCount: 0,
       })
     }
 
@@ -300,8 +545,8 @@ export class RecommendationService {
         authUserId,
         {
           requestCriteria: criteria,
-          rankingMode: 'deterministic',
-          rankingVersion: DETERMINISTIC_RANKING_VERSION,
+          rankingMode,
+          rankingVersion,
           items: ranked.map((item, index) => ({
             provider: item.problem.provider,
             externalId: item.problem.externalId,
@@ -319,7 +564,16 @@ export class RecommendationService {
     })
   }
 
-  async getFeed(authUserId: string, forceRefresh = false) {
+  async getFeed(
+    authUserId: string,
+    forceRefresh = false,
+    requestId: string = randomUUID(),
+    signal?: AbortSignal,
+  ) {
+    if (signal !== undefined) {
+      return this.generate(authUserId, forceRefresh, requestId, signal)
+    }
+
     const key = `${authUserId}:${forceRefresh ? 'refresh' : 'current'}`
     const existing = this.inFlight.get(key)
 
@@ -327,9 +581,11 @@ export class RecommendationService {
       return existing
     }
 
-    const pending = this.generate(authUserId, forceRefresh).finally(() => {
-      this.inFlight.delete(key)
-    })
+    const pending = this.generate(authUserId, forceRefresh, requestId).finally(
+      () => {
+        this.inFlight.delete(key)
+      },
+    )
     this.inFlight.set(key, pending)
 
     return pending
