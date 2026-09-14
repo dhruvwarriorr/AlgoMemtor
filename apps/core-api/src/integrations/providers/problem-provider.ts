@@ -4,6 +4,7 @@ import type {
   ProviderFreshness,
   ProviderKey,
   ProviderWarning,
+  ProblemContent,
 } from '@algomemtor/shared-contracts'
 
 export type ProblemProviderRequest = {
@@ -22,6 +23,12 @@ export type ProblemProviderSearchResult = {
   warnings: ProviderWarning[]
 }
 
+export type ProblemContentResult = {
+  content: ProblemContent | null
+  freshness: ProviderFreshness
+  warnings: ProviderWarning[]
+}
+
 export interface ProblemProvider {
   readonly key: ProviderKey
   search(
@@ -29,4 +36,8 @@ export interface ProblemProvider {
     request?: ProblemProviderRequest,
   ): Promise<ProblemProviderSearchResult>
   getHealth(): ProviderFreshness
+  getContent?(
+    externalId: string,
+    request?: ProblemProviderRequest,
+  ): Promise<ProblemContentResult>
 }

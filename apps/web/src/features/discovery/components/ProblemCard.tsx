@@ -13,6 +13,8 @@ import { SolveOnProviderLink } from './SolveOnProviderLink'
 
 const providerLabels: Record<ProviderKey, string> = {
   codeforces: 'Codeforces',
+  codechef: 'CodeChef',
+  leetcode: 'LeetCode',
 }
 
 const difficultyLabels: Record<NormalizedDifficulty, string> = {
@@ -138,6 +140,12 @@ export function ProblemCard({ problem }: ProblemCardProps) {
       </div>
 
       <footer className="mt-auto flex min-w-0 flex-wrap items-center gap-2 border-t border-border pt-4">
+        <a
+          className="inline-flex min-h-7 items-center justify-center rounded-md border border-border px-2.5 text-sm font-medium text-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+          href={`/problems/${problem.provider}/${encodeURIComponent(problem.externalId)}`}
+        >
+          View details
+        </a>
         <SolveOnProviderLink
           canonicalUrl={problem.canonicalUrl}
           externalId={problem.externalId}

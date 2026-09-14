@@ -24,6 +24,15 @@ import {
   RecommendationRestorationResponseSchema,
   RefreshProviderPublicStatsRequestSchema,
   ProviderActivitySyncResponseSchema,
+  ProviderSyncRequestResponseSchema,
+  ProviderSyncStatusResponseSchema,
+  ProviderActivityResponseSchema,
+  ExternalContestsResponseSchema,
+  ExternalContestsQuerySchema,
+  ProblemDetailResponseSchema,
+  ProviderProfileResponseSchema,
+  UnifiedAnalyticsSchema,
+  UnifiedProfileResponseSchema,
   SetProviderActivityConsentRequestSchema,
   ResolveTimerRequestSchema,
   SaveAiConsentRequestSchema,
@@ -67,18 +76,32 @@ import type {
   SupabaseJwtVerifier,
   VerifiedAccessToken,
 } from './auth/supabase-jwt.js'
-import { readCodeforcesProviderConfig } from './config/provider-config.js'
+import {
+  readCodeforcesProviderConfig,
+  readUnifiedProviderConfig,
+} from './config/provider-config.js'
 import { ProviderError } from './errors/provider-error.js'
 import { CodeforcesProvider } from './integrations/codeforces/codeforces-provider.js'
+import { CodeChefProvider } from './integrations/codechef/codechef-provider.js'
+import { LeetCodeProvider } from './integrations/leetcode/leetcode-provider.js'
+import { CodeforcesContestProvider } from './integrations/codeforces/codeforces-contest-provider.js'
+import { CodeChefContestProvider } from './integrations/codechef/codechef-contest-provider.js'
+import { LeetCodeContestProvider } from './integrations/leetcode/leetcode-contest-provider.js'
 import { CodeChefPublicStatsFetcher } from './integrations/provider-accounts/codechef-public-stats.js'
 import { CodeforcesPublicStatsFetcher } from './integrations/provider-accounts/codeforces-public-stats.js'
 import { LeetCodePublicStatsFetcher } from './integrations/provider-accounts/leetcode-public-stats.js'
+import { CodeChefProfileFetcher } from './integrations/provider-accounts/codechef-profile.js'
+import { CodeforcesProfileFetcher } from './integrations/provider-accounts/codeforces-profile.js'
+import { LeetCodeProfileFetcher } from './integrations/provider-accounts/leetcode-profile.js'
 import {
   ProviderPublicStatsError,
+  type ProviderProfileFetcher,
   type ProviderVerifiedActivityFetcher,
   type ProviderPublicStatsFetcher,
 } from './integrations/provider-accounts/provider-public-stats.js'
 import type { ProblemProvider } from './integrations/providers/problem-provider.js'
+import type { ContestProvider } from './integrations/providers/contest-provider.js'
+import type { ProblemMetadataCache } from './integrations/providers/problem-metadata-cache.js'
 import {
   InMemoryLearnerProfileRepository,
   type LearnerProfileRepository,
@@ -107,7 +130,20 @@ import {
   InMemoryProviderAccountRepository,
   type ProviderAccountRepository,
 } from './repositories/provider-account-repository.js'
+import {
+  InMemoryProviderSyncRepository,
+  type ProviderSyncRepository,
+} from './repositories/provider-sync-repository.js'
+import {
+  InMemoryProviderProfileRepository,
+  type ProviderProfileRepository,
+} from './repositories/provider-profile-repository.js'
+import {
+  InMemoryProviderDataRepository,
+  type ProviderDataRepository,
+} from './repositories/provider-data-repository.js'
 import { ProblemCatalogService } from './services/problem-catalog-service.js'
+import { ContestCatalogService } from './services/contest-catalog-service.js'
 import {
   ProgressService,
   ProgressOutboxUnavailableError,
@@ -129,11 +165,17 @@ import {
   ProviderActivityNotLinkedError,
   ProviderActivityService,
 } from './services/provider-activity-service.js'
+import {
+  ProviderSyncNotLinkedError,
+  ProviderSyncService,
+} from './services/provider-sync-service.js'
+import { ProviderProfileService } from './services/provider-profile-service.js'
 import { serializeProviderAccount } from './services/provider-account-service.js'
 import {
   structuredLogger,
   type StructuredLogger,
 } from './utils/structured-logger.js'
+import { RequestGate } from './utils/request-gate.js'
 
 export type CreateAppOptions = {
   jwtVerifier?: SupabaseJwtVerifier
@@ -143,10 +185,17 @@ export type CreateAppOptions = {
   bookmarkRepository?: BookmarkRepository
   recommendationRepository?: RecommendationRepository
   providerAccountRepository?: ProviderAccountRepository
+  providerSyncRepository?: ProviderSyncRepository
+  providerProfileRepository?: ProviderProfileRepository
+  providerDataRepository?: ProviderDataRepository
+  problemMetadataCache?: ProblemMetadataCache
   providerPublicStatsFetchers?: readonly ProviderPublicStatsFetcher[]
+  providerProfileFetchers?: readonly ProviderProfileFetcher[]
   providerVerifiedActivityFetchers?: readonly ProviderVerifiedActivityFetcher[]
   providerActivityMinRefreshIntervalMs?: number
   problemProvider?: ProblemProvider
+  problemProviders?: readonly ProblemProvider[]
+  contestProviders?: readonly ContestProvider[]
   logger?: StructuredLogger
   aiRecommendationClient?: AiRecommendationClient
   aiMemoryClient?: AiMemoryClient
@@ -166,19 +215,30 @@ const providerStatusCode = (error: ProviderError) => {
 }
 
 const providerMessage = (error: ProviderError) => {
+  const providerName =
+    error.provider === 'codeforces'
+      ? 'Codeforces'
+      : error.provider === 'codechef'
+        ? 'CodeChef'
+        : 'LeetCode'
+
   if (error.code === 'PROVIDER_RATE_LIMITED') {
-    return 'Codeforces is temporarily rate limiting catalog requests.'
+    return `${providerName} is temporarily rate limiting catalog requests.`
   }
 
   if (error.code === 'PROVIDER_INVALID_RESPONSE') {
-    return 'Codeforces returned an invalid metadata response.'
+    return `${providerName} returned an invalid metadata response.`
+  }
+
+  if (error.code === 'PROVIDER_BLOCKED') {
+    return `${providerName} blocked this public data request; cached data may be shown.`
   }
 
   if (error.code === 'PROVIDER_TIMEOUT') {
-    return 'Codeforces took too long to respond.'
+    return `${providerName} took too long to respond.`
   }
 
-  return 'Codeforces is temporarily unavailable.'
+  return `${providerName} is temporarily unavailable.`
 }
 
 const respondWithProviderError = (error: unknown, response: Response) => {
@@ -257,11 +317,114 @@ const defaultProvider = () => {
   })
 }
 
-const defaultProviderPublicStatsFetchers = () => [
-  new CodeforcesPublicStatsFetcher(),
-  new CodeChefPublicStatsFetcher(),
-  new LeetCodePublicStatsFetcher(),
-]
+const defaultProviders = (): readonly ProblemProvider[] => {
+  const config = readUnifiedProviderConfig()
+  const codeforcesRequestGate = new RequestGate({
+    minIntervalMs: config.codeforces.minRequestIntervalMs,
+  })
+  return [
+    ...(config.enabled.codeforces && config.codeforces.catalogEnabled
+      ? [
+          new CodeforcesProvider({
+            ...config.codeforces,
+            cacheTtlMs: config.catalogCacheTtlMs,
+            contentCacheTtlMs: config.contentCacheTtlMs,
+            requestGate: codeforcesRequestGate,
+            logger: structuredLogger,
+          }),
+        ]
+      : []),
+    ...(config.enabled.codechef && config.codechef.catalogEnabled
+      ? [
+          new CodeChefProvider({
+            ...config.codechef,
+            cacheTtlMs: config.catalogCacheTtlMs,
+            contentCacheTtlMs: config.contentCacheTtlMs,
+          }),
+        ]
+      : []),
+    ...(config.enabled.leetcode && config.leetcode.catalogEnabled
+      ? [
+          new LeetCodeProvider({
+            ...config.leetcode,
+            cacheTtlMs: config.catalogCacheTtlMs,
+            contentCacheTtlMs: config.contentCacheTtlMs,
+          }),
+        ]
+      : []),
+  ]
+}
+
+const defaultContestProviders = (): readonly ContestProvider[] => {
+  const config = readUnifiedProviderConfig()
+  return [
+    ...(config.enabled.codeforces && config.codeforces.contestsEnabled
+      ? [
+          new CodeforcesContestProvider({
+            ...config.codeforces,
+            cacheTtlMs: config.contestCacheTtlMs,
+          }),
+        ]
+      : []),
+    ...(config.enabled.codechef && config.codechef.contestsEnabled
+      ? [
+          new CodeChefContestProvider({
+            ...config.codechef,
+            cacheTtlMs: config.contestCacheTtlMs,
+          }),
+        ]
+      : []),
+    ...(config.enabled.leetcode && config.leetcode.contestsEnabled
+      ? [
+          new LeetCodeContestProvider({
+            endpoint: config.leetcode.baseUrl,
+            cacheTtlMs: config.contestCacheTtlMs,
+            timeoutMs: config.leetcode.timeoutMs,
+            maxAttempts: config.leetcode.maxAttempts,
+            minRequestIntervalMs: config.leetcode.minRequestIntervalMs,
+          }),
+        ]
+      : []),
+  ]
+}
+
+const defaultProviderPublicStatsFetchers = () => {
+  const config = readUnifiedProviderConfig()
+  return [
+    ...(config.enabled.codeforces && config.codeforces.profileEnabled
+      ? [new CodeforcesPublicStatsFetcher()]
+      : []),
+    ...(config.enabled.codechef && config.codechef.profileEnabled
+      ? [new CodeChefPublicStatsFetcher()]
+      : []),
+    ...(config.enabled.leetcode && config.leetcode.profileEnabled
+      ? [new LeetCodePublicStatsFetcher()]
+      : []),
+  ]
+}
+
+const defaultProviderVerifiedActivityFetchers = () => {
+  const config = readUnifiedProviderConfig()
+  return config.enabled.codeforces && config.codeforces.activityEnabled
+    ? [new CodeforcesPublicStatsFetcher()]
+    : []
+}
+
+const defaultProviderProfileFetchers =
+  (): readonly ProviderProfileFetcher[] => {
+    const config = readUnifiedProviderConfig()
+    return [
+      ...(config.enabled.codeforces && config.codeforces.profileEnabled
+        ? [new CodeforcesProfileFetcher()]
+        : []),
+      ...(config.enabled.codechef && config.codechef.profileEnabled
+        ? [new CodeChefProfileFetcher()]
+        : []),
+      ...(config.enabled.leetcode && config.leetcode.profileEnabled
+        ? [new LeetCodeProfileFetcher()]
+        : []),
+    ]
+  }
 
 const latestLearnerStatuses = (
   actions: readonly {
@@ -334,6 +497,10 @@ const publicStatsMessage = (error: ProviderPublicStatsError) => {
     return `${providerName} changed or returned an invalid public profile response.`
   }
 
+  if (error.code === 'PROVIDER_BLOCKED') {
+    return `${providerName} blocked this public profile request; cached data may be shown.`
+  }
+
   if (error.code === 'PROVIDER_TIMEOUT') {
     return `${providerName} took too long to return public profile data.`
   }
@@ -369,14 +536,29 @@ const abortSignalForResponse = (request: Request, response: Response) => {
 
 export const createApp = (options: CreateAppOptions = {}) => {
   const logger = options.logger ?? structuredLogger
-  const provider = options.problemProvider ?? defaultProvider()
+  const providers =
+    options.problemProviders ??
+    (options.problemProvider === undefined
+      ? defaultProviders()
+      : [options.problemProvider])
+  const provider = options.problemProvider ?? providers[0] ?? defaultProvider()
   const jwtVerifier = options.jwtVerifier ?? denyUnconfiguredAuthentication
   const requireAuthenticated = requireAuth(jwtVerifier)
-  const catalogService = new ProblemCatalogService(provider)
+  const catalogService = new ProblemCatalogService(providers)
+  const contestCatalogService = new ContestCatalogService(
+    options.contestProviders ?? defaultContestProviders(),
+  )
   const learnerProfileRepository =
     options.learnerProfileRepository ?? new InMemoryLearnerProfileRepository()
   const providerAccountRepository =
     options.providerAccountRepository ?? new InMemoryProviderAccountRepository()
+  const providerSyncRepository =
+    options.providerSyncRepository ?? new InMemoryProviderSyncRepository()
+  const providerProfileRepository =
+    options.providerProfileRepository ?? new InMemoryProviderProfileRepository()
+  const providerDataRepository =
+    options.providerDataRepository ?? new InMemoryProviderDataRepository()
+  const problemMetadataCache = options.problemMetadataCache
   const problemActionRepository =
     options.problemActionRepository ?? new InMemoryProblemActionRepository()
   const progressRepository =
@@ -389,6 +571,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
     aiRecommendationClient:
       options.aiRecommendationClient ?? new UnavailableAiRecommendationClient(),
     provider,
+    providers,
     learnerProfileRepository,
     problemActionRepository,
     progressRepository,
@@ -408,17 +591,29 @@ export const createApp = (options: CreateAppOptions = {}) => {
     actionRepository: problemActionRepository,
     fetchers:
       options.providerVerifiedActivityFetchers ??
-      (providerPublicStatsFetchers.filter(
-        (fetcher) =>
-          typeof (fetcher as { fetchVerifiedActivity?: unknown })
-            .fetchVerifiedActivity === 'function',
-      ) as unknown as readonly ProviderVerifiedActivityFetcher[]),
+      (options.providerPublicStatsFetchers === undefined
+        ? defaultProviderVerifiedActivityFetchers()
+        : (providerPublicStatsFetchers.filter(
+            (fetcher) =>
+              typeof (fetcher as { fetchVerifiedActivity?: unknown })
+                .fetchVerifiedActivity === 'function',
+          ) as unknown as readonly ProviderVerifiedActivityFetcher[])),
     ...(options.providerActivityMinRefreshIntervalMs === undefined
       ? {}
       : {
           minRefreshIntervalMs: options.providerActivityMinRefreshIntervalMs,
         }),
     logger,
+  })
+  const providerSyncService = new ProviderSyncService({
+    repository: providerSyncRepository,
+    providerAccountRepository,
+  })
+  const providerProfileService = new ProviderProfileService({
+    accountRepository: providerAccountRepository,
+    profileRepository: providerProfileRepository,
+    fetchers:
+      options.providerProfileFetchers ?? defaultProviderProfileFetchers(),
   })
   const progressService = new ProgressService({
     actionRepository: problemActionRepository,
@@ -459,6 +654,68 @@ export const createApp = (options: CreateAppOptions = {}) => {
     }
   }
 
+  const queueProviderHistoryMemoryDeletion = async (
+    authUserId: string,
+    provider: z.infer<typeof LinkableProviderSchema>,
+  ): Promise<string[]> => {
+    if (!memoryManagementEnabled) return []
+    const [submissions, solvedProblems, actions, bookmarks, reflections, timers, batches] =
+      await Promise.all([
+        providerDataRepository.listSubmissions(authUserId, provider),
+        providerDataRepository.listSolvedProblems(authUserId, provider),
+        problemActionRepository.listByAuthUserId(authUserId),
+        bookmarkRepository.listByAuthUserId(authUserId),
+        progressRepository.listReflections(authUserId),
+        progressRepository.listTimerSessions(authUserId),
+        recommendationRepository.listBatchesByAuthUserId(authUserId),
+      ])
+
+    const externalIds = new Set<string>()
+    const addReference = (candidate: {
+      provider?: unknown
+      externalId?: unknown
+    }) => {
+      if (
+        candidate.provider === provider &&
+        typeof candidate.externalId === 'string' &&
+        candidate.externalId.length > 0
+      ) {
+        externalIds.add(candidate.externalId)
+      }
+    }
+
+    submissions.forEach(addReference)
+    solvedProblems.forEach(addReference)
+    actions.forEach(addReference)
+    bookmarks.forEach(addReference)
+    reflections.forEach((reflection) => addReference(reflection.problem))
+    timers.forEach((timer) => addReference(timer.problem))
+    batches.forEach((batch) => batch.items.forEach(addReference))
+
+    for (const externalId of externalIds) {
+      const referenceDigest = createHash('sha256')
+        .update(`${provider}:${externalId}`)
+        .digest('hex')
+        .slice(0, 32)
+      try {
+        await progressRepository.enqueueJob({
+          authUserId,
+          jobType: 'problem_data_deletion',
+          evidenceType: 'provider_history_deleted',
+          problemProvider: provider,
+          problemExternalId: externalId,
+          idempotencyKey: `delete-provider-history:${authUserId}:${provider}:${referenceDigest}`,
+        })
+      } catch {
+        logger.warn('provider_history_memory_deletion_enqueue_failed', {
+          errorCode: 'OUTBOX_UNAVAILABLE',
+        })
+        throw new ProgressOutboxUnavailableError()
+      }
+    }
+    return [...externalIds]
+  }
+
   const decorateProblemsForLearner = async (
     authUserId: string,
     problems: readonly ExternalProblemSummary[],
@@ -478,6 +735,106 @@ export const createApp = (options: CreateAppOptions = {}) => {
         statuses.get(`${problem.provider}:${problem.externalId}`) ?? 'unsolved',
       bookmarked: bookmarked.has(`${problem.provider}:${problem.externalId}`),
     }))
+  }
+
+  const providerFreshness = () =>
+    catalogService
+      .getProviders()
+      .data.flatMap((item) =>
+        item.freshness === undefined ? [] : [item.freshness],
+      )
+
+  const providerStatsForProfile = async (authUserId: string) => {
+    const [accounts, allAccounts, profileSnapshots] = await Promise.all([
+      providerAccountRepository.findAllByAuthUserId(authUserId),
+      providerAccountRepository.findAllIncludingDisconnectedByAuthUserId ===
+      undefined
+        ? providerAccountRepository.findAllByAuthUserId(authUserId)
+        : providerAccountRepository.findAllIncludingDisconnectedByAuthUserId(
+            authUserId,
+          ),
+      providerProfileService.latest(authUserId),
+    ])
+    const activeHandles = new Map(
+      accounts.map((account) => [account.provider, account.externalHandle]),
+    )
+    const profiles = profileSnapshots.filter(
+      (profile) => activeHandles.get(profile.provider) === profile.handle,
+    )
+    const profileByProvider = new Map(
+      profiles.map((profile) => [profile.provider, profile]),
+    )
+    const providers = accounts.map((account) => {
+      const profile = profileByProvider.get(account.provider)
+      return {
+        provider: account.provider,
+        handle: account.externalHandle,
+        ...(account.solvedCount === null && profile?.solvedCount === undefined
+          ? {}
+          : {
+              solvedCount:
+                account.solvedCount ?? profile?.solvedCount ?? undefined,
+            }),
+        ...(account.statsComplete === null
+          ? profile?.completeness === undefined
+            ? {}
+            : { complete: profile.completeness === 'complete' }
+          : { complete: account.statsComplete }),
+        stale:
+          account.statsErrorCode !== null || profile?.provenance.stale === true,
+        ...(account.statsFetchedAt === null
+          ? profile?.provenance.fetchedAt === undefined
+            ? {}
+            : { fetchedAt: profile.provenance.fetchedAt }
+          : { fetchedAt: account.statsFetchedAt.toISOString() }),
+        ...(profile?.rating === undefined ? {} : { rating: profile.rating }),
+        ...(profile?.rank === undefined ? {} : { rank: profile.rank }),
+        syncEnabled: account.syncEnabled,
+      }
+    })
+    const solvedTotal = accounts.reduce(
+      (sum, account) =>
+        sum +
+        (account.solvedCount ??
+          profileByProvider.get(account.provider)?.solvedCount ??
+          0),
+      0,
+    )
+    const staleProviders = accounts
+      .filter(
+        (account) =>
+          account.statsErrorCode !== null ||
+          profileByProvider.get(account.provider)?.provenance.stale === true,
+      )
+      .map((account) => account.provider)
+    const completeness =
+      accounts.length === 0 ||
+      accounts.some(
+        (account) =>
+          (account.solvedCount === null &&
+            profileByProvider.get(account.provider)?.solvedCount ===
+              undefined) ||
+          (account.statsComplete !== true &&
+            profileByProvider.get(account.provider)?.completeness !==
+              'complete'),
+      )
+        ? 'partial'
+        : 'complete'
+    return {
+      accounts,
+      ...(allAccounts.length === accounts.length
+        ? {}
+        : {
+            archivedAccounts: allAccounts.filter(
+              (account) => !account.syncEnabled,
+            ),
+          }),
+      providers,
+      profiles,
+      solvedTotal,
+      staleProviders,
+      completeness,
+    }
   }
 
   const featureNotEnabled = (response: Response) => {
@@ -579,7 +936,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
     response.json({
       status: 'ok',
       service: 'core-api',
-      providers: [provider.getHealth()],
+      providers: providers.map((item) => item.getHealth()),
     })
   })
 
@@ -719,26 +1076,27 @@ export const createApp = (options: CreateAppOptions = {}) => {
       }
 
       const authUserId = authenticatedSubject(response)
-      const previousAccount =
-        await providerAccountRepository.findByAuthUserIdAndProvider(
-          authUserId,
-          providerResult.data,
-        )
       const account = await providerAccountRepository.upsertByAuthUserId(
         authUserId,
         providerResult.data,
         accountResult.data.handle,
       )
-      if (
-        previousAccount !== null &&
-        previousAccount.externalHandle !== accountResult.data.handle
-      ) {
-        if (providerResult.data === 'codeforces') {
-          await problemActionRepository.deleteProviderVerifiedByAuthUserId(
-            authUserId,
-            providerResult.data,
-          )
-        }
+
+      try {
+        await providerSyncService.requestManualSync(
+          authUserId,
+          providerResult.data,
+        )
+      } catch (error) {
+        logger.warn('provider_initial_sync_enqueue_failed', {
+          provider: providerResult.data,
+          errorCode:
+            error instanceof Error &&
+            'code' in error &&
+            typeof error.code === 'string'
+              ? error.code
+              : 'PROVIDER_SYNC_ENQUEUE_FAILED',
+        })
       }
 
       response.json(
@@ -769,12 +1127,13 @@ export const createApp = (options: CreateAppOptions = {}) => {
         return
       }
 
-      await providerAccountRepository.deleteByAuthUserId(
-        authenticatedSubject(response),
-        providerResult.data,
-      )
-      if (providerResult.data === 'codeforces') {
-        await problemActionRepository.deleteProviderVerifiedByAuthUserId(
+      if (providerAccountRepository.disconnectByAuthUserId !== undefined) {
+        await providerAccountRepository.disconnectByAuthUserId(
+          authenticatedSubject(response),
+          providerResult.data,
+        )
+      } else {
+        await providerAccountRepository.deleteByAuthUserId(
           authenticatedSubject(response),
           providerResult.data,
         )
@@ -784,6 +1143,194 @@ export const createApp = (options: CreateAppOptions = {}) => {
           data: { provider: providerResult.data },
         }),
       )
+    },
+  )
+
+  app.post(
+    '/api/provider-accounts/:provider/sync',
+    requireAuthenticated,
+    async (request, response) => {
+      const providerResult = LinkableProviderSchema.safeParse(
+        request.params.provider,
+      )
+      if (!providerResult.success) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'UNSUPPORTED_LINK_PROVIDER',
+              'That provider cannot be synchronized.',
+            ),
+          )
+        return
+      }
+      try {
+        const result = await providerSyncService.requestManualSync(
+          authenticatedSubject(response),
+          providerResult.data,
+        )
+        response
+          .status(202)
+          .json(ProviderSyncRequestResponseSchema.parse(result))
+      } catch (error) {
+        if (error instanceof ProviderSyncNotLinkedError) {
+          response
+            .status(404)
+            .json(
+              createApiError(
+                'PROVIDER_ACCOUNT_NOT_LINKED',
+                'Link this provider account before requesting synchronization.',
+              ),
+            )
+          return
+        }
+        throw error
+      }
+    },
+  )
+
+  app.get(
+    '/api/provider-accounts/:provider/sync-status',
+    requireAuthenticated,
+    async (request, response) => {
+      const providerResult = LinkableProviderSchema.safeParse(
+        request.params.provider,
+      )
+      if (!providerResult.success) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'UNSUPPORTED_LINK_PROVIDER',
+              'That provider does not have a synchronization status.',
+            ),
+          )
+        return
+      }
+      response.json(
+        ProviderSyncStatusResponseSchema.parse(
+          await providerSyncService.status(
+            authenticatedSubject(response),
+            providerResult.data,
+          ),
+        ),
+      )
+    },
+  )
+
+  app.delete(
+    '/api/provider-accounts/:provider/history',
+    requireAuthenticated,
+    async (request, response) => {
+      const providerResult = LinkableProviderSchema.safeParse(
+        request.params.provider,
+      )
+      if (!providerResult.success) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'UNSUPPORTED_LINK_PROVIDER',
+              'That provider does not have deletable history.',
+            ),
+          )
+        return
+      }
+      const authUserId = authenticatedSubject(response)
+      let deletedExternalIds: string[]
+      try {
+        deletedExternalIds = await queueProviderHistoryMemoryDeletion(
+          authUserId,
+          providerResult.data,
+        )
+      } catch (error) {
+        if (error instanceof ProgressOutboxUnavailableError) {
+          response
+            .status(503)
+            .json(
+              createApiError(
+                'OUTBOX_UNAVAILABLE',
+                'Provider history deletion is temporarily unavailable. Try again shortly.',
+                { retryable: true },
+              ),
+            )
+          return
+        }
+        throw error
+      }
+      await providerSyncService.deleteHistory(authUserId, providerResult.data)
+      await providerAccountRepository.deleteHistoryByAuthUserId?.(
+        authUserId,
+        providerResult.data,
+      )
+      await providerProfileRepository.deleteByAuthUserId(
+        authUserId,
+        providerResult.data,
+      )
+      await providerDataRepository.deleteByAuthUserId(
+        authUserId,
+        providerResult.data,
+      )
+      await problemActionRepository.deleteProviderVerifiedByAuthUserId?.(
+        authUserId,
+        providerResult.data,
+      )
+      for (const externalId of deletedExternalIds) {
+        await recommendationRepository.deleteFeedbackByProblem?.(
+          authUserId,
+          providerResult.data,
+          externalId,
+        )
+      }
+      response.status(204).send()
+    },
+  )
+
+  app.post(
+    '/api/provider-accounts/:provider/profile/refresh',
+    requireAuthenticated,
+    async (request, response) => {
+      const providerResult = LinkableProviderSchema.safeParse(
+        request.params.provider,
+      )
+      if (!providerResult.success) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'UNSUPPORTED_LINK_PROVIDER',
+              'That provider cannot supply a public profile.',
+            ),
+          )
+        return
+      }
+      try {
+        const profile = await providerProfileService.refresh(
+          authenticatedSubject(response),
+          providerResult.data,
+        )
+        response.json(ProviderProfileResponseSchema.parse({ data: profile }))
+      } catch (error) {
+        if (error instanceof ProviderPublicStatsError) {
+          response.status(publicStatsStatusCode(error)).json(
+            createApiError(error.code, publicStatsMessage(error), {
+              retryable: error.retryable,
+              details: { provider: error.provider },
+            }),
+          )
+          return
+        }
+        if (error instanceof ProviderError) {
+          response.status(providerStatusCode(error)).json(
+            createApiError(error.code, providerMessage(error), {
+              retryable: error.retryable,
+              details: { provider: error.provider },
+            }),
+          )
+          return
+        }
+        throw error
+      }
     },
   )
 
@@ -810,14 +1357,35 @@ export const createApp = (options: CreateAppOptions = {}) => {
         return
       }
 
-      if (!consentResult.success) {
+      const linkedAccount =
+        await providerAccountRepository.findByAuthUserIdAndProvider(
+          authenticatedSubject(response),
+          providerResult.data,
+        )
+      const hasLongLivedConsent =
+        linkedAccount !== null &&
+        linkedAccount !== undefined &&
+        linkedAccount.publicStatsConsentAt !== null
+      const consentValue =
+        request.body !== null && typeof request.body === 'object'
+          ? (request.body as { consent?: unknown }).consent
+          : undefined
+      const explicitConsentFailure =
+        consentValue !== undefined && consentValue !== true
+      const consentIssues = consentResult.success
+        ? []
+        : consentResult.error.issues
+      if (
+        explicitConsentFailure ||
+        (!consentResult.success && !hasLongLivedConsent)
+      ) {
         response
           .status(400)
           .json(
             createApiError(
               'PUBLIC_STATS_CONSENT_REQUIRED',
               'Explicit consent is required before public solved-count data is fetched and stored.',
-              { details: consentResult.error.issues },
+              { details: consentIssues },
             ),
           )
         return
@@ -1865,9 +2433,18 @@ export const createApp = (options: CreateAppOptions = {}) => {
     }
 
     try {
+      const learnerStatuses =
+        queryResult.data.status === undefined
+          ? undefined
+          : latestLearnerStatuses(
+              await problemActionRepository.listByAuthUserId(
+                authenticatedSubject(response),
+              ),
+            )
       const catalog = await catalogService.getProblems(
         queryResult.data,
         response.locals.requestId as string,
+        learnerStatuses,
       )
       response.json({
         ...catalog,
@@ -1899,6 +2476,471 @@ export const createApp = (options: CreateAppOptions = {}) => {
 
       throw error
     }
+  })
+
+  app.get(
+    '/api/problems/:provider/:externalId',
+    requireAuthenticated,
+    async (request, response) => {
+      const providerResult = LinkableProviderSchema.safeParse(
+        pathParam(request, 'provider'),
+      )
+      const externalId = pathParam(request, 'externalId')
+      if (!providerResult.success || externalId === undefined) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'INVALID_PROBLEM_REFERENCE',
+              'The provider problem reference is invalid.',
+            ),
+          )
+        return
+      }
+      try {
+        const summary = await catalogService.getProblem(
+          providerResult.data,
+          externalId,
+          response.locals.requestId as string,
+        )
+        if (summary === null) {
+          response
+            .status(404)
+            .json(
+              createApiError(
+                'PROBLEM_NOT_FOUND',
+                'That problem is not available in the provider catalog.',
+              ),
+            )
+          return
+        }
+        const contentResult = await catalogService.getProblemContent(
+          providerResult.data,
+          externalId,
+          response.locals.requestId as string,
+        )
+        response.json(
+          ProblemDetailResponseSchema.parse({
+            data: {
+              summary,
+              content: contentResult?.content ?? null,
+            },
+            ...(contentResult === null || contentResult === undefined
+              ? {}
+              : {
+                  meta: {
+                    warnings: contentResult.warnings,
+                    freshness: contentResult.freshness,
+                  },
+                }),
+          }),
+        )
+      } catch (error) {
+        if (!respondWithProviderError(error, response)) throw error
+      }
+    },
+  )
+
+  app.get(
+    '/api/unified-profile',
+    requireAuthenticated,
+    async (_request, response) => {
+      const profile = await providerStatsForProfile(
+        authenticatedSubject(response),
+      )
+      response.json(
+        UnifiedProfileResponseSchema.parse({
+          data: {
+            ...profile,
+            accounts: profile.accounts.map(serializeProviderAccount),
+            ...(profile.archivedAccounts === undefined
+              ? {}
+              : {
+                  archivedAccounts: profile.archivedAccounts.map(
+                    serializeProviderAccount,
+                  ),
+                }),
+            generatedAt: new Date().toISOString(),
+          },
+        }),
+      )
+    },
+  )
+
+  app.get('/api/activity', requireAuthenticated, async (request, response) => {
+    const providerResult = LinkableProviderSchema.safeParse(
+      typeof request.query.provider === 'string'
+        ? request.query.provider
+        : undefined,
+    )
+    if (request.query.provider !== undefined && !providerResult.success) {
+      response
+        .status(400)
+        .json(
+          createApiError(
+            'INVALID_PROVIDER_FILTER',
+            'The provider filter is invalid.',
+          ),
+        )
+      return
+    }
+    const provider = providerResult.success ? providerResult.data : undefined
+    const authUserId = authenticatedSubject(response)
+    const [
+      actions,
+      verified,
+      submissions,
+      solvedProblems,
+      ratingChanges,
+      participations,
+    ] = await Promise.all([
+      problemActionRepository.listByAuthUserId(authUserId),
+      providerAccountRepository.listVerifiedActivityByAuthUserId(authUserId),
+      providerDataRepository.listSubmissions(authUserId, provider),
+      providerDataRepository.listSolvedProblems(authUserId, provider),
+      providerDataRepository.listRatingChanges(authUserId, provider),
+      providerDataRepository.listContestParticipations(authUserId, provider),
+    ])
+    const events = actions.flatMap((action) => {
+      if (
+        action.actionType !== 'status_changed' &&
+        action.actionType !== 'opened'
+      ) {
+        return []
+      }
+      if (provider !== undefined && action.provider !== provider) return []
+      return [
+        {
+          id: action.id,
+          provider: action.provider,
+          eventType:
+            action.actionType === 'opened' || action.learnerStatus !== 'solved'
+              ? ('submission' as const)
+              : ('solved' as const),
+          externalId: action.externalId,
+          occurredAt: action.occurredAt.toISOString(),
+          source:
+            action.evidenceSource === 'provider_verified'
+              ? ('provider' as const)
+              : ('manual' as const),
+          completeness: 'complete' as const,
+        },
+      ]
+    })
+    const verifiedEvents = verified.flatMap((event) => {
+      if (provider !== undefined && provider !== 'codeforces') return []
+      return [
+        {
+          id: event.id,
+          provider: 'codeforces' as const,
+          eventType: 'solved' as const,
+          externalId: event.externalId,
+          providerEventId: event.providerEventId,
+          occurredAt: event.occurredAt.toISOString(),
+          source: 'provider' as const,
+          completeness: 'partial' as const,
+        },
+      ]
+    })
+    const normalizedEvents = [
+      ...submissions.map((submission) => ({
+        id: `submission:${submission.provider}:${submission.eventId}`,
+        provider: submission.provider,
+        eventType: 'submission' as const,
+        externalId: submission.externalId,
+        providerEventId: submission.eventId,
+        ...(submission.problemTitle === undefined
+          ? {}
+          : { title: submission.problemTitle }),
+        canonicalUrl: submission.canonicalUrl,
+        occurredAt: submission.occurredAt ?? null,
+        verdict: submission.verdict,
+        ...(submission.language === undefined
+          ? {}
+          : { language: submission.language }),
+        source: 'provider' as const,
+        completeness: submission.completeness,
+      })),
+      ...solvedProblems.map((solved) => ({
+        id: `solved:${solved.provider}:${solved.externalId}`,
+        provider: solved.provider,
+        eventType: 'solved' as const,
+        externalId: solved.externalId,
+        canonicalUrl: solved.canonicalUrl,
+        occurredAt: solved.occurredAt,
+        source: 'provider' as const,
+        completeness: solved.completeness,
+      })),
+      ...ratingChanges.map((change) => ({
+        id: `rating:${change.provider}:${change.eventId}`,
+        provider: change.provider,
+        eventType: 'rating_change' as const,
+        providerEventId: change.eventId,
+        ...(change.contestId === undefined
+          ? {}
+          : { externalId: change.contestId }),
+        ...(change.contestName === undefined
+          ? {}
+          : { title: change.contestName }),
+        occurredAt: change.occurredAt,
+        ratingDelta: change.delta,
+        source: 'provider' as const,
+        completeness: change.provenance.completeness,
+      })),
+      ...participations.map((participation) => ({
+        id: `contest:${participation.provider}:${participation.contestId}`,
+        provider: participation.provider,
+        eventType: 'contest' as const,
+        externalId: participation.contestId,
+        ...(participation.contestName === undefined
+          ? {}
+          : { title: participation.contestName }),
+        occurredAt: participation.attendedAt ?? null,
+        ...(participation.rank === undefined
+          ? {}
+          : { rank: participation.rank }),
+        source: 'provider' as const,
+        completeness: participation.provenance.completeness,
+      })),
+    ]
+    const data = [...events, ...verifiedEvents, ...normalizedEvents].sort(
+      (left, right) =>
+        (right.occurredAt ?? '').localeCompare(left.occurredAt ?? '') ||
+        left.id.localeCompare(right.id),
+    )
+    response.json(
+      ProviderActivityResponseSchema.parse({
+        data,
+        meta: {
+          partial:
+            verified.length > 0 ||
+            normalizedEvents.some((event) => event.completeness !== 'complete'),
+          stale: false,
+          providers: providerFreshness(),
+        },
+      }),
+    )
+  })
+
+  app.get('/api/contests', requireAuthenticated, async (request, response) => {
+    const queryResult = ExternalContestsQuerySchema.safeParse(request.query)
+    if (!queryResult.success) {
+      response
+        .status(400)
+        .json(
+          createApiError(
+            'INVALID_CONTEST_QUERY',
+            'The contest query parameters are invalid.',
+            { details: queryResult.error.issues },
+          ),
+        )
+      return
+    }
+    try {
+      response.json(
+        await contestCatalogService.getContests(
+          queryResult.data,
+          response.locals.requestId as string,
+        ),
+      )
+    } catch (error) {
+      if (!respondWithProviderError(error, response)) throw error
+    }
+  })
+
+  app.get('/api/analytics', requireAuthenticated, async (request, response) => {
+    const providerResult = LinkableProviderSchema.safeParse(
+      typeof request.query.provider === 'string'
+        ? request.query.provider
+        : undefined,
+    )
+    if (request.query.provider !== undefined && !providerResult.success) {
+      response
+        .status(400)
+        .json(
+          createApiError(
+            'INVALID_PROVIDER_FILTER',
+            'The provider filter is invalid.',
+          ),
+        )
+      return
+    }
+    const provider = providerResult.success ? providerResult.data : undefined
+    const authUserId = authenticatedSubject(response)
+    const [
+      profile,
+      actions,
+      submissions,
+      solvedProblems,
+      ratingChanges,
+      participations,
+    ] = await Promise.all([
+      providerStatsForProfile(authUserId),
+      problemActionRepository.listByAuthUserId(authUserId),
+      providerDataRepository.listSubmissions(authUserId, provider),
+      providerDataRepository.listSolvedProblems(authUserId, provider),
+      providerDataRepository.listRatingChanges(authUserId, provider),
+      providerDataRepository.listContestParticipations(authUserId, provider),
+    ])
+    const profileProviders =
+      provider === undefined
+        ? profile.providers
+        : profile.providers.filter((item) => item.provider === provider)
+    const profileSnapshots =
+      provider === undefined
+        ? (profile.profiles ?? [])
+        : (profile.profiles ?? []).filter((item) => item.provider === provider)
+    const solvedByProvider = {
+      codeforces:
+        profileProviders.find((item) => item.provider === 'codeforces')
+          ?.solvedCount ?? 0,
+      codechef:
+        profileProviders.find((item) => item.provider === 'codechef')
+          ?.solvedCount ?? 0,
+      leetcode:
+        profileProviders.find((item) => item.provider === 'leetcode')
+          ?.solvedCount ?? 0,
+    }
+    const solvedByDifficulty = { easy: 0, medium: 0, hard: 0 }
+    const solvedOverTime: Record<string, number> = {}
+    const topicCounts: Record<string, number> = {}
+    const languageCounts: Record<string, number> = {}
+    const solvedReferences = [
+      ...solvedProblems.map((problem) => ({
+        provider: problem.provider,
+        externalId: problem.externalId,
+      })),
+      ...actions.flatMap((action) => {
+        if (
+          action.actionType !== 'status_changed' ||
+          action.learnerStatus !== 'solved'
+        ) {
+          return []
+        }
+        const parsedProvider = LinkableProviderSchema.safeParse(action.provider)
+        return parsedProvider.success
+          ? [{ provider: parsedProvider.data, externalId: action.externalId }]
+          : []
+      }),
+    ]
+    const uniqueSolvedReferences = [
+      ...new Map(
+        solvedReferences.map((reference) => [
+          `${reference.provider}:${reference.externalId}`,
+          reference,
+        ]),
+      ).values(),
+    ]
+    let metadata: ExternalProblemSummary[] = []
+    if (
+      problemMetadataCache?.findByReferences !== undefined &&
+      uniqueSolvedReferences.length > 0
+    ) {
+      try {
+        metadata = await problemMetadataCache.findByReferences(
+          uniqueSolvedReferences,
+        )
+      } catch {
+        logger.warn('provider_metadata_lookup_failed', {
+          route: '/api/analytics',
+        })
+      }
+    }
+    const metadataByKey = new Map(
+      metadata.map((problem) => [
+        `${problem.provider}:${problem.externalId}`,
+        problem,
+      ]),
+    )
+    for (const reference of uniqueSolvedReferences) {
+      const problem = metadataByKey.get(
+        `${reference.provider}:${reference.externalId}`,
+      )
+      if (problem?.normalizedDifficulty !== undefined) {
+        solvedByDifficulty[problem.normalizedDifficulty] += 1
+      }
+      for (const topic of problem?.topics ?? []) {
+        topicCounts[topic] = (topicCounts[topic] ?? 0) + 1
+      }
+    }
+    const solvedDates = new Map<string, string>()
+    for (const solved of solvedProblems) {
+      if (solved.occurredAt !== null) {
+        solvedDates.set(
+          `${solved.provider}:${solved.externalId}`,
+          solved.occurredAt.slice(0, 10),
+        )
+      }
+    }
+    for (const action of actions) {
+      if (
+        action.actionType !== 'status_changed' ||
+        action.learnerStatus !== 'solved'
+      ) {
+        continue
+      }
+      const parsedProvider = LinkableProviderSchema.safeParse(action.provider)
+      if (!parsedProvider.success) continue
+      const key = `${parsedProvider.data}:${action.externalId}`
+      if (!solvedDates.has(key)) {
+        solvedDates.set(key, action.occurredAt.toISOString().slice(0, 10))
+      }
+    }
+    for (const date of solvedDates.values()) {
+      solvedOverTime[date] = (solvedOverTime[date] ?? 0) + 1
+    }
+    if (uniqueSolvedReferences.length === 0) {
+      for (const providerProfile of profileSnapshots) {
+        for (const [topic, count] of Object.entries(
+          providerProfile.topicCounts,
+        )) {
+          topicCounts[topic] = (topicCounts[topic] ?? 0) + count
+        }
+      }
+    }
+    for (const providerProfile of profileSnapshots) {
+      for (const [language, count] of Object.entries(
+        providerProfile.languageCounts,
+      )) {
+        languageCounts[language] = (languageCounts[language] ?? 0) + count
+      }
+    }
+    const acceptedSubmissions = submissions.filter(
+      (item) => item.isAccepted,
+    ).length
+    const acceptanceRate =
+      submissions.length === 0
+        ? undefined
+        : (acceptedSubmissions / submissions.length) * 100
+    const staleProviders =
+      provider === undefined
+        ? profile.staleProviders
+        : profile.staleProviders.filter((item) => item === provider)
+    const solvedTotal =
+      provider === undefined
+        ? profile.solvedTotal
+        : (profileProviders.find((item) => item.provider === provider)
+            ?.solvedCount ?? 0)
+    response.json(
+      UnifiedAnalyticsSchema.parse({
+        solvedTotal,
+        solvedByProvider,
+        solvedOverTime,
+        solvedByDifficulty,
+        topicCounts,
+        languageCounts,
+        ...(acceptanceRate === undefined ? {} : { acceptanceRate }),
+        ratingHistory: ratingChanges,
+        contestParticipation: participations,
+        dataCompleteness:
+          actions.length === 0 &&
+          uniqueSolvedReferences.length === metadataByKey.size
+            ? profile.completeness
+            : 'partial',
+        staleProviders,
+        generatedAt: new Date().toISOString(),
+      }),
+    )
   })
 
   app.get(

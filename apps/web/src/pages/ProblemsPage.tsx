@@ -54,9 +54,9 @@ function ProblemsPage() {
       <ErrorState
         message={
           isRateLimited
-            ? 'Codeforces is rate limiting catalog requests. Wait a moment, then retry.'
+            ? 'A problem provider is rate limiting catalog requests. Wait a moment, then retry.'
             : isProviderUnavailable
-              ? 'Codeforces is temporarily unavailable. You can retry now or return later.'
+              ? 'A problem provider is temporarily unavailable. You can retry now or return later.'
               : error instanceof Error
                 ? error.message
                 : 'The problem catalog could not be loaded.'

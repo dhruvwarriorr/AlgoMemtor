@@ -128,13 +128,14 @@ describe('learner profile contracts', () => {
     ).toBe(false)
   })
 
-  it('does not treat unsupported platform preferences as provider support', () => {
+  it('keeps practice preferences aligned with the three integrated providers', () => {
     const result = PlatformPreferencesSchema.parse({
       platforms: ['codechef', 'atcoder', 'leetcode', 'cses', 'hackerrank'],
     })
 
     expect(result.platforms).not.toContain('codeforces')
-    expect(ProviderKeySchema.safeParse('codechef').success).toBe(false)
+    expect(ProviderKeySchema.safeParse('codechef').success).toBe(true)
+    expect(ProviderKeySchema.safeParse('leetcode').success).toBe(true)
   })
 
   it('does not accept provider-linking credentials as profile data', () => {

@@ -10,15 +10,17 @@ import { useNotification } from '@/app/useNotification'
 import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { Button } from '@/components/ui/button'
+import {
+  useDeleteProviderHistory,
+  useProviderSync,
+  useProviderSyncStatus,
+} from '@/features/platform/hooks'
 
 import { providerAccountErrorMessage } from '../api/provider-accounts'
 import {
   useDisconnectProviderAccount,
   useLinkProviderAccount,
   useProviderAccounts,
-  useRefreshProviderPublicStats,
-  useSetProviderActivityConsent,
-  useSyncProviderActivity,
 } from '../hooks/useProviderAccounts'
 
 const providers: readonly {
@@ -44,6 +46,8 @@ const statsErrorMessages = {
   PROVIDER_ACCOUNT_NOT_FOUND: 'No public profile was found for this handle.',
   PROVIDER_TIMEOUT: 'The provider took too long to respond.',
   PROVIDER_RATE_LIMITED: 'The provider is temporarily rate limiting requests.',
+  PROVIDER_BLOCKED:
+    'The provider blocked this public request; try again later.',
   PROVIDER_UNAVAILABLE: 'The provider is temporarily unavailable.',
   PROVIDER_INVALID_RESPONSE:
     'The provider changed or returned an unexpected profile response.',
@@ -86,8 +90,8 @@ function PublicStatsSummary({ account }: { account: ProviderAccount }) {
       </p>
       {!stats.complete ? (
         <p className="mt-1 text-muted-foreground">
-          Codeforces returned the most recent submission window, so the true
-          total may be higher.
+          The provider returned a bounded observation, so the true total may be
+          higher.
         </p>
       ) : null}
       {stats.stale ? (
@@ -115,25 +119,22 @@ function ProviderAccountCard({
   const { notify } = useNotification()
   const linkAccount = useLinkProviderAccount()
   const disconnectAccount = useDisconnectProviderAccount()
-  const refreshStats = useRefreshProviderPublicStats()
-  const setActivityConsent = useSetProviderActivityConsent()
-  const syncActivity = useSyncProviderActivity()
+  const deleteHistory = useDeleteProviderHistory()
+  const providerSync = useProviderSync(provider)
+  const providerSyncStatus = useProviderSyncStatus(
+    provider,
+    account !== undefined,
+  )
   const [handle, setHandle] = useState(account?.handle ?? '')
   const [consent, setConsent] = useState(false)
-  const [statsConsent, setStatsConsent] = useState(false)
-  const [activityConsent, setActivityConsentChecked] = useState(
-    account?.verifiedActivity.enabled ?? false,
-  )
   const [validationError, setValidationError] = useState<string | null>(null)
   const isBusy =
     linkAccount.isPending ||
     disconnectAccount.isPending ||
-    refreshStats.isPending ||
-    setActivityConsent.isPending ||
-    syncActivity.isPending
+    providerSync.isPending ||
+    deleteHistory.isPending
   const fieldId = `${idPrefix}-${provider}-handle`
   const consentId = `${idPrefix}-${provider}-consent`
-  const statsConsentId = `${idPrefix}-${provider}-stats-consent`
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -171,8 +172,6 @@ function ProviderAccountCard({
       await disconnectAccount.mutateAsync(provider)
       setHandle('')
       setConsent(false)
-      setStatsConsent(false)
-      setActivityConsentChecked(false)
       notify({
         title: `${label} profile disconnected`,
         description: 'The saved public handle was removed.',
@@ -184,16 +183,12 @@ function ProviderAccountCard({
   }
 
   async function handleStatsRefresh() {
-    if (!statsConsent) {
-      return
-    }
-
     try {
-      await refreshStats.mutateAsync(provider)
-      setStatsConsent(false)
+      await providerSync.mutateAsync()
       notify({
-        title: `${label} solved count refreshed`,
-        description: 'The provider-reported public total was saved.',
+        title: `${label} solved-count sync queued`,
+        description:
+          'The provider-reported total will refresh with the profile and activity data in the background.',
         tone: 'success',
       })
     } catch {
@@ -201,41 +196,45 @@ function ProviderAccountCard({
     }
   }
 
-  async function handleActivityConsent(enabled: boolean) {
+  async function handleProviderSync() {
     try {
-      await setActivityConsent.mutateAsync({ provider, enabled })
-      setActivityConsentChecked(enabled)
-      if (!enabled) {
-        notify({
-          title: `${label} activity consent removed`,
-          description: 'Provider-derived activity evidence was removed.',
-          tone: 'success',
-        })
-      }
-    } catch {
-      setActivityConsentChecked(account?.verifiedActivity.enabled ?? false)
-    }
-  }
-
-  async function handleActivitySync() {
-    try {
-      const result = await syncActivity.mutateAsync(provider)
+      await providerSync.mutateAsync()
       notify({
-        title: `${label} activity synchronized`,
-        description: `${result.data.confirmedSolved} new accepted problem${result.data.confirmedSolved === 1 ? '' : 's'} recorded.`,
+        title: `${label} sync queued`,
+        description:
+          'Profile, activity, rating, and contest data will refresh in the background.',
         tone: 'success',
       })
     } catch {
-      // The mutation error and persisted state are rendered below.
+      // The mutation error is rendered below with a safe API message.
+    }
+  }
+
+  async function handleDeleteHistory() {
+    if (
+      !window.confirm(`Delete all stored ${label} history for this account?`)
+    ) {
+      return
+    }
+
+    try {
+      await deleteHistory.mutateAsync(provider)
+      notify({
+        title: `${label} history deleted`,
+        description:
+          'Stored profile snapshots, activity, ratings, and contest observations were removed.',
+        tone: 'success',
+      })
+    } catch {
+      // The mutation error is rendered below with a safe API message.
     }
   }
 
   const mutationError =
     linkAccount.error ??
     disconnectAccount.error ??
-    refreshStats.error ??
-    setActivityConsent.error ??
-    syncActivity.error
+    providerSync.error ??
+    deleteHistory.error
 
   return (
     <article className="flex min-w-0 flex-col gap-4 rounded-lg border border-border bg-background p-4">
@@ -261,51 +260,52 @@ function ProviderAccountCard({
 
       {account ? <PublicStatsSummary account={account} /> : null}
 
-      {account && provider === 'codeforces' ? (
+      {account ? (
         <div className="space-y-3 rounded-md border border-border bg-muted/30 p-3">
-          <label
-            className="flex min-w-0 items-start gap-3 text-sm text-foreground"
-            htmlFor={`${idPrefix}-${provider}-activity-consent`}
-          >
-            <input
-              checked={activityConsent}
-              className="mt-0.5 size-4 shrink-0 rounded accent-primary"
-              disabled={isBusy}
-              id={`${idPrefix}-${provider}-activity-consent`}
-              onChange={(event) => {
-                const enabled = event.currentTarget.checked
-                setActivityConsentChecked(enabled)
-                void handleActivityConsent(enabled)
-              }}
-              type="checkbox"
-            />
-            <span>
-              I consent to a manual Codeforces public-activity sync. This reads
-              accepted submissions from the linked public handle; it does not
-              prove that the handle belongs to me and never collects source
-              code.
-            </span>
-          </label>
+          <div>
+            <p className="font-medium text-foreground">
+              Automatic provider sync
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              AlgoMemtor refreshes this public profile every six hours after
+              linking, with a short jitter. Manual refreshes are queued and
+              limited to one request every fifteen minutes.
+            </p>
+          </div>
           <p className="text-sm text-muted-foreground">
-            Activity status:{' '}
-            {account.verifiedActivity.status === 'not_enabled'
-              ? 'Not enabled'
-              : account.verifiedActivity.status === 'not_synced'
-                ? 'Not synchronized'
-                : account.verifiedActivity.status === 'partial'
-                  ? 'Partial recent-submission window'
-                  : account.verifiedActivity.status === 'error'
-                    ? 'Last sync failed'
-                    : 'Synchronized'}
+            Sync status:{' '}
+            {providerSyncStatus.data?.data.state.status ?? 'Not scheduled'}
+            {providerSyncStatus.data?.data.state.lastSucceededAt
+              ? ` · last completed ${new Date(providerSyncStatus.data.data.state.lastSucceededAt).toLocaleString()}`
+              : ''}
           </p>
-          <Button
-            disabled={isBusy || !activityConsent}
-            onClick={() => void handleActivitySync()}
-            type="button"
-            variant="outline"
-          >
-            {syncActivity.isPending ? 'Syncing activity…' : 'Sync activity'}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              disabled={isBusy || account.syncEnabled === false}
+              onClick={() => void handleProviderSync()}
+              type="button"
+              variant="outline"
+            >
+              {providerSync.isPending ? 'Queueing sync…' : 'Sync provider data'}
+            </Button>
+            <Button
+              disabled={isBusy}
+              onClick={() => void handleDeleteHistory()}
+              type="button"
+              variant="destructive"
+            >
+              {deleteHistory.isPending
+                ? 'Deleting history…'
+                : 'Delete provider history'}
+            </Button>
+          </div>
+          {providerSyncStatus.data?.data.state.lastErrorCode ? (
+            <p className="text-sm text-destructive">
+              Last sync issue:{' '}
+              {providerSyncStatus.data.data.state.lastErrorCode}. Cached
+              observations remain available when possible.
+            </p>
+          ) : null}
         </div>
       ) : null}
 
@@ -335,7 +335,7 @@ function ProviderAccountCard({
               setHandle(event.currentTarget.value)
               setValidationError(null)
               linkAccount.reset()
-              refreshStats.reset()
+              providerSync.reset()
             }}
             placeholder={example}
             spellCheck={false}
@@ -363,9 +363,10 @@ function ProviderAccountCard({
             type="checkbox"
           />
           <span>
-            I consent to AlgoMemtor storing this public profile reference. No
-            password, API key, private activity, or submission source code will
-            be collected.
+            I consent to AlgoMemtor storing this public profile reference and
+            synchronizing the provider&apos;s public profile data. No password,
+            API key, private activity, or submission source code will be
+            collected.
           </span>
         </label>
 
@@ -407,37 +408,20 @@ function ProviderAccountCard({
 
         {account ? (
           <div className="space-y-3 border-t border-border pt-3">
-            <label
-              className="flex min-w-0 items-start gap-3 text-sm text-foreground"
-              htmlFor={statsConsentId}
-            >
-              <input
-                checked={statsConsent}
-                className="mt-0.5 size-4 shrink-0 rounded accent-primary"
-                disabled={isBusy}
-                id={statsConsentId}
-                onChange={(event) => {
-                  setStatsConsent(event.currentTarget.checked)
-                  refreshStats.reset()
-                }}
-                type="checkbox"
-              />
-              <span>
-                I consent to AlgoMemtor requesting this public profile&apos;s
-                solved-problem total and storing the returned count. No source
-                code or private account data is requested.
-              </span>
-            </label>
+            <p className="text-sm text-muted-foreground">
+              Public-sync consent was recorded when this handle was linked. No
+              password, cookie, source code, or private data is requested.
+            </p>
             <Button
-              disabled={isBusy || !statsConsent}
+              disabled={isBusy}
               onClick={() => void handleStatsRefresh()}
               type="button"
               variant="outline"
             >
-              {refreshStats.isPending
-                ? 'Refreshing solved count…'
+              {providerSync.isPending
+                ? 'Queueing solved-count sync…'
                 : account.publicStats.status === 'not_synced'
-                  ? 'Fetch solved count'
+                  ? 'Queue solved-count sync'
                   : 'Refresh solved count'}
             </Button>
           </div>
@@ -464,10 +448,11 @@ export function ProviderAccountLinks({ idPrefix }: { idPrefix: string }) {
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Save a public Codeforces, CodeChef, or LeetCode handle for convenient
-          profile access. With separate consent, you can manually fetch each
-          provider&apos;s public solved count. This does not verify account
-          ownership or individual solves, and it is not continuous syncing. You
-          can skip or disconnect at any time.
+          profile access. Linking records long-lived consent for public profile
+          synchronization every six hours plus manual refresh. This does not
+          verify account ownership or individual solves. You can skip or
+          disconnect at any time; disconnecting keeps history until you delete
+          it explicitly.
         </p>
       </div>
 

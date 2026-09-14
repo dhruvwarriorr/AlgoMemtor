@@ -12,6 +12,7 @@ import { learnerProfileErrorMessage } from '@/features/profile/api/learner-profi
 import { providerAccountErrorMessage } from '@/features/profile/api/provider-accounts'
 import { useLearnerProfile } from '@/features/profile/hooks/useLearnerProfile'
 import { useProviderAccounts } from '@/features/profile/hooks/useProviderAccounts'
+import { useUnifiedProfile } from '@/features/platform/hooks'
 
 function readableLabel(value: string) {
   const words = value.replaceAll('_', ' ').replaceAll('-', ' ')
@@ -31,6 +32,7 @@ function ProfilePage() {
   const { user } = useAuth()
   const profileQuery = useLearnerProfile()
   const accountsQuery = useProviderAccounts()
+  const unifiedProfileQuery = useUnifiedProfile()
 
   if (profileQuery.isPending) {
     return (
@@ -179,6 +181,99 @@ function ProfilePage() {
               </li>
             ))}
           </ul>
+        )}
+      </section>
+
+      <section aria-labelledby="unified-profile-heading" className="space-y-4">
+        <div>
+          <h2
+            className="text-xl font-semibold tracking-tight text-foreground"
+            id="unified-profile-heading"
+          >
+            Unified provider summary
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            The combined total adds the latest reported count from each active
+            provider. Problems are not deduplicated across platforms.
+          </p>
+        </div>
+        {unifiedProfileQuery.isPending ? (
+          <PageSkeleton label="Loading unified provider summary" rows={2} />
+        ) : unifiedProfileQuery.isError ||
+          unifiedProfileQuery.data === undefined ? (
+          <ErrorState
+            message={
+              unifiedProfileQuery.error instanceof Error
+                ? unifiedProfileQuery.error.message
+                : 'The unified provider summary could not be loaded.'
+            }
+            onRetry={() => void unifiedProfileQuery.refetch()}
+            title="Provider summary unavailable"
+          />
+        ) : (
+          <div className="space-y-4">
+            <dl className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <SummaryItem
+                label="Total solved across active links"
+                value={unifiedProfileQuery.data.data.solvedTotal.toLocaleString()}
+              />
+              <SummaryItem
+                label="Data completeness"
+                value={readableLabel(
+                  unifiedProfileQuery.data.data.completeness,
+                )}
+              />
+              <SummaryItem
+                label="Stale providers"
+                value={
+                  unifiedProfileQuery.data.data.staleProviders.length === 0
+                    ? 'None reported'
+                    : unifiedProfileQuery.data.data.staleProviders
+                        .map(readableLabel)
+                        .join(', ')
+                }
+              />
+              <SummaryItem
+                label="Archived identities"
+                value={String(
+                  unifiedProfileQuery.data.data.archivedAccounts?.length ?? 0,
+                )}
+              />
+            </dl>
+            <ul className="grid min-w-0 gap-3 sm:grid-cols-3">
+              {unifiedProfileQuery.data.data.providers.map((provider) => (
+                <li
+                  className="rounded-lg border border-border bg-card p-4"
+                  key={provider.provider}
+                >
+                  <p className="font-medium text-foreground">
+                    {readableLabel(provider.provider)}
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {provider.solvedCount === undefined
+                      ? 'Solved total unavailable'
+                      : `${provider.complete === false ? 'At least ' : ''}${provider.solvedCount.toLocaleString()} solved`}
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {provider.rating === undefined
+                      ? 'Rating not reported'
+                      : `Rating ${provider.rating}`}
+                    {provider.rank ? ` · ${provider.rank}` : ''}
+                  </p>
+                  {provider.stale ? (
+                    <p className="mt-2 text-xs text-destructive">
+                      Last provider refresh is stale.
+                    </p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+            <p className="text-sm text-muted-foreground">
+              Need to remove provider observations? Use the delete-history
+              control in the linked account settings below. Disconnecting alone
+              keeps historical data for your records.
+            </p>
+          </div>
         )}
       </section>
 

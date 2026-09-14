@@ -10,6 +10,7 @@ import { z } from 'zod'
 import { Prisma, type PrismaClient } from '../generated/prisma/client.js'
 import type {
   PersistedProblemCatalog,
+  ProblemReference,
   ProblemMetadataCache,
 } from '../integrations/providers/problem-metadata-cache.js'
 
@@ -29,6 +30,14 @@ const problemFromRecord = (record: {
   providerTags: string[]
   normalizedTopics: string[]
   publicStats: Prisma.JsonValue | null
+  acceptanceRate: number | null
+  isPaidOnly: boolean
+  contentAvailable: boolean
+  extractionStrategy: string
+  sourceUrl: string
+  schemaVersion: string
+  completeness: string
+  stale: boolean
   fetchedAt: Date
 }): ExternalProblemSummary => {
   const publicStats =
@@ -52,12 +61,46 @@ const problemFromRecord = (record: {
     ...(publicStats?.solvedCount === undefined
       ? {}
       : { solvedCount: publicStats.solvedCount }),
+    ...(record.acceptanceRate === null
+      ? {}
+      : { acceptanceRate: record.acceptanceRate }),
+    isPaidOnly: record.isPaidOnly,
+    contentAvailable: record.contentAvailable,
+    extractionStrategy: record.extractionStrategy,
+    sourceUrl: record.sourceUrl,
+    schemaVersion: record.schemaVersion,
+    completeness: record.completeness,
+    stale: record.stale,
     fetchedAt: record.fetchedAt.toISOString(),
   })
 }
 
 export class PrismaExternalProblemCacheRepository implements ProblemMetadataCache {
   constructor(private readonly prisma: PrismaClient) {}
+
+  async findByReferences(references: readonly ProblemReference[]) {
+    const unique = [
+      ...new Map(
+        references.map((reference) => [
+          `${reference.provider}:${reference.externalId}`,
+          {
+            provider: ProviderKeySchema.parse(reference.provider),
+            externalId: reference.externalId,
+          },
+        ]),
+      ).values(),
+    ]
+    if (unique.length === 0) return []
+    const records = await this.prisma.externalProblemCache.findMany({
+      where: {
+        OR: unique.map((reference) => ({
+          provider: reference.provider,
+          externalId: reference.externalId,
+        })),
+      },
+    })
+    return records.map(problemFromRecord)
+  }
 
   async findByProvider(provider: ProviderKey) {
     const validatedProvider = ProviderKeySchema.parse(provider)
@@ -155,6 +198,14 @@ export class PrismaExternalProblemCacheRepository implements ProblemMetadataCach
                 problem.solvedCount === undefined
                   ? Prisma.DbNull
                   : { solvedCount: problem.solvedCount },
+              acceptanceRate: problem.acceptanceRate ?? null,
+              isPaidOnly: problem.isPaidOnly ?? false,
+              contentAvailable: problem.contentAvailable ?? false,
+              extractionStrategy: problem.extractionStrategy ?? 'official_json',
+              sourceUrl: problem.sourceUrl ?? problem.canonicalUrl,
+              schemaVersion: problem.schemaVersion ?? 'legacy-v1',
+              completeness: problem.completeness ?? 'unknown',
+              stale: problem.stale ?? false,
               availability,
               fetchedAt,
               expiresAt,

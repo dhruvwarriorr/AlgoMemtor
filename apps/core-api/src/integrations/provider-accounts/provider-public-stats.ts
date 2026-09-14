@@ -1,5 +1,10 @@
 import type {
   LinkableProvider,
+  ContestParticipation,
+  ProviderProfile,
+  ProviderRatingChange,
+  ProviderSolvedProblem,
+  ProviderSubmission,
   ProviderPublicStatsErrorCode,
   ProviderPublicStatsSource,
   PublicProviderHandle,
@@ -17,6 +22,15 @@ export type ProviderVerifiedActivityFetchResult = {
   fetchedAt: Date
 }
 
+export type ProviderActivityDataFetchResult = {
+  submissions: ProviderSubmission[]
+  solvedProblems: ProviderSolvedProblem[]
+  ratingChanges: ProviderRatingChange[]
+  contestParticipations: ContestParticipation[]
+  complete: boolean
+  fetchedAt: Date
+}
+
 export type ProviderPublicStatsFetchResult = {
   solvedCount: number
   complete: boolean
@@ -30,6 +44,22 @@ export interface ProviderPublicStatsFetcher {
     handle: PublicProviderHandle,
     signal?: AbortSignal,
   ): Promise<ProviderPublicStatsFetchResult>
+}
+
+export interface ProviderProfileFetcher {
+  readonly provider: LinkableProvider
+  fetchProfile(
+    handle: PublicProviderHandle,
+    signal?: AbortSignal,
+  ): Promise<ProviderProfile>
+}
+
+export interface ProviderActivityDataFetcher {
+  readonly provider: LinkableProvider
+  fetchActivityData(
+    handle: PublicProviderHandle,
+    signal?: AbortSignal,
+  ): Promise<ProviderActivityDataFetchResult>
 }
 
 export interface ProviderVerifiedActivityFetcher {

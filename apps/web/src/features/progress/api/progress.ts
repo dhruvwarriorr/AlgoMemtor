@@ -2,6 +2,7 @@ import type {
   LearnerProblemStatus,
   ProviderKey,
 } from '@algomemtor/shared-contracts'
+import { ProviderKeySchema } from '@algomemtor/shared-contracts'
 
 import { requestJson } from '@/features/discovery/api/client'
 
@@ -115,7 +116,7 @@ const bookmarkWriteSchema = {
       !isRecord(value.data) ||
       typeof value.data.id !== 'string' ||
       typeof value.data.provider !== 'string' ||
-      value.data.provider !== 'codeforces' ||
+      !ProviderKeySchema.safeParse(value.data.provider).success ||
       typeof value.data.externalId !== 'string' ||
       value.data.externalId.trim().length === 0 ||
       typeof value.data.createdAt !== 'string' ||
@@ -132,7 +133,7 @@ const bookmarkWriteSchema = {
       data: {
         data: {
           id: value.data.id,
-          provider: 'codeforces' as const,
+          provider: ProviderKeySchema.parse(value.data.provider),
           externalId: value.data.externalId,
           createdAt: value.data.createdAt,
         },

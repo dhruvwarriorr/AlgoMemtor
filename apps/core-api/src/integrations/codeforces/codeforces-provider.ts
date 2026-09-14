@@ -1,5 +1,6 @@
 import {
   ExternalProblemSummarySchema,
+  ProblemContentSchema,
   ProviderFreshnessSchema,
   ProviderWarningSchema,
   type ExternalProblemSummary,
@@ -24,7 +25,17 @@ import type {
   ProblemProviderSearchResult,
   ProviderProblemQuery,
 } from '../providers/problem-provider.js'
+import type { ProviderCapabilityMap } from '../providers/provider-adapter.js'
 import type { ProblemMetadataCache } from '../providers/problem-metadata-cache.js'
+import type { ProblemContentCacheRepository } from '../../repositories/problem-content-cache-repository.js'
+import {
+  fetchProviderText,
+  isProviderHostnameAllowed,
+  type ProviderHttpRequest,
+} from '../providers/provider-http-client.js'
+import { readLimitedResponseText } from '../provider-accounts/provider-fetch-utils.js'
+import { problemContentFromHtml } from '../providers/provider-content.js'
+import { providerHtmlToText } from '../providers/provider-html-sanitizer.js'
 import {
   normalizeCodeforcesDifficulty,
   normalizeCodeforcesProblems,
@@ -54,6 +65,7 @@ type RefreshResult = {
 export type CodeforcesProviderOptions = {
   baseUrl?: string
   cacheTtlMs?: number
+  contentCacheTtlMs?: number
   timeoutMs?: number
   maxAttempts?: number
   minRequestIntervalMs?: number
@@ -66,6 +78,9 @@ export type CodeforcesProviderOptions = {
   sleep?: RequestGateSleep
   requestGate?: RequestGate
   metadataCache?: ProblemMetadataCache
+  contentCache?: ProblemContentCacheRepository
+  catalogEnabled?: boolean
+  contentEnabled?: boolean
 }
 
 const invalidResponseError = () =>
@@ -84,6 +99,7 @@ const requestAbortedError = () =>
 
 export class CodeforcesProvider implements ProblemProvider {
   readonly key = 'codeforces' as const
+  readonly capabilities: ProviderCapabilityMap
 
   private readonly endpoint: URL
   private readonly cacheTtlMs: number
@@ -92,12 +108,24 @@ export class CodeforcesProvider implements ProblemProvider {
   private readonly retryBaseDelayMs: number
   private readonly failureCooldownMs: number
   private readonly fetchImpl: typeof fetch
+  private readonly hasCustomFetch: boolean
   private readonly logger: StructuredLogger
   private readonly now: () => number
   private readonly random: () => number
   private readonly sleep: RequestGateSleep
   private readonly requestGate: RequestGate
   private readonly metadataCache: ProblemMetadataCache | undefined
+  private readonly contentCache = new Map<
+    string,
+    {
+      content: ReturnType<typeof ProblemContentSchema.parse>
+      expiresAtMs: number
+    }
+  >()
+  private readonly contentCacheTtlMs: number
+  private readonly contentRepository: ProblemContentCacheRepository | undefined
+  private readonly catalogEnabled: boolean
+  private readonly contentEnabled: boolean
 
   private cache?: CacheEntry
   private metadataCacheLoaded = false
@@ -113,6 +141,27 @@ export class CodeforcesProvider implements ProblemProvider {
 
   constructor(options: CodeforcesProviderOptions = {}) {
     const baseUrl = options.baseUrl ?? 'https://codeforces.com/api'
+    const base = new URL(baseUrl)
+    const hasCustomFetch = options.fetchImpl !== undefined
+
+    if (
+      base.protocol !== 'https:' ||
+      !isProviderHostnameAllowed(
+        this.key,
+        base.hostname,
+        'codeforces.com',
+        hasCustomFetch,
+      ) ||
+      base.username !== '' ||
+      base.password !== '' ||
+      base.port !== '' ||
+      base.search !== '' ||
+      base.hash !== ''
+    ) {
+      throw new Error(
+        'CODEFORCES_API_BASE_URL must be an HTTPS URL on codeforces.com without credentials, query parameters, fragments, or a custom port.',
+      )
+    }
 
     this.endpoint = new URL(
       'problemset.problems',
@@ -125,6 +174,7 @@ export class CodeforcesProvider implements ProblemProvider {
     this.retryBaseDelayMs = options.retryBaseDelayMs ?? 250
     this.failureCooldownMs = options.failureCooldownMs ?? 30_000
     this.fetchImpl = options.fetchImpl ?? fetch
+    this.hasCustomFetch = hasCustomFetch
     this.logger = options.logger ?? structuredLogger
     this.now = options.now ?? Date.now
     this.random = options.random ?? Math.random
@@ -137,6 +187,23 @@ export class CodeforcesProvider implements ProblemProvider {
         sleep: this.sleep,
       })
     this.metadataCache = options.metadataCache
+    this.contentCacheTtlMs = Math.min(
+      options.contentCacheTtlMs ?? this.cacheTtlMs,
+      2_592_000_000,
+    )
+    this.contentRepository = options.contentCache
+    this.catalogEnabled = options.catalogEnabled ?? true
+    this.contentEnabled = options.contentEnabled ?? true
+    this.capabilities = {
+      catalog: this.catalogEnabled ? 'supported' : 'disabled',
+      problem_content: this.contentEnabled ? 'supported' : 'disabled',
+      profile: 'unsupported',
+      submissions: 'unsupported',
+      solved_problems: 'unsupported',
+      rating_history: 'unsupported',
+      contests: 'supported',
+      contest_participation: 'unsupported',
+    }
 
     if (
       this.endpoint.protocol !== 'https:' ||
@@ -159,12 +226,184 @@ export class CodeforcesProvider implements ProblemProvider {
     query: ProviderProblemQuery,
     request: ProblemProviderRequest = {},
   ): Promise<ProblemProviderSearchResult> {
+    if (!this.catalogEnabled) {
+      return {
+        problems: [],
+        freshness: this.getHealth(),
+        warnings: [
+          ProviderWarningSchema.parse({
+            provider: this.key,
+            code: 'CAPABILITY_DISABLED',
+            message: 'Codeforces catalog synchronization is disabled.',
+          }),
+        ],
+      }
+    }
     const catalog = await this.loadCatalog(request)
 
     return {
       problems: filterProblems(catalog.problems, query),
       freshness: this.getHealth(),
       warnings: catalog.warnings,
+    }
+  }
+
+  async getContent(externalId: string, request: ProblemProviderRequest = {}) {
+    if (!this.contentEnabled) {
+      return {
+        content: null,
+        freshness: this.getHealth(),
+        warnings: [
+          ProviderWarningSchema.parse({
+            provider: this.key,
+            code: 'CAPABILITY_DISABLED',
+            message: 'Codeforces problem content retrieval is disabled.',
+          }),
+        ],
+      }
+    }
+    let cached = this.contentCache.get(externalId)
+    if (cached === undefined && this.contentRepository !== undefined) {
+      try {
+        const persisted = await this.contentRepository.find(
+          this.key,
+          externalId,
+        )
+        if (persisted !== null) {
+          cached = {
+            content: persisted.content,
+            expiresAtMs: persisted.expiresAtMs,
+          }
+          this.contentCache.set(externalId, cached)
+        }
+      } catch {
+        // Cache failures are non-fatal; the public page remains authoritative.
+      }
+    }
+    const now = this.now()
+    if (cached !== undefined && now < cached.expiresAtMs) {
+      return {
+        content: cached.content,
+        freshness: this.getHealth(),
+        warnings: [],
+      }
+    }
+    const match = /^(\d+)([A-Za-z][0-9]*)$/.exec(externalId.trim())
+    if (match === null) {
+      return {
+        content: null,
+        freshness: this.getHealth(),
+        warnings: [
+          ProviderWarningSchema.parse({
+            provider: this.key,
+            code: 'UNSUPPORTED_PROVIDER_RECORDS',
+            message:
+              'This Codeforces problem does not have a safe public statement URL.',
+          }),
+        ],
+      }
+    }
+    const contestId = Number(match[1])
+    const index = match[2]
+    if (index === undefined) {
+      return { content: null, freshness: this.getHealth(), warnings: [] }
+    }
+    let canonicalUrl: string
+    try {
+      canonicalUrl = createCodeforcesProblemUrl(contestId, index)
+    } catch {
+      return { content: null, freshness: this.getHealth(), warnings: [] }
+    }
+    try {
+      const html = await fetchProviderText({
+        provider: this.key,
+        url: new URL(canonicalUrl),
+        allowedHostname: 'codeforces.com',
+        requestGate: this.requestGate,
+        fetchImpl: this.fetchImpl,
+        timeoutMs: this.timeoutMs,
+        maxAttempts: this.maxAttempts,
+        maxResponseBytes: 2_000_000,
+        ...(request.signal === undefined ? {} : { signal: request.signal }),
+        ...(request.requestId === undefined
+          ? {}
+          : { requestId: request.requestId }),
+      } satisfies ProviderHttpRequest)
+      if (/captcha|cloudflare|access denied|just a moment/i.test(html)) {
+        throw new ProviderError('Codeforces blocked public problem content.', {
+          code: 'PROVIDER_BLOCKED',
+          provider: this.key,
+          retryable: false,
+        })
+      }
+      const statementMatch =
+        /<div[^>]*class=["'][^"']*problem-statement[^"']*["'][^>]*>([\s\S]*?)<\/div>\s*<\/div>/i.exec(
+          html,
+        )
+      const source = statementMatch?.[1] ?? html
+      const title =
+        providerHtmlToText(
+          /<div[^>]*class=["'][^"']*title[^"']*["'][^>]*>([\s\S]*?)<\/div>/i.exec(
+            html,
+          )?.[1] ?? '',
+        ) || externalId
+      const content = problemContentFromHtml({
+        provider: this.key,
+        externalId,
+        canonicalUrl,
+        title,
+        html: source,
+        sourceUrl: canonicalUrl,
+        schemaVersion: 'codeforces-problem-html-v1',
+      })
+      this.contentCache.set(externalId, {
+        content,
+        expiresAtMs: now + this.contentCacheTtlMs,
+      })
+      void this.contentRepository?.save({
+        provider: this.key,
+        externalId,
+        content,
+        availability: 'available',
+        fetchedAtMs: now,
+        expiresAtMs: now + this.contentCacheTtlMs,
+      })
+      return { content, freshness: this.getHealth(), warnings: [] }
+    } catch (error) {
+      if (cached !== undefined) {
+        const providerError =
+          error instanceof ProviderError
+            ? error
+            : new ProviderError('Codeforces problem content is unavailable.', {
+                code: 'PROVIDER_UNAVAILABLE',
+                provider: this.key,
+                retryable: true,
+                cause: error,
+              })
+        const staleContent = ProblemContentSchema.parse({
+          ...cached.content,
+          completeness: 'partial',
+          provenance: {
+            ...cached.content.provenance,
+            completeness: 'partial',
+            stale: true,
+            errorCode: providerError.code,
+          },
+        })
+        return {
+          content: staleContent,
+          freshness: this.getHealth(),
+          warnings: [
+            ProviderWarningSchema.parse({
+              provider: this.key,
+              code: 'STALE_DATA',
+              message:
+                'Showing cached Codeforces problem content while the provider is unavailable.',
+            }),
+          ],
+        }
+      }
+      throw error
     }
   }
 
@@ -407,6 +646,13 @@ export class CodeforcesProvider implements ProblemProvider {
         ...(problem.solvedCount === undefined
           ? {}
           : { solvedCount: problem.solvedCount }),
+        isPaidOnly: false,
+        contentAvailable: true,
+        sourceUrl: this.endpoint.toString(),
+        extractionStrategy: 'official_json',
+        schemaVersion: 'codeforces-problemset-v2',
+        completeness: 'complete',
+        stale: false,
         fetchedAt,
       })
 
@@ -449,8 +695,15 @@ export class CodeforcesProvider implements ProblemProvider {
       )
     }
 
-    const validatedProblems =
-      ExternalProblemSummarySchema.array().parse(normalizedProblems)
+    const validatedProblems = ExternalProblemSummarySchema.array()
+      .parse(normalizedProblems)
+      .map((problem) => ({
+        ...problem,
+        completeness:
+          invalidProblemCount === 0 && invalidStatisticsCount === 0
+            ? ('complete' as const)
+            : ('partial' as const),
+      }))
 
     if (validatedProblems.length === 0) {
       throw invalidResponseError()
@@ -538,6 +791,7 @@ export class CodeforcesProvider implements ProblemProvider {
     try {
       response = await this.fetchImpl(this.endpoint, {
         headers: { accept: 'application/json' },
+        redirect: 'manual',
         signal: combinedSignal,
       })
     } catch {
@@ -568,6 +822,22 @@ export class CodeforcesProvider implements ProblemProvider {
       })
     }
 
+    if (response.status === 403) {
+      throw new ProviderError('Codeforces blocked this public request.', {
+        code: 'PROVIDER_BLOCKED',
+        provider: this.key,
+        retryable: false,
+      })
+    }
+
+    if (response.status >= 300 && response.status < 400) {
+      throw new ProviderError('Codeforces redirected a public request.', {
+        code: 'PROVIDER_BLOCKED',
+        provider: this.key,
+        retryable: false,
+      })
+    }
+
     if (!response.ok) {
       throw new ProviderError('Codeforces is temporarily unavailable.', {
         code: 'PROVIDER_UNAVAILABLE',
@@ -577,10 +847,49 @@ export class CodeforcesProvider implements ProblemProvider {
       })
     }
 
-    let body: unknown
+    if (response.url !== '') {
+      const responseUrl = new URL(response.url)
+      if (
+        responseUrl.protocol !== 'https:' ||
+        !isProviderHostnameAllowed(
+          this.key,
+          responseUrl.hostname,
+          'codeforces.com',
+          this.hasCustomFetch,
+        ) ||
+        responseUrl.username !== '' ||
+        responseUrl.password !== '' ||
+        responseUrl.port !== ''
+      ) {
+        throw new ProviderError('Codeforces redirected to an unsafe host.', {
+          code: 'PROVIDER_BLOCKED',
+          provider: this.key,
+          retryable: false,
+        })
+      }
+    }
+
+    const contentType = response.headers.get('content-type')?.toLowerCase()
+    if (
+      contentType !== null &&
+      contentType !== undefined &&
+      !contentType.includes('application/json') &&
+      !contentType.includes('+json')
+    ) {
+      throw invalidResponseError()
+    }
+
+    let text: string
 
     try {
-      body = await response.json()
+      text = await readLimitedResponseText(this.key, response, 30_000_000)
+    } catch {
+      throw invalidResponseError()
+    }
+
+    let body: unknown
+    try {
+      body = JSON.parse(text) as unknown
     } catch {
       throw invalidResponseError()
     }
@@ -668,6 +977,11 @@ export class CodeforcesProvider implements ProblemProvider {
 
     return {
       ...cache,
+      problems: cache.problems.map((problem) => ({
+        ...problem,
+        completeness: 'partial' as const,
+        stale: true,
+      })),
       warnings: [
         ...cache.warnings.filter(
           (warning) => warning.code !== staleWarning.code,

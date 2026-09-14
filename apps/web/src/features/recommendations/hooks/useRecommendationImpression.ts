@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react'
+import type { ProviderKey } from '@algomemtor/shared-contracts'
 
 import { recordProblemAction } from '@/features/progress/api/progress'
 
 type RecommendationImpressionOptions = {
-  provider: 'codeforces'
+  provider: ProviderKey
   externalId: string
   recommendationItemId: string
 }

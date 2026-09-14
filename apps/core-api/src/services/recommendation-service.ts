@@ -10,6 +10,9 @@ import {
   type RecommendationBatch,
   type RecommendationDismissal,
   type RecommendationFeedResponse,
+  type ProviderFreshness,
+  type ProviderKey,
+  type ProviderWarning,
 } from '@algomemtor/shared-contracts'
 
 import {
@@ -19,6 +22,7 @@ import {
   type AiRankingResponse,
 } from '../integrations/ai/ai-recommendation-client.js'
 import type { ProblemProvider } from '../integrations/providers/problem-provider.js'
+import { ProviderError } from '../errors/provider-error.js'
 import type {
   ProblemActionRecord,
   ProblemActionRepository,
@@ -42,6 +46,7 @@ import {
 
 type RecommendationServiceOptions = {
   provider: ProblemProvider
+  providers?: readonly ProblemProvider[]
   learnerProfileRepository: LearnerProfileRepository
   recommendationRepository: RecommendationRepository
   problemActionRepository: ProblemActionRepository
@@ -51,7 +56,11 @@ type RecommendationServiceOptions = {
   memoryGenerationEnabled?: boolean
 }
 
-type ProviderSnapshot = Awaited<ReturnType<ProblemProvider['search']>>
+type ProviderSnapshot = {
+  problems: ExternalProblemSummary[]
+  warnings: ProviderWarning[]
+  freshness: ProviderFreshness[]
+}
 
 const identity = (provider: string, externalId: string) =>
   `${provider}:${externalId}`
@@ -76,6 +85,8 @@ const profileSignature = (
         focusTopics: profile.focusTopics,
         preferredTopics: profile.preferredTopics,
         ratingBand: profile.ratingBand,
+        preferredProviders: profile.preferredProviders,
+        targetDifficulty: profile.targetDifficulty ?? null,
         providerPreferred: profile.providerPreferred,
         goal: source?.goal ?? null,
         experience: source?.experience ?? null,
@@ -176,8 +187,9 @@ const recommendationProblem = (
 const criteriaFor = (
   profile: ReturnType<typeof deriveRankingProfile>,
   source: LearnerProfile | null,
+  provider?: ProviderKey,
 ) => ({
-  provider: 'codeforces' as const,
+  ...(provider === undefined ? {} : { provider }),
   topics: profile.focusTopics,
   minRating: profile.ratingBand.min,
   maxRating: profile.ratingBand.max,
@@ -226,9 +238,9 @@ export const repeatsRecommendationPreferenceText = (
 
 const metaFor = (snapshot: ProviderSnapshot) => ({
   partial: snapshot.warnings.some((warning) => warning.code !== 'STALE_DATA'),
-  stale: snapshot.freshness.stale,
+  stale: snapshot.freshness.some((item) => item.stale),
   warnings: snapshot.warnings,
-  providers: [snapshot.freshness],
+  providers: snapshot.freshness,
 })
 
 export class RecommendationNotFoundError extends Error {
@@ -245,14 +257,56 @@ export class RecommendationService {
   >()
   private readonly memoryInvalidations = new Map<string, Date>()
 
-  constructor(private readonly options: RecommendationServiceOptions) {}
+  private readonly providers: readonly ProblemProvider[]
+
+  constructor(private readonly options: RecommendationServiceOptions) {
+    this.providers = options.providers ?? [options.provider]
+    if (this.providers.length === 0) {
+      throw new Error('At least one recommendation provider is required.')
+    }
+  }
 
   invalidateForLearner(authUserId: string) {
     this.memoryInvalidations.set(authUserId, new Date())
   }
 
   private async loadSnapshot() {
-    return this.options.provider.search({})
+    const settled = await Promise.allSettled(
+      this.providers.map((provider) => provider.search({})),
+    )
+    const problems: ExternalProblemSummary[] = []
+    const warnings: ProviderWarning[] = []
+    const freshness: ProviderFreshness[] = []
+    let successful = 0
+    for (const [index, result] of settled.entries()) {
+      const provider = this.providers[index]
+      if (provider === undefined) continue
+      if (result.status === 'fulfilled') {
+        successful += 1
+        problems.push(...result.value.problems)
+        warnings.push(...result.value.warnings)
+        freshness.push(result.value.freshness)
+        continue
+      }
+      const error =
+        result.reason instanceof ProviderError ? result.reason : null
+      freshness.push({
+        provider: provider.key,
+        availability: 'unavailable',
+        stale: false,
+        ...(error === null ? {} : { lastErrorCode: error.code }),
+      })
+      warnings.push({
+        provider: provider.key,
+        code: error?.code ?? 'PROVIDER_UNAVAILABLE',
+        message: `${provider.key} recommendation candidates are temporarily unavailable.`,
+      })
+    }
+    if (successful === 0) {
+      const failure = settled.find((result) => result.status === 'rejected')
+      if (failure?.status === 'rejected') throw failure.reason
+    }
+    return { problems, warnings, freshness }
   }
 
   private buildAiRequest(
@@ -420,7 +474,11 @@ export class RecommendationService {
         this.options.progressRepository?.latestRelevantChangeAt(authUserId),
       ])
     const rankingProfile = deriveRankingProfile(profile)
-    const criteria = criteriaFor(rankingProfile, profile)
+    const criteria = criteriaFor(
+      rankingProfile,
+      profile,
+      this.providers.length === 1 ? this.providers[0]?.key : undefined,
+    )
     const latestBatch = batches[0]
     const latestFeedback = feedback.reduce<Date | undefined>(
       (latest, item) =>
@@ -707,11 +765,7 @@ export class RecommendationService {
     })
   }
 
-  async restore(
-    authUserId: string,
-    provider: 'codeforces',
-    externalId: string,
-  ) {
+  async restore(authUserId: string, provider: ProviderKey, externalId: string) {
     const actions =
       await this.options.problemActionRepository.listByAuthUserId(authUserId)
     const active = currentDismissals(actions).find(

@@ -95,6 +95,54 @@ describe('ProviderActivityService', () => {
     )
   })
 
+  it('keeps activity observations separate when a handle changes', async () => {
+    let now = new Date('2026-09-14T10:00:00.000Z')
+    const repository = new InMemoryProviderAccountRepository(() => now)
+    const actionRepository = new InMemoryProblemActionRepository(() => now)
+    const service = new ProviderActivityService({
+      repository,
+      actionRepository,
+      fetchers: [
+        {
+          provider: 'codeforces',
+          fetchVerifiedActivity: async (handle) => ({
+            events: [
+              {
+                externalId: '1900A',
+                providerEventId: `${handle}-event`,
+                occurredAt: new Date('2026-09-13T10:00:00.000Z'),
+              },
+            ],
+            complete: true,
+            fetchedAt: now,
+          }),
+        },
+      ],
+      now: () => now,
+      minRefreshIntervalMs: 0,
+    })
+
+    await repository.upsertByAuthUserId(learnerId, 'codeforces', 'tourist')
+    await service.setConsent(learnerId, 'codeforces', true)
+    await service.sync(learnerId, 'codeforces')
+    now = new Date('2026-09-14T10:00:01.000Z')
+    await repository.upsertByAuthUserId(
+      learnerId,
+      'codeforces',
+      'new_handle',
+    )
+    await service.setConsent(learnerId, 'codeforces', true)
+    await service.sync(learnerId, 'codeforces')
+
+    expect(
+      await repository.listVerifiedActivityByAuthUserId(learnerId),
+    ).toHaveLength(2)
+    expect(
+      (await repository.findAllIncludingDisconnectedByAuthUserId(learnerId))
+        .map((account) => account.externalHandle),
+    ).toEqual(['new_handle', 'tourist'])
+  })
+
   it('removes provider evidence and generated actions when consent is revoked', async () => {
     let now = new Date('2026-09-14T10:00:00.000Z')
     const repository = new InMemoryProviderAccountRepository(() => now)

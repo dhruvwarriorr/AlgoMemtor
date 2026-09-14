@@ -12,6 +12,14 @@ boundaries explicit.
 > metadata, and future features recommend problems before redirecting learners to
 > the original platform.
 
+> **Unified-provider overlay (2026-09-14):** ADR 0005 and the companion
+> three-provider plan now permit bounded, sanitized public/free problem content
+> and public activity observations for Codeforces, CodeChef, and LeetCode when
+> the configured source and capability are enabled. This supersedes only the
+> older single-provider/aggregate-only statements below; authentication,
+> CAPTCHA, paywall, private-data, source-code, and access-control bypasses
+> remain prohibited.
+
 ---
 
 ## Table of Contents
@@ -131,8 +139,9 @@ Onboard learner
 - Email registration and login.
 - Goal, experience, preferred topics, and learning preferences.
 - Preferred providers and difficulty range.
-- Optional public handle with consent, plus a separate user-triggered public
-  solved-count refresh.
+- Optional public handle with long-lived public-sync consent. Linked profiles
+  synchronize through the queued six-hour worker with an asynchronous manual
+  refresh cooldown.
 
 ### Problem discovery
 
@@ -691,7 +700,7 @@ provider data.
 
 ## 10.4 Provider approval checklist
 
-Before enabling any additional provider:
+Before enabling a new provider or public-data capability:
 
 - Is the API official or explicitly permitted?
 - Does it provide enough metadata for useful cards?
@@ -703,7 +712,9 @@ Before enabling any additional provider:
 - What is the deletion/refresh policy?
 - What happens when the integration is unavailable?
 
-If the checklist fails, do not scrape as a workaround.
+If the checklist fails, disable or defer that capability. The bounded public
+HTML/GraphQL strategies explicitly accepted by ADR 0005 are not permission to
+bypass robots, authentication, CAPTCHAs, paywalls, or provider blocks.
 
 ## 10.5 Cache strategy
 
@@ -718,9 +729,11 @@ Use:
 - exponential backoff with jitter; and
 - a circuit breaker only after repeated failures justify it.
 
-The initial Codeforces policy uses a one-hour in-process TTL, one shared
-in-flight refresh promise, and a 2.1-second minimum interval between provider
-requests. Timeout, network, and `5xx` failures may receive one retry with backoff.
+The original Codeforces catalog policy used a one-hour in-process TTL. The
+unified release uses the configured six-hour catalog TTL, durable metadata
+cache, one shared in-flight refresh promise, and a 2.1-second minimum interval
+between Codeforces requests. Timeout, network, and `5xx` failures may receive
+bounded retries with backoff.
 HTTP `429` and Codeforces `Call limit exceeded` failures are classified as
 `PROVIDER_RATE_LIMITED` and are not retried immediately. When an expired cache
 exists and refresh fails, the API returns it with degraded/stale freshness and a

@@ -37,6 +37,7 @@ export type ProviderVerifiedActivityState = {
     | 'PROVIDER_ACCOUNT_NOT_FOUND'
     | 'PROVIDER_TIMEOUT'
     | 'PROVIDER_RATE_LIMITED'
+    | 'PROVIDER_BLOCKED'
     | 'PROVIDER_UNAVAILABLE'
     | 'PROVIDER_INVALID_RESPONSE'
     | null
@@ -62,6 +63,7 @@ export type ProviderVerifiedActivityRecord = ProviderVerifiedActivityEvent & {
 }
 
 export type ProviderAccountRecord = {
+  id: string
   provider: LinkableProvider
   externalHandle: PublicProviderHandle
   consentScope: ProviderAccountConsentScope
@@ -78,6 +80,8 @@ export type ProviderAccountRecord = {
   verifiedActivity: ProviderVerifiedActivityState
   linkedAt: Date
   updatedAt: Date
+  syncEnabled: boolean
+  disconnectedAt: Date | null
 }
 
 export type ProviderPublicStatsSuccess = {
@@ -96,6 +100,9 @@ export type ProviderPublicStatsFailure = {
 
 export interface ProviderAccountRepository {
   findAllByAuthUserId(authUserId: string): Promise<ProviderAccountRecord[]>
+  findAllIncludingDisconnectedByAuthUserId?(
+    authUserId: string,
+  ): Promise<ProviderAccountRecord[]>
   findByAuthUserIdAndProvider(
     authUserId: string,
     provider: LinkableProvider,
@@ -152,6 +159,14 @@ export interface ProviderAccountRepository {
     authUserId: string,
     provider: LinkableProvider,
   ): Promise<void>
+  disconnectByAuthUserId?(
+    authUserId: string,
+    provider: LinkableProvider,
+  ): Promise<void>
+  deleteHistoryByAuthUserId?(
+    authUserId: string,
+    provider: LinkableProvider,
+  ): Promise<void>
 }
 
 const consentScope = 'store_public_profile_reference' as const
@@ -184,16 +199,37 @@ export class InMemoryProviderAccountRepository implements ProviderAccountReposit
     string,
     Map<LinkableProvider, ProviderAccountRecord>
   >()
+  private readonly archivedRecordsByAuthUserId = new Map<
+    string,
+    Map<LinkableProvider, ProviderAccountRecord[]>
+  >()
   private readonly activityByAuthUserId = new Map<
     string,
-    Map<LinkableProvider, Map<string, ProviderVerifiedActivityRecord>>
+    Map<
+      LinkableProvider,
+      Map<string, Map<string, ProviderVerifiedActivityRecord>>
+    >
   >()
 
   constructor(private readonly now: () => Date = () => new Date()) {}
 
   async findAllByAuthUserId(authUserId: string) {
-    return [...(this.recordsByAuthUserId.get(authUserId)?.values() ?? [])].sort(
-      (left, right) => left.provider.localeCompare(right.provider),
+    return [...(this.recordsByAuthUserId.get(authUserId)?.values() ?? [])]
+      .filter((record) => record.syncEnabled)
+      .sort((left, right) => left.provider.localeCompare(right.provider))
+  }
+
+  async findAllIncludingDisconnectedByAuthUserId(authUserId: string) {
+    const active = [
+      ...(this.recordsByAuthUserId.get(authUserId)?.values() ?? []),
+    ]
+    const archived = [
+      ...(this.archivedRecordsByAuthUserId.get(authUserId)?.values() ?? []),
+    ].flatMap((records) => records)
+    return [...active, ...archived].sort(
+      (left, right) =>
+        left.provider.localeCompare(right.provider) ||
+        right.linkedAt.getTime() - left.linkedAt.getTime(),
     )
   }
 
@@ -201,13 +237,16 @@ export class InMemoryProviderAccountRepository implements ProviderAccountReposit
     authUserId: string,
     provider: LinkableProvider,
   ) {
-    return this.recordsByAuthUserId.get(authUserId)?.get(provider) ?? null
+    const record = this.recordsByAuthUserId.get(authUserId)?.get(provider)
+    return record?.syncEnabled === false ? null : (record ?? null)
   }
 
   async listVerifiedActivityByAuthUserId(authUserId: string) {
     const byProvider = this.activityByAuthUserId.get(authUserId)
-    return [...(byProvider?.values() ?? [])].flatMap((events) =>
-      [...events.values()].map((event) => ({ ...event })),
+    return [...(byProvider?.values() ?? [])].flatMap((byAccount) =>
+      [...byAccount.values()].flatMap((events) =>
+        [...events.values()].map((event) => ({ ...event })),
+      ),
     )
   }
 
@@ -221,27 +260,76 @@ export class InMemoryProviderAccountRepository implements ProviderAccountReposit
       new Map<LinkableProvider, ProviderAccountRecord>()
     const existing = records.get(provider)
     const now = this.now()
-    const preserveStats = existing?.externalHandle === handle
+    if (existing !== undefined && existing.externalHandle !== handle) {
+      const archivedByProvider =
+        this.archivedRecordsByAuthUserId.get(authUserId) ??
+        new Map<LinkableProvider, ProviderAccountRecord[]>()
+      const archived = archivedByProvider.get(provider) ?? []
+      archived.push({
+        ...existing,
+        syncEnabled: false,
+        disconnectedAt: now,
+        updatedAt: now,
+      })
+      archivedByProvider.set(provider, archived)
+      this.archivedRecordsByAuthUserId.set(authUserId, archivedByProvider)
+      records.delete(provider)
+    }
+    const current = records.get(provider)
+    const archivedByProvider = this.archivedRecordsByAuthUserId
+      .get(authUserId)
+      ?.get(provider)
+    const archivedMatch =
+      current === undefined
+        ? archivedByProvider
+            ?.slice()
+            .reverse()
+            .find((record) => record.externalHandle === handle)
+        : undefined
+    if (current === undefined && archivedMatch !== undefined) {
+      const reconnected: ProviderAccountRecord = {
+        ...archivedMatch,
+        publicStatsConsentAt: archivedMatch.publicStatsConsentAt ?? now,
+        syncEnabled: true,
+        disconnectedAt: null,
+        updatedAt: now,
+      }
+      records.set(provider, reconnected)
+      if (archivedByProvider !== undefined) {
+        this.archivedRecordsByAuthUserId.get(authUserId)?.set(
+          provider,
+          archivedByProvider.filter((record) => record.id !== archivedMatch.id),
+        )
+      }
+      this.recordsByAuthUserId.set(authUserId, records)
+      return reconnected
+    }
+    const preserveStats = current?.externalHandle === handle
     const record: ProviderAccountRecord = {
+      id: current?.id ?? randomUUID(),
       provider,
       externalHandle: handle,
       consentScope,
       verificationStatus: 'not_verified',
-      ...(preserveStats && existing !== undefined
+      syncEnabled: true,
+      disconnectedAt: null,
+      ...(preserveStats && current !== undefined
         ? {
-            activityAccess: existing.activityAccess,
-            publicStatsConsentAt: existing.publicStatsConsentAt,
-            solvedCount: existing.solvedCount,
-            statsComplete: existing.statsComplete,
-            statsSource: existing.statsSource,
-            statsFetchedAt: existing.statsFetchedAt,
-            statsAttemptedAt: existing.statsAttemptedAt,
-            statsErrorCode: existing.statsErrorCode,
-            statsErrorRetryable: existing.statsErrorRetryable,
-            verifiedActivity: existing.verifiedActivity,
+            activityAccess: current.activityAccess,
+            publicStatsConsentAt: current.publicStatsConsentAt ?? now,
+            solvedCount: current.solvedCount,
+            statsComplete: current.statsComplete,
+            statsSource: current.statsSource,
+            statsFetchedAt: current.statsFetchedAt,
+            statsAttemptedAt: current.statsAttemptedAt,
+            statsErrorCode: current.statsErrorCode,
+            statsErrorRetryable: current.statsErrorRetryable,
+            verifiedActivity: current.verifiedActivity,
+            syncEnabled: true,
+            disconnectedAt: null,
           }
-        : createUnlinkedStats()),
-      linkedAt: existing?.linkedAt ?? now,
+        : { ...createUnlinkedStats(), publicStatsConsentAt: now }),
+      linkedAt: current?.linkedAt ?? now,
       updatedAt: now,
     }
 
@@ -339,9 +427,15 @@ export class InMemoryProviderAccountRepository implements ProviderAccountReposit
     }
     const byProvider =
       this.activityByAuthUserId.get(authUserId) ??
-      new Map<LinkableProvider, Map<string, ProviderVerifiedActivityRecord>>()
-    const events =
+      new Map<
+        LinkableProvider,
+        Map<string, Map<string, ProviderVerifiedActivityRecord>>
+      >()
+    const byAccount =
       byProvider.get(provider) ??
+      new Map<string, Map<string, ProviderVerifiedActivityRecord>>()
+    const events =
+      byAccount.get(existing.id) ??
       new Map<string, ProviderVerifiedActivityRecord>()
     const added: ProviderVerifiedActivityRecord[] = []
     const pending: ProviderVerifiedActivityRecord[] = []
@@ -377,7 +471,8 @@ export class InMemoryProviderAccountRepository implements ProviderAccountReposit
         }
       }
     }
-    byProvider.set(provider, events)
+    byAccount.set(existing.id, events)
+    byProvider.set(provider, byAccount)
     this.activityByAuthUserId.set(authUserId, byProvider)
     const updated = {
       ...existing,
@@ -436,10 +531,15 @@ export class InMemoryProviderAccountRepository implements ProviderAccountReposit
     externalId: string,
     actionId: string,
   ) {
-    const activity = this.activityByAuthUserId
-      .get(authUserId)
-      ?.get(provider)
-      ?.get(externalId)
+    const account = this.recordsByAuthUserId.get(authUserId)?.get(provider)
+    const activity =
+      account === undefined
+        ? undefined
+        : this.activityByAuthUserId
+            .get(authUserId)
+            ?.get(provider)
+            ?.get(account.id)
+            ?.get(externalId)
     if (activity !== undefined && activity.progressActionId === null) {
       activity.progressActionId = actionId
     }
@@ -480,18 +580,71 @@ export class InMemoryProviderAccountRepository implements ProviderAccountReposit
   async deleteByAuthUserId(authUserId: string, provider: LinkableProvider) {
     const records = this.recordsByAuthUserId.get(authUserId)
     records?.delete(provider)
+    this.archivedRecordsByAuthUserId.get(authUserId)?.delete(provider)
     this.activityByAuthUserId.get(authUserId)?.delete(provider)
 
     if (records?.size === 0) {
       this.recordsByAuthUserId.delete(authUserId)
     }
+    if (this.archivedRecordsByAuthUserId.get(authUserId)?.size === 0) {
+      this.archivedRecordsByAuthUserId.delete(authUserId)
+    }
     if (this.activityByAuthUserId.get(authUserId)?.size === 0) {
       this.activityByAuthUserId.delete(authUserId)
     }
   }
+
+  async deleteHistoryByAuthUserId(
+    authUserId: string,
+    provider: LinkableProvider,
+  ) {
+    const records = this.recordsByAuthUserId.get(authUserId)
+    const existing = records?.get(provider)
+    const archived = this.archivedRecordsByAuthUserId
+      .get(authUserId)
+      ?.get(provider)
+    if (existing === undefined && archived === undefined) return
+    const now = this.now()
+    if (existing !== undefined && records !== undefined) {
+      records.set(provider, {
+        ...existing,
+        ...createUnlinkedStats(),
+        syncEnabled: false,
+        disconnectedAt: now,
+        updatedAt: now,
+      })
+    }
+    this.activityByAuthUserId.get(authUserId)?.delete(provider)
+    if (archived !== undefined) {
+      this.archivedRecordsByAuthUserId.get(authUserId)?.set(
+        provider,
+        archived.map((record) => ({
+          ...record,
+          ...createUnlinkedStats(),
+          syncEnabled: false,
+          disconnectedAt: now,
+          updatedAt: now,
+        })),
+      )
+    }
+  }
+
+  async disconnectByAuthUserId(authUserId: string, provider: LinkableProvider) {
+    const records = this.recordsByAuthUserId.get(authUserId)
+    const existing = records?.get(provider)
+    if (existing === undefined || records === undefined) return
+    const now = this.now()
+    records.set(provider, {
+      ...existing,
+      syncEnabled: false,
+      disconnectedAt: now,
+      updatedAt: now,
+    })
+  }
 }
 
 const recordFromDatabase = (record: {
+  id: string
   provider: string
   externalHandle: string
   consentScope: string
@@ -515,12 +668,15 @@ const recordFromDatabase = (record: {
   activityRetryAfter: Date | null
   linkedAt: Date
   updatedAt: Date
+  syncEnabled: boolean
+  disconnectedAt: Date | null
 }): ProviderAccountRecord => {
   if (record.verificationStatus !== 'not_verified') {
     throw new Error('Provider account record has an unsupported access state.')
   }
 
   return {
+    id: record.id,
     provider: LinkableProviderSchema.parse(record.provider),
     externalHandle: PublicProviderHandleSchema.parse(record.externalHandle),
     consentScope: ProviderAccountConsentScopeSchema.parse(record.consentScope),
@@ -562,6 +718,8 @@ const recordFromDatabase = (record: {
     },
     linkedAt: record.linkedAt,
     updatedAt: record.updatedAt,
+    syncEnabled: record.syncEnabled,
+    disconnectedAt: record.disconnectedAt,
   }
 }
 
@@ -591,11 +749,22 @@ export class PrismaProviderAccountRepository implements ProviderAccountRepositor
       where: { authUserId },
       select: {
         providerAccounts: {
+          where: { syncEnabled: true },
           orderBy: { provider: 'asc' },
         },
       },
     })
 
+    return (user?.providerAccounts ?? []).map(recordFromDatabase)
+  }
+
+  async findAllIncludingDisconnectedByAuthUserId(authUserId: string) {
+    const user = await this.prisma.coreUser.findUnique({
+      where: { authUserId },
+      select: {
+        providerAccounts: { orderBy: { provider: 'asc' } },
+      },
+    })
     return (user?.providerAccounts ?? []).map(recordFromDatabase)
   }
 
@@ -607,7 +776,7 @@ export class PrismaProviderAccountRepository implements ProviderAccountRepositor
       where: { authUserId },
       select: {
         providerAccounts: {
-          where: { provider },
+          where: { provider, syncEnabled: true },
           take: 1,
         },
       },
@@ -642,56 +811,53 @@ export class PrismaProviderAccountRepository implements ProviderAccountRepositor
         update: {},
         select: { id: true },
       })
-      const existing = await transaction.providerAccount.findUnique({
-        where: { userId_provider: { userId: user.id, provider } },
+      const existing = await transaction.providerAccount.findFirst({
+        where: { userId: user.id, provider, syncEnabled: true },
+        orderBy: { updatedAt: 'desc' },
       })
-
-      if (existing === null) {
-        return transaction.providerAccount.create({
-          data: {
+      const sameHandle = await transaction.providerAccount.findUnique({
+        where: {
+          userId_provider_externalHandle: {
             userId: user.id,
             provider,
             externalHandle: handle,
+          },
+        },
+      })
+
+      if (sameHandle !== null) {
+        if (existing !== null && existing.id !== sameHandle.id) {
+          await transaction.providerAccount.update({
+            where: { id: existing.id },
+            data: { syncEnabled: false, disconnectedAt: new Date() },
+          })
+        }
+        return transaction.providerAccount.update({
+          where: { id: sameHandle.id },
+          data: {
             consentScope,
+            publicStatsConsentAt: sameHandle.publicStatsConsentAt ?? new Date(),
+            syncEnabled: true,
+            disconnectedAt: null,
+            verificationStatus: 'not_verified',
           },
         })
       }
 
-      const handleChanged = existing.externalHandle !== handle
-
-      if (handleChanged) {
-        await transaction.providerVerifiedActivity.deleteMany({
-          where: { providerAccountId: existing.id },
+      if (existing !== null) {
+        await transaction.providerAccount.update({
+          where: { id: existing.id },
+          data: { syncEnabled: false, disconnectedAt: new Date() },
         })
       }
 
-      return transaction.providerAccount.update({
-        where: { id: existing.id },
+      return transaction.providerAccount.create({
         data: {
+          userId: user.id,
+          provider,
           externalHandle: handle,
           consentScope,
-          verificationStatus: 'not_verified',
-          ...(handleChanged
-            ? {
-                activityAccess: 'not_enabled',
-                publicStatsConsentAt: null,
-                solvedCount: null,
-                statsComplete: null,
-                statsSource: null,
-                statsFetchedAt: null,
-                statsAttemptedAt: null,
-                statsErrorCode: null,
-                statsErrorRetryable: null,
-                activityConsentAt: null,
-                activitySyncStatus: 'not_enabled',
-                activityLastAttemptedAt: null,
-                activityLastSucceededAt: null,
-                activityAcceptedProblemCount: null,
-                activityComplete: null,
-                activityErrorCode: null,
-                activityRetryAfter: null,
-              }
-            : {}),
+          publicStatsConsentAt: new Date(),
         },
       })
     })
@@ -758,8 +924,9 @@ export class PrismaProviderAccountRepository implements ProviderAccountRepositor
       select: { id: true },
     })
     if (user === null) return null
-    const account = await this.prisma.providerAccount.findUnique({
-      where: { userId_provider: { userId: user.id, provider } },
+    const account = await this.prisma.providerAccount.findFirst({
+      where: { userId: user.id, provider, syncEnabled: true },
+      orderBy: { updatedAt: 'desc' },
     })
     if (account === null) return null
     if (!enabled) {
@@ -806,8 +973,9 @@ export class PrismaProviderAccountRepository implements ProviderAccountRepositor
         select: { id: true },
       })
       if (user === null) return null
-      const account = await transaction.providerAccount.findUnique({
-        where: { userId_provider: { userId: user.id, provider } },
+      const account = await transaction.providerAccount.findFirst({
+        where: { userId: user.id, provider, syncEnabled: true },
+        orderBy: { updatedAt: 'desc' },
       })
       if (
         account === null ||
@@ -821,9 +989,8 @@ export class PrismaProviderAccountRepository implements ProviderAccountRepositor
       for (const event of activity.events) {
         const existing = await transaction.providerVerifiedActivity.findUnique({
           where: {
-            userId_provider_externalId: {
-              userId: user.id,
-              provider,
+            providerAccountId_externalId: {
+              providerAccountId: account.id,
               externalId: event.externalId,
             },
           },
@@ -915,8 +1082,9 @@ export class PrismaProviderAccountRepository implements ProviderAccountRepositor
       select: { id: true },
     })
     if (user === null) return null
-    const account = await this.prisma.providerAccount.findUnique({
-      where: { userId_provider: { userId: user.id, provider } },
+    const account = await this.prisma.providerAccount.findFirst({
+      where: { userId: user.id, provider, syncEnabled: true },
+      orderBy: { updatedAt: 'desc' },
     })
     if (
       account === null ||
@@ -944,13 +1112,21 @@ export class PrismaProviderAccountRepository implements ProviderAccountRepositor
   ) {
     const user = await this.prisma.coreUser.findUnique({
       where: { authUserId },
-      select: { id: true },
+      select: {
+        id: true,
+        providerAccounts: {
+          where: { provider, syncEnabled: true },
+          select: { id: true },
+          take: 1,
+        },
+      },
     })
     if (user === null) return
+    const account = user.providerAccounts[0]
+    if (account === undefined) return
     await this.prisma.providerVerifiedActivity.updateMany({
       where: {
-        userId: user.id,
-        provider,
+        providerAccountId: account.id,
         externalId,
         progressActionId: null,
       },
@@ -970,6 +1146,79 @@ export class PrismaProviderAccountRepository implements ProviderAccountRepositor
 
     await this.prisma.providerAccount.deleteMany({
       where: { userId: user.id, provider },
+    })
+  }
+
+  async deleteHistoryByAuthUserId(
+    authUserId: string,
+    provider: LinkableProvider,
+  ) {
+    const user = await this.prisma.coreUser.findUnique({
+      where: { authUserId },
+      select: { id: true },
+    })
+    if (user === null) return
+    const accounts = await this.prisma.providerAccount.findMany({
+      where: { userId: user.id, provider },
+      select: { id: true },
+    })
+    if (accounts.length === 0) return
+    await this.prisma.$transaction(async (transaction) => {
+      const accountIds = accounts.map((account) => account.id)
+      await transaction.providerVerifiedActivity.deleteMany({
+        where: { providerAccountId: { in: accountIds } },
+      })
+      await transaction.providerProfileSnapshot.deleteMany({
+        where: { providerAccountId: { in: accountIds } },
+      })
+      await transaction.providerSubmission.deleteMany({
+        where: { providerAccountId: { in: accountIds } },
+      })
+      await transaction.providerSolvedObservation.deleteMany({
+        where: { providerAccountId: { in: accountIds } },
+      })
+      await transaction.providerRatingChange.deleteMany({
+        where: { providerAccountId: { in: accountIds } },
+      })
+      await transaction.contestParticipation.deleteMany({
+        where: { providerAccountId: { in: accountIds } },
+      })
+      await transaction.providerAccount.updateMany({
+        where: { id: { in: accountIds } },
+        data: {
+          publicStatsConsentAt: null,
+          solvedCount: null,
+          statsComplete: null,
+          statsSource: null,
+          statsFetchedAt: null,
+          statsAttemptedAt: null,
+          statsErrorCode: null,
+          statsErrorRetryable: null,
+          activityAccess: 'not_enabled',
+          activityConsentAt: null,
+          activitySyncStatus: 'not_enabled',
+          activityLastAttemptedAt: null,
+          activityLastSucceededAt: null,
+          activityAcceptedProblemCount: null,
+          activityComplete: null,
+          activityErrorCode: null,
+          activityRetryAfter: null,
+          syncEnabled: false,
+          disconnectedAt: new Date(),
+        },
+      })
+    })
+  }
+
+  async disconnectByAuthUserId(authUserId: string, provider: LinkableProvider) {
+    const user = await this.prisma.coreUser.findUnique({
+      where: { authUserId },
+      select: { id: true },
+    })
+    if (user === null) return
+    await this.prisma.providerAccount.updateMany({
+      where: { userId: user.id, provider },
+      data: { syncEnabled: false, disconnectedAt: new Date() },
     })
   }
 
@@ -999,8 +1248,9 @@ export class PrismaProviderAccountRepository implements ProviderAccountRepositor
         return null
       }
 
-      const existing = await transaction.providerAccount.findUnique({
-        where: { userId_provider: { userId: user.id, provider } },
+      const existing = await transaction.providerAccount.findFirst({
+        where: { userId: user.id, provider, syncEnabled: true },
+        orderBy: { updatedAt: 'desc' },
       })
 
       if (existing === null || existing.externalHandle !== expectedHandle) {

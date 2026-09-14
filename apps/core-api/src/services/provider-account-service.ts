@@ -92,7 +92,9 @@ export function serializeProviderAccount(
           }),
       ...(record.verifiedActivity.acceptedProblemCount === null
         ? {}
-        : { acceptedProblemCount: record.verifiedActivity.acceptedProblemCount }),
+        : {
+            acceptedProblemCount: record.verifiedActivity.acceptedProblemCount,
+          }),
       ...(record.verifiedActivity.complete === null
         ? {}
         : { complete: record.verifiedActivity.complete }),
@@ -106,6 +108,10 @@ export function serializeProviderAccount(
     ...(record.publicStatsConsentAt === null
       ? {}
       : { publicStatsConsentAt: record.publicStatsConsentAt.toISOString() }),
+    syncEnabled: record.syncEnabled,
+    ...(record.disconnectedAt === null
+      ? {}
+      : { disconnectedAt: record.disconnectedAt.toISOString() }),
     publicStats,
     linkedAt: record.linkedAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),

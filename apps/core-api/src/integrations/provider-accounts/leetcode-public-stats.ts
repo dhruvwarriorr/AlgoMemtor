@@ -8,6 +8,7 @@ import {
   throwForProviderHttpStatus,
   waitForProviderRequest,
 } from './provider-fetch-utils.js'
+import { isProviderHostnameAllowed } from '../providers/provider-http-client.js'
 import {
   ProviderPublicStatsError,
   type ProviderPublicStatsFetcher,
@@ -70,9 +71,21 @@ export class LeetCodePublicStatsFetcher implements ProviderPublicStatsFetcher {
     this.requestGate =
       options.requestGate ?? new RequestGate({ minIntervalMs: 1000 })
     this.now = options.now ?? (() => new Date())
+    const testHostAllowed = isProviderHostnameAllowed(
+      this.provider,
+      this.endpoint.hostname,
+      'leetcode.com',
+      options.fetchImpl !== undefined,
+    )
 
     if (
       this.endpoint.protocol !== 'https:' ||
+      !testHostAllowed ||
+      this.endpoint.username !== '' ||
+      this.endpoint.password !== '' ||
+      this.endpoint.port !== '' ||
+      this.endpoint.search !== '' ||
+      this.endpoint.hash !== '' ||
       this.endpoint.pathname !== '/graphql' ||
       this.timeoutMs <= 0
     ) {

@@ -9,9 +9,9 @@ datasource db {
 }
 
 model CoreUser {
-  id                     String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  authUserId             String                     @unique @map("auth_user_id") @db.Uuid
-  createdAt              DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
+  id                     String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  authUserId             String                      @unique @map("auth_user_id") @db.Uuid
+  createdAt              DateTime                    @default(now()) @map("created_at") @db.Timestamptz(3)
   learnerProfile         LearnerProfile?
   providerAccounts       ProviderAccount[]
   bookmarks              Bookmark[]
@@ -23,6 +23,13 @@ model CoreUser {
   aiConsents             LearnerAiConsent[]
   outboxJobs             OutboxJob[]
   verifiedActivities     ProviderVerifiedActivity[]
+  providerProfiles       ProviderProfileSnapshot[]
+  providerSubmissions    ProviderSubmission[]
+  solvedObservations     ProviderSolvedObservation[]
+  ratingChanges          ProviderRatingChange[]
+  contestParticipations  ContestParticipation[]
+  syncStates             ProviderSyncState[]
+  syncJobs               ProviderSyncJob[]
 
   @@map("users")
   @@schema("core")
@@ -42,35 +49,44 @@ model LearnerProfile {
 }
 
 model ProviderAccount {
-  id                           String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId                       String                     @map("user_id") @db.Uuid
-  provider                     String                     @db.VarChar(32)
-  externalHandle               String                     @map("external_handle") @db.VarChar(64)
-  consentScope                 String                     @map("consent_scope") @db.VarChar(64)
-  verificationStatus           String                     @default("not_verified") @map("verification_status") @db.VarChar(32)
-  activityAccess               String                     @default("not_enabled") @map("activity_access") @db.VarChar(32)
-  publicStatsConsentAt         DateTime?                  @map("public_stats_consent_at") @db.Timestamptz(3)
-  solvedCount                  Int?                       @map("solved_count")
-  statsComplete                Boolean?                   @map("stats_complete")
-  statsSource                  String?                    @map("stats_source") @db.VarChar(64)
-  statsFetchedAt               DateTime?                  @map("stats_fetched_at") @db.Timestamptz(3)
-  statsAttemptedAt             DateTime?                  @map("stats_attempted_at") @db.Timestamptz(3)
-  statsErrorCode               String?                    @map("stats_error_code") @db.VarChar(64)
-  statsErrorRetryable          Boolean?                   @map("stats_error_retryable")
-  activityConsentAt            DateTime?                  @map("activity_consent_at") @db.Timestamptz(3)
-  activitySyncStatus           String                     @default("not_enabled") @map("activity_sync_status") @db.VarChar(16)
-  activityLastAttemptedAt      DateTime?                  @map("activity_last_attempted_at") @db.Timestamptz(3)
-  activityLastSucceededAt      DateTime?                  @map("activity_last_succeeded_at") @db.Timestamptz(3)
-  activityAcceptedProblemCount Int?                       @map("activity_accepted_problem_count")
-  activityComplete             Boolean?                   @map("activity_complete")
-  activityErrorCode            String?                    @map("activity_error_code") @db.VarChar(64)
-  activityRetryAfter           DateTime?                  @map("activity_retry_after") @db.Timestamptz(3)
-  linkedAt                     DateTime                   @default(now()) @map("linked_at") @db.Timestamptz(3)
-  updatedAt                    DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(3)
-  user                         CoreUser                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                           String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                       String                      @map("user_id") @db.Uuid
+  provider                     String                      @db.VarChar(32)
+  externalHandle               String                      @map("external_handle") @db.VarChar(64)
+  consentScope                 String                      @map("consent_scope") @db.VarChar(64)
+  verificationStatus           String                      @default("not_verified") @map("verification_status") @db.VarChar(32)
+  activityAccess               String                      @default("not_enabled") @map("activity_access") @db.VarChar(32)
+  publicStatsConsentAt         DateTime?                   @map("public_stats_consent_at") @db.Timestamptz(3)
+  solvedCount                  Int?                        @map("solved_count")
+  statsComplete                Boolean?                    @map("stats_complete")
+  statsSource                  String?                     @map("stats_source") @db.VarChar(64)
+  statsFetchedAt               DateTime?                   @map("stats_fetched_at") @db.Timestamptz(3)
+  statsAttemptedAt             DateTime?                   @map("stats_attempted_at") @db.Timestamptz(3)
+  statsErrorCode               String?                     @map("stats_error_code") @db.VarChar(64)
+  statsErrorRetryable          Boolean?                    @map("stats_error_retryable")
+  activityConsentAt            DateTime?                   @map("activity_consent_at") @db.Timestamptz(3)
+  activitySyncStatus           String                      @default("not_enabled") @map("activity_sync_status") @db.VarChar(16)
+  activityLastAttemptedAt      DateTime?                   @map("activity_last_attempted_at") @db.Timestamptz(3)
+  activityLastSucceededAt      DateTime?                   @map("activity_last_succeeded_at") @db.Timestamptz(3)
+  activityAcceptedProblemCount Int?                        @map("activity_accepted_problem_count")
+  activityComplete             Boolean?                    @map("activity_complete")
+  activityErrorCode            String?                     @map("activity_error_code") @db.VarChar(64)
+  activityRetryAfter           DateTime?                   @map("activity_retry_after") @db.Timestamptz(3)
+  syncEnabled                  Boolean                     @default(true) @map("sync_enabled")
+  disconnectedAt               DateTime?                   @map("disconnected_at") @db.Timestamptz(3)
+  linkedAt                     DateTime                    @default(now()) @map("linked_at") @db.Timestamptz(3)
+  updatedAt                    DateTime                    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user                         CoreUser                    @relation(fields: [userId], references: [id], onDelete: Cascade)
   verifiedActivities           ProviderVerifiedActivity[]
+  profileSnapshots             ProviderProfileSnapshot[]
+  submissions                  ProviderSubmission[]
+  solvedObservations           ProviderSolvedObservation[]
+  ratingChanges                ProviderRatingChange[]
+  contestParticipations        ContestParticipation[]
+  syncStates                   ProviderSyncState[]
+  syncJobs                     ProviderSyncJob[]
 
-  @@unique([userId, provider])
+  @@unique([userId, provider, externalHandle], map: "provider_accounts_user_provider_handle_key")
   @@map("provider_accounts")
   @@schema("core")
 }
@@ -90,8 +106,9 @@ model ProviderVerifiedActivity {
   providerAccount    ProviderAccount @relation(fields: [providerAccountId], references: [id], onDelete: Cascade)
   progressAction     ProblemAction?  @relation(fields: [progressActionId], references: [id], onDelete: SetNull)
 
-  @@unique([userId, provider, externalId])
+  @@unique([providerAccountId, externalId], map: "provider_verified_activity_account_external_key")
   @@unique([providerAccountId, providerEventId])
+  @@index([userId, provider, externalId], map: "provider_verified_activity_user_provider_external_idx")
   @@index([userId, providerOccurredAt])
   @@map("provider_verified_activity")
   @@schema("core")
@@ -119,6 +136,14 @@ model ExternalProblemCache {
   providerTags         String[] @map("provider_tags")
   normalizedTopics     String[] @map("normalized_topics")
   publicStats          Json?    @map("public_stats") @db.JsonB
+  acceptanceRate       Float?   @map("acceptance_rate")
+  isPaidOnly           Boolean  @default(false) @map("is_paid_only")
+  contentAvailable     Boolean  @default(false) @map("content_available")
+  extractionStrategy   String   @default("official_json") @map("extraction_strategy") @db.VarChar(32)
+  sourceUrl            String   @default("https://codeforces.com/api/problemset.problems") @map("source_url") @db.VarChar(2048)
+  schemaVersion        String   @default("legacy-v1") @map("schema_version") @db.VarChar(64)
+  completeness         String   @default("complete") @db.VarChar(16)
+  stale                Boolean  @default(false)
   availability         String   @db.VarChar(16)
   fetchedAt            DateTime @map("fetched_at") @db.Timestamptz(3)
   expiresAt            DateTime @map("expires_at") @db.Timestamptz(3)
@@ -131,6 +156,264 @@ model ExternalProblemCache {
   @@index([normalizedTopics], type: Gin)
   @@index([providerTags], type: Gin)
   @@map("external_problem_cache")
+  @@schema("core")
+}
+
+model ProblemContentCache {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  provider           String   @db.VarChar(32)
+  externalId         String   @map("external_id") @db.VarChar(128)
+  title              String   @db.VarChar(512)
+  canonicalUrl       String   @map("canonical_url") @db.VarChar(2048)
+  statementHtml      String?  @map("statement_html") @db.Text
+  statementText      String?  @map("statement_text") @db.Text
+  constraints        Json?    @db.JsonB
+  examples           Json?    @db.JsonB
+  hints              Json?    @db.JsonB
+  publicSolutionHtml String?  @map("public_solution_html") @db.Text
+  isPaidOnly         Boolean  @default(false) @map("is_paid_only")
+  contentAvailable   Boolean  @default(false) @map("content_available")
+  extractionStrategy String   @map("extraction_strategy") @db.VarChar(32)
+  sourceUrl          String   @map("source_url") @db.VarChar(2048)
+  schemaVersion      String   @map("schema_version") @db.VarChar(64)
+  completeness       String   @db.VarChar(16)
+  availability       String   @db.VarChar(16)
+  fetchedAt          DateTime @map("fetched_at") @db.Timestamptz(3)
+  expiresAt          DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([provider, externalId])
+  @@index([expiresAt])
+  @@index([provider, expiresAt])
+  @@map("problem_content_cache")
+  @@schema("core")
+}
+
+model ExternalContest {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  provider           String    @db.VarChar(32)
+  externalId         String    @map("external_id") @db.VarChar(128)
+  name               String    @db.VarChar(512)
+  canonicalUrl       String    @map("canonical_url") @db.VarChar(2048)
+  phase              String?   @db.VarChar(32)
+  startsAt           DateTime? @map("starts_at") @db.Timestamptz(3)
+  endsAt             DateTime? @map("ends_at") @db.Timestamptz(3)
+  durationSeconds    Int?      @map("duration_seconds")
+  isRated            Boolean?  @map("is_rated")
+  status             String    @db.VarChar(16)
+  extractionStrategy String    @map("extraction_strategy") @db.VarChar(32)
+  sourceUrl          String    @map("source_url") @db.VarChar(2048)
+  schemaVersion      String    @map("schema_version") @db.VarChar(64)
+  completeness       String    @db.VarChar(16)
+  availability       String    @db.VarChar(16)
+  fetchedAt          DateTime  @map("fetched_at") @db.Timestamptz(3)
+  expiresAt          DateTime  @map("expires_at") @db.Timestamptz(3)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([provider, externalId])
+  @@index([provider, startsAt])
+  @@index([status, startsAt])
+  @@map("external_contests")
+  @@schema("core")
+}
+
+model ProviderProfileSnapshot {
+  id                 String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId             String          @map("user_id") @db.Uuid
+  providerAccountId  String          @map("provider_account_id") @db.Uuid
+  provider           String          @db.VarChar(32)
+  externalHandle     String          @map("external_handle") @db.VarChar(128)
+  displayName        String?         @map("display_name") @db.VarChar(256)
+  profileUrl         String          @map("profile_url") @db.VarChar(2048)
+  avatarUrl          String?         @map("avatar_url") @db.VarChar(2048)
+  rank               String?         @db.VarChar(128)
+  globalRank         Int?            @map("global_rank")
+  rating             Float?
+  solvedCount        Int?            @map("solved_count")
+  acceptanceRate     Float?          @map("acceptance_rate")
+  languageCounts     Json            @map("language_counts") @db.JsonB
+  topicCounts        Json            @map("topic_counts") @db.JsonB
+  badges             Json            @db.JsonB
+  calendar           Json            @db.JsonB
+  completeness       String          @db.VarChar(16)
+  extractionStrategy String          @map("extraction_strategy") @db.VarChar(32)
+  sourceUrl          String          @map("source_url") @db.VarChar(2048)
+  schemaVersion      String          @map("schema_version") @db.VarChar(64)
+  fetchedAt          DateTime        @map("fetched_at") @db.Timestamptz(3)
+  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  user               CoreUser        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  providerAccount    ProviderAccount @relation(fields: [providerAccountId], references: [id], onDelete: Cascade)
+
+  @@index([userId, provider, fetchedAt])
+  @@index([providerAccountId, fetchedAt])
+  @@map("provider_profile_snapshots")
+  @@schema("core")
+}
+
+model ProviderSubmission {
+  id                 String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId             String          @map("user_id") @db.Uuid
+  providerAccountId  String          @map("provider_account_id") @db.Uuid
+  provider           String          @db.VarChar(32)
+  externalId         String          @map("external_id") @db.VarChar(128)
+  providerEventId    String          @map("provider_event_id") @db.VarChar(128)
+  problemTitle       String?         @map("problem_title") @db.VarChar(512)
+  canonicalUrl       String          @map("canonical_url") @db.VarChar(2048)
+  verdict            String          @db.VarChar(64)
+  language           String?         @db.VarChar(128)
+  occurredAt         DateTime?       @map("occurred_at") @db.Timestamptz(3)
+  isAccepted         Boolean         @map("is_accepted")
+  completeness       String          @db.VarChar(16)
+  extractionStrategy String          @map("extraction_strategy") @db.VarChar(32)
+  sourceUrl          String          @map("source_url") @db.VarChar(2048)
+  schemaVersion      String          @map("schema_version") @db.VarChar(64)
+  fetchedAt          DateTime        @map("fetched_at") @db.Timestamptz(3)
+  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user               CoreUser        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  providerAccount    ProviderAccount @relation(fields: [providerAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([providerAccountId, providerEventId])
+  @@index([userId, provider, occurredAt])
+  @@index([providerAccountId, occurredAt])
+  @@map("provider_submissions")
+  @@schema("core")
+}
+
+model ProviderSolvedObservation {
+  id                 String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId             String          @map("user_id") @db.Uuid
+  providerAccountId  String          @map("provider_account_id") @db.Uuid
+  provider           String          @db.VarChar(32)
+  externalId         String          @map("external_id") @db.VarChar(128)
+  providerEventId    String?         @map("provider_event_id") @db.VarChar(128)
+  canonicalUrl       String          @map("canonical_url") @db.VarChar(2048)
+  occurredAt         DateTime?       @map("occurred_at") @db.Timestamptz(3)
+  firstObservedAt    DateTime        @default(now()) @map("first_observed_at") @db.Timestamptz(3)
+  lastObservedAt     DateTime        @default(now()) @map("last_observed_at") @db.Timestamptz(3)
+  completeness       String          @db.VarChar(16)
+  extractionStrategy String          @map("extraction_strategy") @db.VarChar(32)
+  sourceUrl          String          @map("source_url") @db.VarChar(2048)
+  schemaVersion      String          @map("schema_version") @db.VarChar(64)
+  user               CoreUser        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  providerAccount    ProviderAccount @relation(fields: [providerAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([providerAccountId, externalId], map: "provider_solved_observations_account_external_key")
+  @@unique([providerAccountId, providerEventId])
+  @@index([userId, provider, externalId], map: "provider_solved_observations_user_provider_external_idx")
+  @@index([userId, occurredAt])
+  @@map("provider_solved_observations")
+  @@schema("core")
+}
+
+model ProviderRatingChange {
+  id                 String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId             String          @map("user_id") @db.Uuid
+  providerAccountId  String          @map("provider_account_id") @db.Uuid
+  provider           String          @db.VarChar(32)
+  eventId            String          @map("event_id") @db.VarChar(128)
+  contestId          String?         @map("contest_id") @db.VarChar(128)
+  contestName        String?         @map("contest_name") @db.VarChar(512)
+  canonicalUrl       String          @map("canonical_url") @db.VarChar(2048)
+  occurredAt         DateTime        @map("occurred_at") @db.Timestamptz(3)
+  oldRating          Float           @map("old_rating")
+  newRating          Float           @map("new_rating")
+  delta              Float
+  providerPercentile Float?          @map("provider_percentile")
+  completeness       String          @db.VarChar(16)
+  extractionStrategy String          @map("extraction_strategy") @db.VarChar(32)
+  sourceUrl          String          @map("source_url") @db.VarChar(2048)
+  schemaVersion      String          @map("schema_version") @db.VarChar(64)
+  user               CoreUser        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  providerAccount    ProviderAccount @relation(fields: [providerAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([providerAccountId, eventId])
+  @@index([userId, provider, occurredAt])
+  @@map("provider_rating_changes")
+  @@schema("core")
+}
+
+model ContestParticipation {
+  id                 String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId             String          @map("user_id") @db.Uuid
+  providerAccountId  String          @map("provider_account_id") @db.Uuid
+  provider           String          @db.VarChar(32)
+  contestId          String          @map("contest_id") @db.VarChar(128)
+  contestName        String?         @map("contest_name") @db.VarChar(512)
+  canonicalUrl       String          @map("canonical_url") @db.VarChar(2048)
+  rank               Int?
+  score              Float?
+  ratingChange       Float?          @map("rating_change")
+  oldRating          Float?          @map("old_rating")
+  newRating          Float?          @map("new_rating")
+  attendedAt         DateTime?       @map("attended_at") @db.Timestamptz(3)
+  extractionStrategy String          @map("extraction_strategy") @db.VarChar(32)
+  sourceUrl          String          @map("source_url") @db.VarChar(2048)
+  schemaVersion      String          @map("schema_version") @db.VarChar(64)
+  completeness       String          @db.VarChar(16)
+  user               CoreUser        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  providerAccount    ProviderAccount @relation(fields: [providerAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([providerAccountId, contestId])
+  @@index([userId, provider, attendedAt])
+  @@map("contest_participations")
+  @@schema("core")
+}
+
+model ProviderSyncState {
+  id                String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  scopeKey          String           @map("scope_key") @db.VarChar(160)
+  userId            String?          @map("user_id") @db.Uuid
+  providerAccountId String?          @map("provider_account_id") @db.Uuid
+  provider          String           @db.VarChar(32)
+  capability        String           @db.VarChar(64)
+  status            String           @db.VarChar(16)
+  cursor            String?          @db.Text
+  lastStartedAt     DateTime?        @map("last_started_at") @db.Timestamptz(3)
+  lastSucceededAt   DateTime?        @map("last_succeeded_at") @db.Timestamptz(3)
+  nextRunAt         DateTime?        @map("next_run_at") @db.Timestamptz(3)
+  attempts          Int              @default(0)
+  lastErrorCode     String?          @map("last_error_code") @db.VarChar(64)
+  completeness      String           @db.VarChar(16)
+  stale             Boolean          @default(false)
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user              CoreUser?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  providerAccount   ProviderAccount? @relation(fields: [providerAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([scopeKey, provider, capability])
+  @@index([provider, capability, nextRunAt])
+  @@index([userId, provider, capability])
+  @@map("provider_sync_states")
+  @@schema("core")
+}
+
+model ProviderSyncJob {
+  id                String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String?          @map("user_id") @db.Uuid
+  providerAccountId String?          @map("provider_account_id") @db.Uuid
+  provider          String           @db.VarChar(32)
+  capability        String           @db.VarChar(64)
+  jobType           String           @map("job_type") @db.VarChar(64)
+  cursor            String?          @db.Text
+  status            String           @default("queued") @db.VarChar(16)
+  runAfter          DateTime         @default(now()) @map("run_after") @db.Timestamptz(3)
+  attempts          Int              @default(0)
+  leaseOwner        String?          @map("lease_owner") @db.VarChar(128)
+  leaseExpiresAt    DateTime?        @map("lease_expires_at") @db.Timestamptz(3)
+  idempotencyKey    String           @unique @map("idempotency_key") @db.VarChar(192)
+  lastErrorCode     String?          @map("last_error_code") @db.VarChar(64)
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user              CoreUser?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  providerAccount   ProviderAccount? @relation(fields: [providerAccountId], references: [id], onDelete: Cascade)
+
+  @@index([status, runAfter])
+  @@index([provider, capability, status, runAfter])
+  @@index([userId, createdAt])
+  @@map("provider_sync_jobs")
   @@schema("core")
 }
 

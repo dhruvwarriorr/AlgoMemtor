@@ -12,6 +12,9 @@ const coreMigration = readWorkspaceFile(
 const week10Migration = readWorkspaceFile(
   '../../prisma/migrations/20260910020000_week10_recommendation_actions/migration.sql',
 )
+const unifiedProviderMigration = readWorkspaceFile(
+  '../../prisma/migrations/20260914120000_unified_provider_data/migration.sql',
+)
 const seedSource = readWorkspaceFile('../../prisma/seed.ts')
 const alembicEnvironment = readWorkspaceFile('../../../ai-api/alembic/env.py')
 const aiBaseline = readWorkspaceFile(
@@ -42,7 +45,7 @@ const coreModels = [
 ] as const
 
 const forbiddenField =
-  /^\s*(?:statement|statements|examples|constraints|starterCode|starter_code|editorial|editorials|testCases|test_cases|draft|drafts|submission|submissions|verdict|verdicts|sourceCode|source_code)\s+/im
+  /^\s*(?:starterCode|starter_code|editorial|editorials|testCases|test_cases|draft|drafts|sourceCode|source_code|privateResponse|private_response|sessionCookie|session_cookie)\s+/im
 
 describe('Week 9 database schema boundaries', () => {
   it('keeps every Prisma model in the core schema', () => {
@@ -59,6 +62,12 @@ describe('Week 9 database schema boundaries', () => {
     }
 
     expect(prismaSchema).not.toMatch(forbiddenField)
+    expect(prismaSchema).toMatch(
+      /model ProblemContentCache[\s\S]*?statementHtml\s+String\?/,
+    )
+    expect(prismaSchema).toMatch(
+      /model ProviderSubmission[\s\S]*?verdict\s+String\s+/,
+    )
   })
 
   it('creates only the permitted Week 9 metadata and learner tables', () => {
@@ -104,10 +113,17 @@ describe('Week 9 database schema boundaries', () => {
     )
   })
 
-  it('allows dismissal restoration without deleting action history', () => {
-    expect(week10Migration).toContain(
-      "'dismissal_restored'",
+  it('permits long-lived public consent before the first statistics attempt', () => {
+    expect(unifiedProviderMigration).toMatch(
+      /activity_access = 'not_enabled'[\s\S]*stats_attempted_at IS NULL[\s\S]*OR \([\s\S]*activity_access = 'public_solved_count'/,
     )
+    expect(unifiedProviderMigration).toContain(
+      'public_stats_consent_at IS NOT NULL',
+    )
+  })
+
+  it('allows dismissal restoration without deleting action history', () => {
+    expect(week10Migration).toContain("'dismissal_restored'")
     expect(week10Migration).toContain(
       'DROP CONSTRAINT problem_actions_action_type_check',
     )

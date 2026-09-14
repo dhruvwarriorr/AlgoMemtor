@@ -4,6 +4,8 @@ import {
   ProblemReflectionSchema,
   ProblemReferenceSchema,
   ProblemTimerSessionSchema,
+  ProviderKeySchema,
+  type ProviderKey,
   type AiConsent,
   type ProblemReflection,
   type ProblemReference,
@@ -26,7 +28,7 @@ const outboxJobSchema = z
     evidenceType: z.string().trim().min(1).max(64),
     evidenceId: identifierSchema.optional(),
     evidenceIds: z.array(identifierSchema).max(256).optional(),
-    problemProvider: z.literal('codeforces').optional(),
+    problemProvider: ProviderKeySchema.optional(),
     problemExternalId: z
       .string()
       .trim()
@@ -69,7 +71,7 @@ export type MemoryEvidencePayload = {
   feedback?: 'useful' | 'not_useful' | 'too_easy' | 'about_right' | 'too_hard'
   explicitPreference?: string
   problemStatus?: 'unsolved' | 'attempted' | 'solved'
-  problemProvider?: 'codeforces'
+  problemProvider?: ProviderKey
   problemExternalId?: string
 }
 
@@ -158,7 +160,7 @@ export type ProgressRepository = {
     evidenceType: string
     evidenceId?: string
     evidenceIds?: string[]
-    problemProvider?: 'codeforces'
+    problemProvider?: ProviderKey
     problemExternalId?: string
     idempotencyKey: string
   }): Promise<OutboxJobRecord>
@@ -1685,7 +1687,7 @@ export class PrismaProgressRepository implements ProgressRepository {
         ...(reflection.note === null ? {} : { note: reflection.note }),
         perceivedDifficulty: reflection.perceivedDifficulty as
           'easy' | 'medium' | 'hard',
-        problemProvider: reflection.provider as 'codeforces',
+        problemProvider: ProviderKeySchema.parse(reflection.provider),
         problemExternalId: reflection.externalId,
       }
     }
@@ -1698,7 +1700,7 @@ export class PrismaProgressRepository implements ProgressRepository {
       return {
         occurredAt: timer.completedAt ?? timer.updatedAt,
         timeSpentMinutes: Math.floor(timer.durationSeconds / 60),
-        problemProvider: timer.provider as 'codeforces',
+        problemProvider: ProviderKeySchema.parse(timer.provider),
         problemExternalId: timer.externalId,
       }
     }
@@ -1719,7 +1721,7 @@ export class PrismaProgressRepository implements ProgressRepository {
               problemStatus: action.learnerStatus as
                 'unsolved' | 'attempted' | 'solved',
             }),
-        problemProvider: action.provider as 'codeforces',
+        problemProvider: ProviderKeySchema.parse(action.provider),
         problemExternalId: action.externalId,
       }
     }

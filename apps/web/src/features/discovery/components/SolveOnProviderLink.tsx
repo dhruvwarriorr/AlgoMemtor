@@ -6,6 +6,8 @@ import { cn } from '@/lib/utils'
 
 const providerLabels: Record<ProviderKey, string> = {
   codeforces: 'Codeforces',
+  codechef: 'CodeChef',
+  leetcode: 'LeetCode',
 }
 
 type SolveOnProviderLinkProps = {

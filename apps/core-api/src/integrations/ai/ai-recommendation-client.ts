@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { ProviderKeySchema } from '@algomemtor/shared-contracts'
+
 const safeRequestIdSchema = z.string().regex(/^[A-Za-z0-9_-]{1,100}$/)
 const topicSchema = z
   .string()
@@ -10,7 +12,7 @@ const topicSchema = z
 
 const aiRankingCandidateSchema = z
   .object({
-    provider: z.literal('codeforces'),
+    provider: ProviderKeySchema,
     externalId: z.string().trim().min(1).max(128).regex(/^\S+$/),
     title: z.string().trim().min(1).max(512),
     rating: z.number().finite().nonnegative().optional(),
@@ -93,7 +95,7 @@ export const AiRankingResponseSchema = z
       .array(
         z
           .object({
-            provider: z.literal('codeforces'),
+            provider: ProviderKeySchema,
             externalId: z.string().trim().min(1).max(128).regex(/^\S+$/),
             score: z.number().finite().min(0).max(1),
             reason: z.string().trim().min(1).max(240),

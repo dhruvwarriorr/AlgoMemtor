@@ -3,6 +3,7 @@ import type { ProviderKey } from '@algomemtor/shared-contracts'
 export type ProviderErrorCode =
   | 'PROVIDER_TIMEOUT'
   | 'PROVIDER_RATE_LIMITED'
+  | 'PROVIDER_BLOCKED'
   | 'PROVIDER_UNAVAILABLE'
   | 'PROVIDER_INVALID_RESPONSE'
 

@@ -3,6 +3,7 @@ import type {
   RecommendationDifficultyFeedback,
   RecommendationItem,
   RecommendationUsefulness,
+  ProviderKey,
 } from '@algomemtor/shared-contracts'
 
 import { Button } from '@/components/ui/button'
@@ -35,6 +36,12 @@ const statusLabels: Record<LearnerProblemStatus, string> = {
   solved: 'Solved',
 }
 
+const providerLabels: Record<ProviderKey, string> = {
+  codeforces: 'Codeforces',
+  codechef: 'CodeChef',
+  leetcode: 'LeetCode',
+}
+
 export function RecommendationCard({
   item,
   isDismissPending,
@@ -57,7 +64,9 @@ export function RecommendationCard({
     >
       <header className="space-y-2">
         <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">Codeforces</span>
+          <span className="font-medium text-foreground">
+            {providerLabels[problem.provider]}
+          </span>
           <span aria-hidden="true">•</span>
           <span className="break-all">{problem.externalId}</span>
           {problem.learnerStatus ? (

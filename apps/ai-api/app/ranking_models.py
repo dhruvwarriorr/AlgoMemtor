@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-Provider = Literal["codeforces"]
+Provider = Literal["codeforces", "codechef", "leetcode"]
 NormalizedDifficulty = Literal["easy", "medium", "hard"]
 FallbackReason = Literal[
     "not_configured",

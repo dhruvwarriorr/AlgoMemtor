@@ -54,6 +54,7 @@ export const ProviderPublicStatsErrorCodeSchema = z.enum([
   'PROVIDER_ACCOUNT_NOT_FOUND',
   'PROVIDER_TIMEOUT',
   'PROVIDER_RATE_LIMITED',
+  'PROVIDER_BLOCKED',
   'PROVIDER_UNAVAILABLE',
   'PROVIDER_INVALID_RESPONSE',
 ])
@@ -80,6 +81,7 @@ export const ProviderVerifiedActivityErrorCodeSchema = z.enum([
   'PROVIDER_ACCOUNT_NOT_FOUND',
   'PROVIDER_TIMEOUT',
   'PROVIDER_RATE_LIMITED',
+  'PROVIDER_BLOCKED',
   'PROVIDER_UNAVAILABLE',
   'PROVIDER_INVALID_RESPONSE',
 ])
@@ -222,6 +224,8 @@ export const ProviderAccountSchema = z
     verification: z.literal('not_verified'),
     activityAccess: ProviderAccountActivityAccessSchema,
     verifiedActivity: ProviderVerifiedActivitySchema,
+    syncEnabled: z.boolean().optional(),
+    disconnectedAt: z.iso.datetime({ offset: true }).optional(),
     publicStatsConsentAt: z.iso.datetime({ offset: true }).optional(),
     publicStats: ProviderPublicStatsSchema,
     linkedAt: z.iso.datetime({ offset: true }),
@@ -274,8 +278,8 @@ export const ProviderAccountSchema = z
       const hasStatsAttempt = publicStats.status !== 'not_synced'
 
       if (
-        hasStatsConsent !== hasStatsAccess ||
-        hasStatsAccess !== hasStatsAttempt
+        hasStatsAccess !== hasStatsAttempt ||
+        (hasStatsAttempt && !hasStatsConsent)
       ) {
         context.addIssue({
           code: 'custom',
@@ -290,8 +294,7 @@ export const ProviderAccountSchema = z
       if (activityStatusEnabled === activityStatusNotEnabled) {
         context.addIssue({
           code: 'custom',
-          message:
-            'Verified activity consent and status must agree.',
+          message: 'Verified activity consent and status must agree.',
           path: ['verifiedActivity', 'status'],
         })
       }
@@ -314,7 +317,10 @@ export const ProviderAccountSchema = z
         }
       }
 
-      if (verifiedActivity.status === 'error' && verifiedActivity.errorCode === undefined) {
+      if (
+        verifiedActivity.status === 'error' &&
+        verifiedActivity.errorCode === undefined
+      ) {
         context.addIssue({
           code: 'custom',
           message: 'Verified activity errors require a stable error code.',

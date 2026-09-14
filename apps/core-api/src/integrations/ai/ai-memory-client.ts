@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 
+import type { ProviderKey } from '@algomemtor/shared-contracts'
+
 type AiMemoryConfig = {
   baseUrl: string
   internalServiceToken: string
@@ -19,7 +21,7 @@ export type MemoryEvidenceRequest = {
   feedback?: 'useful' | 'not_useful' | 'too_easy' | 'about_right' | 'too_hard'
   explicitPreference?: string
   problemStatus?: 'unsolved' | 'attempted' | 'solved'
-  problemProvider?: 'codeforces'
+  problemProvider?: ProviderKey
   problemExternalId?: string
 }
 
@@ -82,7 +84,7 @@ export interface AiMemoryClient {
   ): Promise<void>
   deleteProblemEvidence(
     learnerId: string,
-    problemProvider: 'codeforces',
+    problemProvider: ProviderKey,
     problemExternalId: string,
     idempotencyKey: string,
   ): Promise<void>
@@ -127,7 +129,7 @@ export class UnavailableAiMemoryClient implements AiMemoryClient {
 
   async deleteProblemEvidence(
     _learnerId: string,
-    _problemProvider: 'codeforces',
+    _problemProvider: ProviderKey,
     _problemExternalId: string,
     _idempotencyKey: string,
   ): Promise<void> {
@@ -239,7 +241,7 @@ export class HttpAiMemoryClient implements AiMemoryClient {
 
   async deleteProblemEvidence(
     learnerId: string,
-    problemProvider: 'codeforces',
+    problemProvider: ProviderKey,
     problemExternalId: string,
     idempotencyKey: string,
   ) {

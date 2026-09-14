@@ -9,7 +9,7 @@ const httpsUrlSchema = z
     message: 'Only HTTPS URLs are allowed.',
   })
 
-export const ProviderKeySchema = z.enum(['codeforces'])
+export const ProviderKeySchema = z.enum(['codeforces', 'codechef', 'leetcode'])
 
 export type ProviderKey = z.infer<typeof ProviderKeySchema>
 
@@ -56,6 +56,22 @@ export const ExternalProblemSummarySchema = z.object({
   providerTags: z.array(nonEmptyStringSchema),
   topics: z.array(nonEmptyStringSchema).min(1),
   solvedCount: z.number().int().nonnegative().optional(),
+  acceptanceRate: z.number().finite().min(0).max(100).optional(),
+  isPaidOnly: z.boolean().optional(),
+  contentAvailable: z.boolean().optional(),
+  sourceUrl: httpsUrlSchema.optional(),
+  extractionStrategy: z
+    .enum([
+      'official_json',
+      'public_graphql',
+      'embedded_json',
+      'sanitized_html',
+      'stale_cache',
+    ])
+    .optional(),
+  schemaVersion: nonEmptyStringSchema.optional(),
+  completeness: z.enum(['complete', 'partial', 'unknown']).optional(),
+  stale: z.boolean().optional(),
   fetchedAt: z.iso.datetime(),
   learnerStatus: LearnerProblemStatusSchema.optional(),
   bookmarked: z.boolean().optional(),

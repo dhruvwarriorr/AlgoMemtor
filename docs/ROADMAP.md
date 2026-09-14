@@ -3,8 +3,10 @@
 ## External Problem Discovery and AI Recommendation Plan
 
 This roadmap replaces the earlier internal problem workspace and code-execution
-plan. Do not implement stored statements, examples, starter code, hidden tests,
-Monaco, Judge0, code drafts, or internal submissions.
+plan. The unified three-provider overlay permits sanitized public/free problem
+content only as documented in ADR 0005; never store premium/private content,
+starter code, hidden tests, Monaco, Judge0, code drafts, or internal
+submissions.
 
 The new core loop is:
 
@@ -17,6 +19,25 @@ learner profile
   -> manual or provider-verified evidence
   -> better next recommendation
 ```
+
+## Unified provider integration overlay (2026-09-14)
+
+The three-provider release is tracked by `docs/THREE_PROVIDER_INTEGRATION_PLAN.md`
+and `docs/THREE_PROVIDER_IMPLEMENTATION_GUIDE.md`, with the public-data strategy
+recorded in ADR 0005. Those documents supersede the older single-provider and
+CodeChef/LeetCode deferral wording only where it conflicts with the approved
+Codeforces, CodeChef, and LeetCode adapter scope. The existing product boundary
+still applies: AlgoMemtor stores validated public metadata and sanitized
+public/free content, while each provider remains authoritative for statements,
+execution, submissions, and verdicts.
+
+The local implementation currently includes the shared three-provider
+contracts, isolated adapters, durable cache and sync tables, queued six-hour
+linked-account synchronization, unified profile/activity/contest/analytics
+routes, provider filters, content provenance, deletion controls, and the
+multi-provider recommendation path. Live provider smoke tests, authenticated
+browser acceptance, and the 1,000-linked-identity load test remain release
+evidence rather than being claimed by local unit/build checks.
 
 ---
 
@@ -54,7 +75,9 @@ Later phases depend on earlier contracts. In particular:
 - do not build AI before deterministic candidate filtering works;
 - do not add multiple providers before one provider adapter is reliable;
 - do not claim verified progress before provider evidence exists; and
-- do not use scraping to make a blocked phase appear complete.
+- do not use an unapproved source or bypass a provider block to make a phase
+  appear complete; the public HTML strategies explicitly accepted in ADR 0005
+  remain subject to their capability kill switches.
 
 ## 1.2 Weekly completion rule
 
@@ -77,17 +100,21 @@ When tempted to add a feature, ask:
 
 If not, defer it.
 
-## 1.4 Provider stop rule
+## 1.4 Provider stop and kill-switch rule
 
-Stop a provider integration when:
+Stop or disable a provider capability when:
 
-- no official or explicitly permitted API/feed exists;
-- terms do not permit the intended display or cache;
-- attribution cannot be satisfied;
-- canonical links cannot be constructed safely; or
-- the required fields would need HTML scraping.
+- no official or explicitly risk-accepted public source exists;
+- current terms, robots policy, or attribution requirements cannot be met;
+- canonical links cannot be constructed safely;
+- the source requires authentication, a CAPTCHA, a paywall, or a persistent
+  block; or
+- the response no longer validates against the adapter contract.
 
-Record the provider as deferred. Do not work around the boundary.
+ADR 0005 explicitly permits bounded public HTML/GraphQL strategies for the
+three-provider release. Those strategies must remain sanitized, attributed,
+and kill-switchable. Never work around a block with credentials, browser
+automation, proxy rotation, or access-control bypass.
 
 ---
 
@@ -450,7 +477,8 @@ checkpoint.
 - Depending on fields the official API does not supply.
 - Fetching on every keystroke.
 - Retrying rate-limit failures immediately.
-- Scraping statements to enrich cards.
+- Retrieving full statements into catalog cards instead of using the separate,
+  sanitized detail/content capability.
 
 ### Deliverable
 
@@ -809,12 +837,12 @@ provider-confirmed activity remains intentionally outside this week.
 - [ ] Back navigation preserves the recommendation/catalog state.
 - [ ] Reflection data changes later recommendations.
 
-## Week 13: One provider-verified activity flow
+## Week 13: Unified provider-verified activity flow
 
 ### Goal
 
-Verify solves only where the initial provider API and terms permit reliable,
-consented user activity access.
+Verify public activity observations across the configured providers only where
+the source and terms permit reliable, consented access.
 
 ### Build tasks
 
@@ -830,10 +858,11 @@ consented user activity access.
 9. Rate-limit manual sync.
 10. Add reconciliation tests.
 
-Codeforces public activity is the permitted Week 13 implementation. CodeChef and
-LeetCode remain aggregate-only under
-`docs/adr/0003-provider-verified-activity-deferral.md`; do not claim individual
-verification for those providers.
+The original Week 13 decision covered Codeforces public activity only. The
+unified three-provider overlay adds conservative CodeChef and LeetCode activity
+observations to the queued sync path, as documented by ADR 0005; aggregate
+counts and bounded activity remain explicitly attributed, partial, and
+unverified for account ownership.
 
 ### Acceptance checks
 
@@ -1052,8 +1081,8 @@ Set targets only after measuring a baseline. Track:
 
 ### Stage B: Add providers carefully
 
-For each provider, repeat the approval checklist, adapter tests, attribution work,
-and fallback design. Do not create a single generic scraper.
+For each future provider, repeat the approval checklist, adapter tests,
+attribution work, and fallback design. Do not create a single generic scraper.
 
 ### Stage C: Improve progress evidence
 
@@ -1083,7 +1112,7 @@ and fallback design. Do not create a single generic scraper.
 - embedded IDE/compiler;
 - internal code judging;
 - hidden test-case storage;
-- HTML scraping; and
+- unbounded or unauthorized HTML scraping; and
 - pretending to be the source platform.
 
 ---
@@ -1191,7 +1220,8 @@ boundaries, evidence meaning, or AI safety.
 - [ ] Metadata is normalized.
 - [ ] URLs are constructed or allowlisted server-side.
 - [ ] Rate limits, timeouts, cache, and retries are tested.
-- [ ] No scraping is used.
+- [ ] No unauthorized scraping or access-control bypass is used; any approved
+      public HTML strategy is bounded, sanitized, attributed, and kill-switchable.
 
 ## Express
 
@@ -1239,4 +1269,4 @@ boundaries, evidence meaning, or AI safety.
 
 Build the smallest trustworthy loop first. A single reliable provider, clear
 recommendation reason, safe external link, and honest progress signal are more
-valuable than a large catalog built on copied content or unsupported scraping.
+valuable than a large catalog built on copied content or unauthorized scraping.

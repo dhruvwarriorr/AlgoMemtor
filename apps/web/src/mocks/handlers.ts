@@ -1,9 +1,14 @@
 import {
   ApiErrorResponseSchema,
   DisconnectProviderAccountResponseSchema,
+  ExternalContestSchema,
+  ExternalContestsQuerySchema,
+  ExternalContestsResponseSchema,
   ExternalProblemCatalogQueryParamsSchema,
   ExternalProblemCatalogResponseSchema,
   ExternalProblemSummarySchema,
+  ProblemContentSchema,
+  ProblemDetailResponseSchema,
   LearnerProfileResponseSchema,
   LearnerProfileSchema,
   LinkableProviderSchema,
@@ -12,6 +17,9 @@ import {
   ProviderAccountSchema,
   ProviderAccountsResponseSchema,
   ProviderActivitySyncResponseSchema,
+  ProviderActivityResponseSchema,
+  ProviderSyncRequestResponseSchema,
+  ProviderSyncStatusResponseSchema,
   RecommendationDismissalResponseSchema,
   RecommendationDismissalsResponseSchema,
   RecommendationFeedbackInputSchema,
@@ -23,6 +31,8 @@ import {
   RefreshProviderPublicStatsRequestSchema,
   SetProviderActivityConsentRequestSchema,
   TopicsResponseSchema,
+  UnifiedAnalyticsSchema,
+  UnifiedProfileResponseSchema,
   type LearnerProfile,
   type LinkableProvider,
   type ProviderAccount,
@@ -80,12 +90,160 @@ const providersResponse = ProvidersResponseSchema.parse({
       label: 'Codeforces',
       availability: 'available',
     },
+    {
+      key: 'codechef',
+      label: 'CodeChef',
+      availability: 'available',
+    },
+    {
+      key: 'leetcode',
+      label: 'LeetCode',
+      availability: 'available',
+    },
   ],
 })
 
 const topicsResponse = TopicsResponseSchema.parse({
   data: topicFixtures,
 })
+
+const platformCanonicalUrl = (
+  provider: LinkableProvider,
+  externalId: string,
+) => {
+  if (provider === 'codeforces') {
+    const match = /^(\d+)([A-Za-z][0-9]*)$/.exec(externalId)
+    return match
+      ? `https://codeforces.com/problemset/problem/${encodeURIComponent(match[1])}/${encodeURIComponent(match[2])}`
+      : `https://codeforces.com/problemset`
+  }
+  if (provider === 'codechef') {
+    return `https://www.codechef.com/problems/${encodeURIComponent(externalId)}`
+  }
+  return `https://leetcode.com/problems/${encodeURIComponent(externalId)}/`
+}
+
+const platformProvenance = (
+  provider: LinkableProvider,
+  externalId: string,
+  canonicalUrl: string,
+) => ({
+  provider,
+  providerId: externalId,
+  canonicalUrl,
+  sourceUrl: canonicalUrl,
+  extractionStrategy: 'official_json' as const,
+  schemaVersion: `${provider}-mock-v1`,
+  completeness: 'complete' as const,
+  fetchedAt: new Date().toISOString(),
+  stale: false,
+})
+
+const mockPlatformEvents = () => {
+  const now = new Date().toISOString()
+  return [
+    {
+      id: 'mock-event-codeforces-solved',
+      provider: 'codeforces' as const,
+      eventType: 'solved' as const,
+      externalId: '4:A',
+      providerEventId: 'mock-cf-1',
+      title: 'Watermelon',
+      canonicalUrl: platformCanonicalUrl('codeforces', '4:A'),
+      occurredAt: now,
+      source: 'provider' as const,
+      completeness: 'complete' as const,
+    },
+    {
+      id: 'mock-event-codechef-solved',
+      provider: 'codechef' as const,
+      eventType: 'solved' as const,
+      externalId: 'FLOW001',
+      providerEventId: 'mock-cc-1',
+      title: 'Add Two Numbers',
+      canonicalUrl: platformCanonicalUrl('codechef', 'FLOW001'),
+      occurredAt: now,
+      source: 'provider' as const,
+      completeness: 'partial' as const,
+    },
+    {
+      id: 'mock-event-leetcode-submission',
+      provider: 'leetcode' as const,
+      eventType: 'submission' as const,
+      externalId: 'two-sum',
+      providerEventId: 'mock-lc-1',
+      title: 'Two Sum',
+      canonicalUrl: platformCanonicalUrl('leetcode', 'two-sum'),
+      verdict: 'Accepted',
+      language: 'python3',
+      occurredAt: now,
+      source: 'provider' as const,
+      completeness: 'partial' as const,
+    },
+  ]
+}
+
+const mockContests = () => {
+  const now = Date.now()
+  const startsAt = new Date(now + 86_400_000).toISOString()
+  const endsAt = new Date(now + 90_000_000).toISOString()
+  return [
+    {
+      provider: 'codeforces' as const,
+      externalId: '1900',
+      name: 'Mock Codeforces Round',
+      canonicalUrl: 'https://codeforces.com/contests/1900',
+      phase: 'BEFORE',
+      startsAt,
+      endsAt,
+      durationSeconds: 7_200,
+      isRated: true,
+      status: 'upcoming' as const,
+      provenance: platformProvenance(
+        'codeforces',
+        '1900',
+        'https://codeforces.com/contests/1900',
+      ),
+    },
+    {
+      provider: 'codechef' as const,
+      externalId: 'START200',
+      name: 'Mock CodeChef Starters',
+      canonicalUrl: 'https://www.codechef.com/contests/START200',
+      startsAt,
+      endsAt,
+      durationSeconds: 10_800,
+      isRated: true,
+      status: 'upcoming' as const,
+      provenance: platformProvenance(
+        'codechef',
+        'START200',
+        'https://www.codechef.com/contests/START200',
+      ),
+    },
+    {
+      provider: 'leetcode' as const,
+      externalId: 'weekly-contest-500',
+      name: 'Mock LeetCode Weekly Contest',
+      canonicalUrl: 'https://leetcode.com/contest/weekly-contest-500/',
+      startsAt,
+      endsAt,
+      durationSeconds: 5_400,
+      isRated: true,
+      status: 'upcoming' as const,
+      provenance: platformProvenance(
+        'leetcode',
+        'weekly-contest-500',
+        'https://leetcode.com/contest/weekly-contest-500/',
+      ),
+    },
+  ]
+}
+
+const mockSyncJobs = new Map<LinkableProvider, string>()
+
+const providerOptionsIndex = (provider: LinkableProvider) =>
+  ({ codeforces: 701, codechef: 702, leetcode: 703 })[provider]
 
 const recommendationItemId = (index: number) =>
   `00000000-0000-4000-8000-${String(index + 100).padStart(12, '0')}`
@@ -484,6 +642,306 @@ export const handlers: RequestHandler[] = [
   ),
   http.get('/api/providers', () => HttpResponse.json(providersResponse)),
   http.get('/api/topics', () => HttpResponse.json(topicsResponse)),
+  http.get('/api/unified-profile', () => {
+    const providers = providerAccounts.map((account) => ({
+      provider: account.provider,
+      handle: account.handle,
+      ...(account.publicStats.status === 'available'
+        ? {
+            solvedCount: account.publicStats.solvedCount,
+            complete: account.publicStats.complete,
+            fetchedAt: account.publicStats.fetchedAt,
+          }
+        : {}),
+      stale:
+        account.publicStats.status === 'unavailable' ||
+        (account.publicStats.status === 'available' &&
+          account.publicStats.stale),
+      syncEnabled: account.syncEnabled ?? true,
+    }))
+    const solvedTotal = providers.reduce(
+      (total, provider) => total + (provider.solvedCount ?? 0),
+      0,
+    )
+    return HttpResponse.json(
+      UnifiedProfileResponseSchema.parse({
+        data: {
+          solvedTotal,
+          providers,
+          accounts: providerAccounts,
+          completeness:
+            providers.length > 0 &&
+            providers.every((provider) => provider.complete)
+              ? 'complete'
+              : 'partial',
+          staleProviders: providers
+            .filter((provider) => provider.stale)
+            .map((provider) => provider.provider),
+          generatedAt: new Date().toISOString(),
+        },
+      }),
+    )
+  }),
+  http.get('/api/activity', ({ request }) => {
+    const providerResult = LinkableProviderSchema.safeParse(
+      new URL(request.url).searchParams.get('provider'),
+    )
+    const provider = providerResult.success ? providerResult.data : undefined
+    const data = mockPlatformEvents().filter(
+      (event) => provider === undefined || event.provider === provider,
+    )
+    return HttpResponse.json(
+      ProviderActivityResponseSchema.parse({
+        data,
+        meta: {
+          partial: data.some((event) => event.completeness !== 'complete'),
+          stale: false,
+          providers: [],
+        },
+      }),
+    )
+  }),
+  http.get('/api/contests', ({ request }) => {
+    const url = new URL(request.url)
+    const queryResult = ExternalContestsQuerySchema.safeParse(
+      Object.fromEntries(url.searchParams),
+    )
+    if (!queryResult.success) {
+      return HttpResponse.json(
+        createApiError(
+          'INVALID_CONTEST_QUERY',
+          'The contest query parameters are invalid.',
+          queryResult.error.issues,
+        ),
+        { status: 400 },
+      )
+    }
+    const data = mockContests()
+      .filter(
+        (contest) =>
+          queryResult.data.provider === undefined ||
+          contest.provider === queryResult.data.provider,
+      )
+      .filter(
+        (contest) =>
+          queryResult.data.status === undefined ||
+          contest.status === queryResult.data.status,
+      )
+      .slice(0, queryResult.data.limit)
+      .map((contest) => ExternalContestSchema.parse(contest))
+    return HttpResponse.json(
+      ExternalContestsResponseSchema.parse({
+        data,
+        meta: { partial: false, stale: false, providers: [] },
+      }),
+    )
+  }),
+  http.get('/api/analytics', ({ request }) => {
+    const providerResult = LinkableProviderSchema.safeParse(
+      new URL(request.url).searchParams.get('provider'),
+    )
+    const provider = providerResult.success ? providerResult.data : undefined
+    const solvedByProvider = {
+      codeforces: provider === undefined || provider === 'codeforces' ? 245 : 0,
+      codechef: provider === undefined || provider === 'codechef' ? 118 : 0,
+      leetcode: provider === undefined || provider === 'leetcode' ? 176 : 0,
+    }
+    return HttpResponse.json(
+      UnifiedAnalyticsSchema.parse({
+        solvedTotal: Object.values(solvedByProvider).reduce(
+          (total, value) => total + value,
+          0,
+        ),
+        solvedByProvider,
+        solvedOverTime: { '2026-09-01': 4, '2026-09-02': 7 },
+        solvedByDifficulty: { easy: 120, medium: 260, hard: 159 },
+        topicCounts: { arrays: 90, graphs: 34, dynamic_programming: 27 },
+        languageCounts: { Python: 140, Java: 85, 'C++': 70 },
+        acceptanceRate: 68.4,
+        ratingHistory: [],
+        contestParticipation: [],
+        dataCompleteness: 'partial',
+        staleProviders: [],
+        generatedAt: new Date().toISOString(),
+      }),
+    )
+  }),
+  http.post('/api/provider-accounts/:provider/sync', ({ params }) => {
+    const providerResult = LinkableProviderSchema.safeParse(params.provider)
+    const account = providerResult.success
+      ? providerAccounts.find(
+          ({ provider }) => provider === providerResult.data,
+        )
+      : undefined
+    if (!providerResult.success || account === undefined) {
+      return HttpResponse.json(
+        createApiError(
+          'PROVIDER_ACCOUNT_NOT_LINKED',
+          'Link this provider account before requesting synchronization.',
+          {},
+        ),
+        { status: 404 },
+      )
+    }
+    const now = new Date().toISOString()
+    const provider = providerResult.data
+    const jobId =
+      mockSyncJobs.get(provider) ??
+      `00000000-0000-4000-8000-${String(providerOptionsIndex(provider)).padStart(12, '0')}`
+    mockSyncJobs.set(provider, jobId)
+    return HttpResponse.json(
+      ProviderSyncRequestResponseSchema.parse({
+        data: {
+          provider,
+          accepted: true,
+          nextAllowedAt: new Date(Date.now() + 900_000).toISOString(),
+          job: {
+            id: jobId,
+            provider,
+            capability: 'linked_user_sync',
+            status: 'queued',
+            queuedAt: now,
+            runAfter: now,
+            attempts: 0,
+          },
+        },
+      }),
+      { status: 202 },
+    )
+  }),
+  http.get('/api/provider-accounts/:provider/sync-status', ({ params }) => {
+    const providerResult = LinkableProviderSchema.safeParse(params.provider)
+    if (!providerResult.success) {
+      return HttpResponse.json(
+        createApiError(
+          'UNSUPPORTED_LINK_PROVIDER',
+          'That provider is not supported.',
+          {},
+        ),
+        { status: 400 },
+      )
+    }
+    const provider = providerResult.data
+    const now = new Date().toISOString()
+    const jobId = mockSyncJobs.get(provider)
+    return HttpResponse.json(
+      ProviderSyncStatusResponseSchema.parse({
+        data: {
+          provider,
+          state: {
+            provider,
+            capability: 'linked_user_sync',
+            status: jobId === undefined ? 'idle' : 'queued',
+            attempts: 0,
+            completeness: 'unknown',
+            stale: false,
+            nextRunAt: now,
+          },
+          ...(jobId === undefined
+            ? {}
+            : {
+                job: {
+                  id: jobId,
+                  provider,
+                  capability: 'linked_user_sync',
+                  status: 'queued',
+                  queuedAt: now,
+                  runAfter: now,
+                  attempts: 0,
+                },
+              }),
+        },
+      }),
+    )
+  }),
+  http.delete('/api/provider-accounts/:provider/history', ({ params }) => {
+    const providerResult = LinkableProviderSchema.safeParse(params.provider)
+    if (!providerResult.success) {
+      return HttpResponse.json(
+        createApiError(
+          'UNSUPPORTED_LINK_PROVIDER',
+          'That provider is not supported.',
+          {},
+        ),
+        { status: 400 },
+      )
+    }
+    providerAccounts = providerAccounts.map((account) =>
+      account.provider === providerResult.data
+        ? ProviderAccountSchema.parse({
+            ...account,
+            activityAccess: 'not_enabled',
+            verifiedActivity: { enabled: false, status: 'not_enabled' },
+            publicStats: { status: 'not_synced' },
+            updatedAt: new Date().toISOString(),
+          })
+        : account,
+    )
+    mockSyncJobs.delete(providerResult.data)
+    return new HttpResponse(null, { status: 204 })
+  }),
+  http.get('/api/problems/:provider/:externalId', ({ params }) => {
+    const providerResult = LinkableProviderSchema.safeParse(params.provider)
+    if (!providerResult.success) {
+      return HttpResponse.json(
+        createApiError(
+          'PROBLEM_NOT_FOUND',
+          'That problem is not available.',
+          {},
+        ),
+        { status: 404 },
+      )
+    }
+    const provider = providerResult.data
+    const externalId = String(params.externalId)
+    const fixture = problemFixtures.find(
+      (problem) =>
+        problem.provider === provider && problem.externalId === externalId,
+    )
+    const canonicalUrl = platformCanonicalUrl(provider, externalId)
+    const summary = ExternalProblemSummarySchema.parse(
+      fixture ?? {
+        provider,
+        externalId,
+        title:
+          provider === 'codechef'
+            ? 'Add Two Numbers'
+            : provider === 'leetcode'
+              ? 'Two Sum'
+              : 'Provider problem',
+        canonicalUrl,
+        normalizedDifficulty: provider === 'leetcode' ? 'easy' : 'medium',
+        providerTags:
+          provider === 'leetcode'
+            ? ['Array', 'Hash Table']
+            : ['implementation'],
+        topics: ['arrays'],
+        contentAvailable: true,
+        extractionStrategy: 'official_json',
+        schemaVersion: `${provider}-mock-v1`,
+        completeness: 'complete',
+        stale: false,
+        fetchedAt: new Date().toISOString(),
+      },
+    )
+    const content = ProblemContentSchema.parse({
+      provider,
+      externalId,
+      canonicalUrl,
+      title: summary.title,
+      statementHtml: `<p>Use the public provider page to solve <strong>${summary.title}</strong>.</p>`,
+      statementText: `Use the public provider page to solve ${summary.title}.`,
+      constraints: ['Input and output follow the provider statement.'],
+      examples: [{ input: '1 2', output: '3' }],
+      hints: ['Start by identifying the invariant in the input.'],
+      isPaidOnly: summary.isPaidOnly ?? false,
+      completeness: 'complete',
+      provenance: platformProvenance(provider, externalId, canonicalUrl),
+    })
+    return HttpResponse.json(
+      ProblemDetailResponseSchema.parse({ data: { summary, content } }),
+    )
+  }),
   http.get('/api/recommendations', async () => {
     await delay(mockDelayMs)
     return HttpResponse.json(recommendationResponse())

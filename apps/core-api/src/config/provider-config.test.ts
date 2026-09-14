@@ -11,6 +11,11 @@ describe('readCodeforcesProviderConfig', () => {
       maxAttempts: 2,
       minRequestIntervalMs: 2100,
       activityMinRefreshIntervalMs: 900_000,
+      catalogEnabled: true,
+      contentEnabled: true,
+      profileEnabled: true,
+      activityEnabled: true,
+      contestsEnabled: true,
     })
   })
 

@@ -26,7 +26,7 @@ export type EvidenceSource = z.infer<typeof EvidenceSourceSchema>
 
 export const ProgressEvidenceSummarySchema = z
   .object({
-    provider: z.literal('codeforces'),
+    provider: ProviderKeySchema,
     occurredAt: z.iso.datetime(),
     observedAt: z.iso.datetime(),
   })

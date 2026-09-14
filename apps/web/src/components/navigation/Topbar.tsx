@@ -12,6 +12,9 @@ import MobileSidebar from './MobileSidebar'
 const navigationItems = [
   { label: 'Dashboard', to: '/dashboard' },
   { label: 'Problems', to: '/problems' },
+  { label: 'Activity', to: '/activity' },
+  { label: 'Contests', to: '/contests' },
+  { label: 'Analytics', to: '/analytics' },
   { label: 'Progress', to: '/progress' },
   { label: 'Memory', to: '/memory' },
   { label: 'Profile', to: '/profile' },

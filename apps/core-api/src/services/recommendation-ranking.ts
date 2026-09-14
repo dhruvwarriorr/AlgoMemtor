@@ -2,6 +2,8 @@ import {
   type ExternalProblemSummary,
   type ExperienceLevel,
   type LearnerProfile,
+  type NormalizedDifficulty,
+  type ProviderKey,
 } from '@algomemtor/shared-contracts'
 
 import type { ProblemActionRecord } from '../repositories/problem-action-repository.js'
@@ -26,6 +28,8 @@ export type NormalizedRankingProfile = {
   focusTopics: string[]
   preferredTopics: string[]
   ratingBand: RatingBand
+  preferredProviders: ProviderKey[]
+  targetDifficulty?: NormalizedDifficulty
   providerPreferred: boolean
   profileSource: 'profile' | 'cold_start'
   recommendationPreference?: string
@@ -97,6 +101,8 @@ export const deriveRankingProfile = (
       focusTopics: suggestedTopics.complete_beginner,
       preferredTopics: [],
       ratingBand: { min: 800, max: 1000 },
+      preferredProviders: [],
+      targetDifficulty: 'easy',
       providerPreferred: true,
       profileSource: 'cold_start',
     }
@@ -107,10 +113,23 @@ export const deriveRankingProfile = (
     (standing) =>
       standing.platform === 'codeforces' && standing.metric === 'rating',
   )
-  const explicitRange =
-    profile.ratingComfortRange?.platform === 'codeforces'
-      ? profile.ratingComfortRange
-      : undefined
+  const explicitRange = profile.ratingComfortRange
+
+  const preferredProviders = profile.platformPreferences.platforms.filter(
+    (platform): platform is ProviderKey =>
+      platform === 'codeforces' ||
+      platform === 'codechef' ||
+      platform === 'leetcode',
+  )
+  const targetDifficulty: NormalizedDifficulty | undefined =
+    profile.difficultyComfort === 'new_to_rated_problems' ||
+    profile.difficultyComfort === 'introductory'
+      ? 'easy'
+      : profile.difficultyComfort === 'medium'
+        ? 'medium'
+        : profile.difficultyComfort === 'challenging'
+          ? 'hard'
+          : undefined
 
   let ratingBand = explicitRange
     ? { min: explicitRange.min, max: explicitRange.max }
@@ -158,9 +177,11 @@ export const deriveRankingProfile = (
     focusTopics: unique(focusTopics),
     preferredTopics: unique(profile.preferredTopics),
     ratingBand,
+    preferredProviders,
+    ...(targetDifficulty === undefined ? {} : { targetDifficulty }),
     providerPreferred:
       profile.platformPreferences.platforms.length === 0 ||
-      profile.platformPreferences.platforms.includes('codeforces'),
+      preferredProviders.length > 0,
     profileSource: 'profile',
     ...(profile.recommendationPreference === undefined
       ? {}
@@ -181,7 +202,7 @@ const sortActions = (actions: readonly ProblemActionRecord[]) =>
 export const deriveRecommendationHistory = (
   actions: readonly ProblemActionRecord[],
   batches: readonly {
-    items: readonly { provider: 'codeforces'; externalId: string }[]
+    items: readonly { provider: ProviderKey; externalId: string }[]
   }[],
   problems: readonly ExternalProblemSummary[],
 ): RecommendationHistory => {
@@ -274,7 +295,9 @@ const difficultyMatch = (
   profile: NormalizedRankingProfile,
 ) => {
   if (typeof problem.providerDifficulty !== 'number') {
-    return 0
+    if (problem.normalizedDifficulty === undefined) return 0
+    if (profile.targetDifficulty === problem.normalizedDifficulty) return 1
+    return profile.targetDifficulty === undefined ? 0 : 0.5
   }
 
   if (
@@ -346,7 +369,11 @@ const baseScore = (
 ) => {
   const topic = topicMatch(problem, profile)
   const difficulty = difficultyMatch(problem, profile)
-  const provider = profile.providerPreferred ? 1 : 0
+  const provider =
+    profile.preferredProviders.length === 0 ||
+    profile.preferredProviders.includes(problem.provider)
+      ? 1
+      : 0
   const revision = revisionMatch(problem, history)
 
   return (
@@ -385,9 +412,18 @@ const reasonFor = (
   }
 
   if (difficulty === 1) {
-    reasons.push(
-      `Fits your ${profile.ratingBand.min}–${profile.ratingBand.max} rating range.`,
-    )
+    if (
+      typeof problem.providerDifficulty === 'number' &&
+      profile.targetDifficulty === undefined
+    ) {
+      reasons.push(
+        `Fits your ${profile.ratingBand.min}–${profile.ratingBand.max} rating range.`,
+      )
+    } else if (profile.targetDifficulty !== undefined) {
+      reasons.push(`Fits your ${profile.targetDifficulty} target difficulty.`)
+    } else {
+      reasons.push('Fits the normalized difficulty for your practice path.')
+    }
   } else if (difficulty === 0.5) {
     reasons.push(
       'Sits just outside your target difficulty for a gentle stretch.',

@@ -3,9 +3,13 @@ import { describe, expect, it, vi } from 'vitest'
 import { RequestGate } from '../../utils/request-gate.js'
 import {
   CodeChefPublicStatsFetcher,
+  isCodeChefChallengePage,
   parseCodeChefSolvedCount,
 } from './codechef-public-stats.js'
+import { CodeChefProfileFetcher } from './codechef-profile.js'
 import { CodeforcesPublicStatsFetcher } from './codeforces-public-stats.js'
+import { LeetCodeActivityFetcher } from './leetcode-activity.js'
+import { LeetCodeProfileFetcher } from './leetcode-profile.js'
 import { LeetCodePublicStatsFetcher } from './leetcode-public-stats.js'
 
 const noWaitGate = () => new RequestGate({ minIntervalMs: 0 })
@@ -263,6 +267,100 @@ describe('public provider solved-count fetchers', () => {
     await expect(fetcher.fetchSolvedCount('missing')).rejects.toMatchObject({
       code: 'PROVIDER_ACCOUNT_NOT_FOUND',
       retryable: false,
+    })
+  })
+
+  it('parses current LeetCode profile GraphQL categories', async () => {
+    const fetcher = new LeetCodeProfileFetcher({
+      endpoint: 'https://leetcode.test/graphql',
+      fetchImpl: vi.fn(async () =>
+        Response.json({
+          data: {
+            matchedUser: {
+              username: 'learner',
+              profile: { ranking: 42 },
+              badges: [{ displayName: 'Badge' }],
+              submitStatsGlobal: {
+                acSubmissionNum: [{ difficulty: 'All', count: 77 }],
+                totalSubmissionNum: [{ difficulty: 'All', count: 100 }],
+              },
+              languageProblemCount: [
+                { languageName: 'C++', problemsSolved: 77 },
+              ],
+              tagProblemCounts: {
+                advanced: [{ tagName: 'Graphs', problemsSolved: 2 }],
+                intermediate: [{ tagName: 'Graphs', problemsSolved: 3 }],
+                fundamental: [{ tagName: 'Arrays', problemsSolved: 4 }],
+              },
+              submissionCalendar: '{}',
+            },
+            userContestRanking: { rating: 1550, globalRanking: 9 },
+          },
+        }),
+      ),
+      requestGate: noWaitGate(),
+    })
+
+    await expect(fetcher.fetchProfile('learner')).resolves.toMatchObject({
+      solvedCount: 77,
+      acceptanceRate: 77,
+      globalRank: 9,
+      rating: 1550,
+      topicCounts: { Graphs: 5, Arrays: 4 },
+    })
+  })
+
+  it('parses current LeetCode recent submissions without removed question fields', async () => {
+    const fetchImpl: typeof fetch = vi.fn(async (input, init) => {
+      const body = JSON.parse(String(init?.body)) as { query: string }
+      return Response.json(
+        body.query.includes('recentSubmissionList')
+          ? {
+              data: {
+                recentSubmissionList: [
+                  {
+                    title: 'Two Sum',
+                    titleSlug: 'two-sum',
+                    timestamp: '1700000000',
+                    statusDisplay: 'Accepted',
+                    lang: 'cpp',
+                  },
+                ],
+              },
+            }
+          : { data: { userContestRankingHistory: [] } },
+      )
+    })
+    const fetcher = new LeetCodeActivityFetcher({
+      endpoint: 'https://leetcode.test/graphql',
+      fetchImpl,
+      requestGate: noWaitGate(),
+      recentLimit: 10,
+    })
+
+    await expect(fetcher.fetchActivityData('learner')).resolves.toMatchObject({
+      submissions: [expect.objectContaining({ externalId: 'two-sum' })],
+      solvedProblems: [expect.objectContaining({ externalId: 'two-sum' })],
+    })
+  })
+
+  it('does not mistake Cloudflare assets on a valid CodeChef page for a block', async () => {
+    const html = `
+      <html><head><title>learner | CodeChef User Profile</title>
+      <script src="/cdn-cgi/scripts/cloudflare-static/rocket-loader.min.js"></script>
+      <meta name="robots" content="noindex" /></head>
+      <body><section class="rating-data-section problems-solved">
+      <h3>Total Problems Solved: 12</h3></section></body></html>
+    `
+    expect(isCodeChefChallengePage(html)).toBe(false)
+    const fetcher = new CodeChefProfileFetcher({
+      baseUrl: 'https://codechef.test/users/',
+      fetchImpl: vi.fn(async () => new Response(html)),
+      requestGate: noWaitGate(),
+    })
+
+    await expect(fetcher.fetchProfile('learner')).resolves.toMatchObject({
+      solvedCount: 12,
     })
   })
 })

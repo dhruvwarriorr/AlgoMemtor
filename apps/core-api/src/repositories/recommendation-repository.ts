@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import {
   NormalizedDifficultySchema,
   ProviderKeySchema,
+  type ProviderKey,
 } from '@algomemtor/shared-contracts'
 import { z } from 'zod'
 
@@ -173,7 +174,7 @@ export type RecommendationFeedbackEvidence = {
   occurredAt: Date
   note?: string
   feedback?: 'useful' | 'not_useful' | 'too_easy' | 'about_right' | 'too_hard'
-  problemProvider: 'codeforces'
+  problemProvider: ProviderKey
   problemExternalId: string
 }
 
@@ -210,12 +211,12 @@ export interface RecommendationRepository {
   ): Promise<RecommendationFeedbackEvidence | null>
   listFeedbackEvidenceIdsByProblem?(
     authUserId: string,
-    provider: 'codeforces',
+    provider: ProviderKey,
     externalId: string,
   ): Promise<string[]>
   deleteFeedbackByProblem?(
     authUserId: string,
-    provider: 'codeforces',
+    provider: ProviderKey,
     externalId: string,
   ): Promise<void>
 }
@@ -223,7 +224,7 @@ export interface RecommendationRepository {
 export type RecommendationItemOwnershipRecord = {
   id: string
   batchId: string
-  provider: 'codeforces'
+  provider: ProviderKey
   externalId: string
 }
 
@@ -466,7 +467,7 @@ export class InMemoryRecommendationRepository implements RecommendationRepositor
 
   async listFeedbackEvidenceIdsByProblem(
     authUserId: string,
-    provider: 'codeforces',
+    provider: ProviderKey,
     externalId: string,
   ) {
     const ownerId = authUserIdSchema.parse(authUserId)
@@ -489,7 +490,7 @@ export class InMemoryRecommendationRepository implements RecommendationRepositor
 
   async deleteFeedbackByProblem(
     authUserId: string,
-    provider: 'codeforces',
+    provider: ProviderKey,
     externalId: string,
   ) {
     const ownerId = authUserIdSchema.parse(authUserId)
@@ -706,7 +707,7 @@ export class PrismaRecommendationRepository implements RecommendationRepository 
 
   async listFeedbackEvidenceIdsByProblem(
     authUserId: string,
-    provider: 'codeforces',
+    provider: ProviderKey,
     externalId: string,
   ) {
     const ownerId = authUserIdSchema.parse(authUserId)
@@ -727,7 +728,7 @@ export class PrismaRecommendationRepository implements RecommendationRepository 
 
   async deleteFeedbackByProblem(
     authUserId: string,
-    provider: 'codeforces',
+    provider: ProviderKey,
     externalId: string,
   ) {
     const ownerId = authUserIdSchema.parse(authUserId)

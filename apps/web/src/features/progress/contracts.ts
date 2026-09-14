@@ -2,6 +2,7 @@ import {
   BookmarkSortSchema,
   ProblemReferenceSchema,
   type BookmarkSort,
+  type ProviderKey,
 } from '@algomemtor/shared-contracts'
 
 export {
@@ -91,14 +92,14 @@ export function bookmarkSort(value: string | null): BookmarkSort {
 }
 
 export function isProblemReference(value: unknown): value is {
-  provider: 'codeforces'
+  provider: ProviderKey
   externalId: string
 } {
   return ProblemReferenceSchema.safeParse(value).success
 }
 
 export function problemKey(value: {
-  provider: 'codeforces'
+  provider: ProviderKey
   externalId: string
 }) {
   return `${value.provider}:${value.externalId}`

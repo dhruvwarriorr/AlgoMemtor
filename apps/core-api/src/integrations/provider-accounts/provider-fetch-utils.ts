@@ -40,6 +40,7 @@ export async function fetchWithTimeout(options: {
   try {
     return await options.fetchImpl(options.url, {
       ...options.init,
+      redirect: options.init?.redirect ?? 'manual',
       signal: combinedSignal,
     })
   } catch (error) {
@@ -86,6 +87,28 @@ export function throwForProviderHttpStatus(
         provider,
         code: 'PROVIDER_RATE_LIMITED',
         retryable: true,
+      },
+    )
+  }
+
+  if (response.status === 403) {
+    throw new ProviderPublicStatsError(
+      'The provider blocked this public-statistics request.',
+      {
+        provider,
+        code: 'PROVIDER_BLOCKED',
+        retryable: false,
+      },
+    )
+  }
+
+  if (response.status >= 300 && response.status < 400) {
+    throw new ProviderPublicStatsError(
+      'The provider redirected this public-statistics request.',
+      {
+        provider,
+        code: 'PROVIDER_BLOCKED',
+        retryable: false,
       },
     )
   }
