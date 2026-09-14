@@ -4,10 +4,17 @@ import {
   type SaveLearnerProfileRequest,
 } from '@algomemtor/shared-contracts'
 
-import { requestJson } from '@/features/discovery/api/client'
+import { ApiClientError, requestJson } from '@/features/discovery/api/client'
 
 type RequestOptions = {
   signal?: AbortSignal
+}
+
+export function isLearnerDataDeletionPendingError(error: unknown) {
+  return (
+    error instanceof ApiClientError &&
+    error.code === 'LEARNER_DATA_DELETION_PENDING'
+  )
 }
 
 export function fetchLearnerProfile({ signal }: RequestOptions = {}) {

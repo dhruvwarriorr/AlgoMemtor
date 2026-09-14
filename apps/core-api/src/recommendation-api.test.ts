@@ -19,6 +19,7 @@ import type {
 } from './integrations/ai/ai-recommendation-client.js'
 import type { ProblemProvider } from './integrations/providers/problem-provider.js'
 import { InMemoryProblemActionRepository } from './repositories/problem-action-repository.js'
+import { InMemoryProgressRepository } from './repositories/progress-repository.js'
 import { InMemoryRecommendationRepository } from './repositories/recommendation-repository.js'
 import {
   AI_FALLBACK_RANKING_VERSION,
@@ -133,6 +134,7 @@ const startApp = (
   options: {
     aiRecommendationClient?: AiRecommendationClient
     problemActionRepository?: InMemoryProblemActionRepository
+    progressRepository?: InMemoryProgressRepository
     recommendationRepository?: InMemoryRecommendationRepository
   } = {},
 ) => {
@@ -153,6 +155,8 @@ const startApp = (
     logger,
     problemActionRepository:
       options.problemActionRepository ?? new InMemoryProblemActionRepository(),
+    progressRepository:
+      options.progressRepository ?? new InMemoryProgressRepository(),
     problemProvider: provider,
     recommendationRepository:
       options.recommendationRepository ??
@@ -166,7 +170,8 @@ const startApp = (
 
 describe('recommendation API', () => {
   it('generates, reuses, feedback-merges, dismisses, and restores a batch', async () => {
-    const baseUrl = startApp()
+    const progressRepository = new InMemoryProgressRepository()
+    const baseUrl = startApp({ progressRepository })
     const headers = authorization('user-a')
     const firstResponse = await fetch(`${baseUrl}/api/recommendations`, {
       headers,
@@ -201,6 +206,14 @@ describe('recommendation API', () => {
     )
     expect(useful.data.usefulness).toBe('useful')
 
+    const feedbackJob = await progressRepository.claimNextJob()
+    expect(feedbackJob).toMatchObject({
+      jobType: 'memory_generation',
+      evidenceType: 'recommendation_feedback',
+      evidenceId: useful.data.id,
+      status: 'processing',
+    })
+
     const difficultyResponse = await fetch(
       `${baseUrl}/api/recommendation-items/${firstItem?.id}/feedback`,
       {
@@ -215,6 +228,13 @@ describe('recommendation API', () => {
     expect(difficulty.data).toMatchObject({
       usefulness: 'useful',
       perceivedDifficulty: 'about_right',
+    })
+    const updatedFeedbackJob = await progressRepository.claimNextJob()
+    expect(updatedFeedbackJob).toMatchObject({
+      jobType: 'memory_generation',
+      evidenceType: 'recommendation_feedback',
+      evidenceId: useful.data.id,
+      status: 'processing',
     })
 
     const dismissResponse = await fetch(

@@ -10,7 +10,11 @@ vi.mock('@/features/auth/authenticated-fetch', () => ({
 
 import { ApiClientError } from '@/features/discovery/api/client'
 
-import { fetchLearnerProfile, saveLearnerProfile } from './learner-profile'
+import {
+  fetchLearnerProfile,
+  isLearnerDataDeletionPendingError,
+  saveLearnerProfile,
+} from './learner-profile'
 
 const answers = {
   experience: 'beginner' as const,
@@ -95,5 +99,23 @@ describe('learner profile API', () => {
       expect(error).toBeInstanceOf(ApiClientError)
       expect(error).toMatchObject({ code: 'INVALID_RESPONSE' })
     }
+  })
+
+  it('recognizes only the data-deletion pending error', () => {
+    expect(
+      isLearnerDataDeletionPendingError(
+        new ApiClientError('Cleanup is pending.', {
+          code: 'LEARNER_DATA_DELETION_PENDING',
+        }),
+      ),
+    ).toBe(true)
+    expect(
+      isLearnerDataDeletionPendingError(
+        new ApiClientError('Request failed.', { code: 'HTTP_ERROR' }),
+      ),
+    ).toBe(false)
+    expect(
+      isLearnerDataDeletionPendingError(new Error('Request failed.')),
+    ).toBe(false)
   })
 })

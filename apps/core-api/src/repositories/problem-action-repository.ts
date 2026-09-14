@@ -62,6 +62,8 @@ const problemActionInputSchema = z
     learnerStatus: LearnerStatusSchema.optional(),
     evidenceSource: EvidenceSourceSchema.optional(),
     recommendationBatchId: identifierSchema.optional(),
+    recommendationItemId: identifierSchema.optional(),
+    sourceContext: z.string().trim().min(1).max(64).optional(),
     occurredAt: z.date().optional(),
   })
   .strict()
@@ -76,6 +78,8 @@ const problemActionRecordSchema = z
     learnerStatus: LearnerStatusSchema.optional(),
     evidenceSource: EvidenceSourceSchema.optional(),
     recommendationBatchId: identifierSchema.optional(),
+    recommendationItemId: identifierSchema.optional(),
+    sourceContext: z.string().trim().min(1).max(64).optional(),
     occurredAt: z.date(),
   })
   .strict()
@@ -91,6 +95,8 @@ const problemActionDatabaseRecordSchema = z
     learnerStatus: LearnerStatusSchema.nullable().optional(),
     evidenceSource: EvidenceSourceSchema.nullable().optional(),
     recommendationBatchId: identifierSchema.nullable().optional(),
+    recommendationItemId: identifierSchema.nullable().optional(),
+    sourceContext: z.string().trim().min(1).max(64).nullable().optional(),
     occurredAt: z.date(),
   })
   .strict()
@@ -106,6 +112,11 @@ export interface ProblemActionRepository {
     authUserId: string,
     input: AppendProblemActionInput,
   ): Promise<ProblemActionRecord>
+  deleteByAuthUserId?(
+    authUserId: string,
+    provider: ProviderKey,
+    externalId: string,
+  ): Promise<void>
 }
 
 const parseAuthUserId = (authUserId: string) =>
@@ -139,6 +150,13 @@ const problemActionFromDatabase = (
     parsed.recommendationBatchId === null
       ? {}
       : { recommendationBatchId: parsed.recommendationBatchId }),
+    ...(parsed.recommendationItemId === undefined ||
+    parsed.recommendationItemId === null
+      ? {}
+      : { recommendationItemId: parsed.recommendationItemId }),
+    ...(parsed.sourceContext === undefined || parsed.sourceContext === null
+      ? {}
+      : { sourceContext: parsed.sourceContext }),
     occurredAt: parsed.occurredAt,
   })
 }
@@ -165,6 +183,12 @@ const problemActionFromInput = (
     ...(input.recommendationBatchId === undefined
       ? {}
       : { recommendationBatchId: input.recommendationBatchId }),
+    ...(input.recommendationItemId === undefined
+      ? {}
+      : { recommendationItemId: input.recommendationItemId }),
+    ...(input.sourceContext === undefined
+      ? {}
+      : { sourceContext: input.sourceContext }),
     occurredAt: input.occurredAt ?? now,
   })
 
@@ -189,13 +213,44 @@ export class InMemoryProblemActionRepository implements ProblemActionRepository 
   ) {
     const ownerId = parseAuthUserId(authUserId)
     const parsedInput = parseProblemActionInput(input)
-    const action = problemActionFromInput(parsedInput, this.now())
     const actions = this.actionsByAuthUserId.get(ownerId) ?? []
+
+    const existingImpression =
+      parsedInput.actionType === 'impression' &&
+      parsedInput.recommendationItemId !== undefined
+        ? actions.find(
+            (action) =>
+              action.actionType === 'impression' &&
+              action.recommendationItemId === parsedInput.recommendationItemId,
+          )
+        : undefined
+
+    if (existingImpression !== undefined) {
+      return problemActionFromValue(existingImpression)
+    }
+
+    const action = problemActionFromInput(parsedInput, this.now())
 
     actions.push(action)
     this.actionsByAuthUserId.set(ownerId, actions)
 
     return problemActionFromValue(action)
+  }
+
+  async deleteByAuthUserId(
+    authUserId: string,
+    provider: ProviderKey,
+    externalId: string,
+  ) {
+    const ownerId = parseAuthUserId(authUserId)
+    const actions = this.actionsByAuthUserId.get(ownerId) ?? []
+    this.actionsByAuthUserId.set(
+      ownerId,
+      actions.filter(
+        (action) =>
+          action.provider !== provider || action.externalId !== externalId,
+      ),
+    )
   }
 }
 
@@ -251,6 +306,39 @@ export class PrismaProblemActionRepository implements ProblemActionRepository {
         }
       }
 
+      if (parsedInput.recommendationItemId !== undefined) {
+        const item = await transaction.recommendationItem.findFirst({
+          where: {
+            id: parsedInput.recommendationItemId,
+            batch: { userId: user.id },
+          },
+          select: { id: true },
+        })
+
+        if (item === null) {
+          throw new Error(
+            'The recommendation item is not owned by this learner.',
+          )
+        }
+      }
+
+      if (
+        parsedInput.actionType === 'impression' &&
+        parsedInput.recommendationItemId !== undefined
+      ) {
+        const existing = await transaction.problemAction.findFirst({
+          where: {
+            userId: user.id,
+            actionType: 'impression',
+            recommendationItemId: parsedInput.recommendationItemId,
+          },
+        })
+
+        if (existing !== null) {
+          return { ownerId: user.id, record: existing }
+        }
+      }
+
       const record = await transaction.problemAction.create({
         data: {
           userId: user.id,
@@ -266,6 +354,12 @@ export class PrismaProblemActionRepository implements ProblemActionRepository {
           ...(parsedInput.recommendationBatchId === undefined
             ? {}
             : { recommendationBatchId: parsedInput.recommendationBatchId }),
+          ...(parsedInput.recommendationItemId === undefined
+            ? {}
+            : { recommendationItemId: parsedInput.recommendationItemId }),
+          ...(parsedInput.sourceContext === undefined
+            ? {}
+            : { sourceContext: parsedInput.sourceContext }),
           ...(parsedInput.occurredAt === undefined
             ? {}
             : { occurredAt: parsedInput.occurredAt }),
@@ -276,5 +370,21 @@ export class PrismaProblemActionRepository implements ProblemActionRepository {
     })
 
     return problemActionFromDatabase(result.record, result.ownerId)
+  }
+
+  async deleteByAuthUserId(
+    authUserId: string,
+    provider: ProviderKey,
+    externalId: string,
+  ) {
+    const ownerId = parseAuthUserId(authUserId)
+    const user = await this.prisma.coreUser.findUnique({
+      where: { authUserId: ownerId },
+      select: { id: true },
+    })
+    if (user === null) return
+    await this.prisma.problemAction.deleteMany({
+      where: { userId: user.id, provider, externalId },
+    })
   }
 }

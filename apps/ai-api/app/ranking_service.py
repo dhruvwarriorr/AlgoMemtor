@@ -6,10 +6,12 @@ from dataclasses import dataclass
 from decimal import Decimal
 from time import perf_counter
 from typing import Any, Protocol
+from uuid import UUID
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import ValidationError
 
+from .memory_models import MemoryRetrievalResponse, StoredMemory
 from .ranking_audit import (
     NullRankingAuditRepository,
     RankingAudit,
@@ -35,6 +37,8 @@ Structured profile fields and the supplied candidate list are authoritative.
 Write concise reasons grounded in topics, difficulty, goal, or learning style.
 Do not quote the learner request or reveal names, handles, contact details, IDs, or private data.
 """
+RANKING_RETRIEVAL_ERRORS = (OSError, RuntimeError, TypeError, ValueError)
+RANKING_OUTPUT_ERRORS = (ValidationError, TypeError, ValueError)
 
 
 @dataclass(frozen=True)
@@ -46,6 +50,12 @@ class ModelResult:
 
 class RankingModel(Protocol):
     async def rank(self, request: RankingRequest) -> ModelResult: ...
+
+
+class MemoryRetriever(Protocol):
+    async def retrieve(
+        self, learner_id: UUID, query: str | None, limit: int
+    ) -> MemoryRetrievalResponse: ...
 
 
 class RankingNotConfiguredError(RuntimeError):
@@ -70,6 +80,11 @@ class GeminiRankingModel:
         )
 
     async def rank(self, request: RankingRequest) -> ModelResult:
+        return await self.rank_with_memories(request, [])
+
+    async def rank_with_memories(
+        self, request: RankingRequest, memories: list[StoredMemory]
+    ) -> ModelResult:
         model_payload = {
             "expectedCount": request.expectedCount,
             "learner": request.learner.model_dump(exclude_none=True),
@@ -78,6 +93,15 @@ class GeminiRankingModel:
                 for candidate in request.candidates
             ],
         }
+        if memories:
+            model_payload["learnerMemory"] = [
+                {
+                    "category": memory.category,
+                    "statement": memory.statement,
+                    "confidence": memory.confidence,
+                }
+                for memory in memories[:5]
+            ]
         result: dict[str, Any] = await self.structured_model.ainvoke(
             [
                 ("system", SYSTEM_PROMPT),
@@ -102,10 +126,12 @@ class RankingService:
         settings: AiSettings,
         audit_repository: RankingAuditRepository | NullRankingAuditRepository,
         model: RankingModel | None = None,
+        memory_retriever: MemoryRetriever | None = None,
     ) -> None:
         self.settings = settings
         self.audit_repository = audit_repository
         self.model = model
+        self.memory_retriever = memory_retriever
 
     def get_model(self) -> RankingModel:
         if self.model is not None:
@@ -223,13 +249,56 @@ class RankingService:
         output_tokens: int | None = None
         fallback_reason: str | None = None
         items: list[RankedItem] = []
+        memories: list[StoredMemory] = []
+
+        if self.settings.memory_rag_enabled and self.memory_retriever is not None:
+            query = json.dumps(
+                {
+                    "focusTopics": request.learner.focusTopics,
+                    "preferredTopics": request.learner.preferredTopics,
+                    "preferredDifficulty": request.learner.preferredDifficulty.model_dump(),
+                    "candidateTopics": sorted(
+                        {
+                            topic
+                            for candidate in request.candidates
+                            for topic in candidate.topics
+                        }
+                    )[:25],
+                    "candidateDifficulties": sorted(
+                        {
+                            candidate.normalizedDifficulty
+                            for candidate in request.candidates
+                            if candidate.normalizedDifficulty is not None
+                        }
+                    ),
+                },
+                separators=(",", ":"),
+            )
+            try:
+                retrieved = await self.memory_retriever.retrieve(
+                    request.learnerId,
+                    query,
+                    self.settings.memory_retrieval_limit,
+                )
+                memories = retrieved.items[:5]
+            except asyncio.CancelledError:
+                raise
+            except RANKING_RETRIEVAL_ERRORS:
+                safe_log(
+                    "ai_memory_retrieval_failed",
+                    {"requestId": request.requestId},
+                )
 
         try:
             model = self.get_model()
+            rank_with_memories = getattr(model, "rank_with_memories", None)
+            model_call = (
+                rank_with_memories(request, memories)
+                if callable(rank_with_memories)
+                else model.rank(request)
+            )
             async with asyncio.timeout(self.settings.llm_timeout_seconds):
-                model_result = await asyncio.gather(
-                    model.rank(request), return_exceptions=True
-                )
+                model_result = await asyncio.gather(model_call, return_exceptions=True)
             result = model_result[0]
             if isinstance(result, asyncio.CancelledError):
                 raise result
@@ -247,7 +316,7 @@ class RankingService:
         except TimeoutError:
             fallback_reason = "timeout"
             items = []
-        except (ValidationError, TypeError, ValueError):
+        except RANKING_OUTPUT_ERRORS:
             fallback_reason = "invalid_output"
             items = []
         except RankingNotConfiguredError:
@@ -270,4 +339,10 @@ class RankingService:
 
 
 def get_ranking_service() -> RankingService:
-    return RankingService(get_ai_settings(), get_ranking_audit_repository())
+    from .memory_service import get_memory_service
+
+    return RankingService(
+        get_ai_settings(),
+        get_ranking_audit_repository(),
+        memory_retriever=get_memory_service(),
+    )

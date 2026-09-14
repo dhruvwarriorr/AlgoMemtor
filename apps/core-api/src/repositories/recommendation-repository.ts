@@ -169,6 +169,14 @@ export type RecommendationFeedbackRecord = z.infer<
   typeof recommendationFeedbackRecordSchema
 >
 
+export type RecommendationFeedbackEvidence = {
+  occurredAt: Date
+  note?: string
+  feedback?: 'useful' | 'not_useful' | 'too_easy' | 'about_right' | 'too_hard'
+  problemProvider: 'codeforces'
+  problemExternalId: string
+}
+
 export class RecommendationOwnershipError extends Error {
   constructor() {
     super('The recommendation item is not owned by this learner.')
@@ -196,6 +204,20 @@ export interface RecommendationRepository {
   listFeedbackByAuthUserId(
     authUserId: string,
   ): Promise<RecommendationFeedbackRecord[]>
+  getFeedbackEvidenceByAuthUserId?(
+    authUserId: string,
+    feedbackId: string,
+  ): Promise<RecommendationFeedbackEvidence | null>
+  listFeedbackEvidenceIdsByProblem?(
+    authUserId: string,
+    provider: 'codeforces',
+    externalId: string,
+  ): Promise<string[]>
+  deleteFeedbackByProblem?(
+    authUserId: string,
+    provider: 'codeforces',
+    externalId: string,
+  ): Promise<void>
 }
 
 export type RecommendationItemOwnershipRecord = {
@@ -413,6 +435,82 @@ export class InMemoryRecommendationRepository implements RecommendationRepositor
       )
       .map((feedback) => recommendationFeedbackRecordSchema.parse(feedback))
   }
+
+  async getFeedbackEvidenceByAuthUserId(
+    authUserId: string,
+    feedbackId: string,
+  ) {
+    const ownerId = authUserIdSchema.parse(authUserId)
+    const id = identifierSchema.parse(feedbackId)
+    const feedback = this.feedbackByAuthUserId
+      .get(ownerId)
+      ?.get(
+        [...(this.feedbackByAuthUserId.get(ownerId)?.entries() ?? [])].find(
+          ([, value]) => value.id === id,
+        )?.[0] ?? '',
+      )
+    if (feedback === undefined) return null
+    const item = (this.batchesByAuthUserId.get(ownerId) ?? [])
+      .flatMap((batch) => batch.items)
+      .find((candidate) => candidate.id === feedback.recommendationItemId)
+    if (item === undefined) return null
+    const feedbackValue = feedback.usefulness ?? feedback.perceivedDifficulty
+    return {
+      occurredAt: feedback.updatedAt,
+      ...(feedback.notes === undefined ? {} : { note: feedback.notes }),
+      ...(feedbackValue === undefined ? {} : { feedback: feedbackValue }),
+      problemProvider: item.provider,
+      problemExternalId: item.externalId,
+    }
+  }
+
+  async listFeedbackEvidenceIdsByProblem(
+    authUserId: string,
+    provider: 'codeforces',
+    externalId: string,
+  ) {
+    const ownerId = authUserIdSchema.parse(authUserId)
+    const referenceProvider = ProviderKeySchema.parse(provider)
+    const referenceExternalId = externalIdSchema.parse(externalId)
+    const itemIds = new Set(
+      (this.batchesByAuthUserId.get(ownerId) ?? [])
+        .flatMap((batch) => batch.items)
+        .filter(
+          (item) =>
+            item.provider === referenceProvider &&
+            item.externalId === referenceExternalId,
+        )
+        .map((item) => item.id),
+    )
+    return [...(this.feedbackByAuthUserId.get(ownerId)?.values() ?? [])]
+      .filter((feedback) => itemIds.has(feedback.recommendationItemId))
+      .map((feedback) => feedback.id)
+  }
+
+  async deleteFeedbackByProblem(
+    authUserId: string,
+    provider: 'codeforces',
+    externalId: string,
+  ) {
+    const ownerId = authUserIdSchema.parse(authUserId)
+    const referenceProvider = ProviderKeySchema.parse(provider)
+    const referenceExternalId = externalIdSchema.parse(externalId)
+    const itemIds = new Set(
+      (this.batchesByAuthUserId.get(ownerId) ?? [])
+        .flatMap((batch) => batch.items)
+        .filter(
+          (item) =>
+            item.provider === referenceProvider &&
+            item.externalId === referenceExternalId,
+        )
+        .map((item) => item.id),
+    )
+    const feedback = this.feedbackByAuthUserId.get(ownerId)
+    if (feedback === undefined) return
+    for (const itemId of feedback.keys()) {
+      if (itemIds.has(itemId)) feedback.delete(itemId)
+    }
+  }
 }
 
 export class PrismaRecommendationRepository implements RecommendationRepository {
@@ -565,5 +663,84 @@ export class PrismaRecommendationRepository implements RecommendationRepository 
     })
 
     return records.map(recommendationFeedbackFromDatabase)
+  }
+
+  async getFeedbackEvidenceByAuthUserId(
+    authUserId: string,
+    feedbackId: string,
+  ) {
+    const ownerId = authUserIdSchema.parse(authUserId)
+    const id = identifierSchema.parse(feedbackId)
+    const record = await this.prisma.recommendationFeedback.findFirst({
+      where: { id, user: { authUserId: ownerId } },
+      include: {
+        recommendationItem: {
+          select: { provider: true, externalId: true },
+        },
+      },
+    })
+    if (record === null) return null
+    const feedbackValue = record.usefulness ?? record.perceivedDifficulty
+    return {
+      occurredAt: record.updatedAt,
+      ...(record.notes === null ? {} : { note: record.notes }),
+      ...(feedbackValue === null || feedbackValue === undefined
+        ? {}
+        : {
+            feedback: z
+              .enum([
+                'useful',
+                'not_useful',
+                'too_easy',
+                'about_right',
+                'too_hard',
+              ])
+              .parse(feedbackValue),
+          }),
+      problemProvider: ProviderKeySchema.parse(
+        record.recommendationItem.provider,
+      ),
+      problemExternalId: record.recommendationItem.externalId,
+    }
+  }
+
+  async listFeedbackEvidenceIdsByProblem(
+    authUserId: string,
+    provider: 'codeforces',
+    externalId: string,
+  ) {
+    const ownerId = authUserIdSchema.parse(authUserId)
+    const referenceProvider = ProviderKeySchema.parse(provider)
+    const referenceExternalId = externalIdSchema.parse(externalId)
+    const records = await this.prisma.recommendationFeedback.findMany({
+      where: {
+        user: { authUserId: ownerId },
+        recommendationItem: {
+          provider: referenceProvider,
+          externalId: referenceExternalId,
+        },
+      },
+      select: { id: true },
+    })
+    return records.map((record) => record.id)
+  }
+
+  async deleteFeedbackByProblem(
+    authUserId: string,
+    provider: 'codeforces',
+    externalId: string,
+  ) {
+    const ownerId = authUserIdSchema.parse(authUserId)
+    const referenceProvider = ProviderKeySchema.parse(provider)
+    const referenceExternalId = externalIdSchema.parse(externalId)
+    await this.prisma.recommendationFeedback.deleteMany({
+      where: {
+        user: { authUserId: ownerId },
+        recommendationItem: {
+          provider: referenceProvider,
+          externalId: referenceExternalId,
+        },
+      },
+    })
   }
 }

@@ -174,8 +174,8 @@ Understand exactly what AlgoMemtor owns and what external platforms own.
    - `unsolved`;
    - `attempted`; and
    - `solved`.
-   Keep recommendations, dismissals, and evidence provenance separate from
-   question status. Provider-link clicks do not change status.
+     Keep recommendations, dismissals, and evidence provenance separate from
+     question status. Provider-link clicks do not change status.
 9. Define success metrics that do not count clicks as solves.
 
 ### Acceptance checks
@@ -528,16 +528,16 @@ Collect enough preference data for a useful first recommendation.
 ### Acceptance checks
 
 - [x] Onboarding works without a linked external account. The provider-linking
-  section is optional and the profile API accepts a completed profile without
-  any linked provider.
+      section is optional and the profile API accepts a completed profile without
+      any linked provider.
 - [x] Required fields are understandable. The shared contract validates the
-  required goal, experience, provider, and comfort inputs, while the form
-  explains the fields and validation messages.
+      required goal, experience, provider, and comfort inputs, while the form
+      explains the fields and validation messages.
 - [x] Completion leads to the dashboard. A saved complete profile clears the
-  onboarding gate and the form navigates to `/dashboard`.
+      onboarding gate and the form navigates to `/dashboard`.
 - [x] Settings can correct the profile later. Settings loads and saves the
-  authenticated learner's profile, and the PostgreSQL repository preserves it
-  across a disconnect/reconnect integration check.
+      authenticated learner's profile, and the PostgreSQL repository preserves it
+      across a disconnect/reconnect integration check.
 
 The checks above have automated and local integration evidence. A fresh
 authenticated browser pass for the updated onboarding/settings UI remains a
@@ -700,9 +700,9 @@ access and deterministic filtering. It creates a maximum 40-item Codeforces
 shortlist, sends normalized metadata and learner context to FastAPI through the
 internal ranking client, validates the returned IDs and reasons again, and only
 then attaches the provider-owned canonical URLs. A successful batch is stored as
-`rankingMode: "ai"` with version `ai-gemini-v1`; every fallback is stored as
+`rankingMode: "ai"` with version `ai-gemini-rag-v1`; every fallback is stored as
 `rankingMode: "deterministic"` with version
-`ai-v1-fallback-deterministic-v1`.
+`ai-rag-v1-fallback-deterministic-v2`.
 
 FastAPI exposes `POST /internal/recommendations/rank`, protected by the shared
 `X-Internal-Service-Token`. With `LLM_API_KEY` configured it uses the configured
@@ -739,7 +739,7 @@ browser acceptance.
 - [ ] Latency and cost are measured.
 - [ ] An evaluation compares AI against the baseline.
 
-The 24-scenario evaluation dataset and runner are present in
+The 48-scenario evaluation dataset and runner are present in
 `apps/core-api/evaluation/dataset.json` and `apps/core-api/evaluation/run.ts`.
 `npx tsx apps/core-api/evaluation/run.ts --validate-only` validates the dataset
 without contacting Gemini. A live AI-vs-baseline run is explicitly opt-in and
@@ -755,8 +755,6 @@ evidence, so those release checks remain pending.
   evaluation set.
 - Browser verification with a real authenticated session and live Gemini
   credentials.
-- Learner memory, RAG, embeddings, and vector retrieval; `EMBEDDING_MODEL`
-  remains unused configuration.
 - General conversational preference handling; the implemented input is one
   optional, profile-scoped recommendation note rather than a chat or memory
   system.
@@ -793,6 +791,17 @@ Track what AlgoMemtor genuinely knows after external navigation.
 6. Keep append-only evidence history where practical.
 7. Update recommendation exclusions and revision rules.
 
+### Current local implementation
+
+The progress slice now includes append-only manual status events, persistent
+bookmarks, recommendation impressions and non-blocking opens, reflections,
+server-timed sessions with concurrency and four-hour capping, a protected
+analytics/history dashboard, and durable outbox hooks for learner-memory
+processing. Catalog, recommendation, bookmark, and progress views share the
+same status, bookmark, reflection, and timer controls. The implementation is
+also wired for profile-scoped AI note consent and learner-data deletion while
+provider-confirmed activity remains intentionally outside this week.
+
 ### Acceptance checks
 
 - [ ] Opening never becomes completion.
@@ -822,7 +831,9 @@ consented user activity access.
 10. Add reconciliation tests.
 
 If reliable verification is not permitted, ship Week 12 without Week 13 and label
-provider verification as deferred. Do not fake it.
+provider verification as deferred. Do not fake it. See
+`docs/adr/0003-provider-verified-activity-deferral.md` for the CodeChef and
+LeetCode decision and the incomplete Week 13 gate.
 
 ### Acceptance checks
 
@@ -862,6 +873,18 @@ Remember useful learner patterns without creating an opaque permanent profile.
 7. Add embeddings only when semantic retrieval is measurably helpful.
 8. Exclude low-confidence memories from strong claims.
 9. Test memory influence on recommendations.
+
+### Current local implementation
+
+The learner-memory slice is implemented locally with a separate Alembic-owned
+`ai` schema, consent-aware reflection summarization, confidence thresholds,
+inspect/correct/archive/restore/delete controls, durable core outbox jobs,
+Gemini embeddings at 768 dimensions, owner-scoped cosine retrieval, and
+bounded RAG input to the recommendation ranker. Raw notes, prompts, provider
+URLs, and problem content are excluded from memory and audit persistence.
+Local tests cover the contracts and failure boundaries; live PostgreSQL,
+Gemini, embedding, worker-restart, and authenticated-browser evidence remain
+release gates rather than being marked complete here.
 
 ### Acceptance checks
 

@@ -9,10 +9,11 @@
     "packages/shared-contracts"
   ],
   "scripts": {
-    "dev": "concurrently -n WEB,CORE,AI -c cyan,green,magenta \"npm:dev:web\" \"npm:dev:core\" \"npm:dev:ai\"",
+    "dev": "concurrently -n WEB,CORE,AI,WORKER -c cyan,green,magenta,yellow \"npm:dev:web\" \"npm:dev:core\" \"npm:dev:ai\" \"npm:dev:worker\"",
     "dev:web": "npm --prefix apps/web run dev",
     "dev:core": "npm --prefix apps/core-api run dev",
     "dev:ai": "cd apps/ai-api && uv run fastapi dev app/main.py --port 8000",
+    "dev:worker": "npm --prefix apps/core-api run dev:worker",
     "db:up": "docker-compose up -d postgres",
     "db:logs": "docker-compose logs -f postgres",
     "db:down": "docker-compose down",

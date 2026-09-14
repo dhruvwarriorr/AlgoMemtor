@@ -13,6 +13,7 @@ const navigationItems = [
   { label: 'Dashboard', to: '/dashboard' },
   { label: 'Problems', to: '/problems' },
   { label: 'Progress', to: '/progress' },
+  { label: 'Memory', to: '/memory' },
   { label: 'Profile', to: '/profile' },
   { label: 'Settings', to: '/settings' },
 ] as const

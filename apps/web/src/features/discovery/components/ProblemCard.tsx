@@ -7,6 +7,7 @@ import type {
 
 import { useNotification } from '@/app/useNotification'
 import { Button } from '@/components/ui/button'
+import { ProblemLearningControls } from '@/features/progress/components/ProblemLearningControls'
 
 import { SolveOnProviderLink } from './SolveOnProviderLink'
 
@@ -38,11 +39,11 @@ export function ProblemCard({ problem }: ProblemCardProps) {
     problem.providerTags.length - visibleProviderTags.length,
   )
 
-  function showPlaceholder(action: 'bookmark' | 'dismiss') {
+  function dismissPlaceholder() {
     notify({
-      title: `${action === 'bookmark' ? 'Bookmarking' : 'Dismissing'} is coming later`,
+      title: 'Dismissing is coming later',
       description:
-        'This control is a placeholder and has not changed or saved the problem.',
+        'Dismissal is not part of the catalog flow yet, so this problem was not changed.',
       tone: 'info',
     })
   }
@@ -139,20 +140,23 @@ export function ProblemCard({ problem }: ProblemCardProps) {
       <footer className="mt-auto flex min-w-0 flex-wrap items-center gap-2 border-t border-border pt-4">
         <SolveOnProviderLink
           canonicalUrl={problem.canonicalUrl}
+          externalId={problem.externalId}
           provider={problem.provider}
         />
-        <Button
-          aria-label={`Bookmark ${problem.title}`}
-          onClick={() => showPlaceholder('bookmark')}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          Bookmark
-        </Button>
+        <ProblemLearningControls
+          initialBookmarked={
+            (problem as typeof problem & { bookmarked?: boolean }).bookmarked ??
+            false
+          }
+          initialStatus={problem.learnerStatus ?? 'unsolved'}
+          problem={{
+            provider: problem.provider,
+            externalId: problem.externalId,
+          }}
+        />
         <Button
           aria-label={`Dismiss ${problem.title}`}
-          onClick={() => showPlaceholder('dismiss')}
+          onClick={dismissPlaceholder}
           size="sm"
           type="button"
           variant="ghost"

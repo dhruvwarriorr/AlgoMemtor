@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import re
 from typing import Annotated, Literal
 from uuid import UUID
@@ -29,7 +31,7 @@ class PreferredDifficulty(StrictModel):
     max: float = Field(ge=0)
 
     @model_validator(mode="after")
-    def validate_range(self) -> "PreferredDifficulty":
+    def validate_range(self) -> PreferredDifficulty:
         if self.min > self.max:
             raise ValueError("Minimum difficulty cannot exceed maximum difficulty.")
         return self
@@ -65,7 +67,7 @@ class RankingRequest(StrictModel):
     candidates: list[RankingCandidate] = Field(min_length=1, max_length=40)
 
     @model_validator(mode="after")
-    def validate_candidates(self) -> "RankingRequest":
+    def validate_candidates(self) -> RankingRequest:
         identities = [
             f"{candidate.provider}:{candidate.externalId}"
             for candidate in self.candidates
@@ -102,7 +104,7 @@ class RankingResponse(StrictModel):
     auditId: UUID | None = None
 
     @model_validator(mode="after")
-    def validate_fallback(self) -> "RankingResponse":
+    def validate_fallback(self) -> RankingResponse:
         if self.fallback and self.fallbackReason is None:
             raise ValueError("Fallback responses require a stable reason.")
         if self.fallback and self.items:

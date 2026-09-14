@@ -5,6 +5,7 @@ type CatalogPaginationProps = {
   isFetching?: boolean
   onPageChange: (page: number) => void
   totalPages: number
+  ariaLabel?: string
 }
 
 export function CatalogPagination({
@@ -12,12 +13,13 @@ export function CatalogPagination({
   isFetching = false,
   onPageChange,
   totalPages,
+  ariaLabel = 'Problem catalog pagination',
 }: CatalogPaginationProps) {
   const hasPages = totalPages > 0
 
   return (
     <nav
-      aria-label="Problem catalog pagination"
+      aria-label={ariaLabel}
       className="flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-card p-3 sm:flex-row sm:items-center sm:justify-between"
     >
       <p className="text-sm text-muted-foreground" role="status">

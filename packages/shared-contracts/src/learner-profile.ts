@@ -230,6 +230,7 @@ const learnerProfileAnswersShape = {
     ),
   additionalConsiderations: optionalNotesSchema,
   recommendationPreference: z.string().trim().min(1).max(500).optional(),
+  timezone: z.string().trim().min(1).max(64).optional(),
 }
 
 export const LearnerProfileAnswersSchema = z

@@ -71,19 +71,38 @@ export async function requestJson<T>(
 
   let body: unknown
 
-  try {
-    body = await response.json()
-  } catch (error) {
-    throw new ApiClientError(
-      response.ok
-        ? 'The application service returned an unreadable response.'
-        : fallbackHttpMessage(response.status),
-      {
-        status: response.status,
-        code: response.ok ? 'INVALID_JSON_RESPONSE' : 'HTTP_ERROR',
-        cause: error,
-      },
-    )
+  if (response.status === 204) {
+    body = null
+  } else {
+    try {
+      body = await response.json()
+    } catch (error) {
+      throw new ApiClientError(
+        response.ok
+          ? 'The application service returned an unreadable response.'
+          : fallbackHttpMessage(response.status),
+        {
+          status: response.status,
+          code: response.ok ? 'INVALID_JSON_RESPONSE' : 'HTTP_ERROR',
+          cause: error,
+        },
+      )
+    }
+  }
+
+  if (response.status === 204) {
+    const result = schema.safeParse(body)
+    if (!result.success) {
+      throw new ApiClientError(
+        'The application service returned an unexpected response.',
+        {
+          status: response.status,
+          code: 'INVALID_RESPONSE',
+          details: result.error.issues,
+        },
+      )
+    }
+    return result.data
   }
 
   if (!response.ok) {

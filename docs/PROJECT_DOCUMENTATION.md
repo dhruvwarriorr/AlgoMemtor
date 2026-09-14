@@ -319,8 +319,8 @@ metadata candidates to FastAPI. The browser never calls FastAPI directly. The
 core API calls `POST /internal/recommendations/rank` with
 `X-Internal-Service-Token` when `AI_API_URL` and `INTERNAL_SERVICE_TOKEN` are
 configured; otherwise it uses the deterministic fallback client. A successful
-AI batch is persisted as `ai-gemini-v1`. Any AI fallback or client failure is
-persisted as `ai-v1-fallback-deterministic-v1` and keeps the recommendation feed
+  AI batch is persisted as `ai-gemini-rag-v1`. Any AI fallback or client failure is
+  persisted as `ai-rag-v1-fallback-deterministic-v2` and keeps the recommendation feed
 available.
 
 The Week 10 baseline also exposes `POST /api/recommendations/refresh` for an
@@ -458,6 +458,8 @@ LLM_OUTPUT_PRICE_PER_MILLION_USD=9.00
 LLM_PRICING_VERSION=gemini-3.5-flash-standard-2026-09
 EMBEDDING_MODEL=
 AI_AUDIT_TIMEOUT_SECONDS=0.5
+MEMORY_GENERATION_ENABLED=true
+MEMORY_RAG_ENABLED=true
 INTERNAL_SERVICE_TOKEN=
 ```
 
@@ -471,10 +473,12 @@ the `X-Internal-Service-Token` header. FastAPI's ranking settings use
 per-million token prices. `LLM_PRICING_VERSION` labels those price assumptions
 in audit rows and defaults to `gemini-3.5-flash-standard-2026-09`.
 `AI_RANKING_VERSION` is also accepted by FastAPI's settings and defaults to
-`ai-gemini-v1`, although it is not needed in the example file. `DATABASE_URL`
-enables the AI audit repository; without it, audit writes are no-ops.
-`EMBEDDING_MODEL` is present for later work and is not read by the current
-ranking service.
+`ai-gemini-rag-v1`. `DATABASE_URL` enables the AI audit, memory, and vector
+repositories; without it, persistence uses safe no-op boundaries. The current
+memory path uses `EMBEDDING_MODEL=gemini-embedding-001` with 768 dimensions,
+owner-scoped cosine retrieval, and a SQL fallback when vector retrieval is
+unavailable. `PROGRESS_ENABLED`, `MEMORY_GENERATION_ENABLED`, and
+`MEMORY_RAG_ENABLED` are independent rollout flags.
 
 Remove obsolete Judge0 variables during implementation migration. Never expose
 provider or LLM credentials through `VITE_*` variables.
@@ -834,17 +838,22 @@ deterministic fallback version.
 
 # 12. AI Recommendation Service
 
-## 12.1 Current Week 11 responsibilities
+## 12.1 Current Phase 9 responsibilities
 
 - accept a bounded, authenticated internal ranking request;
 - rank supplied Codeforces metadata candidates through the configured Gemini
   model;
 - interpret the optional profile-scoped recommendation preference;
-- explain selections concisely; and
-- return structured, validated output with usage and latency metadata.
+- explain selections concisely;
+- return structured, validated output with usage and latency metadata; and
+- process consented learner evidence into inspectable, evidence-linked memories
+  with optional 768-dimensional vector retrieval.
 
-Learner-pattern extraction and memory retrieval remain later-roadmap work; this
-slice does not implement RAG, embeddings, or vector retrieval.
+The memory path uses the same bounded Gemini adapter for reflection summaries and
+memory generation, `gemini-embedding-001` for memory text embeddings, and a
+SQL-memory fallback when vector retrieval is unavailable. Progress events enqueue
+durable work without waiting for AI. Live database, Gemini, embedding, worker
+restart, and authenticated-browser checks remain release gates.
 
 ## 12.2 Non-responsibilities
 
@@ -1093,10 +1102,13 @@ outbound opens, and status changes. Question status is always `unsolved`,
 `provider_verified` evidence source. An outbound open remains only an `opened`
 event.
 
-### `core.verified_activity` (planned for Week 13)
+### Provider-confirmed activity (deferred)
 
-Stores provider-confirmed activity with provider event ID or another deduplication
-key, verification time, and minimal evidence required for audit.
+There is intentionally no `core.verified_activity` table or model. CodeChef and
+LeetCode aggregate solved-count integrations do not provide an approved,
+reliable individual-activity interface for this phase. Their totals remain
+separate from learner status and memory evidence. See ADR 0003; Week 13
+verification acceptance remains incomplete.
 
 ### `core.recommendation_batches`
 
@@ -1121,8 +1133,9 @@ Stores memory text, category, confidence, status, and timestamps.
 
 ### `ai.memory_evidence`
 
-Links each memory to manual feedback, verified activity, or another permitted
-learner event.
+Links each memory to permitted manual progress, reflections, timers, profile
+preferences, or recommendation feedback. Provider-confirmed activity is not
+used because Week 13 is deferred.
 
 ### `ai.ranking_audits`
 
@@ -1140,10 +1153,9 @@ The repository is best-effort and is enabled only when the AI service has a
 `DATABASE_URL`; otherwise it uses a no-op repository and the response omits
 `auditId`. An audit insert failure does not fail ranking.
 
-`ai.learner_memories` and `ai.memory_evidence` remain later-roadmap tables. Week
-9 establishes the `ai` schema and Alembic history, while Week 11 adds
-`ai.ranking_audits`. Prisma applies `core` migrations before Alembic on a fresh
-database. Their bookkeeping tables are also distinct:
+The learner-memory tables are owned by Alembic, while the progress, bookmarks,
+and durable outbox tables are owned by Prisma. Prisma applies `core` migrations
+before Alembic on a fresh database. Their bookkeeping tables are also distinct:
 `public._prisma_migrations` and `public.ai_alembic_version`.
 
 ## 14.3 Removed old-model concepts
@@ -1326,7 +1338,12 @@ profile-preference regeneration.
   extraction, timeout/provider/missing-configuration fallback, token-protected
   endpoint behavior, and non-fatal audit failures.
 - `apps/ai-api/tests/test_alembic_baseline.py` checks that the AI migration
-  creates only the `ai` schema objects expected for the audit table.
+  creates and downgrades only the Alembic-owned `ai` schema objects, including
+  pgvector, memory tables, and HNSW retrieval indexes.
+- `apps/ai-api/tests/test_memory.py` covers consent boundaries, privacy
+  filtering, malicious notes, structured summaries, evidence thresholds,
+  memory correction and ownership, embedding fallback, vector/SQL retrieval,
+  cleanup, and worker-safe processing behavior.
 - `apps/ai-api/tests/test_ranking_audit_integration.py` verifies the migration
   and repository against PostgreSQL when `TEST_DATABASE_URL` is configured; it
   is skipped when that environment variable is absent.
@@ -1341,7 +1358,7 @@ npm --prefix apps/core-api exec vitest run \
   src/recommendation-api.test.ts
 ```
 
-The 24-scenario evaluation dataset and runner are in
+The 48-scenario evaluation dataset and runner are in
 `apps/core-api/evaluation/dataset.json` and
 `apps/core-api/evaluation/run.ts`. Run
 `npx tsx apps/core-api/evaluation/run.ts --validate-only` for local dataset
@@ -1349,8 +1366,8 @@ validation. A live AI-vs-baseline comparison is explicitly opt-in and requires a
 configured AI URL and internal token; it gates on allowlist/schema safety, at
 least five percentage points of weighted improvement, p95 latency below eight
 seconds, and average estimated cost at or below $0.02. Local validation and
-tests are not evidence of live Gemini quality, latency, cost, or browser
-acceptance.
+tests are not evidence of live Gemini or embedding quality, latency, cost, worker
+restart behavior, or browser acceptance.
 
 ## 18.4 End-to-end tests
 

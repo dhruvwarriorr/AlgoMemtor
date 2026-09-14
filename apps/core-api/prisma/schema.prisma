@@ -18,6 +18,10 @@ model CoreUser {
   recommendationBatches  RecommendationBatch[]
   problemActions         ProblemAction[]
   recommendationFeedback RecommendationFeedback[]
+  reflections            ProblemReflection[]
+  timerSessions          ProblemTimerSession[]
+  aiConsents             LearnerAiConsent[]
+  outboxJobs             OutboxJob[]
 
   @@map("users")
   @@schema("core")
@@ -139,6 +143,7 @@ model RecommendationItem {
   createdAt  DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
   batch      RecommendationBatch      @relation(fields: [batchId], references: [id], onDelete: Cascade)
   feedback   RecommendationFeedback[]
+  actions    ProblemAction[]
 
   @@unique([batchId, provider, externalId], map: "recommendation_items_batch_provider_external_id_key")
   @@unique([batchId, position], map: "recommendation_items_batch_position_key")
@@ -156,14 +161,96 @@ model ProblemAction {
   learnerStatus         String?              @map("learner_status") @db.VarChar(16)
   evidenceSource        String?              @map("evidence_source") @db.VarChar(32)
   recommendationBatchId String?              @map("recommendation_batch_id") @db.Uuid
+  recommendationItemId  String?              @map("recommendation_item_id") @db.Uuid
+  sourceContext         String?              @map("source_context") @db.VarChar(64)
   occurredAt            DateTime             @default(now()) @map("occurred_at") @db.Timestamptz(3)
   user                  CoreUser             @relation(fields: [userId], references: [id], onDelete: Cascade)
   recommendationBatch   RecommendationBatch? @relation(fields: [recommendationBatchId], references: [id], onDelete: SetNull)
+  recommendationItem    RecommendationItem?  @relation(fields: [recommendationItemId], references: [id], onDelete: SetNull)
 
   @@index([userId, provider, externalId, occurredAt])
   @@index([userId, actionType, occurredAt])
   @@index([recommendationBatchId])
+  @@index([recommendationItemId])
   @@map("problem_actions")
+  @@schema("core")
+}
+
+model ProblemReflection {
+  id                     String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                 String   @map("user_id") @db.Uuid
+  provider               String   @db.VarChar(32)
+  externalId             String   @map("external_id") @db.VarChar(128)
+  perceivedDifficulty    String   @map("perceived_difficulty") @db.VarChar(16)
+  note                   String?  @db.VarChar(1000)
+  statusActionId         String?  @map("status_action_id") @db.Uuid
+  supersedesReflectionId String?  @map("supersedes_reflection_id") @db.Uuid
+  createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  user                   CoreUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, provider, externalId, createdAt])
+  @@index([userId, createdAt])
+  @@map("problem_reflections")
+  @@schema("core")
+}
+
+model ProblemTimerSession {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId             String    @map("user_id") @db.Uuid
+  provider           String    @db.VarChar(32)
+  externalId         String    @map("external_id") @db.VarChar(128)
+  state              String    @db.VarChar(16)
+  durationSeconds    Int       @default(0) @map("duration_seconds")
+  startedAt          DateTime  @default(now()) @map("started_at") @db.Timestamptz(3)
+  lastResumedAt      DateTime? @map("last_resumed_at") @db.Timestamptz(3)
+  pausedAt           DateTime? @map("paused_at") @db.Timestamptz(3)
+  completedAt        DateTime? @map("completed_at") @db.Timestamptz(3)
+  requiresResolution Boolean   @default(false) @map("requires_resolution")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user               CoreUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, provider, externalId, createdAt])
+  @@index([userId, state])
+  @@map("problem_timer_sessions")
+  @@schema("core")
+}
+
+model LearnerAiConsent {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  enabled       Boolean
+  policyVersion String   @map("policy_version") @db.VarChar(64)
+  occurredAt    DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
+  user          CoreUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, occurredAt])
+  @@map("learner_ai_consents")
+  @@schema("core")
+}
+
+model OutboxJob {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  jobType        String    @map("job_type") @db.VarChar(64)
+  evidenceType   String    @map("evidence_type") @db.VarChar(64)
+  evidenceId     String?   @map("evidence_id") @db.Uuid
+  evidenceIds    Json?     @map("evidence_ids") @db.JsonB
+  problemProvider String?  @map("problem_provider") @db.VarChar(32)
+  problemExternalId String? @map("problem_external_id") @db.VarChar(128)
+  idempotencyKey String    @unique @map("idempotency_key") @db.VarChar(160)
+  status         String    @default("pending") @db.VarChar(16)
+  attempts       Int       @default(0)
+  nextAttemptAt  DateTime  @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
+  safeErrorCode  String?   @map("safe_error_code") @db.VarChar(64)
+  lockedAt       DateTime? @map("locked_at") @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user           CoreUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+  @@index([userId, createdAt])
+  @@map("outbox_jobs")
   @@schema("core")
 }
 

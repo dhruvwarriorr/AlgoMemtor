@@ -29,6 +29,7 @@ import {
   type RecommendationRepository,
 } from '../repositories/recommendation-repository.js'
 import type { LearnerProfileRepository } from '../repositories/learner-profile-repository.js'
+import type { ProgressRepository } from '../repositories/progress-repository.js'
 import type { StructuredLogger } from '../utils/structured-logger.js'
 import {
   DETERMINISTIC_RANKING_VERSION,
@@ -46,6 +47,8 @@ type RecommendationServiceOptions = {
   problemActionRepository: ProblemActionRepository
   aiRecommendationClient: AiRecommendationClient
   logger: StructuredLogger
+  progressRepository?: ProgressRepository
+  memoryGenerationEnabled?: boolean
 }
 
 type ProviderSnapshot = Awaited<ReturnType<ProblemProvider['search']>>
@@ -53,10 +56,10 @@ type ProviderSnapshot = Awaited<ReturnType<ProblemProvider['search']>>
 const identity = (provider: string, externalId: string) =>
   `${provider}:${externalId}`
 
-export const AI_RANKING_VERSION = 'ai-gemini-v1'
-export const AI_FALLBACK_RANKING_VERSION = 'ai-v1-fallback-deterministic-v1'
+export const AI_RANKING_VERSION = 'ai-gemini-rag-v1'
+export const AI_FALLBACK_RANKING_VERSION = 'ai-rag-v1-fallback-deterministic-v2'
 export const AI_CANDIDATE_LIMIT = 40
-const AI_POLICY_VERSION = 'week11-v1'
+const AI_POLICY_VERSION = 'phase9-progress-memory-v1'
 const reusableRankingVersions = new Set([
   AI_RANKING_VERSION,
   AI_FALLBACK_RANKING_VERSION,
@@ -231,8 +234,13 @@ export class RecommendationService {
     string,
     Promise<RecommendationFeedResponse>
   >()
+  private readonly memoryInvalidations = new Map<string, Date>()
 
   constructor(private readonly options: RecommendationServiceOptions) {}
+
+  invalidateForLearner(authUserId: string) {
+    this.memoryInvalidations.set(authUserId, new Date())
+  }
 
   private async loadSnapshot() {
     return this.options.provider.search({})
@@ -389,19 +397,41 @@ export class RecommendationService {
     requestId: string,
     signal?: AbortSignal,
   ): Promise<RecommendationFeedResponse> {
-    const [profile, actions, batches, feedback, snapshot] = await Promise.all([
-      this.options.learnerProfileRepository.findByAuthUserId(authUserId),
-      this.options.problemActionRepository.listByAuthUserId(authUserId),
-      this.options.recommendationRepository.listBatchesByAuthUserId(authUserId),
-      this.options.recommendationRepository.listFeedbackByAuthUserId(
-        authUserId,
-      ),
-      this.loadSnapshot(),
-    ])
+    const [profile, actions, batches, feedback, snapshot, progressChange] =
+      await Promise.all([
+        this.options.learnerProfileRepository.findByAuthUserId(authUserId),
+        this.options.problemActionRepository.listByAuthUserId(authUserId),
+        this.options.recommendationRepository.listBatchesByAuthUserId(
+          authUserId,
+        ),
+        this.options.recommendationRepository.listFeedbackByAuthUserId(
+          authUserId,
+        ),
+        this.loadSnapshot(),
+        this.options.progressRepository?.latestRelevantChangeAt(authUserId),
+      ])
     const rankingProfile = deriveRankingProfile(profile)
     const criteria = criteriaFor(rankingProfile, profile)
     const latestBatch = batches[0]
-    const latestAction = latestRelevantActionAt(actions)
+    const latestFeedback = feedback.reduce<Date | undefined>(
+      (latest, item) =>
+        latest === undefined || item.updatedAt > latest
+          ? item.updatedAt
+          : latest,
+      undefined,
+    )
+    const latestAction = [
+      latestRelevantActionAt(actions),
+      progressChange,
+      latestFeedback,
+      this.memoryInvalidations.get(authUserId),
+    ].reduce<Date | undefined>(
+      (latest, current) =>
+        current !== undefined && (latest === undefined || current > latest)
+          ? current
+          : latest,
+      undefined,
+    )
     const availableProblemIds = new Set(
       snapshot.problems.map((problem) =>
         identity(problem.provider, problem.externalId),
@@ -556,6 +586,13 @@ export class RecommendationService {
           })),
         },
       )
+    const invalidatedAt = this.memoryInvalidations.get(authUserId)
+    if (
+      invalidatedAt !== undefined &&
+      invalidatedAt.getTime() <= savedBatch.createdAt.getTime()
+    ) {
+      this.memoryInvalidations.delete(authUserId)
+    }
     const view = this.toBatchView(savedBatch, snapshot, actions, feedback)
 
     return RecommendationFeedResponseSchema.parse({
@@ -602,6 +639,28 @@ export class RecommendationService {
         recommendationItemId,
         input,
       )
+
+    if (
+      this.options.memoryGenerationEnabled !== false &&
+      this.options.progressRepository !== undefined
+    ) {
+      try {
+        await this.options.progressRepository.enqueueJob({
+          authUserId,
+          jobType: 'memory_generation',
+          evidenceType: 'recommendation_feedback',
+          evidenceId: feedback.id,
+          idempotencyKey: `memory:recommendation_feedback:${feedback.id}:${feedback.updatedAt.toISOString()}`,
+        })
+      } catch (error) {
+        this.options.logger.warn('memory_outbox_enqueue_failed', {
+          evidenceType: 'recommendation_feedback',
+          errorCode: 'OUTBOX_UNAVAILABLE',
+        })
+        void error
+      }
+    }
+    this.invalidateForLearner(authUserId)
 
     return RecommendationFeedbackResponseSchema.parse({
       data: serializeFeedback(feedback),

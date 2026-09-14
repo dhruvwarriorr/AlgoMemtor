@@ -303,6 +303,317 @@
         {"externalId": "1703C", "title": "Shortest Path Variants", "rating": 1600, "topics": ["shortest-paths"], "solvedCount": 800, "gold": {"relevance": 0.95, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "shortest-paths"}},
         {"externalId": "1703D", "title": "Beginner String Warmup", "rating": 900, "topics": ["strings"], "solvedCount": 9000, "gold": {"relevance": 0.1, "difficultyFit": 0, "preferenceFit": 0, "diversityGroup": "unrelated"}}
       ]
+    },
+    {
+      "id": "longitudinal-progress-01",
+      "category": "longitudinal_progress",
+      "description": "A graph learner with prior attempts should receive a useful next step without treating an open as a solve.",
+      "profile": {"experience": "intermediate", "difficultyComfort": "medium", "goal": "improve_problem_solving", "topicPreference": {"mode": "selected", "topics": ["graphs"]}, "platformPreferences": {"platforms": ["codeforces"]}, "ratingComfortRange": {"platform": "codeforces", "min": 1200, "max": 1500}, "learningPreferences": ["practice_weak_areas"], "onboardingCompleted": true},
+      "history": {"attemptedProblemIds": ["codeforces:1801A"], "attemptedTopics": ["graphs"], "recentRecommendationIds": ["codeforces:1801A"]},
+      "candidates": [
+        {"externalId": "1801A", "title": "Graph Warmup Previously Attempted", "rating": 1300, "topics": ["graphs"], "solvedCount": 120, "gold": {"relevance": 0.9, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "attempted-graph"}},
+        {"externalId": "1801B", "title": "Shortest Path Revision", "rating": 1350, "topics": ["shortest-paths"], "solvedCount": 110, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "path-revision"}},
+        {"externalId": "1801C", "title": "Cycle Detection Follow-up", "rating": 1400, "topics": ["bfs-and-dfs"], "solvedCount": 100, "gold": {"relevance": 0.95, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "traversal-revision"}},
+        {"externalId": "1801D", "title": "Unrelated String Stretch", "rating": 1400, "topics": ["strings"], "solvedCount": 9000, "gold": {"relevance": 0.1, "difficultyFit": 1, "preferenceFit": 0, "diversityGroup": "unrelated"}}
+      ]
+    },
+    {
+      "id": "longitudinal-progress-02",
+      "category": "longitudinal_progress",
+      "description": "Solved, dismissed, and recently recommended items remain separate facts when a new practice batch is built.",
+      "profile": {"experience": "beginner", "difficultyComfort": "introductory", "goal": "build_consistent_habit", "topicPreference": {"mode": "selected", "topics": ["strings"]}, "platformPreferences": {"platforms": ["codeforces"]}, "ratingComfortRange": {"platform": "codeforces", "min": 800, "max": 1200}, "learningPreferences": ["mixed_approach"], "onboardingCompleted": true},
+      "history": {"solvedProblemIds": ["codeforces:1802A"], "dismissedProblemIds": ["codeforces:1802B"], "recentRecommendationIds": ["codeforces:1802C"], "attemptedTopics": ["strings"]},
+      "preferNewItems": true,
+      "candidates": [
+        {"externalId": "1802A", "title": "Previously Solved String Drill", "rating": 900, "topics": ["strings"], "solvedCount": 700, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "solved"}},
+        {"externalId": "1802B", "title": "Dismissed Graph Detour", "rating": 1000, "topics": ["graphs"], "solvedCount": 800, "gold": {"relevance": 0.2, "difficultyFit": 1, "preferenceFit": 0, "diversityGroup": "dismissed"}},
+        {"externalId": "1802C", "title": "Recent Parsing Practice", "rating": 1000, "topics": ["strings"], "solvedCount": 120, "gold": {"relevance": 0.9, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "recent"}},
+        {"externalId": "1802D", "title": "New Suffix Practice", "rating": 1100, "topics": ["string-suffix-structures"], "solvedCount": 100, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "new-suffix"}},
+        {"externalId": "1802E", "title": "New Implementation Companion", "rating": 900, "topics": ["implementation"], "solvedCount": 90, "gold": {"relevance": 0.85, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "new-implementation"}}
+      ]
+    },
+    {
+      "id": "longitudinal-progress-03",
+      "category": "longitudinal_progress",
+      "description": "A longer history should keep solved problems out while using attempted topics for a measured revision path.",
+      "profile": {"experience": "advanced", "difficultyComfort": "challenging", "goal": "learn_advanced_algorithms", "topicPreference": {"mode": "selected", "topics": ["dynamic-programming"]}, "platformPreferences": {"platforms": ["codeforces"]}, "ratingComfortRange": {"platform": "codeforces", "min": 1500, "max": 1900}, "learningPreferences": ["learn_concept_then_solve"], "onboardingCompleted": true},
+      "history": {"attemptedProblemIds": ["codeforces:1803B"], "attemptedTopics": ["dynamic-programming", "graphs"], "solvedProblemIds": ["codeforces:1803A"], "recentRecommendationIds": ["codeforces:1803C"]},
+      "candidates": [
+        {"externalId": "1803A", "title": "Solved State Compression", "rating": 1600, "topics": ["dynamic-programming"], "solvedCount": 500, "gold": {"relevance": 0.8, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "solved-dp"}},
+        {"externalId": "1803B", "title": "Attempted Tree DP Review", "rating": 1650, "topics": ["trees"], "solvedCount": 120, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "attempted-dp"}},
+        {"externalId": "1803C", "title": "Recent Graph State Practice", "rating": 1700, "topics": ["graphs"], "solvedCount": 110, "gold": {"relevance": 0.95, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "recent-graph"}},
+        {"externalId": "1803D", "title": "Unrelated Beginner Strings", "rating": 900, "topics": ["strings"], "solvedCount": 9000, "gold": {"relevance": 0.1, "difficultyFit": 0, "preferenceFit": 0, "diversityGroup": "unrelated"}}
+      ]
+    },
+    {
+      "id": "conflicting-evidence-01",
+      "category": "conflicting_evidence",
+      "description": "When attempted and solved history conflicts for one problem, the recommendation set must not reintroduce that solved item.",
+      "profile": {"experience": "intermediate", "difficultyComfort": "medium", "goal": "improve_problem_solving", "topicPreference": {"mode": "selected", "topics": ["graphs"]}, "platformPreferences": {"platforms": ["codeforces"]}, "ratingComfortRange": {"platform": "codeforces", "min": 1200, "max": 1500}, "learningPreferences": ["practice_weak_areas"], "onboardingCompleted": true},
+      "history": {"attemptedProblemIds": ["codeforces:1811A", "codeforces:1811B"], "attemptedTopics": ["graphs"], "solvedProblemIds": ["codeforces:1811A"]},
+      "candidates": [
+        {"externalId": "1811A", "title": "Conflicting Graph Status", "rating": 1300, "topics": ["graphs"], "solvedCount": 100, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "conflict"}},
+        {"externalId": "1811B", "title": "Attempted BFS Follow-up", "rating": 1350, "topics": ["bfs-and-dfs"], "solvedCount": 90, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "follow-up"}},
+        {"externalId": "1811C", "title": "Shortest Path Reconciliation", "rating": 1400, "topics": ["shortest-paths"], "solvedCount": 80, "gold": {"relevance": 0.95, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "reconciliation"}},
+        {"externalId": "1811D", "title": "Unrelated String Problem", "rating": 1300, "topics": ["strings"], "solvedCount": 9000, "gold": {"relevance": 0.1, "difficultyFit": 1, "preferenceFit": 0, "diversityGroup": "unrelated"}}
+      ]
+    },
+    {
+      "id": "conflicting-evidence-02",
+      "category": "conflicting_evidence",
+      "description": "A solved and dismissed record must not outweigh valid unsolved alternatives in the next batch.",
+      "profile": {"experience": "beginner", "difficultyComfort": "introductory", "goal": "improve_problem_solving", "topicPreference": {"mode": "selected", "topics": ["strings"]}, "platformPreferences": {"platforms": ["codeforces"]}, "ratingComfortRange": {"platform": "codeforces", "min": 800, "max": 1200}, "learningPreferences": ["solve_problems_directly"], "onboardingCompleted": true},
+      "history": {"solvedProblemIds": ["codeforces:1812A"], "dismissedProblemIds": ["codeforces:1812A"]},
+      "candidates": [
+        {"externalId": "1812A", "title": "Solved And Dismissed String Item", "rating": 900, "topics": ["strings"], "solvedCount": 1000, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "conflict"}},
+        {"externalId": "1812B", "title": "Clean Parsing Exercise", "rating": 1000, "topics": ["strings"], "solvedCount": 100, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "parsing"}},
+        {"externalId": "1812C", "title": "String Prefix Repair", "rating": 1100, "topics": ["strings"], "solvedCount": 90, "gold": {"relevance": 0.95, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "prefix"}},
+        {"externalId": "1812D", "title": "Gentle Math Alternative", "rating": 900, "topics": ["math"], "solvedCount": 80, "gold": {"relevance": 0.85, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "math"}}
+      ]
+    },
+    {
+      "id": "conflicting-evidence-03",
+      "category": "conflicting_evidence",
+      "description": "Recent recommendation history must not restore a problem whose solved evidence is already present.",
+      "profile": {"experience": "advanced", "difficultyComfort": "challenging", "goal": "learn_advanced_algorithms", "topicPreference": {"mode": "selected", "topics": ["dynamic-programming"]}, "platformPreferences": {"platforms": ["codeforces"]}, "ratingComfortRange": {"platform": "codeforces", "min": 1500, "max": 1900}, "learningPreferences": ["learn_concept_then_solve"], "onboardingCompleted": true},
+      "history": {"attemptedProblemIds": ["codeforces:1813B"], "attemptedTopics": ["dynamic-programming"], "solvedProblemIds": ["codeforces:1813A"], "recentRecommendationIds": ["codeforces:1813A", "codeforces:1813C"]},
+      "candidates": [
+        {"externalId": "1813A", "title": "Solved Optimization Problem", "rating": 1700, "topics": ["dynamic-programming"], "solvedCount": 1000, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "conflict"}},
+        {"externalId": "1813B", "title": "Attempted Tree Optimization", "rating": 1750, "topics": ["trees"], "solvedCount": 100, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "tree"}},
+        {"externalId": "1813C", "title": "Recent Graph Optimization", "rating": 1700, "topics": ["graphs"], "solvedCount": 90, "gold": {"relevance": 0.95, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "graph"}},
+        {"externalId": "1813D", "title": "Out Of Range Implementation", "rating": 900, "topics": ["implementation"], "solvedCount": 9000, "gold": {"relevance": 0.1, "difficultyFit": 0, "preferenceFit": 0, "diversityGroup": "unrelated"}}
+      ]
+    },
+    {
+      "id": "consent-privacy-01",
+      "category": "consent_privacy",
+      "description": "Ranking context may use explicit learning preferences without exposing a provider handle or learner identifier.",
+      "profile": {"experience": "intermediate", "difficultyComfort": "medium", "goal": "improve_problem_solving", "topicPreference": {"mode": "selected", "topics": ["graphs"]}, "platformPreferences": {"platforms": ["codeforces"]}, "ratingComfortRange": {"platform": "codeforces", "min": 1200, "max": 1500}, "learningPreferences": ["solve_problems_directly"], "recommendationPreference": "Use only explicitly consented learning signals; never include account handles or private identifiers in reasons.", "onboardingCompleted": true},
+      "candidates": [
+        {"externalId": "1821A", "title": "Graph Components With Public Metadata", "rating": 1300, "topics": ["graphs"], "solvedCount": 100, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "consented-metadata"}},
+        {"externalId": "1821B", "title": "Shortest Path With Public Metadata", "rating": 1400, "topics": ["shortest-paths"], "solvedCount": 90, "gold": {"relevance": 0.95, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "consented-path"}},
+        {"externalId": "1821C", "title": "Unrelated Private Account Detail", "rating": 1300, "topics": ["strings"], "solvedCount": 9000, "gold": {"relevance": 0.05, "difficultyFit": 1, "preferenceFit": 0, "diversityGroup": "private-detail"}},
+        {"externalId": "1821D", "title": "Advanced Graph Detour", "rating": 1900, "topics": ["graphs"], "solvedCount": 8000, "gold": {"relevance": 0.3, "difficultyFit": 0, "preferenceFit": 0, "diversityGroup": "too-hard"}}
+      ]
+    },
+    {
+      "id": "consent-privacy-02",
+      "category": "consent_privacy",
+      "description": "Absent provider consent should not become an implicit ranking signal or a reason to reveal account data.",
+      "profile": {"experience": "beginner", "difficultyComfort": "introductory", "goal": "start_competitive_programming", "topicPreference": {"mode": "selected", "topics": ["strings"]}, "platformPreferences": {"platforms": ["codeforces"]}, "ratingComfortRange": {"platform": "codeforces", "min": 800, "max": 1100}, "learningPreferences": ["solve_problems_directly"], "recommendationPreference": "I have not consented to provider-account access; keep explanations about practice metadata only.", "onboardingCompleted": true},
+      "candidates": [
+        {"externalId": "1822A", "title": "String Token Basics", "rating": 900, "topics": ["strings"], "solvedCount": 100, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "safe-string"}},
+        {"externalId": "1822B", "title": "Parsing Without Account Data", "rating": 1000, "topics": ["strings"], "solvedCount": 90, "gold": {"relevance": 0.95, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "safe-parsing"}},
+        {"externalId": "1822C", "title": "Reveal A Provider Handle", "rating": 1000, "topics": ["implementation"], "solvedCount": 9000, "gold": {"relevance": 0.1, "difficultyFit": 1, "preferenceFit": 0, "diversityGroup": "privacy-risk"}},
+        {"externalId": "1822D", "title": "Out Of Range Graph Problem", "rating": 1700, "topics": ["graphs"], "solvedCount": 8000, "gold": {"relevance": 0.1, "difficultyFit": 0, "preferenceFit": 0, "diversityGroup": "too-hard"}}
+      ]
+    },
+    {
+      "id": "consent-privacy-03",
+      "category": "consent_privacy",
+      "description": "A consent-limited learner still receives useful recommendations from normalized catalog metadata alone.",
+      "profile": {"experience": "advanced", "difficultyComfort": "challenging", "goal": "prepare_for_contests", "topicPreference": {"mode": "selected", "topics": ["dynamic-programming"]}, "platformPreferences": {"platforms": ["codeforces"]}, "ratingComfortRange": {"platform": "codeforces", "min": 1500, "max": 1900}, "learningPreferences": ["mixed_approach"], "recommendationPreference": "Do not infer or disclose private progress beyond the evidence I explicitly provide.", "onboardingCompleted": true},
+      "candidates": [
+        {"externalId": "1823A", "title": "Bounded Dynamic Programming", "rating": 1600, "topics": ["dynamic-programming"], "solvedCount": 120, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "safe-dp"}},
+        {"externalId": "1823B", "title": "Tree State Transitions", "rating": 1700, "topics": ["trees"], "solvedCount": 100, "gold": {"relevance": 0.95, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "safe-tree"}},
+        {"externalId": "1823C", "title": "Private Progress Claim", "rating": 1750, "topics": ["graphs"], "solvedCount": 90, "gold": {"relevance": 0.2, "difficultyFit": 1, "preferenceFit": 0, "diversityGroup": "unsupported-claim"}},
+        {"externalId": "1823D", "title": "Beginner Sorting Detour", "rating": 900, "topics": ["sorting"], "solvedCount": 9000, "gold": {"relevance": 0.1, "difficultyFit": 0, "preferenceFit": 0, "diversityGroup": "too-easy"}}
+      ]
+    },
+    {
+      "id": "correction-01",
+      "category": "correction",
+      "description": "A learner correction should leave the next ranking grounded in the current attempted topic rather than an obsolete solved claim.",
+      "profile": {"experience": "beginner", "difficultyComfort": "introductory", "goal": "improve_problem_solving", "topicPreference": {"mode": "selected", "topics": ["implementation"]}, "platformPreferences": {"platforms": ["codeforces"]}, "ratingComfortRange": {"platform": "codeforces", "min": 800, "max": 1100}, "learningPreferences": ["practice_weak_areas"], "onboardingCompleted": true},
+      "history": {"attemptedProblemIds": ["codeforces:1831A"], "attemptedTopics": ["implementation"], "solvedProblemIds": ["codeforces:1831B"]},
+      "candidates": [
+        {"externalId": "1831A", "title": "Corrected Implementation Attempt", "rating": 900, "topics": ["implementation"], "solvedCount": 110, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "current-attempt"}},
+        {"externalId": "1831B", "title": "Obsolete Solved Label", "rating": 900, "topics": ["implementation"], "solvedCount": 1000, "gold": {"relevance": 0.8, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "obsolete"}},
+        {"externalId": "1831C", "title": "Fresh Array Simulation", "rating": 1000, "topics": ["implementation"], "solvedCount": 100, "gold": {"relevance": 0.95, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "fresh"}},
+        {"externalId": "1831D", "title": "Advanced Graph Detour", "rating": 1700, "topics": ["graphs"], "solvedCount": 9000, "gold": {"relevance": 0.1, "difficultyFit": 0, "preferenceFit": 0, "diversityGroup": "unrelated"}}
+      ]
+    },
+    {
+      "id": "correction-02",
+      "category": "correction",
+      "description": "After a corrected recent recommendation, prefer a new valid item while preserving the learner's topic and difficulty context.",
+      "profile": {"experience": "intermediate", "difficultyComfort": "medium", "goal": "build_consistent_habit", "topicPreference": {"mode": "selected", "topics": ["binary-search"]}, "platformPreferences": {"platforms": ["codeforces"]}, "ratingComfortRange": {"platform": "codeforces", "min": 1100, "max": 1500}, "learningPreferences": ["mixed_approach"], "onboardingCompleted": true},
+      "history": {"attemptedTopics": ["binary-search"], "recentRecommendationIds": ["codeforces:1832A", "codeforces:1832B"]},
+      "preferNewItems": true,
+      "candidates": [
+        {"externalId": "1832A", "title": "Corrected Boundary Item", "rating": 1300, "topics": ["binary-search"], "solvedCount": 120, "gold": {"relevance": 0.9, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "corrected"}},
+        {"externalId": "1832B", "title": "Corrected Window Item", "rating": 1400, "topics": ["two-pointers"], "solvedCount": 110, "gold": {"relevance": 0.9, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "recent"}},
+        {"externalId": "1832C", "title": "New Search Invariant", "rating": 1350, "topics": ["binary-search"], "solvedCount": 100, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "new-search"}},
+        {"externalId": "1832D", "title": "New Prefix Sum Companion", "rating": 1200, "topics": ["prefix-sums"], "solvedCount": 90, "gold": {"relevance": 0.95, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "new-prefix"}}
+      ]
+    },
+    {
+      "id": "correction-03",
+      "category": "correction",
+      "description": "Corrected high-level progress should keep recommendations explainable and avoid inventing a stronger status.",
+      "profile": {"experience": "advanced", "difficultyComfort": "challenging", "goal": "learn_advanced_algorithms", "topicPreference": {"mode": "selected", "topics": ["graphs"]}, "platformPreferences": {"platforms": ["codeforces"]}, "ratingComfortRange": {"platform": "codeforces", "min": 1500, "max": 1900}, "learningPreferences": ["learn_concept_then_solve"], "onboardingCompleted": true},
+      "history": {"attemptedProblemIds": ["codeforces:1833A"], "attemptedTopics": ["graphs"], "recentRecommendationIds": ["codeforces:1833B"]},
+      "candidates": [
+        {"externalId": "1833A", "title": "Corrected Graph Attempt", "rating": 1600, "topics": ["graphs"], "solvedCount": 100, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "current"}},
+        {"externalId": "1833B", "title": "Previously Suggested Graph Item", "rating": 1700, "topics": ["shortest-paths"], "solvedCount": 90, "gold": {"relevance": 0.95, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "recent"}},
+        {"externalId": "1833C", "title": "Fresh Connectivity Review", "rating": 1750, "topics": ["graphs", "disjoint-set-union"], "solvedCount": 80, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "fresh"}},
+        {"externalId": "1833D", "title": "Out Of Range String Item", "rating": 900, "topics": ["strings"], "solvedCount": 9000, "gold": {"relevance": 0.1, "difficultyFit": 0, "preferenceFit": 0, "diversityGroup": "unrelated"}}
+      ]
+    },
+    {
+      "id": "deletion-01",
+      "category": "deletion",
+      "description": "A removed learner item must not be selected again when the remaining catalog is still useful.",
+      "profile": {"experience": "intermediate", "difficultyComfort": "medium", "goal": "improve_problem_solving", "topicPreference": {"mode": "selected", "topics": ["strings"]}, "platformPreferences": {"platforms": ["codeforces"]}, "ratingComfortRange": {"platform": "codeforces", "min": 1100, "max": 1500}, "learningPreferences": ["solve_problems_directly"], "onboardingCompleted": true},
+      "history": {"dismissedProblemIds": ["codeforces:1841A"]},
+      "candidates": [
+        {"externalId": "1841A", "title": "Removed String Record", "rating": 1200, "topics": ["strings"], "solvedCount": 10000, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "removed"}},
+        {"externalId": "1841B", "title": "Remaining Suffix Practice", "rating": 1300, "topics": ["string-suffix-structures"], "solvedCount": 100, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "remaining-suffix"}},
+        {"externalId": "1841C", "title": "Remaining Parsing Practice", "rating": 1400, "topics": ["strings"], "solvedCount": 90, "gold": {"relevance": 0.95, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "remaining-parse"}},
+        {"externalId": "1841D", "title": "Unrelated Graph Problem", "rating": 1300, "topics": ["graphs"], "solvedCount": 9000, "gold": {"relevance": 0.1, "difficultyFit": 1, "preferenceFit": 0, "diversityGroup": "unrelated"}}
+      ]
+    },
+    {
+      "id": "deletion-02",
+      "category": "deletion",
+      "description": "Solved and removed records stay out of a later batch without erasing valid alternatives.",
+      "profile": {"experience": "beginner", "difficultyComfort": "introductory", "goal": "start_competitive_programming", "topicPreference": {"mode": "selected", "topics": ["implementation"]}, "platformPreferences": {"platforms": ["codeforces"]}, "ratingComfortRange": {"platform": "codeforces", "min": 800, "max": 1100}, "learningPreferences": ["mixed_approach"], "onboardingCompleted": true},
+      "history": {"solvedProblemIds": ["codeforces:1842A"], "dismissedProblemIds": ["codeforces:1842B"]},
+      "candidates": [
+        {"externalId": "1842A", "title": "Solved Starter Simulation", "rating": 800, "topics": ["implementation"], "solvedCount": 1000, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "solved"}},
+        {"externalId": "1842B", "title": "Removed Math Starter", "rating": 900, "topics": ["math"], "solvedCount": 900, "gold": {"relevance": 0.95, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "removed"}},
+        {"externalId": "1842C", "title": "Available Sorting Starter", "rating": 1000, "topics": ["sorting"], "solvedCount": 100, "gold": {"relevance": 0.95, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "available-sorting"}},
+        {"externalId": "1842D", "title": "Available String Starter", "rating": 900, "topics": ["strings"], "solvedCount": 90, "gold": {"relevance": 0.9, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "available-strings"}},
+        {"externalId": "1842E", "title": "Advanced Graph Item", "rating": 1800, "topics": ["graphs"], "solvedCount": 9000, "gold": {"relevance": 0.1, "difficultyFit": 0, "preferenceFit": 0, "diversityGroup": "too-hard"}}
+      ]
+    },
+    {
+      "id": "deletion-03",
+      "category": "deletion",
+      "description": "Deleting a recent recommendation should allow a fresh, relevant replacement without changing learner difficulty.",
+      "profile": {"experience": "advanced", "difficultyComfort": "challenging", "goal": "prepare_for_contests", "topicPreference": {"mode": "selected", "topics": ["dynamic-programming"]}, "platformPreferences": {"platforms": ["codeforces"]}, "ratingComfortRange": {"platform": "codeforces", "min": 1500, "max": 1900}, "learningPreferences": ["practice_weak_areas"], "onboardingCompleted": true},
+      "history": {"dismissedProblemIds": ["codeforces:1843A"], "recentRecommendationIds": ["codeforces:1843A"]},
+      "preferNewItems": true,
+      "candidates": [
+        {"externalId": "1843A", "title": "Deleted Recent DP Item", "rating": 1700, "topics": ["dynamic-programming"], "solvedCount": 1000, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "deleted"}},
+        {"externalId": "1843B", "title": "Fresh DP Optimization", "rating": 1750, "topics": ["dynamic-programming"], "solvedCount": 100, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "fresh-dp"}},
+        {"externalId": "1843C", "title": "Fresh Graph Optimization", "rating": 1700, "topics": ["graphs"], "solvedCount": 90, "gold": {"relevance": 0.95, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "fresh-graph"}},
+        {"externalId": "1843D", "title": "Fresh Tree Optimization", "rating": 1800, "topics": ["trees"], "solvedCount": 80, "gold": {"relevance": 0.95, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "fresh-tree"}}
+      ]
+    },
+    {
+      "id": "retrieval-relevance-01",
+      "category": "retrieval_relevance",
+      "description": "Relevant graph metadata should outrank a popular but unrelated title and cover the requested retrieval groups.",
+      "profile": {"experience": "intermediate", "difficultyComfort": "medium", "goal": "improve_problem_solving", "topicPreference": {"mode": "selected", "topics": ["graphs"]}, "platformPreferences": {"platforms": ["codeforces"]}, "ratingComfortRange": {"platform": "codeforces", "min": 1200, "max": 1500}, "learningPreferences": ["solve_problems_directly"], "onboardingCompleted": true},
+      "targetGroups": ["graphs", "shortest-paths", "traversal"],
+      "candidates": [
+        {"externalId": "1851A", "title": "Graph Connectivity Retrieval", "rating": 1300, "topics": ["graphs"], "solvedCount": 100, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "graphs"}},
+        {"externalId": "1851B", "title": "Shortest Path Retrieval", "rating": 1400, "topics": ["shortest-paths"], "solvedCount": 90, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "shortest-paths"}},
+        {"externalId": "1851C", "title": "Traversal Retrieval", "rating": 1200, "topics": ["bfs-and-dfs"], "solvedCount": 80, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "traversal"}},
+        {"externalId": "1851D", "title": "Popular Unrelated String", "rating": 1300, "topics": ["strings"], "solvedCount": 10000, "gold": {"relevance": 0.1, "difficultyFit": 1, "preferenceFit": 0, "diversityGroup": "unrelated"}}
+      ]
+    },
+    {
+      "id": "retrieval-relevance-02",
+      "category": "retrieval_relevance",
+      "description": "A dynamic-programming retrieval set should reward semantically close state variants rather than exact-title popularity.",
+      "profile": {"experience": "advanced", "difficultyComfort": "challenging", "goal": "learn_advanced_algorithms", "topicPreference": {"mode": "selected", "topics": ["dynamic-programming"]}, "platformPreferences": {"platforms": ["codeforces"]}, "ratingComfortRange": {"platform": "codeforces", "min": 1500, "max": 1900}, "learningPreferences": ["learn_concept_then_solve"], "onboardingCompleted": true},
+      "targetGroups": ["dynamic-programming", "tree-dp", "state-compression"],
+      "candidates": [
+        {"externalId": "1852A", "title": "Dynamic Programming State Retrieval", "rating": 1600, "topics": ["dynamic-programming"], "solvedCount": 120, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "dynamic-programming"}},
+        {"externalId": "1852B", "title": "Tree DP State Retrieval", "rating": 1700, "topics": ["trees"], "solvedCount": 110, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "tree-dp"}},
+        {"externalId": "1852C", "title": "State Compression Retrieval", "rating": 1800, "topics": ["dynamic-programming", "bit-manipulation"], "solvedCount": 100, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "state-compression"}},
+        {"externalId": "1852D", "title": "Popular Geometry Distraction", "rating": 1700, "topics": ["geometry"], "solvedCount": 10000, "gold": {"relevance": 0.1, "difficultyFit": 1, "preferenceFit": 0, "diversityGroup": "unrelated"}}
+      ]
+    },
+    {
+      "id": "retrieval-relevance-03",
+      "category": "retrieval_relevance",
+      "description": "Fundamentals retrieval should balance close array techniques while excluding an expert distraction.",
+      "profile": {"experience": "beginner", "difficultyComfort": "introductory", "goal": "build_consistent_habit", "topicPreference": {"mode": "selected", "topics": ["binary-search", "two-pointers"]}, "platformPreferences": {"platforms": ["codeforces"]}, "ratingComfortRange": {"platform": "codeforces", "min": 900, "max": 1300}, "learningPreferences": ["mixed_approach"], "onboardingCompleted": true},
+      "targetGroups": ["binary-search", "two-pointers", "prefix-sums"],
+      "candidates": [
+        {"externalId": "1853A", "title": "Binary Search Boundaries Retrieval", "rating": 1100, "topics": ["binary-search"], "solvedCount": 120, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "binary-search"}},
+        {"externalId": "1853B", "title": "Two Pointer Window Retrieval", "rating": 1200, "topics": ["two-pointers"], "solvedCount": 110, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "two-pointers"}},
+        {"externalId": "1853C", "title": "Prefix Sum Retrieval", "rating": 1000, "topics": ["prefix-sums"], "solvedCount": 100, "gold": {"relevance": 0.95, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "prefix-sums"}},
+        {"externalId": "1853D", "title": "Expert Segment Tree Distraction", "rating": 1900, "topics": ["segment-trees"], "solvedCount": 10000, "gold": {"relevance": 0.1, "difficultyFit": 0, "preferenceFit": 0, "diversityGroup": "unrelated"}}
+      ]
+    },
+    {
+      "id": "fallback-01",
+      "category": "fallback",
+      "description": "A ranking fallback remains usable when provider metadata omits optional rating and popularity fields.",
+      "profile": {"experience": "intermediate", "difficultyComfort": "medium", "goal": "improve_problem_solving", "topicPreference": {"mode": "selected", "topics": ["graphs"]}, "platformPreferences": {"platforms": ["codeforces"]}, "ratingComfortRange": {"platform": "codeforces", "min": 1100, "max": 1500}, "learningPreferences": ["solve_problems_directly"], "onboardingCompleted": true},
+      "candidates": [
+        {"externalId": "1861A", "title": "Graph Metadata Without Rating", "topics": ["graphs"], "gold": {"relevance": 1, "difficultyFit": 0.4, "preferenceFit": 1, "diversityGroup": "missing-rating"}},
+        {"externalId": "1861B", "title": "Shortest Path With Rating", "rating": 1300, "topics": ["shortest-paths"], "solvedCount": 100, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "rated-path"}},
+        {"externalId": "1861C", "title": "Graph Traversal With No Count", "rating": 1200, "topics": ["bfs-and-dfs"], "gold": {"relevance": 0.95, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "missing-count"}},
+        {"externalId": "1861D", "title": "Unrelated String Problem", "rating": 1300, "topics": ["strings"], "solvedCount": 10000, "gold": {"relevance": 0.1, "difficultyFit": 1, "preferenceFit": 0, "diversityGroup": "unrelated"}}
+      ]
+    },
+    {
+      "id": "fallback-02",
+      "category": "fallback",
+      "description": "When all optional popularity signals are absent, deterministic ordering still respects topic and difficulty metadata.",
+      "profile": {"experience": "beginner", "difficultyComfort": "introductory", "goal": "start_competitive_programming", "topicPreference": {"mode": "selected", "topics": ["strings"]}, "platformPreferences": {"platforms": ["codeforces"]}, "ratingComfortRange": {"platform": "codeforces", "min": 800, "max": 1100}, "learningPreferences": ["solve_problems_directly"], "onboardingCompleted": true},
+      "candidates": [
+        {"externalId": "1862A", "title": "String Warmup Without Counts", "rating": 900, "topics": ["strings"], "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "string"}},
+        {"externalId": "1862B", "title": "Parsing Warmup Without Counts", "rating": 1000, "topics": ["strings"], "gold": {"relevance": 0.95, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "parsing"}},
+        {"externalId": "1862C", "title": "Implementation Warmup Without Counts", "topics": ["implementation"], "gold": {"relevance": 0.9, "difficultyFit": 0.4, "preferenceFit": 1, "diversityGroup": "implementation"}},
+        {"externalId": "1862D", "title": "Advanced Graph Without Counts", "rating": 1800, "topics": ["graphs"], "gold": {"relevance": 0.1, "difficultyFit": 0, "preferenceFit": 0, "diversityGroup": "too-hard"}}
+      ]
+    },
+    {
+      "id": "fallback-03",
+      "category": "fallback",
+      "description": "If AI ranking is unavailable or malformed, the safe candidate set remains available for deterministic fallback ranking.",
+      "profile": {"experience": "advanced", "difficultyComfort": "challenging", "goal": "prepare_for_contests", "topicPreference": {"mode": "selected", "topics": ["dynamic-programming"]}, "platformPreferences": {"platforms": ["codeforces"]}, "ratingComfortRange": {"platform": "codeforces", "min": 1500, "max": 1900}, "learningPreferences": ["mixed_approach"], "onboardingCompleted": true},
+      "candidates": [
+        {"externalId": "1863A", "title": "Dynamic Programming Fallback", "rating": 1600, "topics": ["dynamic-programming"], "solvedCount": 100, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "fallback-dp"}},
+        {"externalId": "1863B", "title": "Graph Fallback Companion", "rating": 1700, "topics": ["graphs"], "solvedCount": 90, "gold": {"relevance": 0.95, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "fallback-graph"}},
+        {"externalId": "1863C", "title": "Tree Fallback Companion", "rating": 1750, "topics": ["trees"], "solvedCount": 80, "gold": {"relevance": 0.95, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "fallback-tree"}},
+        {"externalId": "1863D", "title": "Beginner String Fallback Distraction", "rating": 900, "topics": ["strings"], "solvedCount": 10000, "gold": {"relevance": 0.1, "difficultyFit": 0, "preferenceFit": 0, "diversityGroup": "unrelated"}}
+      ]
+    },
+    {
+      "id": "provider-verification-01",
+      "category": "provider_verification",
+      "description": "Permitted public provider statistics should inform context without turning an outbound open into verified completion.",
+      "profile": {"experience": "intermediate", "difficultyComfort": "medium", "goal": "improve_problem_solving", "topicPreference": {"mode": "selected", "topics": ["graphs"]}, "platformPreferences": {"platforms": ["codeforces"]}, "ratingComfortRange": {"platform": "codeforces", "min": 1200, "max": 1500}, "learningPreferences": ["solve_problems_directly"], "onboardingCompleted": true},
+      "history": {"recentRecommendationIds": ["codeforces:1871A"]},
+      "candidates": [
+        {"externalId": "1871A", "title": "Opened Graph Problem", "rating": 1300, "topics": ["graphs"], "solvedCount": 120, "gold": {"relevance": 0.9, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "opened-only"}},
+        {"externalId": "1871B", "title": "Provider-Count Graph Problem", "rating": 1400, "topics": ["shortest-paths"], "solvedCount": 100, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "provider-count"}},
+        {"externalId": "1871C", "title": "Provider-Count Traversal Problem", "rating": 1200, "topics": ["bfs-and-dfs"], "solvedCount": 90, "gold": {"relevance": 0.95, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "provider-traversal"}},
+        {"externalId": "1871D", "title": "Unrelated Popular String", "rating": 1300, "topics": ["strings"], "solvedCount": 10000, "gold": {"relevance": 0.1, "difficultyFit": 1, "preferenceFit": 0, "diversityGroup": "unrelated"}}
+      ]
+    },
+    {
+      "id": "provider-verification-02",
+      "category": "provider_verification",
+      "description": "Verified provider activity is a separate signal from manual status and should not erase the learner's other evidence.",
+      "profile": {"experience": "beginner", "difficultyComfort": "introductory", "goal": "build_consistent_habit", "topicPreference": {"mode": "selected", "topics": ["strings"]}, "platformPreferences": {"platforms": ["codeforces"]}, "ratingComfortRange": {"platform": "codeforces", "min": 800, "max": 1200}, "learningPreferences": ["practice_weak_areas"], "onboardingCompleted": true},
+      "history": {"attemptedProblemIds": ["codeforces:1872A"], "attemptedTopics": ["strings"], "solvedProblemIds": ["codeforces:1872B"]},
+      "candidates": [
+        {"externalId": "1872A", "title": "Manual Attempt String", "rating": 900, "topics": ["strings"], "solvedCount": 110, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "manual"}},
+        {"externalId": "1872B", "title": "Provider Verified String", "rating": 1000, "topics": ["strings"], "solvedCount": 100, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "verified"}},
+        {"externalId": "1872C", "title": "Fresh Parsing Exercise", "rating": 1100, "topics": ["strings"], "solvedCount": 90, "gold": {"relevance": 0.95, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "fresh"}},
+        {"externalId": "1872D", "title": "Advanced Graph Detour", "rating": 1800, "topics": ["graphs"], "solvedCount": 9000, "gold": {"relevance": 0.1, "difficultyFit": 0, "preferenceFit": 0, "diversityGroup": "unrelated"}}
+      ]
+    },
+    {
+      "id": "provider-verification-03",
+      "category": "provider_verification",
+      "description": "A permitted provider refresh can improve evidence-backed context while preserving safe ranking and canonical metadata boundaries.",
+      "profile": {"experience": "advanced", "difficultyComfort": "challenging", "goal": "prepare_for_contests", "topicPreference": {"mode": "selected", "topics": ["dynamic-programming"]}, "platformPreferences": {"platforms": ["codeforces"]}, "ratingComfortRange": {"platform": "codeforces", "min": 1500, "max": 1900}, "learningPreferences": ["learn_concept_then_solve"], "onboardingCompleted": true},
+      "history": {"attemptedTopics": ["dynamic-programming"], "recentRecommendationIds": ["codeforces:1873A"]},
+      "candidates": [
+        {"externalId": "1873A", "title": "Recent Provider Refresh Candidate", "rating": 1600, "topics": ["dynamic-programming"], "solvedCount": 120, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "refreshed-dp"}},
+        {"externalId": "1873B", "title": "Verified Activity DP Follow-up", "rating": 1700, "topics": ["dynamic-programming"], "solvedCount": 100, "gold": {"relevance": 1, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "verified-dp"}},
+        {"externalId": "1873C", "title": "Verified Activity Tree Follow-up", "rating": 1750, "topics": ["trees"], "solvedCount": 90, "gold": {"relevance": 0.95, "difficultyFit": 1, "preferenceFit": 1, "diversityGroup": "verified-tree"}},
+        {"externalId": "1873D", "title": "Unrelated Beginner Warmup", "rating": 900, "topics": ["implementation"], "solvedCount": 9000, "gold": {"relevance": 0.1, "difficultyFit": 0, "preferenceFit": 0, "diversityGroup": "unrelated"}}
+      ]
     }
   ]
 }

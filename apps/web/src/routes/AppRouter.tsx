@@ -5,6 +5,7 @@ import BookmarksPage from '@/pages/BookmarksPage'
 import DashboardPage from '@/pages/DashboardPage'
 import LandingPage from '@/pages/LandingPage'
 import LoginPage from '@/pages/LoginPage'
+import MemoryPage from '@/pages/MemoryPage'
 import NotFoundPage from '@/pages/NotFoundPage'
 import OnboardingPage from '@/pages/OnboardingPage'
 import ProblemsPage from '@/pages/ProblemsPage'
@@ -28,6 +29,7 @@ function AppRouter() {
           <Route path="recommendations" element={<RecommendationsPage />} />
           <Route path="bookmarks" element={<BookmarksPage />} />
           <Route path="progress" element={<ProgressPage />} />
+          <Route path="memory" element={<MemoryPage />} />
           <Route path="profile" element={<ProfilePage />} />
           <Route path="settings" element={<SettingPage />} />
         </Route>

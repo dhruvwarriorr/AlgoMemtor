@@ -16,8 +16,9 @@ The repository now includes the external-metadata catalog and the first live
 Codeforces provider gateway. React consumes the same normalized `/api/*`
 contract in mocked and live modes; Express owns provider validation,
 normalization, safe URLs, filtering, caching, rate handling, and freshness. The
-current Week 11 slice optionally adds bounded Gemini ranking through FastAPI,
-with deterministic fallback when the AI path is unavailable.
+current implementation also adds bounded Gemini ranking through FastAPI, manual
+progress, bookmarks, analytics, timers, and learner-memory retrieval, with
+deterministic fallbacks when AI or provider services are unavailable.
 
 ## Product principles
 
@@ -102,15 +103,14 @@ Browser
                         -> FastAPI over a server-side token
                              |
                              +-- Gemini ranking and explanations
-                             +-- PostgreSQL (ai schema; ranking audits)
-                             +-- learner memory and embeddings remain later scope
+                             +-- PostgreSQL (ai schema; audits, memories, vectors)
 ```
 
 | Component         | Ownership                                                                                          |
 | ----------------- | -------------------------------------------------------------------------------------------------- |
 | React             | Accessible catalog UI, filters, recommendations, and safe outbound navigation                      |
 | Express           | Authentication-aware product APIs, provider adapters, normalization, caching, and progress records |
-| FastAPI           | Internal bounded Gemini ranking, explanations, and ranking audits; learner memory/embeddings remain later |
+| FastAPI           | Internal bounded Gemini ranking, explanations, learner memory, and vector retrieval |
 | PostgreSQL        | Learner data, normalized metadata cache, bookmarks, recommendation history, and outbound events    |
 | External provider | Canonical statement, examples, editor, submissions, judging, and authoritative solve status        |
 
@@ -120,7 +120,7 @@ Codeforces is the reference integration because its official
 statistics that can be normalized into redirect cards. Additional providers are
 added only after confirming their current API and usage terms.
 
-## Week 11 AI ranking (current local implementation)
+## AI ranking, progress, and learner memory (current local implementation)
 
 For an authenticated recommendation request, Express obtains the normalized
 Codeforces snapshot, applies the deterministic Week 10 rules, and sends at most
@@ -146,8 +146,8 @@ local unavailable client. If FastAPI has no `LLM_API_KEY`, it returns a
 `not_configured` fallback. Timeouts, provider errors, invalid model output,
 unavailable HTTP responses, invalid JSON, and invalid response schemas all keep
 the deterministic recommendation feed available. AI batches use
-`ai-gemini-v1`; fallback batches use
-`ai-v1-fallback-deterministic-v1`.
+`ai-gemini-rag-v1`; fallback batches use
+`ai-rag-v1-fallback-deterministic-v2`.
 
 The internal endpoint requires the same non-empty token in the AI service. A
 missing AI token configuration returns `503`, while a missing or wrong supplied
@@ -160,7 +160,7 @@ URLs, contact-like strings, UUIDs, and repeated four-word slices of the
 preference note. Audit failures are non-fatal.
 
 The evaluation dataset and runner live in `apps/core-api/evaluation/`. Use
-`npx tsx apps/core-api/evaluation/run.ts --validate-only` to validate the 24
+`npx tsx apps/core-api/evaluation/run.ts --validate-only` to validate the 48
 scenarios without calling Gemini. A live comparison is explicitly opt-in with
 `ALGOMEMTOR_EVALUATION_ENABLED=true` plus an AI URL and internal token; it
 reports relevance, difficulty, diversity, preference, p95 latency, and average
@@ -254,8 +254,8 @@ Never commit real secrets. Provider credentials, when required, belong in the
 core API environment only. LLM credentials belong in the AI API environment
 only.
 
-For the Week 11 local AI path, set these server-side variables (the example
-files contain local defaults/placeholders):
+For the local AI and learner-memory path, set these server-side variables (the
+example files contain local defaults/placeholders):
 
 Core API:
 
@@ -263,6 +263,9 @@ Core API:
 AI_API_URL=http://localhost:8000
 AI_RANKING_TIMEOUT_MS=8000
 INTERNAL_SERVICE_TOKEN=
+PROGRESS_ENABLED=true
+MEMORY_GENERATION_ENABLED=true
+MEMORY_RAG_ENABLED=true
 ```
 
 AI API:
@@ -278,14 +281,26 @@ LLM_PRICING_VERSION=gemini-3.5-flash-standard-2026-09
 DATABASE_URL=postgresql+psycopg://algomemtor:algomemtor_local@localhost:5432/algomemtor
 AI_AUDIT_TIMEOUT_SECONDS=0.5
 INTERNAL_SERVICE_TOKEN=
+EMBEDDING_MODEL=gemini-embedding-001
+EMBEDDING_DIMENSIONS=768
+EMBEDDING_TIMEOUT_SECONDS=4
+MEMORY_GENERATION_VERSION=memory-gemini-v1
+MEMORY_MIN_CONFIDENCE=0.75
+MEMORY_MIN_EVIDENCE_STRENGTH=0.75
+MEMORY_SIMILARITY_THRESHOLD=0.75
+MEMORY_RETRIEVAL_LIMIT=5
+MEMORY_AUDIT_TIMEOUT_SECONDS=0.5
+MEMORY_GENERATION_ENABLED=true
+MEMORY_RAG_ENABLED=true
 ```
 
 The core URL must be HTTPS or an HTTP loopback URL and cannot contain
 credentials, query parameters, or fragments. `LLM_API_KEY` enables Gemini; the
 two price variables calculate an estimate from reported token usage and are not
 live billing data. `LLM_PRICING_VERSION` labels the price assumptions in audit
-rows. `DATABASE_URL` enables `ai.ranking_audits`. `EMBEDDING_MODEL` is retained
-for later learner-memory work and is not used by Week 11.
+rows. `DATABASE_URL` enables the AI audit, memory, and vector tables. Reflection
+notes are sent to Gemini only after the learner enables the separate AI note
+sharing choice. Structured progress signals remain separate from raw notes.
 
 ### 4. Configure Supabase authentication
 
@@ -344,6 +359,7 @@ Or start services independently:
 npm run dev:web
 npm run dev:core
 npm run dev:ai
+npm run dev:worker
 ```
 
 | Service              | URL                            |
@@ -351,6 +367,7 @@ npm run dev:ai
 | React                | `http://localhost:5173`        |
 | Express health check | `http://localhost:3001/health` |
 | FastAPI health check | `http://localhost:8000/health` |
+| Memory worker        | durable outbox consumer; no HTTP endpoint |
 
 ## Mock-first development
 
@@ -394,6 +411,7 @@ authenticated browser acceptance.
 - [Long-term product vision](docs/CP_Mentor_AI_Project_Vision.md)
 - [Foundational architecture ADR](docs/adr/0001-foundational-architecture.md)
 - [Public provider statistics ADR](docs/adr/0002-public-provider-profile-statistics.md)
+- [Provider-verified activity deferral ADR](docs/adr/0003-provider-verified-activity-deferral.md)
 
 ## Security and compliance boundaries
 

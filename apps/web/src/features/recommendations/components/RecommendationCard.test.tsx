@@ -3,6 +3,10 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { RecommendationItem } from '@algomemtor/shared-contracts'
 
+vi.mock('@/features/progress/components/ProblemLearningControls', () => ({
+  ProblemLearningControls: () => null,
+}))
+
 import { RecommendationCard } from './RecommendationCard'
 
 const item: RecommendationItem = {
@@ -21,6 +25,7 @@ const item: RecommendationItem = {
     normalizedDifficulty: 'medium',
     providerTags: ['graphs'],
     topics: ['graphs'],
+    learnerStatus: 'attempted',
     fetchedAt: '2026-09-10T00:00:00.000Z',
   },
 }
@@ -39,6 +44,8 @@ describe('RecommendationCard', () => {
 
     expect(markup).toContain('Why this fits')
     expect(markup).toContain('Practises your focus topic: graphs.')
+    expect(markup).toContain('Attempted')
+    expect(markup).not.toContain('>attempted</span>')
     expect(markup).toContain('Solve on Codeforces')
     expect(markup).toContain('Useful')
     expect(markup).toContain('Too hard')

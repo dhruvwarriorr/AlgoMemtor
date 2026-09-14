@@ -18,10 +18,29 @@ class AiSettings(BaseSettings):
     llm_input_price_per_million_usd: Decimal = Field(default=Decimal("1.50"), ge=0)
     llm_output_price_per_million_usd: Decimal = Field(default=Decimal("9.00"), ge=0)
     llm_pricing_version: str = "gemini-3.5-flash-standard-2026-09"
-    ai_ranking_version: str = "ai-gemini-v1"
+    ai_ranking_version: str = "ai-gemini-rag-v1"
+    embedding_model: str = "gemini-embedding-001"
+    embedding_dimensions: int = Field(default=768, ge=768, le=768)
+    embedding_timeout_seconds: float = Field(default=4, gt=0, le=30)
+    memory_generation_version: str = "memory-gemini-v1"
+    memory_prompt_version: str = "memory-prompt-v1"
+    consent_policy_version: str = "phase9-progress-memory-v1"
+    memory_min_confidence: float = Field(default=0.75, ge=0, le=1)
+    memory_proposed_min_confidence: float = Field(default=0.50, ge=0, le=1)
+    memory_min_evidence_strength: float = Field(default=0.75, ge=0, le=1)
+    memory_similarity_threshold: float = Field(default=0.75, ge=0, le=1)
+    memory_retrieval_limit: int = Field(default=5, ge=1, le=5)
+    memory_audit_timeout_seconds: float = Field(default=0.5, gt=0, le=5)
+    memory_generation_enabled: bool = True
+    memory_rag_enabled: bool = True
 
     @field_validator(
-        "llm_model", "llm_pricing_version", "ai_ranking_version", mode="before"
+        "llm_model",
+        "llm_pricing_version",
+        "ai_ranking_version",
+        "embedding_model",
+        "memory_generation_version",
+        mode="before",
     )
     @classmethod
     def use_versioned_default_when_blank(
@@ -32,7 +51,9 @@ class AiSettings(BaseSettings):
         defaults = {
             "llm_model": "gemini-3.5-flash",
             "llm_pricing_version": "gemini-3.5-flash-standard-2026-09",
-            "ai_ranking_version": "ai-gemini-v1",
+            "ai_ranking_version": "ai-gemini-rag-v1",
+            "embedding_model": "gemini-embedding-001",
+            "memory_generation_version": "memory-gemini-v1",
         }
         return defaults[info.field_name]
 

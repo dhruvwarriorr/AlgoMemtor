@@ -13,11 +13,17 @@ import {
   HttpAiRecommendationClient,
   UnavailableAiRecommendationClient,
 } from './integrations/ai/ai-recommendation-client.js'
+import {
+  HttpAiMemoryClient,
+  UnavailableAiMemoryClient,
+} from './integrations/ai/ai-memory-client.js'
 import { CodeChefPublicStatsFetcher } from './integrations/provider-accounts/codechef-public-stats.js'
 import { CodeforcesPublicStatsFetcher } from './integrations/provider-accounts/codeforces-public-stats.js'
 import { LeetCodePublicStatsFetcher } from './integrations/provider-accounts/leetcode-public-stats.js'
 import { PrismaLearnerProfileRepository } from './repositories/learner-profile-repository.js'
 import { PrismaProblemActionRepository } from './repositories/problem-action-repository.js'
+import { PrismaBookmarkRepository } from './repositories/bookmark-repository.js'
+import { PrismaProgressRepository } from './repositories/progress-repository.js'
 import { PrismaExternalProblemCacheRepository } from './repositories/external-problem-cache-repository.js'
 import { PrismaProviderAccountRepository } from './repositories/provider-account-repository.js'
 import { PrismaRecommendationRepository } from './repositories/recommendation-repository.js'
@@ -40,6 +46,9 @@ const app = createApp({
   aiRecommendationClient: aiConfig.configured
     ? new HttpAiRecommendationClient(aiConfig)
     : new UnavailableAiRecommendationClient(),
+  aiMemoryClient: aiConfig.configured
+    ? new HttpAiMemoryClient(aiConfig)
+    : new UnavailableAiMemoryClient(),
   jwtVerifier,
   problemProvider: new CodeforcesProvider({
     ...codeforcesConfig,
@@ -49,6 +58,8 @@ const app = createApp({
   }),
   learnerProfileRepository: new PrismaLearnerProfileRepository(prisma),
   problemActionRepository: new PrismaProblemActionRepository(prisma),
+  progressRepository: new PrismaProgressRepository(prisma),
+  bookmarkRepository: new PrismaBookmarkRepository(prisma),
   recommendationRepository: new PrismaRecommendationRepository(prisma),
   providerAccountRepository: new PrismaProviderAccountRepository(prisma),
   providerPublicStatsFetchers: [

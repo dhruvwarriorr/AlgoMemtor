@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type {
   ExternalProblemSummary,
@@ -7,6 +7,10 @@ import type {
 } from '@algomemtor/shared-contracts'
 
 import { NotificationContext } from '@/app/notification-context'
+
+vi.mock('@/features/progress/components/ProblemLearningControls', () => ({
+  ProblemLearningControls: () => null,
+}))
 
 import { ProblemCatalog } from './ProblemCatalog'
 

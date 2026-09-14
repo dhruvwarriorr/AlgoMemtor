@@ -58,6 +58,7 @@ export const ExternalProblemSummarySchema = z.object({
   solvedCount: z.number().int().nonnegative().optional(),
   fetchedAt: z.iso.datetime(),
   learnerStatus: LearnerProblemStatusSchema.optional(),
+  bookmarked: z.boolean().optional(),
   recommendationReason: nonEmptyStringSchema.optional(),
 })
 

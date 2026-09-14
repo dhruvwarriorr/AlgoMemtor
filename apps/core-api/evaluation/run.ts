@@ -35,6 +35,8 @@ const LATENCY_BUDGET_MS = 8_000
 const COST_BUDGET_USD = 0.02
 const IMPROVEMENT_BUDGET = 0.05
 const DATASET_FETCHED_AT = '2026-09-01T00:00:00.000Z'
+const EXPECTED_SCENARIO_COUNT = 48
+const SCENARIOS_PER_CATEGORY = 3
 
 const categorySchema = z.enum([
   'cold_start',
@@ -45,6 +47,14 @@ const categorySchema = z.enum([
   'preference_conflict',
   'malicious_instructions',
   'absent_preferences',
+  'longitudinal_progress',
+  'conflicting_evidence',
+  'consent_privacy',
+  'correction',
+  'deletion',
+  'retrieval_relevance',
+  'fallback',
+  'provider_verification',
 ])
 
 const evaluationTopicSchema = z
@@ -197,9 +207,9 @@ const percentile95 = (values: readonly number[]) => {
 }
 
 const validateDatasetInvariants = (dataset: EvaluationDataset) => {
-  if (dataset.scenarios.length !== 24) {
+  if (dataset.scenarios.length !== EXPECTED_SCENARIO_COUNT) {
     throw new Error(
-      `The evaluation dataset must contain 24 scenarios; found ${dataset.scenarios.length}.`,
+      `The evaluation dataset must contain ${EXPECTED_SCENARIO_COUNT} scenarios; found ${dataset.scenarios.length}.`,
     )
   }
 
@@ -239,9 +249,9 @@ const validateDatasetInvariants = (dataset: EvaluationDataset) => {
   }
 
   for (const category of categorySchema.options) {
-    if (categoryCounts.get(category) !== 3) {
+    if (categoryCounts.get(category) !== SCENARIOS_PER_CATEGORY) {
       throw new Error(
-        `Category ${category} must contain three scenarios; found ${categoryCounts.get(category) ?? 0}.`,
+        `Category ${category} must contain ${SCENARIOS_PER_CATEGORY} scenarios; found ${categoryCounts.get(category) ?? 0}.`,
       )
     }
   }

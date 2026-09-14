@@ -1,4 +1,5 @@
 import type {
+  LearnerProblemStatus,
   RecommendationDifficultyFeedback,
   RecommendationItem,
   RecommendationUsefulness,
@@ -7,6 +8,9 @@ import type {
 import { Button } from '@/components/ui/button'
 
 import { SolveOnProviderLink } from '@/features/discovery/components/SolveOnProviderLink'
+import { ProblemLearningControls } from '@/features/progress/components/ProblemLearningControls'
+
+import { useRecommendationImpression } from '../hooks/useRecommendationImpression'
 
 type RecommendationCardProps = {
   item: RecommendationItem
@@ -25,6 +29,12 @@ const difficultyLabels = {
   hard: 'Hard',
 } as const
 
+const statusLabels: Record<LearnerProblemStatus, string> = {
+  unsolved: 'Unsolved',
+  attempted: 'Attempted',
+  solved: 'Solved',
+}
+
 export function RecommendationCard({
   item,
   isDismissPending,
@@ -34,9 +44,17 @@ export function RecommendationCard({
 }: RecommendationCardProps) {
   const { problem } = item
   const visibleTags = problem.providerTags.slice(0, 4)
+  const cardRef = useRecommendationImpression({
+    externalId: problem.externalId,
+    provider: problem.provider,
+    recommendationItemId: item.id,
+  })
 
   return (
-    <article className="flex min-w-0 flex-col gap-4 rounded-xl border border-border bg-card p-4 shadow-sm sm:p-5">
+    <article
+      className="flex min-w-0 flex-col gap-4 rounded-xl border border-border bg-card p-4 shadow-sm sm:p-5"
+      ref={cardRef}
+    >
       <header className="space-y-2">
         <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span className="font-medium text-foreground">Codeforces</span>
@@ -44,7 +62,7 @@ export function RecommendationCard({
           <span className="break-all">{problem.externalId}</span>
           {problem.learnerStatus ? (
             <span className="rounded-full bg-muted px-2 py-0.5 font-medium text-foreground">
-              {problem.learnerStatus}
+              {statusLabels[problem.learnerStatus]}
             </span>
           ) : null}
         </div>
@@ -187,7 +205,23 @@ export function RecommendationCard({
       <footer className="flex min-w-0 flex-wrap items-center gap-2">
         <SolveOnProviderLink
           canonicalUrl={problem.canonicalUrl}
+          externalId={problem.externalId}
           provider={problem.provider}
+          recommendationItemId={item.id}
+          sourceContext="recommendation"
+        />
+        <ProblemLearningControls
+          initialBookmarked={
+            (problem as typeof problem & { bookmarked?: boolean }).bookmarked ??
+            false
+          }
+          initialStatus={problem.learnerStatus ?? 'unsolved'}
+          problem={{
+            provider: problem.provider,
+            externalId: problem.externalId,
+          }}
+          recommendationItemId={item.id}
+          sourceContext="recommendation"
         />
         <Button
           aria-label={`Dismiss ${problem.title}`}

@@ -41,7 +41,7 @@ def test_blank_versioned_settings_use_documented_defaults() -> None:
 
     assert configured.llm_model == "gemini-3.5-flash"
     assert configured.llm_pricing_version == "gemini-3.5-flash-standard-2026-09"
-    assert configured.ai_ranking_version == "ai-gemini-v1"
+    assert configured.ai_ranking_version == "ai-gemini-rag-v1"
 
 
 def request_payload(candidate_count: int = 2) -> dict[str, Any]:

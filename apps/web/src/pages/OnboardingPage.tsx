@@ -7,6 +7,7 @@ import { useNotification } from '@/app/useNotification'
 import { learnerProfileErrorMessage } from '@/features/profile/api/learner-profile'
 import { LearnerProfileForm } from '@/features/profile/components/LearnerProfileForm'
 import { ProviderAccountLinks } from '@/features/profile/components/ProviderAccountLinks'
+import { AiNoteConsentCard } from '@/features/profile/components/AiNoteConsentCard'
 import {
   useLearnerProfile,
   useSaveLearnerProfile,
@@ -59,6 +60,7 @@ function OnboardingPage() {
         submitLabel="Complete setup"
       />
       <ProviderAccountLinks idPrefix="onboarding" />
+      <AiNoteConsentCard />
     </PageContainer>
   )
 }

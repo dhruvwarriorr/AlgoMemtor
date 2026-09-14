@@ -166,6 +166,7 @@ type FormState = {
   learningPreferences: LearningPreference[]
   additionalConsiderations: string
   recommendationPreference: string
+  timezone: string
 }
 
 type FormErrorKey =
@@ -214,6 +215,10 @@ function emptyStandings(): Record<RatedPracticePlatform, StandingInput> {
 }
 
 function initialFormState(profile: LearnerProfile | null): FormState {
+  const browserTimezone = Intl.DateTimeFormat()
+    .resolvedOptions()
+    .timeZone.trim()
+
   if (!profile) {
     return {
       experience: '',
@@ -230,6 +235,7 @@ function initialFormState(profile: LearnerProfile | null): FormState {
       learningPreferences: [],
       additionalConsiderations: '',
       recommendationPreference: '',
+      timezone: browserTimezone,
     }
   }
 
@@ -260,6 +266,7 @@ function initialFormState(profile: LearnerProfile | null): FormState {
     learningPreferences: [...profile.learningPreferences],
     additionalConsiderations: profile.additionalConsiderations ?? '',
     recommendationPreference: profile.recommendationPreference ?? '',
+    timezone: profile.timezone ?? browserTimezone,
   }
 }
 
@@ -317,6 +324,7 @@ function buildProfileRequest(state: FormState) {
     ...(recommendationPreference === undefined
       ? {}
       : { recommendationPreference }),
+    ...(state.timezone.trim() ? { timezone: state.timezone.trim() } : {}),
   })
 }
 
@@ -1151,6 +1159,44 @@ function LearnerProfileFormFields({
             id={`${idPrefix}-considerations-error`}
             message={errors.additionalConsiderations}
           />
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-2">
+          <label
+            className="text-sm font-medium text-foreground"
+            htmlFor={`${idPrefix}-timezone`}
+          >
+            Timezone for progress dates
+          </label>
+          <input
+            aria-describedby={`${idPrefix}-timezone-help`}
+            className={inputClassName}
+            disabled={isSaving}
+            id={`${idPrefix}-timezone`}
+            list={`${idPrefix}-timezone-options`}
+            onChange={(event) =>
+              setField('timezone', event.currentTarget.value)
+            }
+            placeholder="e.g. Asia/Kolkata"
+            spellCheck={false}
+            value={state.timezone}
+          />
+          <datalist id={`${idPrefix}-timezone-options`}>
+            <option value="UTC" />
+            <option value="Asia/Kolkata" />
+            <option value="Asia/Singapore" />
+            <option value="Europe/London" />
+            <option value="Europe/Berlin" />
+            <option value="America/New_York" />
+            <option value="America/Los_Angeles" />
+          </datalist>
+          <p
+            className="text-sm text-muted-foreground"
+            id={`${idPrefix}-timezone-help`}
+          >
+            Used only to place your 30-day activity and streak dates. The
+            browser timezone is suggested, and you can change it any time.
+          </p>
         </div>
       </section>
 
