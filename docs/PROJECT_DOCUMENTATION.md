@@ -1,422 +1,952 @@
-# AlgoMemtor Project Documentation
+# AlgoMemtor — Complete Project Documentation
 
-## External Problem Discovery and AI Recommendation Architecture
+**Document status:** current implementation reference
+**Last reconciled:** 2026-09-14
+**Repository:** `AlgoMemtor`
+**Document scope:** product behavior, architecture, provider integrations,
+data contracts, operations, testing, privacy, and known limitations.
 
-This is the detailed product and engineering reference for AlgoMemtor. It is
-written for a beginner-friendly implementation while keeping production
-boundaries explicit.
+This is the single maintained project document. It replaces the former roadmap,
+blueprint, provider plans, and architecture decision records. The source tree
+and tests remain authoritative for behavior; this document describes the intent
+and the currently implemented behavior together so that mismatches are visible.
 
-> **Architecture change:** AlgoMemtor no longer plans to host problem statements,
-> examples, constraints, starter code, test cases, a Monaco editor, or code
-> execution. Its contracts and development mocks now use permitted external
-> metadata, and future features recommend problems before redirecting learners to
-> the original platform.
+## Contents
 
-> **Unified-provider overlay (2026-09-14):** ADR 0005 and the companion
-> three-provider plan now permit bounded, sanitized public/free problem content
-> and public activity observations for Codeforces, CodeChef, and LeetCode when
-> the configured source and capability are enabled. This supersedes only the
-> older single-provider/aggregate-only statements below; authentication,
-> CAPTCHA, paywall, private-data, source-code, and access-control bypasses
-> remain prohibited.
-
----
-
-## Table of Contents
-
-1. [How to use this document](#1-how-to-use-this-document)
-2. [Product overview](#2-product-overview)
-3. [MVP scope](#3-mvp-scope)
-4. [Important concepts](#4-important-concepts)
-5. [Technology stack](#5-technology-stack)
+1. [Product summary](#1-product-summary)
+2. [Current implementation status](#2-current-implementation-status)
+3. [Product boundaries](#3-product-boundaries)
+4. [Feature inventory](#4-feature-inventory)
+5. [User experience](#5-user-experience)
 6. [System architecture](#6-system-architecture)
-7. [Repository and local development](#7-repository-and-local-development)
-8. [Frontend architecture](#8-frontend-architecture)
-9. [Screens and user experience](#9-screens-and-user-experience)
-10. [External provider gateway](#10-external-provider-gateway)
-11. [Core API](#11-core-api)
-12. [AI recommendation service](#12-ai-recommendation-service)
-13. [Authentication and provider linking](#13-authentication-and-provider-linking)
-14. [Database design](#14-database-design)
-15. [Progress evidence](#15-progress-evidence)
-16. [API standards](#16-api-standards)
-17. [Mock-first development](#17-mock-first-development)
-18. [Testing](#18-testing)
-19. [Security, privacy, and provider compliance](#19-security-privacy-and-provider-compliance)
-20. [Logging and observability](#20-logging-and-observability)
-21. [Deployment](#21-deployment)
-22. [Git and coding conventions](#22-git-and-coding-conventions)
-23. [Definition of done](#23-definition-of-done)
-24. [Common mistakes](#24-common-mistakes)
-25. [Troubleshooting](#25-troubleshooting)
-26. [Glossary and references](#26-glossary-and-references)
+7. [Repository structure](#7-repository-structure)
+8. [Shared contracts](#8-shared-contracts)
+9. [Provider integrations](#9-provider-integrations)
+10. [Profile, solved activity, and tags](#10-profile-solved-activity-and-tags)
+11. [Synchronization and caching](#11-synchronization-and-caching)
+12. [HTTP API](#12-http-api)
+13. [Database model](#13-database-model)
+14. [Authentication and privacy](#14-authentication-and-privacy)
+15. [Recommendations, Gemini, and memory](#15-recommendations-gemini-and-memory)
+16. [Frontend engineering](#16-frontend-engineering)
+17. [Configuration](#17-configuration)
+18. [Local setup and daily operation](#18-local-setup-and-daily-operation)
+19. [Testing and verification](#19-testing-and-verification)
+20. [Operations and troubleshooting](#20-operations-and-troubleshooting)
+21. [Known limitations and next work](#21-known-limitations-and-next-work)
+22. [Engineering checklist](#22-engineering-checklist)
+23. [Source-traced implementation map](#23-source-traced-implementation-map)
+24. [End-to-end request lifecycles](#24-end-to-end-request-lifecycles)
+25. [Provider transformation details](#25-provider-transformation-details)
+26. [Persistence and deletion flows](#26-persistence-and-deletion-flows)
+27. [State machines and invariants](#27-state-machines-and-invariants)
+28. [How to extend the project](#28-how-to-extend-the-project)
+29. [Planning framework for future work](#29-planning-framework-for-future-work)
 
 ---
 
-# 1. How to Use This Document
+## 1. Product summary
 
-Use this document to answer four questions:
+AlgoMemtor is an AI-assisted learning navigator for data structures and
+algorithms, competitive programming, coding interviews, and algorithmic
+thinking. It learns a learner's goals and preferences, obtains normalized
+problem metadata from supported platforms, filters and ranks suitable problems,
+explains the recommendations, and sends the learner to the canonical provider
+page.
 
-1. What should AlgoMemtor do?
-2. Which service owns each responsibility?
-3. What data is allowed to enter the system?
-4. How do we verify a feature safely?
-
-When implementation and documentation disagree, do not silently bend the new
-architecture around old code. Record the mismatch and migrate it in a focused
-change.
-
-Project rules:
-
-- Build one end-to-end slice at a time.
-- Keep provider access deterministic and outside the browser.
-- Let AI rank only backend-supplied candidates.
-- Store metadata and learner evidence, not copied problem content.
-- Treat all external data and AI output as untrusted.
-- Do not infer learning progress from external-link clicks.
-- Keep the product usable if AI or one provider is unavailable.
-- Do not push branches or commits unless explicitly requested.
-
----
-
-# 2. Product Overview
-
-## 2.1 What AlgoMemtor is
-
-AlgoMemtor is an AI-assisted learning navigator for:
-
-- Data Structures and Algorithms;
-- competitive programming;
-- coding interview preparation; and
-- long-term algorithmic learning.
-
-It builds a learner profile, obtains external problem metadata through approved
-provider integrations, recommends suitable problems, and opens the canonical
-problem page on the source platform.
-
-## 2.2 What AlgoMemtor is not
-
-AlgoMemtor is not:
-
-- a mirror of LeetCode, Codeforces, CodeChef, AtCoder, CSES, or another provider;
-- a storage system for external statements or test cases;
-- an online IDE;
-- a compiler or judge;
-- a submission proxy; or
-
-
-## 2.3 Core product loop
+The product loop is:
 
 ```text
-Onboard learner
-  -> fetch normalized external metadata
-  -> filter safe candidates
-  -> AI ranks candidates
-  -> explain recommendations
-  -> learner opens the source platform
-  -> collect manual or provider-verified evidence
-  -> update learner profile
-  -> improve the next recommendation
+learner profile
+    -> provider metadata and public profile observations
+    -> deterministic filters
+    -> optional Gemini ranking and explanation
+    -> attributed canonical provider link
+    -> manual or provider-observed evidence
+    -> analytics and learner memory
+    -> better next recommendation
 ```
 
-## 2.4 Product principles
+AlgoMemtor is a discovery, planning, analytics, and mentorship layer. The
+external platform remains authoritative for the complete statement, editor,
+compiler, hidden tests, submissions, verdicts, and account ownership.
 
-- **Source-first:** the provider remains visible and authoritative.
-- **Recommendation-first:** explain why a problem fits.
-- **Evidence-first:** confidence must match the available signal.
-- **API-first:** integrate only through official or explicitly permitted access.
-- **Fallback-first:** ordinary filtering works without AI.
-- **Privacy-first:** collect the minimum activity needed for personalization.
+### Core principles
+
+- Provider ownership is visible through attribution and canonical links.
+- React talks to the Express API, never directly to external providers.
+- Provider responses, HTML, GraphQL, and AI output are untrusted input.
+- Deterministic filtering and ranking remain usable when Gemini is unavailable.
+- Aggregate statistics are never presented as individual solve evidence.
+- Partial, stale, blocked, and unavailable data are labeled honestly.
+- User source code, passwords, session cookies, CSRF tokens, and CAPTCHA
+  artifacts are never collected or stored.
+- An outbound link is an `opened` event, not proof that a learner solved a
+  problem.
 
 ---
 
-# 3. MVP Scope
+## 2. Current implementation status
 
-## 3.1 Included
+The following capabilities are implemented in the current working tree:
 
-### Account and onboarding
+| Area | Status | Notes |
+| --- | --- | --- |
+| React/Vite application shell | Implemented | Responsive authenticated application with protected routes |
+| Supabase email authentication | Implemented | JWT verification is owned by Express and FastAPI |
+| Learner onboarding/profile | Implemented | Goals, experience, topics, difficulty, platforms, preferences |
+| Codeforces catalog | Implemented | Official problemset API, normalized metadata, caching, filters |
+| CodeChef catalog | Implemented | Provider adapter with catalog and contest support |
+| LeetCode catalog | Implemented | Public GraphQL/catalog strategy with validation and cache |
+| CSES catalog | Implemented | Public `/problemset/` HTML catalog; catalog-only provider |
+| Provider account linking | Implemented | Codeforces, CodeChef, and LeetCode public handles |
+| Public solved totals | Implemented | Consent-gated provider profile statistics |
+| Codeforces activity | Implemented | Public accepted observations with bounded completeness |
+| CodeChef activity | Implemented | Recent public submissions and accepted observations |
+| LeetCode activity | Implemented | Bounded recent submissions and accepted observations |
+| Provider problem tags | Implemented | CodeChef/LeetCode recent observations; profile aggregate tags for LeetCode |
+| Unified activity | Implemented | Submissions, solves, ratings, and contest participation |
+| Unified analytics | Implemented | Provider totals, difficulty, topics, language, rating, contests |
+| Unified contests | Implemented | Codeforces, CodeChef, and LeetCode contest adapters |
+| Manual progress | Implemented | `unsolved`, `attempted`, `solved`, reflections, timers |
+| Bookmarks and dismissals | Implemented | Owner-scoped persistence and recommendation actions |
+| Deterministic recommendations | Implemented | Validated candidate set and stable fallback |
+| Gemini ranking | Implemented behind configuration | LangChain client, structured output, validation, fallback |
+| Learner memory/RAG | Implemented behind configuration | FastAPI memory generation, retrieval, audit, deletion |
+| Background provider sync | Implemented | PostgreSQL jobs, leases, cooldowns, six-hour schedule |
+| Authenticated full historical LeetCode/CodeChef/CSES import | Not implemented | Requires an approved API, local connector, or user import |
 
-- Email registration and login.
-- Goal, experience, preferred topics, and learning preferences.
-- Preferred providers and difficulty range.
-- Optional public handle with long-lived public-sync consent. Linked profiles
-  synchronize through the queued six-hour worker with an asynchronous manual
-  refresh cooldown.
-
-### Problem discovery
-
-- Metadata from at least one approved provider API.
-- Provider attribution and canonical outbound URL.
-- Search, provider, topic, difficulty, and status filters.
-- Bookmarks and dismissed recommendations.
-- Loading, empty, stale, partial, rate-limited, and error states.
-
-### AI recommendations
-
-- Natural-language preference input.
-- Structured candidate filtering.
-- AI ranking of validated candidates.
-- Short explanation for every recommendation.
-- Deterministic fallback when AI fails.
-
-### Progress
-
-- Recommendation history.
-- Question status limited to `unsolved`, `attempted`, and `solved`.
-- Provider-verified solves only when a supported API makes this reliable.
-- Explicit labels for every evidence type.
-
-## 3.2 Excluded
-
-- Internal problem content.
-- Embedded editor or code execution.
-- Draft and source-code storage.
-- Internal submissions or verdicts.
-- Hidden test cases.
-- Recreated contests or platform judges.
-- Automatic verification based only on a click.
-- Payments, marketplaces, duels, and complex multi-agent orchestration.
-
-## 3.3 MVP success criteria
-
-The MVP succeeds when a learner can:
-
-1. finish onboarding;
-2. request a relevant practice problem;
-3. understand why it was suggested;
-4. open the correct source-platform URL;
-5. record what happened afterward; and
-6. receive a measurably better next recommendation.
+Local unit, type-check, build, and mocked integration checks pass when run with
+the documented commands. Live provider behavior and authenticated browser
+acceptance still depend on the operator's network, environment, database, and
+Supabase project.
 
 ---
 
-# 4. Important Concepts
+## 3. Product boundaries
 
-## 4.1 Frontend
+### AlgoMemtor owns
 
-The React application renders screens and sends requests to AlgoMemtor APIs. It
-does not fetch providers directly because provider normalization, credentials,
-rate limits, cache policy, and URL validation belong on the server.
+- learner account and onboarding preferences;
+- normalized provider metadata and permitted public profile observations;
+- provider freshness, completeness, source, and extraction provenance;
+- catalog filters and deterministic recommendation rules;
+- optional bounded AI ranking and explanations;
+- bookmarks, dismissals, outbound-open events, manual statuses, reflections,
+  timers, analytics, and learner memory;
+- data deletion, consent, stale-state presentation, and operational controls.
 
-## 4.2 Backend
+### External providers own
 
-The backend contains two services:
+- full problem statements and official examples;
+- code editors, compilers, execution, hidden tests, submissions, and verdicts;
+- canonical contest pages and official rankings;
+- account ownership and private/authenticated data;
+- provider-specific taxonomy and native difficulty/rating semantics.
 
-- Express owns product logic and provider integrations.
-- FastAPI owns AI ranking and learner intelligence.
+### Explicitly excluded
 
-## 4.3 Provider adapter
+- copying premium or private problem material;
+- an embedded Monaco editor or code runner;
+- Judge0 or internal judging;
+- learner source-code, drafts, tests, or submission storage;
+- collecting provider passwords, bearer cookies, CSRF tokens, or private API
+  responses;
+- CAPTCHA solving, proxy rotation to evade controls, fingerprint spoofing, or
+  browser automation intended to defeat a block;
+- fabricating solved problems from an aggregate total;
+- cross-platform deduplication of supposedly equivalent problems;
+- treating a public handle as verified ownership;
+- automatic submission or execution on a provider.
 
-A provider adapter translates one external API into AlgoMemtor's normalized
-contract. React should not need to know that one provider calls difficulty a
-`rating` while another uses a label.
-
-## 4.4 Metadata versus content
-
-Metadata helps identify and select a problem:
-
-- provider;
-- external ID;
-- title;
-- rating/difficulty;
-- tags;
-- public statistics; and
-- canonical URL.
-
-Content is what a learner needs to solve it:
-
-- full statement;
-- input/output specification;
-- examples and constraints;
-- starter code;
-- tests; and
-- editorial.
-
-AlgoMemtor may cache permitted metadata. The source platform retains content.
-
-## 4.5 Redirect and outbound link
-
-The word “redirect” in this project means navigating to a validated external
-problem URL. A problem card may use a direct anchor or a first-party endpoint
-that records an event and then issues a `302/303` redirect.
-
-Any redirect endpoint must map a known `(provider, externalId)` to a server-owned
-canonical URL. It must never accept and forward an arbitrary user URL.
-
-## 4.6 AI ranking
-
-The AI receives a bounded candidate list and learner context. It returns selected
-candidate IDs, scores, and reasons. Express validates that every returned ID was
-in the candidate list, then attaches trusted URLs from its own data.
-
-## 4.7 Evidence
-
-Evidence describes how AlgoMemtor knows something. Manual completion and a
-provider-verified solve are different facts and must remain different in the
-data model and UI. Following an external link is not progress evidence.
-
-## 4.8 Cache
-
-A cache temporarily reuses provider metadata to improve speed and stay within
-rate limits. Caching does not transfer ownership of provider data to AlgoMemtor.
+When a provider returns a login wall, CAPTCHA, paywall, persistent `403`, or
+malformed response, the affected capability becomes unavailable or stale. The
+system does not attempt to defeat the control.
 
 ---
 
-# 5. Technology Stack
+## 4. Feature inventory
 
-| Layer          | Technology              | Purpose                                              |
-| -------------- | ----------------------- | ---------------------------------------------------- |
-| Web            | React, Vite, TypeScript | Accessible catalog and recommendation UI             |
-| Routing        | React Router            | Client-side route mapping                            |
-| Server state   | TanStack Query          | API loading, cache, retry, and stale states          |
-| Mock API       | MSW                     | Frontend-first provider and recommendation scenarios |
-| Validation     | Zod                     | Browser and Express TypeScript contracts             |
-| Core API       | Express + TypeScript    | Product behavior and provider gateway                |
-| AI API         | FastAPI + Python        | Ranking, explanations, memory                        |
-| AI validation  | Pydantic                | Internal request/response schemas                    |
-| Database       | PostgreSQL              | Learner data and permitted metadata cache            |
-| Vector support | pgvector                | Optional learner-memory retrieval                    |
-| Authentication | Supabase Auth           | Managed user identity                                |
+### 4.1 Authentication and account lifecycle
 
-There is no Monaco or Judge0 dependency in the target architecture.
+- Email/password registration and login through Supabase Auth.
+- Protected frontend routes and authenticated API requests.
+- Cryptographic JWT verification in Express and FastAPI.
+- One refresh retry after an expired frontend token, then local session expiry.
+- Logout and auth-aware navigation.
+- Learner-owned data deletion controls.
+
+### 4.2 Onboarding and learner profile
+
+The onboarding form captures:
+
+- experience level;
+- learning goal;
+- comfortable difficulty;
+- preferred topics or automatic topic suggestions;
+- preferred providers;
+- learning preferences;
+- additional considerations;
+- a saved recommendation preference note;
+- timezone; and
+- optional public provider handles with explicit public-sync consent.
+
+The structured choices are authoritative for deterministic ranking. Free-form
+notes are optional context and are bounded before they can reach Gemini.
+
+### 4.3 Unified problem discovery
+
+The Problems page uses the database-backed normalized catalog and supports:
+
+- provider selection: All, Codeforces, CodeChef, LeetCode, or CSES;
+- text search;
+- topic filtering;
+- normalized difficulty filtering;
+- native rating bounds where available;
+- learner status filtering;
+- pagination;
+- provider attribution;
+- canonical outbound links; and
+- loading, empty, stale, partial, rate-limited, and error states.
+
+Problem identifiers are always paired with a provider. A Codeforces ID can never
+be used as a LeetCode or CodeChef ID.
+
+### 4.4 Problem detail
+
+Problem detail resolves a validated `(provider, externalId)` pair and displays
+the metadata and provenance that the provider capability allows. Public/free
+content may be sanitized and cached only when the configured provider strategy
+supports it and the deployment review permits it. Premium/private material is
+represented by metadata and a provider link only.
+
+The page can show provider tags, normalized topics, difficulty, rating, status,
+freshness, and source attribution. “Solve on provider” records an outbound-open
+event and then navigates to the trusted canonical URL.
+
+### 4.5 Recommendations
+
+The recommendation flow:
+
+1. loads the authenticated learner profile;
+2. obtains a bounded provider catalog snapshot;
+3. applies deterministic filters for status, difficulty, topics, and provider;
+4. sends at most the configured candidate limit to FastAPI when AI is enabled;
+5. validates returned candidate IDs against the supplied set;
+6. attaches canonical URLs from Express-owned provider data; and
+7. persists the recommendation batch and item explanations.
+
+Gemini cannot add an unknown problem, URL, provider, or learner status. If AI is
+unavailable, deterministic ranking remains the visible fallback.
+
+### 4.6 Progress and evidence
+
+Learner problem status has exactly three values:
+
+- `unsolved`;
+- `attempted`; and
+- `solved`.
+
+Manual status changes, provider-observed accepted activity, recommendation
+actions, bookmarks, dismissals, reflections, and outbound opens are separate
+facts. A provider observation can be partial and bounded; it must not be
+presented as proof of account ownership.
+
+### 4.7 Unified profile
+
+The Profile page presents:
+
+- latest solved totals by connected provider;
+- combined total as an arithmetic sum, without cross-platform deduplication;
+- ratings and ranks when reported;
+- freshness and completeness;
+- linked and archived identities;
+- provider profile snapshots;
+- consent and disconnect controls; and
+- data deletion controls.
+
+### 4.8 Unified activity
+
+Activity is a chronological, provider-attributed timeline containing:
+
+- submissions and verdicts;
+- accepted-problem observations;
+- provider tags and normalized topics when available;
+- language and timestamps;
+- rating changes; and
+- contest participation.
+
+The UI can filter by provider and event type. Bounded provider windows are
+marked partial rather than silently treated as complete history.
+
+### 4.9 Unified contests
+
+The Contests page combines upcoming and historical provider contests with:
+
+- provider and contest filters;
+- start/end times and local-time rendering;
+- contest status and rated flag;
+- participation rank/score where available; and
+- rating changes where available.
+
+### 4.10 Analytics
+
+Analytics includes:
+
+- total solved and provider breakdown;
+- solved-over-time observations;
+- normalized difficulty distribution;
+- native provider topic/tag counts;
+- language usage;
+- recent-window acceptance rate;
+- rating progression; and
+- contest participation.
+
+LeetCode profile-side `tagProblemCounts` is used for the complete aggregate
+skill distribution returned by its public profile. Concrete recent solved rows
+are not added again for that provider, preventing double-counting. For
+providers without aggregate topic counts, concrete observed problem metadata is
+used.
+
+### 4.11 Bookmarks, dismissals, reflections, and timers
+
+- Bookmarks are learner-owned and provider-scoped.
+- Recommendation impressions and feedback are persisted separately.
+- Dismissed recommendations can be restored.
+- Reflections attach learner notes to a provider problem.
+- Timer sessions support start, pause, resume, and resolve.
+- These features never store submitted source code.
+
+### 4.12 Learner memory
+
+The AI service can generate bounded memory signals from eligible learner data.
+Memory has confidence, evidence strength, lifecycle actions, retrieval limits,
+and delete/archive/restore controls. The learner can inspect and manage memory.
 
 ---
 
-# 6. System Architecture
+## 5. User experience
 
-```mermaid
-flowchart LR
-    B["React browser"] --> C["Express core API"]
-    C --> P["Provider gateway"]
-    P --> CF["Codeforces API"]
-    P --> FP["Future permitted provider APIs"]
-    C --> DB[("PostgreSQL core schema")]
-    C -->|"internal service token"| A["FastAPI AI service"]
-    A --> G["Gemini via langchain-google-genai"]
-    A --> AIDB[("PostgreSQL ai schema + optional pgvector")]
-    C --> B
-    B -->|"validated outbound link"| EXT["Source problem page"]
-```
+### Public routes
 
-## 6.1 Discovery request
+- `/` — landing page and product explanation.
+- `/login` — Supabase email authentication.
 
-```text
-React
-  -> GET /api/problems?provider=codeforces&topic=graphs
-  -> Express validates query
-  -> provider gateway checks cache
-  -> adapter fetches/normalizes if needed
-  -> Express returns metadata-only results
-```
+### Protected routes
 
-## 6.2 Recommendation request
+- `/dashboard` — authenticated landing and recommendation entry point.
+- `/onboarding` — learner profile setup and provider linking.
+- `/problems` — unified provider catalog.
+- `/problems/:provider/:externalId` — problem detail.
+- `/recommendations` — ranked practice feed.
+- `/activity` — merged activity timeline.
+- `/contests` — contest catalog and participation.
+- `/analytics` — unified analytics.
+- `/progress` — manual progress history and analytics.
+- `/bookmarks` — saved problems.
+- `/memory` — learner memory controls.
+- `/profile` — unified provider profile.
+- `/settings` — profile, provider consent, and data reset controls.
 
-```text
-React
-  -> GET /api/recommendations
-  -> Express loads profile and candidate metadata
-  -> deterministic-v1 excludes ineligible problems and creates a 40-item shortlist
-  -> FastAPI ranks the shortlist when the internal AI client is configured
-  -> Express validates returned IDs/reasons and attaches current metadata and URLs
-  -> Express saves the batch with its ranking mode and version
-  -> React renders attributed cards
-```
-
-The Week 10 deterministic baseline remains the first filter and fallback. The
-current Week 11 integration sends at most 40 unique normalized Codeforces
-metadata candidates to FastAPI. The browser never calls FastAPI directly. The
-core API calls `POST /internal/recommendations/rank` with
-`X-Internal-Service-Token` when `AI_API_URL` and `INTERNAL_SERVICE_TOKEN` are
-configured; otherwise it uses the deterministic fallback client. A successful
-  AI batch is persisted as `ai-gemini-rag-v1`. Any AI fallback or client failure is
-  persisted as `ai-rag-v1-fallback-deterministic-v2` and keeps the recommendation feed
-available.
-
-The Week 10 baseline also exposes `POST /api/recommendations/refresh` for an
-explicit new batch. Feedback is recorded through
-`PATCH /api/recommendation-items/:itemId/feedback`. Dismissal state is
-append-only: `POST /api/recommendation-items/:itemId/dismiss` records a
-dismissal, `GET /api/recommendation-dismissals` lists active dismissals, and
-`DELETE /api/recommendation-dismissals/:provider/:externalId` restores one.
-The persisted ranking version is `deterministic-v1` for the standalone Week 10
-baseline and the two Week 11 versions above when the AI path is used.
-
-## 6.3 Outbound navigation
-
-```text
-Learner selects Solve on Codeforces
-  -> server resolves known provider + external ID
-  -> learner navigates to the canonical provider URL
-```
-
-The external site handles statement display, editing, compilation, submission,
-and judging.
-
-## 6.4 Failure boundaries
-
-- If AI fails, use deterministic ranking.
-- If the core-to-AI request times out, returns a non-success response, or fails
-  response validation, use deterministic ranking.
-- If Gemini is not configured, FastAPI returns a `not_configured` fallback; if
-  the core internal token is not configured, Express skips the HTTP call and
-  uses the same deterministic path locally.
-- If one provider fails, return partial results from others.
-- If cached metadata is still allowed but stale, show a stale label.
-- If no provider is available, show bookmarks and a retry state.
-- Provider failure must not corrupt learner progress.
+All merged views expose provider filters and use responsive layouts. Keyboard
+navigation, semantic buttons/anchors, focus visibility, and honest loading/error
+states are part of the feature contract.
 
 ---
 
-# 7. Repository and Local Development
-
-## 7.1 Repository structure
+## 6. System architecture
 
 ```text
-apps/
-  web/                    React frontend
-  core-api/               Express API and provider adapters
-  ai-api/                 FastAPI ranking and memory
-packages/
-  shared-contracts/       Shared Zod schemas and TypeScript types
-docs/                     Product, architecture, and roadmap documents
+Browser (React + Vite)
+  |
+  +-- /api/* --> Express core API
+  |                +-- Supabase JWT verification
+  |                +-- provider adapters and HTTP safety layer
+  |                +-- normalization, cache, filtering, URL construction
+  |                +-- learner data and provider sync queue
+  |                +-- PostgreSQL core schema through Prisma
+  |
+  +-- never calls providers directly
+
+Express -- internal token --> FastAPI AI API
+                                +-- JWT verification
+                                +-- bounded Gemini/LangChain ranking
+                                +-- learner memory and retrieval
+                                +-- PostgreSQL ai schema through Alembic
+
+External providers
+  +-- Codeforces
+  +-- CodeChef
+  +-- LeetCode
+  +-- CSES catalog
 ```
 
-Recommended future core API layout:
+### Ownership table
+
+| Component | Responsibility |
+| --- | --- |
+| `apps/web` | Routes, UI, auth state, URL filters, accessible interactions |
+| `apps/core-api` | Authenticated product API, adapters, normalization, persistence, safe URLs |
+| `apps/ai-api` | Gemini ranking, explanations, learner memory, vector retrieval |
+| `packages/shared-contracts` | Runtime-validated TypeScript contracts shared by API, UI, and mocks |
+| Prisma | `core` PostgreSQL schema and migrations |
+| Alembic | `ai` PostgreSQL schema and migrations |
+| Supabase Auth | Application identity and email authentication |
+| Providers | Statements, execution, submissions, judging, authoritative accounts |
+
+Prisma and Alembic must never manage the same table or schema objects.
+
+---
+
+## 7. Repository structure
 
 ```text
-apps/core-api/src/
-  controllers/
-  services/
-  repositories/
-  integrations/providers/
-    provider.ts
-    codeforces-provider.ts
-  schemas/
-  middleware/
+.
+├── apps/
+│   ├── web/
+│   │   └── src/
+│   │       ├── app/              # providers, auth, theme, notifications
+│   │       ├── components/       # layout, navigation, UI, state components
+│   │       ├── features/         # auth, profile, platform, progress, memory
+│   │       ├── pages/             # route-level screens
+│   │       ├── routes/            # router, protected routes, scroll state
+│   │       └── mocks/             # normalized MSW fixtures and handlers
+│   ├── core-api/
+│   │   ├── prisma/                # Prisma schema and core migrations
+│   │   └── src/
+│   │       ├── auth/              # JWT verification and auth middleware
+│   │       ├── config/            # environment parsing and feature flags
+│   │       ├── database/           # Prisma client
+│   │       ├── integrations/       # providers, provider accounts, AI client
+│   │       ├── repositories/       # persistence and in-memory implementations
+│   │       ├── services/           # product, sync, recommendation, progress logic
+│   │       ├── utils/              # request gates and shared utilities
+│   │       ├── app.ts              # Express route assembly
+│   │       └── server.ts           # HTTP server and provider wiring
+│   └── ai-api/
+│       ├── app/                    # FastAPI routes, services, models
+│       ├── alembic/                # AI schema migrations
+│       └── tests/                  # Python service and RAG tests
+├── packages/
+│   └── shared-contracts/           # Zod schemas and shared TypeScript types
+├── docker-compose.yml              # local PostgreSQL
+├── package.json                    # workspace scripts
+└── README.md                       # short entry-point README
 ```
 
-## 7.2 Local prerequisites
+---
 
-- Node.js and npm matching repository requirements;
-- Python and `uv` matching `apps/ai-api/pyproject.toml`;
-- Docker and Docker Compose; and
-- Git.
+## 8. Shared contracts
 
-## 7.3 Setup
+The shared package is the boundary between Express, React, mocks, and tests.
+Provider-specific raw DTOs remain inside adapters.
 
-```bash
-npm install
-uv sync --project apps/ai-api
-cp apps/web/.env.example apps/web/.env
-cp apps/core-api/.env.example apps/core-api/.env
-cp apps/ai-api/.env.example apps/ai-api/.env
-npm run db:up
-npm run dev
+### Provider keys
+
+```text
+codeforces | codechef | leetcode | cses
 ```
 
-## 7.4 Environment variables
+`codeforces`, `codechef`, and `leetcode` are linkable account providers.
+`cses` is catalog-only in the current implementation and cannot be linked as
+an account.
 
-Frontend variables may include:
+### Normalized provider records
+
+The contracts include:
+
+- `ProviderProfile` — handle, solved count, acceptance rate, rank, rating,
+  languages, aggregate topics, badges, calendar, completeness, provenance.
+- `ProviderSubmission` — provider problem, event ID, verdict, language,
+  timestamp, acceptance, completeness, provenance.
+- `ProviderSolvedProblem` — concrete provider problem, occurrence timestamps,
+  source event, provider tags, normalized topics, completeness, provenance.
+- `ProviderRatingChange` — contest, old/new rating, delta, percentile,
+  timestamp, provenance.
+- `ExternalContest` — provider contest identity, name, URL, schedule, status,
+  rated flag, completeness, provenance.
+- `ContestParticipation` — contest rank/score/rating fields and provenance.
+- `ProblemContent` — sanitized permitted content only; never source code/tests.
+- `ProviderSyncState` and job/status contracts — cursor, attempts, leases,
+  freshness, retry/error state.
+- `UnifiedProfile`, `UnifiedAnalytics`, and activity response contracts.
+
+### Provenance requirements
+
+External records carry:
+
+```text
+provider
+providerId
+canonicalUrl
+sourceUrl
+extractionStrategy
+schemaVersion
+completeness
+fetchedAt
+stale
+```
+
+The source class distinguishes official JSON, public GraphQL, embedded JSON,
+sanitized HTML, and stale cache. Unknown or malformed records are skipped or
+returned as partial; they are never silently converted to zero values.
+
+---
+
+## 9. Provider integrations
+
+All provider access is server-side through the shared HTTP layer. Each adapter
+validates payloads with Zod, constructs canonical URLs from validated IDs, uses
+an allowlisted HTTPS host, applies a request gate, and maps failures to stable
+provider errors.
+
+### 9.1 Codeforces
+
+#### Sources
+
+- `problemset.problems` for the global catalog;
+- `user.info` for profile fields;
+- `user.status` for bounded public submissions and accepted observations;
+- `user.rating` for rating history;
+- `contest.list` and public standings for contests; and
+- public problem pages only when a permitted field is unavailable through the
+  official API and the capability is enabled.
+
+#### Behavior
+
+- Official API response envelopes and records are validated.
+- Problems are normalized with rating, difficulty band, tags, statistics, and
+  safe contest/index URLs.
+- The existing 2.1-second request gate is preserved.
+- Submission pagination records incomplete coverage when the provider window is
+  exhausted.
+- Only concrete accepted submissions with valid provider IDs and timestamps
+  become provider activity evidence.
+
+### 9.2 CodeChef
+
+#### Sources
+
+- public catalog and contest endpoints where available;
+- public profile HTML for aggregate profile statistics and embedded history;
+- public `/recent/user` response for recent submission rows; and
+- public contest problem JSON for problem tags.
+
+#### Recent activity and tags
+
+The activity adapter parses recent rows, including problem code, contest code,
+title, result, language, timestamp, and public solution ID when present. For up
+to the configured enrichment limit of accepted rows, it requests the public
+contest problem record and preserves both `computed_tags` and `user_tags`.
+Those values become `providerTags`; slugified values become normalized `topics`.
+
+The first public recent page is bounded and is returned as partial. A failed
+problem-detail request preserves the accepted observation without inventing a
+tag. A challenge page, login wall, or persistent block opens the capability
+circuit breaker and preserves the last valid cache.
+
+### 9.3 LeetCode
+
+#### Sources
+
+- public GraphQL `matchedUser` profile query;
+- public catalog/problem GraphQL queries;
+- public `recentSubmissionList` for bounded recent submissions;
+- public `question(titleSlug)` hydration for problem topic tags;
+- public contest history and profile statistics; and
+- sanitized public pages only where the configured capability allows it.
+
+#### Profile-side skills
+
+The profile query requests `tagProblemCounts` in the `advanced`,
+`intermediate`, and `fundamental` groups. Every returned tag and its
+`problemsSolved` count is retained in `ProviderProfile.topicCounts`. The three
+groups are flattened into a native tag-count map for shared analytics; the
+provider's tag names and counts remain unchanged.
+
+#### Recent activity and tags
+
+The activity adapter requests a bounded recent submission list, identifies
+accepted rows, then batches public `question(titleSlug)` lookups. Each accepted
+observation stores all returned `topicTags` names in `providerTags` and slugs in
+`topics`. The recent list is explicitly partial; it is not an all-time solved
+list.
+
+Authenticated operations such as `userProgressQuestionList`, session-cookie
+handling, CSRF handling, private data, and premium content are not implemented.
+
+### 9.4 CSES
+
+CSES is currently a catalog-only provider.
+
+- Source: public `https://cses.fi/problemset/` HTML.
+- Parser: task sections and `/problemset/task/<id>` links.
+- Output: task ID, title, canonical URL, section-derived tags/topics,
+  completeness, freshness, and provenance.
+- Cache: the normal catalog cache and provider request gate.
+- Unsupported currently: linked accounts, solved status, submissions, ratings,
+  contests, and authenticated task history.
+
+CSES has no documented public developer API in this implementation. A future
+user-controlled local connector or validated import can add account history
+without sending raw credentials to AlgoMemtor.
+
+### Provider source failure policy
+
+| Condition | Result |
+| --- | --- |
+| Timeout/network error | Retry eligible failures with bounded exponential jitter |
+| `429` | Honor `Retry-After`; defer instead of immediate retry |
+| `403`, CAPTCHA, login wall, paywall | Disable affected capability; retain stale data |
+| `404`/unknown handle | Stable not-found response; do not fabricate zeros |
+| Malformed schema | Partial valid records or capability-level circuit breaker |
+| Redirect to unapproved host | Reject response |
+| Oversized response | Reject response |
+
+---
+
+## 10. Profile, solved activity, and tags
+
+### Aggregate profile totals
+
+The combined solved total is the arithmetic sum of the latest totals from active
+linked providers. It intentionally does not deduplicate equivalent problems
+across platforms. A stale or partial total is visibly qualified.
+
+### Concrete observations
+
+Concrete solved observations are keyed by `(providerAccount, externalId)` and
+carry optional provider event IDs, timestamps, tags, normalized topics,
+completeness, and provenance. Repeated syncs update observation timestamps
+idempotently.
+
+### What “all tags” means
+
+- For LeetCode profile analytics, all tags returned by the profile's three skill
+  groups are captured with aggregate solved counts.
+- For a fetched LeetCode recent accepted problem, all `topicTags` returned by
+  its public question record are captured.
+- For a fetched CodeChef accepted problem, both public tag arrays are captured
+  when the problem endpoint returns them.
+- No provider currently exposes a complete public lifetime mapping from every
+  solved question to its tags without an approved authenticated connector or
+  import.
+
+This distinction prevents a profile aggregate such as `Array ×151` from being
+mistaken for a list of 151 individually identified problems.
+
+---
+
+## 11. Synchronization and caching
+
+### Provider sync worker
+
+The dedicated provider worker consumes PostgreSQL-backed jobs using row leases.
+It performs incremental, idempotent profile/activity/statistics upserts and can
+resume after a restart.
+
+Default policy:
+
+- linked-user synchronization every six hours with jitter;
+- manual refresh queued asynchronously with a 15-minute cooldown;
+- global catalogs refreshed every six hours;
+- upcoming contests refreshed every 15 minutes;
+- detailed problem content refreshed lazily with a 30-day TTL;
+- one active request stream per unofficial source;
+- at least one second between CodeChef/LeetCode/CSES requests;
+- Codeforces gate preserved at 2.1 seconds;
+- two retries for eligible network/timeout/`5xx` failures;
+- no immediate retry for `403`, `404`, validation failure, CAPTCHA, or login wall;
+- stale cache retained when a new refresh fails.
+
+### Sync lifecycle
+
+```text
+queued -> leased -> running -> succeeded
+                         \-> retry_wait -> queued
+                         \-> failed / stale
+```
+
+Each job has an idempotency key, attempts, run-after timestamp, optional cursor,
+lease owner, lease expiration, and last error code. Source health is tracked at
+capability level so a CodeChef activity failure does not disable its catalog.
+
+### Manual sync flow
+
+1. Frontend posts a provider sync request.
+2. Express validates that the provider is linkable and the account has consent.
+3. Express returns `202 Accepted` with a job/status reference.
+4. The worker runs the job asynchronously.
+5. The frontend polls sync status and refreshes profile/activity queries after
+   success or visible failure.
+
+---
+
+## 12. HTTP API
+
+All `/api/*` routes below require a valid Supabase bearer token unless noted.
+The browser uses the central authenticated fetch client.
+
+### Identity and learner profile
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/health` | Express health check; not learner-authenticated |
+| `GET` | `/api/me` | Authenticated identity |
+| `GET` | `/api/learner-profile` | Load learner profile |
+| `PUT` | `/api/learner-profile` | Create/update onboarding profile |
+| `GET` | `/api/providers` | Enabled provider capabilities |
+| `GET` | `/api/topics` | Normalized topic vocabulary |
+
+### Provider accounts and sync
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/provider-accounts` | Linked accounts and statistics |
+| `PUT` | `/api/provider-accounts/:provider` | Link/update public handle and consent |
+| `DELETE` | `/api/provider-accounts/:provider` | Disconnect while retaining history policy |
+| `POST` | `/api/provider-accounts/:provider/sync` | Queue asynchronous account sync |
+| `GET` | `/api/provider-accounts/:provider/sync-status` | Read job and capability status |
+| `DELETE` | `/api/provider-accounts/:provider/history` | Permanently remove provider history |
+| `POST` | `/api/provider-accounts/:provider/profile/refresh` | Refresh profile snapshot |
+| `POST` | `/api/provider-accounts/:provider/public-stats/refresh` | Refresh aggregate public totals |
+| `PUT` | `/api/provider-accounts/:provider/activity-consent` | Enable/revoke activity consent |
+| `POST` | `/api/provider-accounts/:provider/activity-sync` | Queue activity synchronization |
+
+CSES is rejected by account routes because it is not a linkable provider.
+
+### Catalog and activity
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/problems` | Unified filtered catalog and pagination |
+| `GET` | `/api/problems/:provider/:externalId` | Validated detail and provenance |
+| `GET` | `/api/problems/:provider/:externalId/progress` | Learner progress |
+| `PUT` | `/api/problems/:provider/:externalId/status` | Set manual learner status |
+| `DELETE` | `/api/problems/:provider/:externalId/progress` | Remove progress |
+| `POST` | `/api/problems/:provider/:externalId/open` | Record outbound-open event |
+| `GET` | `/api/activity` | Merged submissions, solves, ratings, contests |
+| `GET` | `/api/contests` | Upcoming and historical contests |
+| `GET` | `/api/analytics` | Unified or provider-filtered analytics |
+
+### Recommendations and learner actions
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/recommendations` | Current recommendation feed |
+| `POST` | `/api/recommendations/refresh` | Queue/build a refreshed feed |
+| `PATCH` | `/api/recommendation-items/:itemId/feedback` | Save recommendation feedback |
+| `POST` | `/api/recommendation-items/:itemId/dismiss` | Dismiss a recommendation |
+| `GET` | `/api/recommendation-dismissals` | List dismissed items |
+| `DELETE` | `/api/recommendation-dismissals/:provider/:externalId` | Restore dismissed item |
+| `POST` | `/api/recommendation-items/:itemId/impression` | Record impression |
+| `GET` | `/api/bookmarks` | List bookmarks |
+| `POST` | `/api/bookmarks` | Create bookmark |
+| `DELETE` | `/api/bookmarks/:provider/:externalId` | Delete bookmark |
+| `POST` | `/api/problems/:provider/:externalId/reflections` | Save reflection |
+| `POST` | `/api/problems/:provider/:externalId/timer` | Start timer |
+| `POST` | `/api/timers/:sessionId/pause` | Pause timer |
+| `POST` | `/api/timers/:sessionId/resume` | Resume timer |
+| `POST` | `/api/timers/:sessionId/resolve` | Resolve timer |
+
+### Progress, memory, consent, and deletion
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/progress/history` | Manual progress history |
+| `GET` | `/api/progress/analytics` | Progress conversion analytics |
+| `GET` | `/api/learner-memories` | List learner memories |
+| `PATCH` | `/api/learner-memories/:memoryId` | Edit/archive/restore memory |
+| `POST` | `/api/learner-memories/:memoryId/action` | Apply memory action |
+| `GET` | `/api/ai-consent` | Read AI-note consent |
+| `PUT` | `/api/ai-consent` | Update AI-note consent |
+| `GET` | `/api/me/data/status` | Deletion/status information |
+| `DELETE` | `/api/me/data` | Cascade-delete learner data |
+
+Stable API errors include `PROVIDER_TIMEOUT`, `PROVIDER_RATE_LIMITED`,
+`PROVIDER_UNAVAILABLE`, `PROVIDER_INVALID_RESPONSE`, `PROVIDER_BLOCKED`,
+`PROVIDER_ACCOUNT_NOT_FOUND`, and authentication/validation errors.
+
+---
+
+## 13. Database model
+
+Prisma owns the `core` schema. Important tables include:
+
+### Learner and identity
+
+- `core.users` — application user mapped to Supabase subject.
+- `core.learner_profiles` — structured onboarding answers.
+- `core.provider_accounts` — linked public handles, consent, stats, sync state,
+  and disconnect metadata.
+
+### Provider data
+
+- `core.external_problem_cache` — normalized catalog metadata, tags, topics,
+  availability, freshness, and provenance.
+- `core.problem_content_cache` — permitted sanitized content only.
+- `core.external_contests` — contest catalog and provenance.
+- `core.provider_profile_snapshots` — profile totals, languages, aggregate
+  topics, badges, calendar, and fetched timestamps.
+- `core.provider_submissions` — normalized bounded submission rows.
+- `core.provider_solved_observations` — concrete solved problems, including
+  `provider_tags` and `normalized_topics` arrays.
+- `core.provider_rating_changes` — rating progression.
+- `core.contest_participations` — contest evidence.
+- `core.provider_verified_activity` — minimal Codeforces evidence rows where
+  the existing provider flow supports them.
+
+### Sync and product behavior
+
+- `core.provider_sync_states` — capability-level cursor/freshness/error state.
+- `core.provider_sync_jobs` — queued work, leases, retries, and idempotency.
+- `core.normalized_topics` — seeded shared topic vocabulary.
+- `core.bookmarks` — learner-owned saved problems.
+- `core.problem_actions` — impressions, opens, dismissals, feedback, status.
+- recommendation batches/items/history tables.
+- progress reflections and timer sessions.
+
+All provider rows retain provider identity and provenance. Unique constraints
+prevent duplicate provider/account/problem observations. Deletion cascades from
+the learner and explicit provider-history deletion removes snapshots, activity,
+analytics source rows, and provider-generated evidence.
+
+### Migrations
+
+The current working tree includes migrations for:
+
+- solved-observation provider tag/topic arrays; and
+- CSES provider identities and `cses.fi` canonical URLs in relevant tables.
+
+Apply core migrations only through Prisma after PostgreSQL is available.
+
+---
+
+## 14. Authentication and privacy
+
+### Supabase JWT verification
+
+Express and FastAPI verify, rather than merely decode, access tokens. Validation
+includes:
+
+- cryptographic signature through remote JWKS;
+- issuer;
+- audience `authenticated`;
+- expiry;
+- non-empty subject; and
+- role `authenticated`.
+
+Only ES256 and RS256 are accepted. Missing, malformed, expired, wrong-issuer,
+wrong-audience, wrong-role, missing-subject, and invalid-signature tokens return
+`401` with `WWW-Authenticate: Bearer`.
+
+### Provider linking
+
+Linking a provider records a public handle and explicit consent. It does not
+verify account ownership. One active identity per learner/provider is used while
+disconnected identities and history can remain archived.
+
+Disconnecting stops synchronization. History remains until explicit provider
+history deletion or full learner deletion.
+
+### Secret handling
+
+- Supabase publishable key may be exposed to Vite.
+- Supabase secret/service-role keys remain server-side.
+- Gemini keys remain in FastAPI configuration.
+- Internal service tokens are server-to-server only.
+- Provider passwords, cookies, CSRF tokens, CAPTCHA results, private responses,
+  and learner source code are never persisted or logged.
+- Logs contain provider, status, retryability, safe counts, duration, and stable
+  error codes—not handles, raw HTML, raw GraphQL, credentials, or payloads.
+
+### External data safety
+
+- Provider payloads are schema-validated.
+- URLs are reconstructed from trusted provider IDs and allowlisted hosts.
+- Redirect targets cannot be arbitrary browser-supplied URLs.
+- HTML is sanitized before any permitted rendering.
+- AI receives bounded metadata and derived features, not raw provider pages or
+  credentials.
+
+---
+
+## 15. Recommendations, Gemini, and memory
+
+### FastAPI ranking contract
+
+Express sends a bounded candidate set and structured learner context to the
+internal ranking endpoint. FastAPI verifies the internal service token, invokes
+the configured Gemini model through LangChain, and returns structured candidate
+IDs, scores, reasons, fallback state, measured latency, and optional token/cost
+metadata.
+
+Express validates every selected ID against the original candidate set and
+attaches the canonical URL itself. Reasons are bounded and rejected if they
+contain URLs, contact-like data, UUIDs, or copied slices of private notes.
+
+### Fallback behavior
+
+AI failure is non-fatal. Deterministic ranking remains available for:
+
+- missing AI configuration;
+- timeout;
+- unavailable FastAPI;
+- invalid JSON or schema;
+- model errors; and
+- audit persistence failures.
+
+### AI audit and memory
+
+AI audit rows contain model/version, fallback state, latency, optional token and
+cost estimates, and a keyed fingerprint of an eligible note. They do not store
+raw prompts or private note text. Learner memory uses bounded evidence, explicit
+confidence/strength thresholds, retrieval limits, and learner-controlled
+archive/restore/delete actions.
+
+The evaluation harnesses validate ranking scenarios and memory retrieval locally;
+they do not prove production Gemini quality, billing, latency, or browser auth.
+
+---
+
+## 16. Frontend engineering
+
+### Data fetching
+
+- TanStack Query owns server state.
+- Query keys include the authenticated user and normalized filters.
+- Catalog filters are stored in `URLSearchParams`.
+- The frontend calls only normalized `/api/*` endpoints.
+- API responses are runtime-validated with shared Zod schemas.
+- Provider freshness warnings are distinct from TanStack Query cache freshness.
+
+### Navigation and links
+
+- Use real anchors for external navigation and buttons for actions.
+- Open new tabs with `rel="noopener noreferrer"`.
+- Display provider attribution beside every external problem.
+- Record an outbound-open asynchronously without delaying navigation.
+
+### State presentation
+
+Every provider-facing view has intentional states for loading, empty, success,
+partial, stale, rate-limited, blocked, and error. A blocked provider is never
+shown as zero solved problems. Temporary notifications expire after a short
+period and do not accumulate indefinitely.
+
+### Visual system
+
+The application keeps the established dark, compact, responsive visual system.
+New provider filters and pages extend existing patterns rather than replacing
+the navigation or interaction model.
+
+---
+
+## 17. Configuration
+
+Create environment files from the examples and never commit live values.
+
+### Web (`apps/web/.env`)
 
 ```text
 VITE_CORE_API_URL=http://localhost:3001
@@ -424,42 +954,72 @@ VITE_AI_API_URL=http://localhost:8000
 VITE_SITE_URL=http://localhost:5173
 VITE_SUPABASE_URL=
 VITE_SUPABASE_PUBLISHABLE_KEY=
-VITE_USE_MOCKS=true
+VITE_USE_MOCKS=false
 ```
 
-`VITE_AI_API_URL` remains in the frontend example for compatibility but is not
-used by the Week 11 browser flow. The browser calls Express; Express uses the
-server-side `AI_API_URL` and internal token to reach FastAPI.
-
-Core API variables may include:
+### Core API (`apps/core-api/.env`)
 
 ```text
 NODE_ENV=development
 PORT=3001
 WEB_ORIGIN=http://localhost:5173
-DATABASE_URL=
+DATABASE_URL=postgresql://algomemtor:algomemtor_local@localhost:5432/algomemtor
+DATABASE_POOL_MAX=10
+DATABASE_CONNECTION_TIMEOUT_MS=5000
 SUPABASE_URL=
 SUPABASE_JWT_ISSUER=
+CODEFORCES_API_BASE_URL=https://codeforces.com/api
+CODECHEF_API_BASE_URL=https://www.codechef.com
+LEETCODE_GRAPHQL_URL=https://leetcode.com/graphql
+PROVIDER_CACHE_TTL_SECONDS=3600
+PROVIDER_TIMEOUT_MS=8000
+PROVIDER_MAX_ATTEMPTS=2
+PROVIDER_CATALOG_CACHE_TTL_SECONDS=21600
+PROVIDER_CONTEST_CACHE_TTL_SECONDS=900
+PROVIDER_CONTENT_CACHE_TTL_SECONDS=2592000
+CODEFORCES_MIN_REQUEST_INTERVAL_MS=2100
+CODECHEF_MIN_REQUEST_INTERVAL_MS=1000
+LEETCODE_MIN_REQUEST_INTERVAL_MS=1000
+PROVIDER_CODEFORCES_ENABLED=true
+PROVIDER_CODECHEF_ENABLED=true
+PROVIDER_LEETCODE_ENABLED=true
+PROVIDER_CODEFORCES_CATALOG_ENABLED=true
+PROVIDER_CODEFORCES_CONTENT_ENABLED=true
+PROVIDER_CODEFORCES_PROFILE_ENABLED=true
+PROVIDER_CODEFORCES_ACTIVITY_ENABLED=true
+PROVIDER_CODEFORCES_CONTESTS_ENABLED=true
+PROVIDER_CODECHEF_CATALOG_ENABLED=true
+PROVIDER_CODECHEF_CONTENT_ENABLED=true
+PROVIDER_CODECHEF_PROFILE_ENABLED=true
+PROVIDER_CODECHEF_ACTIVITY_ENABLED=true
+PROVIDER_CODECHEF_CONTESTS_ENABLED=true
+PROVIDER_LEETCODE_CATALOG_ENABLED=true
+PROVIDER_LEETCODE_CONTENT_ENABLED=true
+PROVIDER_LEETCODE_PROFILE_ENABLED=true
+PROVIDER_LEETCODE_ACTIVITY_ENABLED=true
+PROVIDER_LEETCODE_CONTESTS_ENABLED=true
+CODECHEF_CATALOG_LIMIT=5000
+LEETCODE_CATALOG_PAGE_SIZE=100
+LEETCODE_CATALOG_MAX_PAGES=10
+PROVIDER_ACTIVITY_MIN_REFRESH_INTERVAL_MS=900000
 AI_API_URL=http://localhost:8000
 AI_RANKING_TIMEOUT_MS=8000
 INTERNAL_SERVICE_TOKEN=
-CODEFORCES_API_BASE_URL=https://codeforces.com/api
-PROVIDER_CACHE_TTL_SECONDS=
-PROVIDER_TIMEOUT_MS=8000
-PROVIDER_MAX_ATTEMPTS=2
-CODEFORCES_MIN_REQUEST_INTERVAL_MS=2100
-PROVIDER_ACTIVITY_MIN_REFRESH_INTERVAL_MS=900000
+PROGRESS_ENABLED=true
+MEMORY_GENERATION_ENABLED=true
+MEMORY_RAG_ENABLED=true
 ```
 
-`PROVIDER_ACTIVITY_MIN_REFRESH_INTERVAL_MS` controls the per-learner cooldown
-for manual Codeforces activity synchronization; the default is 15 minutes.
+CSES uses the fixed allowlisted host and does not require an account credential
+or CSES environment secret.
 
-AI API variables may include:
+### AI API (`apps/ai-api/.env`)
 
 ```text
 APP_ENV=development
 PORT=8000
-DATABASE_URL=
+WEB_ORIGIN=http://localhost:5173
+DATABASE_URL=postgresql+psycopg://algomemtor:algomemtor_local@localhost:5432/algomemtor
 SUPABASE_URL=
 SUPABASE_JWT_ISSUER=
 LLM_API_KEY=
@@ -469,1261 +1029,813 @@ LLM_MAX_OUTPUT_TOKENS=2048
 LLM_INPUT_PRICE_PER_MILLION_USD=1.50
 LLM_OUTPUT_PRICE_PER_MILLION_USD=9.00
 LLM_PRICING_VERSION=gemini-3.5-flash-standard-2026-09
-EMBEDDING_MODEL=
-AI_AUDIT_TIMEOUT_SECONDS=0.5
+AI_RANKING_VERSION=ai-gemini-rag-v1
+INTERNAL_SERVICE_TOKEN=
+EMBEDDING_MODEL=gemini-embedding-001
+EMBEDDING_DIMENSIONS=768
+EMBEDDING_TIMEOUT_SECONDS=4
+MEMORY_GENERATION_VERSION=memory-gemini-v1
+MEMORY_MIN_CONFIDENCE=0.75
+MEMORY_MIN_EVIDENCE_STRENGTH=0.75
+MEMORY_SIMILARITY_THRESHOLD=0.75
+MEMORY_RETRIEVAL_LIMIT=5
+MEMORY_AUDIT_TIMEOUT_SECONDS=0.5
 MEMORY_GENERATION_ENABLED=true
 MEMORY_RAG_ENABLED=true
-INTERNAL_SERVICE_TOKEN=
 ```
 
-The Week 11 core-to-AI variables are `AI_API_URL` (default
-`http://localhost:8000`), `AI_RANKING_TIMEOUT_MS` (default `8000`), and
-`INTERNAL_SERVICE_TOKEN`. Core accepts an HTTPS AI URL or an HTTP loopback URL
-only, rejects credentials/query strings/fragments, and sends the shared token in
-the `X-Internal-Service-Token` header. FastAPI's ranking settings use
-`LLM_API_KEY`, `LLM_MODEL`, `LLM_TIMEOUT_SECONDS` (7 seconds, maximum 30),
-`LLM_MAX_OUTPUT_TOKENS` (2048, maximum 8192), and the two configured
-per-million token prices. `LLM_PRICING_VERSION` labels those price assumptions
-in audit rows and defaults to `gemini-3.5-flash-standard-2026-09`.
-`AI_RANKING_VERSION` is also accepted by FastAPI's settings and defaults to
-`ai-gemini-rag-v1`. `DATABASE_URL` enables the AI audit, memory, and vector
-repositories; without it, persistence uses safe no-op boundaries. The current
-memory path uses `EMBEDDING_MODEL=gemini-embedding-001` with 768 dimensions,
-owner-scoped cosine retrieval, and a SQL fallback when vector retrieval is
-unavailable. `PROGRESS_ENABLED`, `MEMORY_GENERATION_ENABLED`, and
-`MEMORY_RAG_ENABLED` are independent rollout flags.
-
-Remove obsolete Judge0 variables during implementation migration. Never expose
-provider or LLM credentials through `VITE_*` variables.
+`INTERNAL_SERVICE_TOKEN` must match between core and AI when HTTP ranking is
+enabled. Empty AI/LLM configuration intentionally produces a safe fallback.
 
 ---
 
-# 8. Frontend Architecture
+## 18. Local setup and daily operation
 
-## 8.1 Feature organization
+### Prerequisites
 
-Recommended target structure:
+- Node.js 22 or newer;
+- npm 11 or compatible workspace npm;
+- Python 3.14 or compatible Python;
+- `uv`;
+- Docker and Docker Compose; and
+- a Supabase project for live authentication.
 
-```text
-apps/web/src/
-  app/
-  routes/
-  layouts/
-  pages/
-  components/
-  features/
-    auth/
-    onboarding/
-    discovery/
-    recommendations/
-    bookmarks/
-    progress/
-    provider-accounts/
-  lib/
-  mocks/
-```
-
-## 8.2 State ownership
-
-- TanStack Query owns server data.
-- URL search parameters own catalog filters.
-- Component state owns local UI controls.
-- A small store may own cross-route UI state only when necessary.
-- PostgreSQL owns durable learner data.
-
-Do not copy fetched provider results into a global store merely to filter them.
-
-## 8.3 Problem-card contract
-
-```ts
-type ExternalProblemSummary = {
-  provider: 'codeforces'
-  externalId: string
-  title: string
-  canonicalUrl: string
-  providerDifficulty?: number | string
-  normalizedDifficulty?: 'easy' | 'medium' | 'hard'
-  providerTags: string[]
-  topics: string[]
-  solvedCount?: number
-  fetchedAt: string
-  learnerStatus?: 'unsolved' | 'attempted' | 'solved'
-  recommendationReason?: string
-}
-```
-
-This target contract replaces the earlier statement/examples/constraints detail
-contract.
-
-## 8.4 Outbound-link component
-
-The component should:
-
-- display provider name in its label;
-- use only server-supplied canonical URLs;
-- open in a new tab when that best preserves the learning plan;
-- add `rel="noopener noreferrer"` where applicable;
-- remain keyboard accessible; and
-- never change question status because the link was followed.
-
----
-
-# 9. Screens and User Experience
-
-## 9.1 Route map
-
-| Route              | Access        | Purpose                                |
-| ------------------ | ------------- | -------------------------------------- |
-| `/`                | Public        | Landing page                           |
-| `/login`           | Public        | Authentication                         |
-| `/onboarding`      | Authenticated | Learner goals and provider preferences |
-| `/dashboard`       | Authenticated | Next actions and recent evidence       |
-| `/problems`        | Authenticated | External metadata catalog              |
-| `/recommendations` | Authenticated | Ranked personalized feed               |
-| `/bookmarks`       | Authenticated | Saved external problems                |
-| `/progress`        | Authenticated | Manual and verified learning evidence  |
-| `/profile`         | Authenticated | Learner and linked-provider profile    |
-| `/settings`        | Authenticated | Privacy and recommendation settings    |
-| `*`                | Any           | Not found                              |
-
-The previous `/problems/:problemId` coding workspace should be removed or changed
-into a metadata-only preview only if research shows that preview adds real value.
-
-## 9.2 Catalog filters
-
-- search text;
-- provider;
-- normalized topic;
-- provider rating/difficulty range;
-- question status (`unsolved`, `attempted`, or `solved`); and
-- exclude dismissed recommendations or solved problems.
-
-Keep filters in URL query parameters:
-
-```text
-/problems?provider=codeforces&topic=graphs&minRating=1000&maxRating=1300
-```
-
-## 9.3 Recommendation card
-
-The card must show:
-
-- title;
-- provider attribution;
-- rating or difficulty with its meaning;
-- tags/topics;
-- AI reason, labelled as AlgoMemtor-generated;
-- question status; and
-- **Solve on Provider** action.
-
-It must not render copied statement text.
-
-## 9.4 Status language
-
-Use precise copy:
-
-- “Marked complete by you” for manual evidence.
-- “Verified from Codeforces” only after a successful provider check.
-- “Last refreshed 2 hours ago” when cached metadata might be stale.
-
----
-
-# 10. External Provider Gateway
-
-## 10.1 Responsibilities
-
-- call permitted provider APIs;
-- validate provider responses;
-- normalize identifiers, tags, rating, and statistics;
-- construct canonical URLs from trusted identifiers;
-- cache metadata within allowed policy;
-- coordinate rate limits and backoff;
-- expose provider health and freshness; and
-- optionally read consented user activity.
-
-## 10.2 Provider interface
-
-```ts
-interface ProblemProvider {
-  key: ProviderKey
-  search(query: ProviderProblemQuery): Promise<NormalizedProblem[]>
-  getUserActivity?(handle: string): Promise<NormalizedActivity[]>
-}
-```
-
-Keep provider DTOs private to their adapter. Only normalized schemas cross into
-services and shared contracts.
-
-## 10.3 Codeforces reference adapter
-
-The official `problemset.problems` method returns a problem list and problem
-statistics. The documented `Problem` object includes contest ID, index, name,
-rating, and tags. It does not supply the complete statement, which fits
-AlgoMemtor's metadata-and-redirect boundary.
-
-The provider adapter should:
-
-1. fetch through Express;
-2. validate the `status` and `result` envelope;
-3. combine `Problem` with matching `ProblemStatistics`;
-4. normalize tags and difficulty;
-5. construct the canonical Codeforces problem URL;
-6. cache the normalized response; and
-7. respect the documented request limit and failure responses.
-
-The initial implementation uses the anonymous `problemset.problems` method, so
-it does not require or store a Codeforces API key or secret. It validates the
-outer `OK`/`FAILED` envelope first, then validates `Problem` and
-`ProblemStatistics` records individually so malformed records cannot enter the
-normalized catalog.
-
-Current normalization rules are deterministic:
-
-- contest problems use `${contestId}${index}` as the external ID;
-- provider tags are trimmed, lowercased, and deduplicated;
-- normalized topics are safe slugs, with documented aliases such as
-  `dfs and similar`, `shortest paths`, and `graph matchings` to `graphs`;
-- Codeforces rating is preserved as `providerDifficulty`;
-- normalized difficulty is derived deterministically from the provider rating:
-  - an absent rating remains absent (`undefined`);
-  - ratings less than or equal to `1000` are `easy`;
-  - ratings greater than `1000` and less than or equal to `1500` are `medium`;
-  - ratings greater than `1500` are `hard`;
-- statistics join on contest ID and normalized problem index; and
-- only a positive contest ID and alphanumeric problem index can produce
-  `https://codeforces.com/problemset/problem/{contestId}/{index}`.
-
-Valid custom-problemset records without a contest ID are not exposed because the
-current canonical URL policy cannot construct the required contest/index URL
-safely. They are reported as unsupported partial records rather than malformed
-provider data.
-
-## 10.4 Provider approval checklist
-
-Before enabling a new provider or public-data capability:
-
-- Is the API official or explicitly permitted?
-- Does it provide enough metadata for useful cards?
-- May the metadata be displayed and cached?
-- What attribution is required?
-- What are the rate and authentication limits?
-- How is a canonical URL constructed safely?
-- Can learner activity be accessed with consent?
-- What is the deletion/refresh policy?
-- What happens when the integration is unavailable?
-
-If the checklist fails, disable or defer that capability. The bounded public
-HTML/GraphQL strategies explicitly accepted by ADR 0005 are not permission to
-bypass robots, authentication, CAPTCHAs, paywalls, or provider blocks.
-
-## 10.5 Cache strategy
-
-Start with an in-process cache or PostgreSQL cache table. Add Redis only if
-multiple service instances need coordinated refresh and expiry.
-
-Use:
-
-- provider-specific TTL;
-- stale-while-revalidate only when provider policy permits;
-- request deduplication;
-- exponential backoff with jitter; and
-- a circuit breaker only after repeated failures justify it.
-
-The original Codeforces catalog policy used a one-hour in-process TTL. The
-unified release uses the configured six-hour catalog TTL, durable metadata
-cache, one shared in-flight refresh promise, and a 2.1-second minimum interval
-between Codeforces requests. Timeout, network, and `5xx` failures may receive
-bounded retries with backoff.
-HTTP `429` and Codeforces `Call limit exceeded` failures are classified as
-`PROVIDER_RATE_LIMITED` and are not retried immediately. When an expired cache
-exists and refresh fails, the API returns it with degraded/stale freshness and a
-structured warning. A short refresh-failure cooldown prevents every filter
-request from attempting another provider refresh during the outage.
-
----
-
-# 11. Core API
-
-## 11.1 Responsibilities
-
-- users and learner profiles;
-- provider preferences and consent;
-- problem discovery orchestration;
-- bookmarks and dismissals;
-- manual and verified progress;
-- recommendation orchestration;
-- provider gateway; and
-- FastAPI internal authentication.
-
-## 11.2 Endpoints
-
-### Learner profile
-
-```text
-GET /api/learner-profile
-PUT /api/learner-profile
-```
-
-Both endpoints require a verified Supabase bearer token. Express derives profile
-ownership from the verified JWT subject and never accepts a learner ID from the
-request body. `GET` returns `data: null` until a profile exists; `PUT` validates
-the shared learner-profile contract and returns the saved profile.
-
-The production server uses Prisma against the PostgreSQL `core` schema. The
-app factory still defaults to process-local storage for fast API tests; that
-test double does not survive a core API restart. The migration and reconnect
-acceptance test cover the durable path.
-
-### Providers and discovery
-
-```text
-GET /api/providers
-GET /api/problems
-GET /api/problems/:provider/:externalId/resolve
-```
-
-`resolve` returns or redirects to a server-validated canonical URL. It never
-accepts an arbitrary destination URL.
-
-### Recommendations
-
-```text
-GET    /api/recommendations
-POST   /api/recommendations/refresh
-PATCH  /api/recommendation-items/:itemId/feedback
-POST   /api/recommendation-items/:itemId/dismiss
-GET    /api/recommendation-dismissals
-DELETE /api/recommendation-dismissals/:provider/:externalId
-```
-
-### Learner actions
-
-```text
-POST   /api/bookmarks
-DELETE /api/bookmarks/:provider/:externalId
-PUT    /api/progress/:provider/:externalId
-```
-
-### Provider accounts
-
-```text
-GET    /api/provider-accounts
-PUT    /api/provider-accounts/:provider
-POST   /api/provider-accounts/:provider/public-stats/refresh
-DELETE /api/provider-accounts/:provider
-```
-
-## 11.3 Recommendation orchestration pseudocode
-
-```ts
-async function recommend(userId, requestId, forceRefresh = false) {
-  const profile = await learnerRepository.getProfile(userId)
-  const snapshot = await providerGateway.search({})
-  const history = await loadRecommendationHistory(userId, snapshot.problems)
-  const shortlist = deterministicRank({
-    candidates: snapshot.problems,
-    history,
-    profile: deriveRankingProfile(profile),
-    preferNewItems: forceRefresh,
-    limit: 40,
-  })
-
-  let ranking = shortlist.slice(0, 10)
-  try {
-    const aiResponse = await aiClient.rank({
-      requestId,
-      learnerId: userId,
-      expectedCount: Math.min(10, shortlist.length),
-      learner: toBoundedLearnerContext(profile),
-      candidates: toMetadataOnlyCandidates(shortlist),
-    })
-    ranking = validateAllowlistedAiResponse(aiResponse, shortlist) ?? ranking
-  } catch {
-    // Keep the deterministic shortlist when the internal AI call fails.
-  }
-
-  return attachTrustedUrlsAndSaveHistory(ranking, snapshot.problems, userId)
-}
-```
-
-The production implementation keeps the same boundary: the model receives no
-canonical URLs, and Express resolves them from its own validated provider
-snapshot after allowlisting the model's IDs. A non-AI result is saved with the
-deterministic fallback version.
-
----
-
-# 12. AI Recommendation Service
-
-## 12.1 Current Phase 9 responsibilities
-
-- accept a bounded, authenticated internal ranking request;
-- rank supplied Codeforces metadata candidates through the configured Gemini
-  model;
-- interpret the optional profile-scoped recommendation preference;
-- explain selections concisely;
-- return structured, validated output with usage and latency metadata; and
-- process consented learner evidence into inspectable, evidence-linked memories
-  with optional 768-dimensional vector retrieval.
-
-The memory path uses the same bounded Gemini adapter for reflection summaries and
-memory generation, `gemini-embedding-001` for memory text embeddings, and a
-SQL-memory fallback when vector retrieval is unavailable. Progress events enqueue
-durable work without waiting for AI. Live database, Gemini, embedding, worker
-restart, and authenticated-browser checks remain release gates.
-
-## 12.2 Non-responsibilities
-
-FastAPI and the LLM must not:
-
-- browse arbitrary problem sites;
-- invent or transform untrusted outbound URLs;
-- execute learner code;
-- claim an unverified solve; or
-- return a problem outside the supplied candidate IDs;
-- receive canonical URLs, full statements, examples, constraints, editorials,
-  starter code, tests, or learner source code.
-
-## 12.3 Internal ranking endpoint and request
-
-FastAPI exposes the service-only endpoint:
-
-```text
-POST /internal/recommendations/rank
-X-Internal-Service-Token: <shared server-side token>
-```
-
-The route is not a browser-facing `/api/*` route and uses the shared internal
-token rather than a learner Supabase bearer token. A missing FastAPI token
-configuration returns `503`; a missing or incorrect supplied token returns
-`401`.
-
-```json
-{
-  "requestId": "request_123",
-  "learnerId": "00000000-0000-4000-8000-000000000001",
-  "expectedCount": 1,
-  "learner": {
-    "goal": "improve_problem_solving",
-    "experience": "beginner",
-    "focusTopics": ["graphs"],
-    "preferredTopics": ["strings"],
-    "preferredDifficulty": { "min": 1000, "max": 1300 },
-    "learningPreferences": ["solve_problems_directly"],
-    "recommendationPreference": "Prefer a focused graph revision problem."
-  },
-  "candidates": [
-    {
-      "provider": "codeforces",
-      "externalId": "1234A",
-      "title": "Example metadata title",
-      "rating": 1100,
-      "normalizedDifficulty": "medium",
-      "topics": ["graphs"]
-    }
-  ]
-}
-```
-
-The request schema is strict: candidates are unique, Codeforces-only metadata,
-bounded to 40 records; `expectedCount` is 1–10 and equals the candidate count
-when fewer than ten candidates are supplied. Learner topics are normalized
-slugs, and the optional recommendation note is trimmed and capped at 500
-characters. The Gemini payload keeps `expectedCount`, bounded learner context,
-and candidate metadata, but omits `requestId`, `learnerId`, and all canonical
-URLs. The account-level `additionalConsiderations` field is not forwarded.
-
-## 12.4 Ranking response
-
-```json
-{
-  "items": [
-    {
-      "provider": "codeforces",
-      "externalId": "1234A",
-      "score": 0.89,
-      "reason": "Matches your graph goal and current rating range."
-    }
-  ],
-  "model": "gemini-3.5-flash",
-  "fallback": false,
-  "latencyMs": 180,
-  "inputTokens": 900,
-  "outputTokens": 180,
-  "estimatedCostUsd": 0.00297,
-  "auditId": "00000000-0000-4000-8000-000000000099"
-}
-```
-
-`fallbackReason` is required on fallback responses and absent on successful
-responses. Current fallback reasons are `not_configured`, `timeout`,
-`provider_error`, `invalid_output`, and `service_unavailable` (the final value is
-used by the Express client for transport, HTTP, invalid-JSON, or invalid-schema
-failures). The AI service
-measures its request latency and calculates an estimated cost only when token
-usage is returned, using the configured input/output prices; these values are
-instrumentation, not live billing or quality evidence. Express validates the
-response again, rejects unknown or duplicate IDs and unsafe reasons, and attaches
-trusted URLs afterward.
-
-## 12.5 Recommendation safeguards
-
-- cap the candidate count at 40;
-- require Gemini JSON-schema structured output through LangChain;
-- validate requests and responses with Pydantic and the Express Zod contract;
-- require the exact expected count, unique IDs, allowlisted IDs, scores from 0
-  to 1, and reasons of at most 240 characters;
-- reject reasons containing URLs, email addresses, phone-like strings, UUIDs,
-  or handle-like `@names`;
-- reject a reason that repeats any four-word sequence from the optional
-  recommendation note;
-- exclude canonical URLs, account-level considerations, and raw prompts from
-  the Gemini payload and audit record; request and learner IDs are retained only
-  in the internal request/audit for traceability;
-- store model/version, pricing version, IDs, fallback, latency, usage, and
-  estimated cost for audits; and
-- fall back deterministically on any AI failure.
-
-## 12.6 Fallback, privacy, and audit behavior
-
-When `LLM_API_KEY` is empty, FastAPI returns an empty item list with
-`fallbackReason: "not_configured"`. A model timeout returns `"timeout"`; a
-provider exception returns `"provider_error"`; and malformed, incomplete,
-duplicate, unknown-ID, or unsafe-reason output returns `"invalid_output"`.
-The Express client maps an unavailable AI service, non-success response, invalid
-JSON, or invalid response contract to a core fallback and keeps the deterministic
-ranking. The recommendation batch therefore remains usable even when the AI
-service or Gemini is unavailable.
-
-The FastAPI audit repository is enabled only when its `DATABASE_URL` is set. The
-`ai.ranking_audits` row stores the request/learner identifiers for traceability,
-candidate and returned ID arrays, model and ranking version, fallback fields,
-latency, pricing version, optional token counts, optional estimated cost, and a
-keyed HMAC-SHA256 fingerprint of the recommendation note. It does not store the
-raw request, prompt, note, or provider problem content. Audit persistence has a
-bounded timeout; if no database is configured, a no-op repository returns no
-`auditId`. If an insert fails, the ranking response remains non-fatal and the
-service emits only a safe audit-failure event.
-
----
-
-# 13. Authentication and Provider Linking
-
-## 13.1 Application authentication
-
-1. React authenticates with Supabase.
-2. React sends the access token to Express or FastAPI.
-3. Each API verifies signature, issuer, audience, and expiry.
-4. Database records map the auth subject to an internal user ID.
-
-## 13.2 Provider linking
-
-Provider linking is separate from AlgoMemtor login. Depending on the provider, it
-may use:
-
-- a public handle entered by the learner;
-- OAuth or another official authorization flow; or
-- no integration if the provider offers neither safely.
-
-The user must see what will be read and how to disconnect it.
-
-## 13.3 Redirect URLs
-
-Authentication callback redirects and external problem navigation are different
-features. Maintain separate allowlists and tests for each.
-
-The browser constructs confirmation redirects from `VITE_SITE_URL` and uses the
-exact `/dashboard` callback. Supabase Auth URL Configuration must allow
-`http://localhost:5173/dashboard` locally and the corresponding HTTPS URL for
-the deployed frontend. The Site URL should be the production frontend origin
-once deployment exists. Callback configuration is external project state and
-must be verified in the Supabase dashboard for every environment.
-
----
-
-# 14. Database Design
-
-Use one PostgreSQL database with separate ownership:
-
-- Prisma owns `core` tables.
-- Alembic owns `ai` tables.
-- Both tools must never migrate the same table.
-
-## 14.1 Core tables
-
-### `core.users`
-
-| Column         | Purpose                       |
-| -------------- | ----------------------------- |
-| `id`           | Internal UUID                 |
-| `auth_user_id` | Supabase user subject, unique |
-| `created_at`   | Creation time                 |
-
-### `core.learner_profiles`
-
-Stores goal, experience, preferred topics/providers, difficulty range, learning
-preferences, and onboarding completion.
-
-### `core.normalized_topics`
-
-Stores the stable normalized topic vocabulary used by filtering, profiles, and
-later recommendation logic. The seed uses deterministic IDs and upserts by slug,
-so repeating it does not create duplicates.
-
-### `core.provider_accounts`
-
-| Column                    | Purpose                                       |
-| ------------------------- | --------------------------------------------- |
-| `user_id`                 | Owner                                         |
-| `provider`                | Approved provider key                         |
-| `external_handle`         | Public account identifier                     |
-| `consent_scope`           | What AlgoMemtor may retain                    |
-| `activity_access`         | Whether public solved-count access is enabled |
-| `public_stats_consent_at` | Time of explicit public-statistics consent    |
-| `solved_count`            | Last permitted public solved count            |
-| `stats_fetched_at`        | Last successful statistics refresh            |
-| `stats_error_code`        | Stable provider error, when present           |
-
-Never store provider secrets in plaintext columns.
-
-### `core.external_problem_cache`
-
-| Column                  | Purpose                           |
-| ----------------------- | --------------------------------- |
-| `provider`              | Provider key                      |
-| `external_id`           | Provider identifier               |
-| `title`                 | Permitted display title           |
-| `canonical_url`         | Validated provider URL            |
-| `provider_difficulty`   | Provider-native difficulty/rating |
-| `normalized_difficulty` | AlgoMemtor display band           |
-| `provider_tags`         | Provider-native tags              |
-| `normalized_topics`     | AlgoMemtor topics                 |
-| `public_stats`          | Permitted public metadata         |
-| `availability`          | available/degraded/unavailable    |
-| `fetched_at`            | Retrieval time                    |
-| `expires_at`            | Cache expiry                      |
-
-Primary uniqueness is `(provider, external_id)`. There are no statement,
-examples, constraints, starter-code, editorial, or test-case columns.
-
-### `core.bookmarks`
-
-Stores the learner's current saved-problem set. Uniqueness on
-`(user_id, provider, external_id)` makes repeated saves idempotent.
-
-### `core.problem_actions`
-
-Stores append-only recommendation impressions, bookmark/dismiss events,
-outbound opens, and status changes. Question status is always `unsolved`,
-`attempted`, or `solved`; status changes require a separate `manual` or
-`provider_verified` evidence source. An outbound open remains only an `opened`
-event.
-
-### Provider-confirmed activity
-
-`core.provider_verified_activity` stores consented Codeforces accepted-problem
-evidence from the official public `user.status` endpoint. It contains only the
-provider/problem identifiers, provider event ID, occurrence/observation
-timestamps, and linked progress-action ID. A linked public handle is not proof
-of account ownership. Manual status changes remain authoritative for the current
-label, while provider evidence remains visible in history.
-
-CodeChef and LeetCode aggregate solved-count integrations do not provide an
-approved, reliable individual-activity interface for this phase. Their totals
-remain separate from learner status and memory evidence. See ADR 0003 and ADR
-0004; live provider, database, and browser acceptance remains required before
-marking every Week 13 gate complete.
-
-### `core.recommendation_batches`
-
-Stores validated request criteria, ranking mode/version, and creation time.
-`core.recommendation_items` stores the bounded ordered external problem IDs,
-scores, and concise reasons for each batch.
-
-### `core.recommendation_feedback`
-
-Stores useful/not-useful, too-easy/too-hard, and optional learner notes.
-
-Every learner-owned repository resolves the verified Supabase subject to an
-internal `core.users.id` and scopes reads and mutations to that owner. Feedback
-and action references to recommendation records are accepted only when the
-referenced record belongs to the same learner.
-
-## 14.2 AI tables
-
-### `ai.learner_memories`
-
-Stores memory text, category, confidence, status, and timestamps.
-
-### `ai.memory_evidence`
-
-Links each memory to permitted manual progress, reflections, timers, profile
-preferences, or recommendation feedback. Provider-confirmed Codeforces activity
-may be used only when the learner has enabled the explicit public-activity
-consent policy; no raw provider payload or source code is shared with the AI
-service.
-
-### `ai.ranking_audits`
-
-Added by the Week 11 Alembic migration
-`apps/ai-api/alembic/versions/202609120000_ranking_audits.py`. It stores the
-request and learner identifiers, model and ranking version, supplied and
-returned provider-ID arrays, fallback state/reason, measured latency,
-pricing version, optional input/output token counts, optional estimated cost, a
-keyed HMAC-SHA256 fingerprint of the optional recommendation preference, and
-creation time.
-Indexes support learner history and request lookup. It never stores raw prompts
-or the preference text.
-
-The repository is best-effort and is enabled only when the AI service has a
-`DATABASE_URL`; otherwise it uses a no-op repository and the response omits
-`auditId`. An audit insert failure does not fail ranking.
-
-The learner-memory tables are owned by Alembic, while the progress, bookmarks,
-and durable outbox tables are owned by Prisma. Prisma applies `core` migrations
-before Alembic on a fresh database. Their bookkeeping tables are also distinct:
-`public._prisma_migrations` and `public.ai_alembic_version`.
-
-## 14.3 Removed old-model concepts
-
-The target database does not need:
-
-- `core.problems` containing statements;
-- problem-topic join rows for owned problems;
-- attempts tied to an internal coding workspace;
-- submissions, judge tokens, or verdict rows;
-- code drafts; or
-- hidden test bundles.
-
----
-
-# 15. Progress Evidence
-
-## 15.1 State model
-
-```text
-unsolved ----> attempted ----> solved
-    |              |
-    +--------------+----------> solved
-```
-
-Outbound opens, recommendations, and dismissals are separate events and never
-become question statuses. Manual or provider evidence can support a status
-change without adding another status value.
-
-## 15.2 Status meanings
-
-| Status      | Meaning                                             |
-| ----------- | --------------------------------------------------- |
-| `unsolved`  | The learner has not solved the question             |
-| `attempted` | The learner tried the question but has not solved it |
-| `solved`    | The learner completed the question                  |
-
-## 15.3 Metrics
-
-Count only questions with status `solved` as solved. Evidence provenance may
-separately indicate whether the status was manually reported or provider verified.
-
----
-
-# 16. API Standards
-
-## 16.1 Success envelope
-
-```json
-{
-  "data": [],
-  "meta": {
-    "page": 1,
-    "pageSize": 20,
-    "total": 100,
-    "providers": ["codeforces"],
-    "stale": false
-  }
-}
-```
-
-## 16.2 Error envelope
-
-```json
-{
-  "error": {
-    "code": "PROVIDER_UNAVAILABLE",
-    "message": "Codeforces is temporarily unavailable.",
-    "retryable": true
-  }
-}
-```
-
-## 16.3 Provider-aware partial response
-
-If one of several providers fails, return successful results plus structured
-provider warnings instead of failing the whole request when safe:
-
-```json
-{
-  "data": [],
-  "meta": {
-    "partial": true,
-    "warnings": [{ "provider": "example", "code": "RATE_LIMITED" }]
-  }
-}
-```
-
-## 16.4 Validation boundaries
-
-Validate:
-
-- browser input before services;
-- provider responses before normalization;
-- normalized metadata before caching;
-- FastAPI input and output;
-- candidate IDs after AI ranking; and
-- external URLs before returning or redirecting.
-
----
-
-# 17. Mock-First Development
-
-## 17.1 Why mocks come first
-
-Provider APIs introduce rate limits, outages, incomplete fields, and changing
-availability. MSW lets the frontend implement every user-visible state before a
-live provider is required.
-
-## 17.2 Required mock scenarios
-
-- metadata catalog success;
-- combined filters;
-- no matching problems;
-- one provider unavailable;
-- provider rate limited;
-- stale cache result;
-- malformed provider record rejected;
-- AI-ranked recommendations;
-- AI unavailable with deterministic fallback;
-- safe outbound link;
-- manual completion; and
-- provider-verified completion.
-
-Fixtures must use fictional or minimal permitted metadata. Do not add copied
-statements, examples, or test cases.
-
-## 17.3 Contract parity
-
-Mocks, React, Express, and FastAPI must share the same normalized meaning. A mock
-must not expose fields that a live permitted provider cannot supply.
-
----
-
-# 18. Testing
-
-## 18.1 Frontend tests
-
-- filter combinations and URL persistence;
-- provider attribution;
-- recommendation reasons;
-- outbound-link accessibility and safety;
-- separate evidence labels;
-- retry and partial-provider UI; and
-- AI fallback copy.
-
-## 18.2 Express tests
-
-- provider DTO validation;
-- tag and difficulty normalization;
-- cache expiry and request deduplication;
-- timeout, rate-limit, and retry mapping;
-- canonical URL construction;
-- open-redirect prevention;
-- candidate allowlisting after AI output;
-- learner record authorization; and
-- verified activity deduplication.
-
-The Week 6 provider suite uses mocked HTTP responses and covers successful
-normalization, malformed records, safe canonical URLs, combined filters,
-unrated-range behavior, timeout/rate-limit/unavailable classification, retry
-limits, provider request spacing, TTL hits and expiry, concurrent refresh
-deduplication, stale fallback, safe logging, provider health/freshness, and the
-shared catalog/error response contracts. Mocked tests run before live provider
-smoke testing.
-
-Week 11 local Express checks are in
-`apps/core-api/src/config/ai-config.test.ts`,
-`apps/core-api/src/integrations/ai/ai-recommendation-client.test.ts`, and
-`apps/core-api/src/recommendation-api.test.ts`. They cover safe AI service URL
-configuration, the internal token header, strict request/response validation,
-timeout and cancellation, no retry after an unavailable response, bounded
-40-candidate requests, trusted URL attachment, invalid AI output fallback, and
-profile-preference regeneration.
-
-## 18.3 FastAPI tests
-
-- `apps/ai-api/tests/test_internal_ranking.py` covers strict request schemas,
-  allowlisted/unique IDs, bounded reasons, prompt redaction, token/cost
-  extraction, timeout/provider/missing-configuration fallback, token-protected
-  endpoint behavior, and non-fatal audit failures.
-- `apps/ai-api/tests/test_alembic_baseline.py` checks that the AI migration
-  creates and downgrades only the Alembic-owned `ai` schema objects, including
-  pgvector, memory tables, and HNSW retrieval indexes.
-- `apps/ai-api/tests/test_memory.py` covers consent boundaries, privacy
-  filtering, malicious notes, structured summaries, evidence thresholds,
-  memory correction and ownership, embedding fallback, vector/SQL retrieval,
-  cleanup, and worker-safe processing behavior.
-- `apps/ai-api/tests/test_ranking_audit_integration.py` verifies the migration
-  and repository against PostgreSQL when `TEST_DATABASE_URL` is configured; it
-  is skipped when that environment variable is absent.
-
-Run the focused local checks with:
+### Install
 
 ```bash
-uv run --project apps/ai-api pytest apps/ai-api/tests/test_internal_ranking.py
-npm --prefix apps/core-api exec vitest run \
-  src/config/ai-config.test.ts \
-  src/integrations/ai/ai-recommendation-client.test.ts \
-  src/recommendation-api.test.ts
+npm install
+uv sync --project apps/ai-api
+cp apps/web/.env.example apps/web/.env
+cp apps/core-api/.env.example apps/core-api/.env
+cp apps/ai-api/.env.example apps/ai-api/.env
 ```
 
-The 48-scenario evaluation dataset and runner are in
-`apps/core-api/evaluation/dataset.json` and
-`apps/core-api/evaluation/run.ts`. Run
-`npx tsx apps/core-api/evaluation/run.ts --validate-only` for local dataset
-validation. A live AI-vs-baseline comparison is explicitly opt-in and requires a
-configured AI URL and internal token; it gates on allowlist/schema safety, at
-least five percentage points of weighted improvement, p95 latency below eight
-seconds, and average estimated cost at or below $0.02. Local validation and
-tests are not evidence of live Gemini or embedding quality, latency, cost, worker
-restart behavior, or browser acceptance.
+Fill only the required local values. Never overwrite an existing environment
+file without reviewing it first.
 
-Phase 10 also includes an isolated memory-RAG harness at
-`apps/ai-api/app/evaluation/memory_rag_eval.py`. It uses unique temporary
-learner IDs, cleans every run in a `finally` path, repeats each case three times,
-compares vector and SQL recall@5, and applies the ranking improvement, privacy,
-unknown-ID, p95 latency, and cost gates. It remains an adapter-driven live
-evaluation rather than a claim that local unit fixtures prove deployment
-quality. Strict runs require explicit evidence/memory fixtures, at least three
-scenarios for each of the five memory categories, and the conflicting-evidence,
-correction, consent-revocation, deletion, irrelevant-memory,
-embedding-failure, and LLM-failure scenarios.
+### Database
 
-## 18.4 End-to-end tests
+```bash
+npm run db:up
+npm run db:migrate
+npm run db:seed
+```
 
-- onboarding to recommendation;
-- recommendation to external navigation;
-- external navigation without a question-status change;
-- question-status update path;
-- supported provider verification path;
-- provider outage; and
-- AI outage.
+`db:migrate` applies Prisma core migrations and then Alembic AI migrations.
+`db:seed` idempotently seeds normalized topics. Stop PostgreSQL with:
 
-## 18.5 Manual QA
+```bash
+npm run db:down
+```
 
-- Test at mobile and desktop widths.
-- Confirm every source label matches the destination host.
-- Confirm external links are keyboard accessible.
-- Confirm Back navigation returns to preserved catalog filters.
-- Confirm unknown URLs cannot be used for redirection.
-- Confirm a click never appears as a solve.
-- Confirm provider and AI errors are understandable.
+### Run all services
 
----
+```bash
+npm run dev
+```
 
-# 19. Security, Privacy, and Provider Compliance
+The root command starts the web app, Express API, FastAPI, memory worker, and
+provider-sync worker.
 
-## 19.1 URL safety
+### Run services separately
 
-- Allow only HTTPS.
-- Allow only reviewed provider hosts.
-- Construct URLs from provider IDs when possible.
-- Normalize before comparison.
-- Reject credentials, fragments, unexpected ports, and lookalike hosts.
-- Do not build a generic `?next=` redirect endpoint.
+```bash
+npm run dev:web
+npm run dev:core
+npm run dev:ai
+npm run dev:worker
+npm run dev:provider-worker
+```
 
-## 19.2 Provider rules
+| Service | Local address |
+| --- | --- |
+| React/Vite | `http://localhost:5173` |
+| Express | `http://localhost:3001` |
+| FastAPI | `http://localhost:8000` |
+| Memory worker | PostgreSQL outbox consumer; no HTTP endpoint |
+| Provider worker | PostgreSQL provider-job consumer; no HTTP endpoint |
 
-- Review terms before implementation and periodically afterward.
-- Respect attribution, rate, caching, and deletion requirements.
-- Identify AlgoMemtor appropriately when a provider requires it.
-- Disable a provider if continued use becomes non-compliant.
+### Supabase setup
 
-## 19.3 AI safety
-
-- Treat provider metadata and learner text as untrusted.
-- Do not let prompt content alter system/provider policies.
-- Give the model no secret-bearing network tools.
-- Validate candidate IDs and explanations.
-- Keep AI prose separate from provider-owned metadata.
-- Send no canonical URLs, request IDs, learner IDs, account-level
-  `additionalConsiderations`, or copied problem content to Gemini.
-- Treat the optional 500-character recommendation preference as untrusted input;
-  structured profile choices remain authoritative.
-- Reject URL-, email-, phone-, and UUID-like strings in generated reasons before
-  they reach the recommendation batch.
-
-## 19.4 Learner privacy
-
-- Ask before linking a provider account.
-- Explain what data is synchronized.
-- Store minimal evidence.
-- Allow disconnect and deletion.
-- Avoid logging personal prompts or provider tokens.
-- Do not publish manual or verified progress without consent.
-
-## 19.5 Secrets
-
-- Supabase and provider server secrets stay in Express.
-- LLM secrets stay in FastAPI.
-- Internal service tokens stay server-side.
-- No secret uses a `VITE_*` variable.
+Configure email/password authentication, set the site URL to the frontend
+origin, and allow the exact `/dashboard` callback for local and production
+origins. Set `SUPABASE_JWT_ISSUER` to `<SUPABASE_URL>/auth/v1` in both APIs.
 
 ---
 
-# 20. Logging and Observability
+## 19. Testing and verification
 
-Use structured logs with:
+### JavaScript/TypeScript workspace
 
-- request ID;
-- service;
-- route;
-- user ID only when necessary and safely represented;
-- provider;
-- cache hit/miss;
-- provider latency/status;
-- AI latency/fallback;
-- result count; and
-- error code.
+```bash
+npm run typecheck
+npm run test
+npm run lint
+npm run format:check
+npm run build
+```
 
-Never log:
+Focused commands:
 
-- access or provider tokens;
-- authorization headers;
-- LLM keys;
-- unnecessary learner prompts;
-- full provider payloads by default; or
-- private linked-account activity.
+```bash
+npm run typecheck:contracts
+npm run typecheck:web
+npm run typecheck:core
+npm run test:contracts
+npm run test:web
+npm run test:core
+```
 
-Track:
+### Python service
 
-- provider success, rate-limit, and latency;
-- cache freshness and hit rate;
-- broken or rejected URL count;
-- recommendation open rate;
-- manual and verified completion separately;
-- AI latency and fallback rate; and
-- recommendation feedback.
+```bash
+uv run --project apps/ai-api pytest apps/ai-api/tests
+uv run --project apps/ai-api ruff check apps/ai-api
+uv run --project apps/ai-api ruff format --check apps/ai-api
+```
 
-Provider logs use an explicit safe-field allowlist. They record request ID,
-provider, cache state, latency, result/rejection counts, attempt number, and
-stable error code; they do not record provider response bodies, credentials,
-authorization headers, or arbitrary error details.
+### Provider adapter tests
 
-Week 11 core logs use the same allowlist for AI events such as
-`ai_ranking_completed` and `ai_ranking_fallback`: request ID, route, model,
-fallback reason, candidate/returned IDs, counts, latency, token counts, and
-estimated cost. FastAPI audit-failure logs include only the request ID and
-fallback flag. Neither service logs the raw recommendation preference, prompt,
-LLM key, internal token, or full provider payload. Live collection and analysis
-of these metrics remains a pending acceptance task.
+Fixtures cover:
 
----
+- valid, missing, malformed, partial, paginated, blocked, rate-limited, and
+  changed-schema responses;
+- Codeforces normalization and URL safety;
+- CodeChef recent rows and problem tag enrichment;
+- LeetCode profile skill counts and recent question tag hydration; and
+- CSES public catalog parsing and canonical links.
 
-# 21. Deployment
+### Required safety tests
 
-## 21.1 Suggested deployment
+- SSRF and unapproved-host attempts;
+- unsafe redirects and oversized response bodies;
+- HTML/script injection in provider content;
+- accidental cookie, authorization-header, or raw-payload logging;
+- unknown provider/problem IDs from AI output;
+- stale-cache preservation after provider failure;
+- sync job leases, retries, cooldowns, deduplication, and deletion; and
+- exact arithmetic for combined provider totals.
 
-- React on a static/frontend platform;
-- Express on a Node-compatible service;
-- FastAPI on a Python-compatible service;
-- managed PostgreSQL;
-- Supabase Auth; and
-- secrets in deployment secret stores.
+### Live smoke checks
 
-## 21.2 Deployment order
+Live checks are opt-in and must use public handles only. They should verify a
+known public user, missing user, catalog page, contest list, and public problem
+for each provider. Redact payloads and never require credentials. Live smoke
+checks do not replace unit tests or authenticated browser acceptance.
 
-1. Database.
-2. Express health check.
-3. Provider integration with server-side credentials if required.
-4. FastAPI health check and internal authentication.
-5. React with production API URLs.
-6. Supabase callback configuration.
-7. End-to-end outbound-link smoke test.
+### Browser acceptance
 
-## 21.3 Production checks
+Verify manually or with browser tests:
 
-- approved provider hosts only;
-- real provider rate limits configured;
-- cache expiry configured;
-- provider and AI timeouts configured;
-- CORS restricted;
-- auth tokens validated;
-- no obsolete code-execution secrets;
-- privacy and provider-disconnect controls work; and
-- manual versus provider-verified evidence remains distinguishable.
+- signup, login, refresh/session restoration, logout;
+- onboarding and provider linking;
+- queued sync and status polling;
+- provider filters and CSES catalog;
+- profile skill/tag analytics;
+- activity/contest pagination;
+- recommendation fallback;
+- progress, bookmark, dismissal, memory, and deletion flows;
+- mobile layouts and keyboard navigation.
 
 ---
 
-# 22. Git and Coding Conventions
+## 20. Operations and troubleshooting
 
-## 22.1 Git
+### Analytics shows “Unable to load analytics”
 
-- Use focused branches such as `codex/external-problem-contracts` when asked.
-- Keep unrelated uncommitted changes intact.
-- Do not commit generated secrets or local environments.
-- Do not push automatically.
+1. Confirm the core API is running on port 3001.
+2. Inspect the core API log for the stable error code.
+3. Verify the browser has a valid Supabase session.
+4. Verify database migrations have been applied.
+5. Check that the API response satisfies the shared contract, including every
+   provider key (`codeforces`, `codechef`, `leetcode`, and `cses`).
+6. Retry after restarting the core API if source code changed under a watch
+   process.
 
-## 22.2 TypeScript
+### Provider data is empty or stale
 
-- Strict mode.
-- Zod validation at boundaries.
-- Provider-specific DTOs stay inside provider adapters.
-- Use discriminated unions for provider and evidence types where appropriate.
-- Avoid `any` and non-null assertions without proof.
+- Confirm the relevant provider and capability flags are enabled.
+- Check the provider sync-status endpoint.
+- Inspect `lastErrorCode`, `nextRunAt`, completeness, and stale state.
+- Do not interpret a block or login wall as zero solved problems.
+- Wait for the request gate/cooldown before retrying.
 
-## 22.3 Python
+### CodeChef activity has accepted rows but no tags
 
-- Type annotations.
-- Pydantic request/response models.
-- Small ranking and memory services.
-- Ruff formatting and linting.
+The recent row is preserved as partial when the contest problem JSON request is
+unavailable. Check provider availability and schema health. The adapter does
+not invent tags from titles or aggregate counts.
 
-## 22.4 React
+### LeetCode has profile topic counts but few concrete solved problems
 
-- Accessible semantic controls.
-- Real anchors for navigation.
-- Buttons for actions such as bookmark or dismiss.
-- Loading, empty, error, stale, and partial states.
-- Source attribution beside each outbound action.
+This is expected. The profile query exposes aggregate skill counts, while the
+public recent submission query exposes only a bounded recent window. Complete
+question-level history requires an approved connector or import.
 
----
+### CSES has catalog data but no profile
 
-# 23. Definition of Done
+This is expected. CSES is catalog-only in the current implementation. Account
+history is not inferred from public task pages.
 
-A provider/recommendation feature is complete only when:
+### AI recommendations fall back
 
-- behavior matches the metadata-and-redirect boundary;
-- provider terms and fields are documented;
-- types and runtime validation exist;
-- loading, empty, partial, stale, and error states exist;
-- URLs are constructed or validated server-side;
-- no copied problem content enters fixtures or storage;
-- AI output is restricted to supplied candidates;
-- deterministic fallback works;
-- manual and verified evidence are distinct;
-- tests cover important branches;
-- accessibility has been checked;
-- documentation is updated; and
-- formatting, type-check, lint, tests, and build pass.
+Check `AI_API_URL`, matching `INTERNAL_SERVICE_TOKEN`, FastAPI health, Gemini
+configuration, timeout settings, and audit/database availability. Fallback is a
+supported product state, not a data-loss condition.
+
+### Database migration problems
+
+Confirm PostgreSQL is running, `DATABASE_URL` points to the intended database,
+and that Prisma and Alembic are being run in their documented order. Never use a
+destructive reset against a shared database.
 
 ---
 
-# 24. Common Mistakes
+## 21. Known limitations and next work
 
-## Calling provider APIs from React
+### Current limitations
 
-This leaks integration details into the browser and makes rate limits, errors,
-and normalization inconsistent. Call through Express.
+1. CodeChef and LeetCode concrete solved activity is bounded by public recent
+   windows; it is not a complete lifetime history.
+2. LeetCode profile aggregate tags have counts but not a historical
+   question-to-tag mapping.
+3. CodeChef tag enrichment is limited to the accepted rows observed in the
+   recent page and successful detail requests.
+4. CSES supports catalog metadata only.
+5. Provider terms, robots policies, response schemas, and anti-bot behavior can
+   change; capabilities need ongoing review and kill switches.
+6. Public handles are not ownership verification.
+7. Live provider, production Supabase, deployment, and 1,000-identity load
+   evidence are environment-dependent and must not be claimed from local tests.
+8. Full problem content remains capability- and permission-dependent; premium
+   and private material is metadata-and-link only.
 
-## Letting AI browse and choose arbitrary URLs
+### Safe next work
 
-The model may hallucinate or return unsafe destinations. Give it validated
-candidates and attach URLs after validation.
-
-## Copying statements into fixtures
-
-Fixtures should model metadata contracts and states, not reproduce problem
-content.
-
-## Treating a provider-link click as progress
-
-Following a provider link is not progress evidence. Question status remains
-`unsolved`, `attempted`, or `solved` and changes independently.
-
-## Assuming every provider uses the same difficulty scale
-
-Preserve provider-native difficulty and add a documented normalized band.
-
-## Hiding stale data
-
-Display freshness when it affects trust. Do not present an old cache as live.
-
-## Starting with many providers
-
-Complete one reliable adapter and contract before adding more.
+- Add a provider-approved API or user-controlled local connector for complete
+  question-level history.
+- Add a versioned LeetCode skill-level contract if the UI needs to preserve the
+  Advanced/Intermediate/Fundamental grouping separately.
+- Add durable CSES catalog refresh health and optional user-import validation.
+- Add route-level analytics contract tests to prevent provider-enum regressions.
+- Run live browser acceptance and production migration checks.
+- Perform the planned provider load test with at least 1,000 linked identities.
+- Review provider terms, robots, attribution, retention, and applicable law
+  before public deployment.
 
 ---
 
-# 25. Troubleshooting
+## 22. Engineering checklist
 
-## Provider request is rate limited
+Before merging a change:
 
-Check cache behavior, concurrent refresh deduplication, provider request limits,
-and backoff. Do not increase request volume blindly.
+- [ ] `git status --short --branch` was checked first.
+- [ ] Unrelated dirty work was preserved.
+- [ ] Shared contracts changed before producers/consumers.
+- [ ] Provider payloads are validated and provenance is recorded.
+- [ ] Canonical URLs are server-constructed from allowlisted identifiers.
+- [ ] Partial/stale/blocked states are honest.
+- [ ] No provider credentials, cookies, CSRF tokens, CAPTCHA data, or source
+      code entered logs, fixtures, contracts, or storage.
+- [ ] AI output is bounded and candidate IDs are validated.
+- [ ] Relevant tests, type-checks, lint/format checks, and builds pass.
+- [ ] Database migrations are present for schema changes.
+- [ ] Browser/live acceptance gaps are explicitly reported.
+- [ ] No commit, push, reset, clean, or destructive database operation was
+      performed without explicit authorization.
 
-## Provider returns malformed or missing fields
-
-Validate the raw DTO, skip invalid records, log a safe structured error, and keep
-partial valid results when possible.
-
-## External link opens the wrong problem
-
-Check `(provider, externalId)` normalization and canonical URL construction. Do
-not patch the UI with a hard-coded URL.
-
-## AI returns an unknown problem
-
-Reject the response, record an audit error, and use deterministic fallback. Never
-navigate to an AI-only URL or ID.
-
-## Progress says solved after a click
-
-This is a data-model bug. Following a provider link must not update question
-status; verify the status reducer and dashboard aggregation.
-
-## Linked-provider sync is stale
-
-Show the last successful sync and error, preserve earlier evidence, and offer a
-retry or disconnect action.
-
-## React cannot call Express
-
-Check the API base URL, dev proxy, CORS origin, server port, and browser console.
-
-## AI service is unavailable
-
-Confirm Express uses deterministic ranking and returns a clear fallback marker.
+This document should be updated whenever a public contract, provider source,
+environment variable, data boundary, route, persistence model, or user-facing
+feature changes.
 
 ---
 
-# 26. Glossary and References
+## 23. Source-traced implementation map
 
-| Term                   | Meaning                                                       |
-| ---------------------- | ------------------------------------------------------------- |
-| Provider               | External platform that owns the problem and judge             |
-| Adapter                | Code translating a provider API into AlgoMemtor's contract    |
-| External ID            | Provider-owned problem identifier                             |
-| Canonical URL          | Approved source-platform URL for a problem                    |
-| Metadata               | Identification and selection fields, not full solving content |
-| Manual completion      | Learner-reported completion                                   |
-| Verified solve         | Solve confirmed through a supported provider API              |
-| Candidate set          | Backend-validated problems the AI may rank                    |
-| Deterministic fallback | Non-AI ordering used when AI is unavailable                   |
+This section maps user-visible behavior to the files that implement it. Use it
+when planning a change so that contracts, producers, consumers, persistence,
+and tests are updated together.
 
-Official references:
+### 23.1 Shared contract files
 
-- [React](https://react.dev/)
-- [Vite](https://vite.dev/)
-- [React Router](https://reactrouter.com/)
-- [TanStack Query](https://tanstack.com/query/latest)
-- [MSW](https://mswjs.io/)
-- [Express](https://expressjs.com/)
-- [FastAPI](https://fastapi.tiangolo.com/)
-- [PostgreSQL](https://www.postgresql.org/docs/)
-- [Supabase Auth](https://supabase.com/docs/guides/auth)
-- [Codeforces API introduction](https://codeforces.com/apiHelp)
-- [Codeforces API methods](https://codeforces.com/apiHelp/methods)
-- [Codeforces API objects](https://codeforces.com/apiHelp/objects)
+| File | Owns |
+| --- | --- |
+| `packages/shared-contracts/src/problem-catalog.ts` | Provider keys, problem summaries, queries, pagination, freshness, warnings |
+| `packages/shared-contracts/src/platform-data.ts` | Profiles, submissions, solved observations, ratings, contests, analytics |
+| `packages/shared-contracts/src/provider-account.ts` | Linkable providers, account consent, handle/profile URL validation |
+| `packages/shared-contracts/src/learner-profile.ts` | Onboarding answers and structured learner preferences |
+| `packages/shared-contracts/src/recommendations.ts` | Candidate ranking, recommendation batches, feedback, dismissal |
+| `packages/shared-contracts/src/progress.ts` | Manual statuses, actions, reflections, timers, progress analytics |
+| `packages/shared-contracts/src/learner-memory.ts` | Memory records, evidence, lifecycle actions, AI consent |
+| `packages/shared-contracts/src/index.ts` | Public package exports consumed by web and core API |
 
-## Final reminder
+The normal change order is: update the shared schema, update the adapter or API
+producer, update repository serialization, update React consumers and mocks,
+then add contract and behavior tests.
 
-AlgoMemtor's value is choosing and explaining the learner's next challenge. The
-external provider remains the trusted place to read and solve that challenge.
+### 23.2 Core API composition
+
+`apps/core-api/src/app.ts` is the route composition root. It receives dependency
+implementations from `apps/core-api/src/server.ts`, applies authentication and
+validation middleware, calls services, and serializes shared-contract responses.
+It should not contain provider-specific parsing or raw external HTTP calls.
+
+| Module | Responsibility |
+| --- | --- |
+| `src/auth/require-auth.ts` | Express middleware that requires a verified Supabase subject |
+| `src/auth/supabase-jwt.ts` | JWKS-backed JWT verification and claim checks |
+| `src/config/provider-config.ts` | Provider URLs, capability switches, gates, limits, and environment parsing |
+| `src/config/ai-config.ts` | AI URL, timeout, token, model, and feature configuration |
+| `src/integrations/providers/provider-http-client.ts` | HTTPS allowlists, timeout, bounded bodies, retries, safe errors |
+| `src/integrations/providers/provider-adapter.ts` | Capability names/statuses and common adapter shape |
+| `src/integrations/providers/problem-provider.ts` | Catalog/detail/content provider interface |
+| `src/integrations/providers/contest-provider.ts` | Contest provider interface and freshness contract |
+| `src/integrations/providers/cached-catalog-provider.ts` | In-memory/durable catalog refresh, cache, filtering, stale fallback |
+| `src/integrations/providers/cached-contest-provider.ts` | Contest cache, refresh, and stale handling |
+| `src/integrations/providers/problem-filters.ts` | Search, topic, difficulty, rating, and pagination filtering |
+| `src/integrations/providers/provider-html-sanitizer.ts` | Allowed HTML, URL attributes, text, sections, and examples |
+| `src/services/problem-catalog-service.ts` | Selects provider(s), merges catalogs, topics, and detail/content results |
+| `src/services/contest-catalog-service.ts` | Selects providers and merges contest results |
+| `src/services/provider-account-service.ts` | Link/disconnect account validation and serialization |
+| `src/services/provider-account-stats-service.ts` | User-triggered aggregate public-stat refresh and stale preservation |
+| `src/services/provider-profile-service.ts` | Profile snapshot refresh and latest-profile selection |
+| `src/services/provider-activity-service.ts` | Consent-gated Codeforces verified activity |
+| `src/services/provider-sync-service.ts` | Manual sync job creation, cooldown, status, history deletion |
+| `src/services/provider-sync-worker.ts` | Lease-based profile/activity/statistics worker and scheduling |
+| `src/services/recommendation-ranking.ts` | Deterministic candidate scoring, diversity, reasons, and history |
+| `src/services/recommendation-service.ts` | AI request, response validation, persistence, fallback, feedback |
+| `src/services/progress-service.ts` | Manual actions, status reduction, history, analytics, reflections, timers |
+| `src/repositories/provider-data-repository.ts` | Submissions, solved observations, ratings, contest participation |
+| `src/repositories/provider-profile-repository.ts` | Profile snapshot persistence and latest selection |
+| `src/repositories/provider-sync-repository.ts` | Sync states/jobs, leases, retries, cursors, and deletion |
+| `src/repositories/external-problem-cache-repository.ts` | Durable normalized problem catalog |
+| `src/repositories/problem-content-cache-repository.ts` | Durable permitted sanitized content |
+| `src/repositories/external-contest-cache-repository.ts` | Durable contest catalog |
+| `src/database/prisma.ts` | Prisma client construction and database lifecycle |
+
+### 23.3 Provider adapter files
+
+Each provider directory contains the provider class, raw schemas, canonical URL
+builder, and tests. Account adapters are kept separate from global catalogs.
+
+```text
+integrations/codeforces/
+  codeforces-provider.ts             catalog metadata and filtering
+  codeforces-normalizer.ts           IDs, tags, topics, difficulty
+  codeforces-contest-provider.ts     contest list normalization
+  codeforces-schemas.ts              raw response validation
+  codeforces-url.ts                  canonical problem URLs
+
+integrations/codechef/
+  codechef-provider.ts               catalog metadata
+  codechef-contest-provider.ts       contest list normalization
+  codechef-schemas.ts                raw JSON validation
+  codechef-url.ts                    canonical problem URLs
+
+integrations/leetcode/
+  leetcode-provider.ts               GraphQL catalog and permitted content
+  leetcode-contest-provider.ts       contest list normalization
+  leetcode-schemas.ts                question/content validation
+  leetcode-url.ts                    canonical problem URLs
+
+integrations/cses/
+  cses-provider.ts                   public HTML catalog-only adapter
+  cses-provider.test.ts              parser, URL, and partial-result tests
+
+integrations/provider-accounts/
+  *-profile.ts                       public profile snapshots
+  *-public-stats.ts                  aggregate solved totals
+  *-activity.ts                      bounded submissions/accepted observations
+  provider-public-stats.ts           common account adapter interfaces
+```
+
+### 23.4 Frontend implementation map
+
+| Path | Responsibility |
+| --- | --- |
+| `apps/web/src/routes/AppRouter.tsx` | Route table and public/protected screen selection |
+| `apps/web/src/routes/ProtectedRoute.tsx` | Onboarding/auth gate for learner screens |
+| `apps/web/src/features/auth/*` | Supabase session, token refresh, authenticated fetch |
+| `apps/web/src/features/platform/api.ts` | Central platform API calls and response parsing |
+| `apps/web/src/features/platform/hooks.ts` | TanStack Query hooks for catalog/profile/activity/analytics |
+| `apps/web/src/features/platform/components/provider-labels.ts` | Provider labels and linkable-provider options |
+| `apps/web/src/features/profile/*` | Learner profile and provider-account UI |
+| `apps/web/src/pages/ProblemsPage.tsx` | Catalog filters, pagination, and problem cards |
+| `apps/web/src/pages/ProblemDetailPage.tsx` | Detail metadata, status, tags, and outbound link |
+| `apps/web/src/pages/RecommendationsPage.tsx` | Recommendation feed, refresh, feedback, dismissal |
+| `apps/web/src/pages/ActivityPage.tsx` | Merged provider event timeline and tags |
+| `apps/web/src/pages/ContestsPage.tsx` | Contest catalog and participation view |
+| `apps/web/src/pages/AnalyticsPage.tsx` | Provider totals and topic/language/rating distributions |
+| `apps/web/src/pages/ProgressPage.tsx` | Manual status history and progress analytics |
+| `apps/web/src/pages/MemoryPage.tsx` | Learner memory review and lifecycle controls |
+| `apps/web/src/mocks/handlers.ts` | MSW implementation of the same normalized API shape |
+
+---
+
+## 24. End-to-end request lifecycles
+
+### 24.1 Loading the unified catalog
+
+```text
+ProblemsPage
+  -> useProblems(query from URLSearchParams)
+  -> fetchProblemCatalog('/api/problems?...')
+  -> Express validates catalog query
+  -> ProblemCatalogService selects providers
+  -> CachedCatalogProvider returns fresh cache or refreshes
+  -> provider adapter calls allowlisted source
+  -> raw payload is schema-validated
+  -> normalizer creates ExternalProblemSummary records
+  -> metadata cache persists/upserts records
+  -> service filters, sorts, paginates, and adds freshness/warnings
+  -> shared schema validates response
+  -> React renders cards and provider links
+```
+
+Filter state belongs in the URL. A filter change changes the query key and
+resets pagination; it must not copy the catalog into a global store.
+
+### 24.2 Linking a provider account
+
+```text
+ProviderAccountLinks form
+  -> PUT /api/provider-accounts/:provider
+  -> requireAuthenticated obtains Supabase subject
+  -> request schema validates provider, handle, profile URL, consent
+  -> ProviderAccountService constructs canonical profile URL
+  -> repository upserts one active identity for learner/provider
+  -> prior handle remains archived/history-separated if changed
+  -> response returns not_verified account and consent state
+```
+
+The link operation records permission to read the configured public scope; it
+does not claim that the handle belongs to the learner.
+
+### 24.3 Refreshing a public profile
+
+```text
+profile refresh button
+  -> POST /api/provider-accounts/:provider/profile/refresh
+  -> ProviderProfileService checks active linked account
+  -> profile adapter fetches public JSON/GraphQL/HTML
+  -> raw response is bounded and validated
+  -> normalized ProviderProfile is persisted as a snapshot
+  -> provider account's latest statistic/freshness fields update
+  -> UI invalidates profile, analytics, and account queries
+```
+
+LeetCode's profile adapter requests solved totals, languages, badges, calendar,
+contest rating/rank, and all returned `tagProblemCounts` categories. The profile
+snapshot is the source used for aggregate topic analytics.
+
+### 24.4 Queued provider activity sync
+
+```text
+user enables activity consent
+  -> POST /api/provider-accounts/:provider/activity-consent
+  -> consent is persisted
+manual sync or scheduler
+  -> POST /api/provider-accounts/:provider/sync
+  -> ProviderSyncService creates idempotent ProviderSyncJob
+  -> worker leases queued row
+  -> adapter fetches bounded activity
+  -> submissions and solved observations upsert by provider keys
+  -> Codeforces evidence may append provider-verified status action
+  -> sync state and account status update
+  -> worker schedules next six-hour run
+  -> frontend polls sync-status and refreshes activity/analytics
+```
+
+CodeChef and LeetCode activity observations remain partial public observations;
+they do not turn aggregate totals into complete lifetime evidence.
+
+### 24.5 Loading analytics
+
+```text
+AnalyticsPage
+  -> useAnalytics(provider filter)
+  -> GET /api/analytics
+  -> profile snapshots + actions + submissions + solved rows + ratings + contests
+  -> provider solved totals are read from latest profile/account totals
+  -> concrete solved references are deduplicated by provider and external ID
+  -> metadata and solved-observation tags are joined
+  -> providers with aggregate profile topic counts use those counts once
+  -> remaining providers derive topic counts from concrete metadata
+  -> response includes difficulty, languages, ratings, contests, freshness
+  -> UnifiedAnalyticsSchema validates response
+  -> UI renders distributions and partial/stale qualification
+```
+
+### 24.6 Generating recommendations
+
+```text
+RecommendationsPage
+  -> GET /api/recommendations
+  -> RecommendationService loads learner profile, catalog, and actions
+  -> deriveRankingProfile normalizes experience, goals, topics, ranges
+  -> deriveRecommendationHistory removes solved/dismissed identities
+  -> rankRecommendations scores and diversifies candidates
+  -> optional FastAPI request sends bounded metadata only
+  -> validateAiResponse rejects unknown IDs/unsafe reasons
+  -> fallback to deterministic results on any AI failure
+  -> repository persists batch/items and metadata
+  -> UI renders explanations and safe outbound links
+```
+
+---
+
+## 25. Provider transformation details
+
+### 25.1 Codeforces normalization
+
+The raw problemset response contains separate problem and statistics arrays.
+`codeforces-normalizer.ts` joins them using a stable problem identity and emits:
+
+- external ID derived from contest ID and problem index, or a safe problemset
+  identity;
+- title from the provider name;
+- native rating as `providerDifficulty`;
+- normalized `easy`/`medium`/`hard` band from the current rating policy;
+- deduplicated native tags in `providerTags`;
+- lower-case slug topics in `topics`;
+- solved/submission statistics where available; and
+- canonical `codeforces.com/problemset/problem/...` URL.
+
+Invalid contest IDs, indices, hosts, or response records are skipped without
+invalidating otherwise valid catalog records.
+
+### 25.2 CodeChef catalog and activity normalization
+
+The catalog adapter validates the public problem envelope, converts native
+fields to the shared summary, preserves native rating/difficulty, and builds a
+canonical `codechef.com/problems/<code>` URL.
+
+The account activity adapter has two public paths:
+
+1. `/recent/user?page=0&user_handle=<handle>` is read as bounded recent HTML
+   content returned by the public route. Rows are parsed for problem code,
+   contest code, title, result, language, timestamp, and solution ID.
+2. For accepted rows, `/api/contests/<contest>/problems/<code>` is requested.
+   `computed_tags` and `user_tags` are concatenated into `providerTags`; topic
+   slugs are derived without discarding the native values.
+
+The date parser converts the provider's displayed India-time value into UTC.
+Rows without trustworthy time retain `occurredAt: null`. The activity result is
+always `partial` because the public page is a bounded window.
+
+### 25.3 LeetCode profile and activity normalization
+
+The profile adapter sends a public GraphQL `matchedUser` query containing:
+
+- `submitStatsGlobal.acSubmissionNum` and `totalSubmissionNum`;
+- `languageProblemCount`;
+- `tagProblemCounts.advanced`, `.intermediate`, and `.fundamental`;
+- badges and submission calendar; and
+- contest rating/global ranking.
+
+The adapter validates every count, sums duplicate tag names across the three
+categories into `topicCounts`, and preserves provider-native spelling.
+
+The activity adapter sends `recentSubmissionList`, validates each row, converts
+timestamps, and treats `statusDisplay === "Accepted"` as accepted. It then
+batches up to 50 safe title slugs into aliased public `question` fields to
+hydrate all returned `topicTags`. A question-detail failure keeps the activity
+row but leaves tags absent and marks the observation partial.
+
+### 25.4 CSES catalog normalization
+
+The CSES adapter fetches one public HTML page and matches problem sections and
+task links. Each task becomes:
+
+```text
+provider: cses
+externalId: numeric task ID as a string
+canonicalUrl: https://cses.fi/problemset/task/<id>/
+providerTags: ["cses", <section slug>]
+topics: ["cses", <section slug>]
+contentAvailable: false
+```
+
+The task section is useful for filtering, but it is not a user solve signal.
+
+---
+
+## 26. Persistence and deletion flows
+
+### 26.1 Upsert identity rules
+
+Provider records are idempotent under these keys:
+
+| Record | Identity |
+| --- | --- |
+| Catalog problem | `(provider, externalId)` |
+| Contest | `(provider, externalId)` |
+| Profile snapshot | append-only snapshot for account/fetch time |
+| Submission | `(providerAccountId, providerEventId)` |
+| Solved observation | `(providerAccountId, externalId)` |
+| Rating change | `(providerAccountId, eventId)` |
+| Contest participation | `(providerAccountId, contestId)` |
+| Sync job | `idempotencyKey` |
+| Manual problem action | learner/action identity rules in `ProblemAction` |
+
+An update should enrich missing tags/topics and timestamps without replacing a
+newer trustworthy value with an empty or null value.
+
+### 26.2 Handle changes
+
+Changing a handle creates a separate identity boundary. Existing observations
+remain attached to the old provider account and are not merged with the new
+handle. The active account used by profile and sync services points to the new
+identity.
+
+### 26.3 Disconnect
+
+Disconnect disables future synchronization and marks the account disconnected.
+The current product policy retains provider history until explicit deletion so a
+learner can reconnect without silently losing historical analytics.
+
+### 26.4 Provider-history deletion
+
+`DELETE /api/provider-accounts/:provider/history` removes the learner's
+provider-specific profile snapshots, submissions, solved observations, rating
+changes, contest participation, provider-generated actions/evidence, sync jobs,
+and sync state. It does not delete unrelated manual progress for other
+providers.
+
+### 26.5 Full learner deletion
+
+`DELETE /api/me/data` cascades through learner profile, provider accounts,
+provider data, actions, recommendations, bookmarks, progress, memory evidence,
+AI audits permitted by the service, and deletion status records. External
+provider accounts themselves are not deleted; only AlgoMemtor's copies and
+references are removed.
+
+---
+
+## 27. State machines and invariants
+
+### 27.1 Provider capability state
+
+```text
+supported -> refreshing -> fresh
+                      \-> partial
+                      \-> stale
+                      \-> unavailable
+                      \-> disabled
+```
+
+The transition is capability-specific. For example, CodeChef activity can be
+disabled while its catalog remains fresh.
+
+### 27.2 Account activity state
+
+```text
+not_enabled -> consented -> queued -> running -> succeeded
+                                      \-> partial
+                                      \-> retry_wait
+                                      \-> failed/stale
+```
+
+Revoking consent is terminal for the current activity run: a late response must
+not restore the account to enabled or reinsert deleted provider evidence.
+
+### 27.3 Learner status reduction
+
+The current status for a problem is derived from the learner's latest relevant
+manual/status action. Historical actions remain append-only. Provider evidence
+and manual status are stored separately so a learner can correct a label without
+destroying the external observation.
+
+### 27.4 Invariants
+
+- A response with `provider: cses` cannot enter a linkable-account route.
+- A canonical URL must match the provider and validated external identifier.
+- An AI-selected candidate must exist in the candidate set originally sent by
+  Express.
+- A provider aggregate count cannot create a solved observation.
+- An outbound-open event cannot set status to `solved`.
+- A stale refresh cannot erase the last successful record.
+- A missing tag list is different from an empty tag list returned by a provider.
+- Combined solved total is a sum of provider totals, not a sum of incomplete
+  concrete observations.
+- Deletion is owner-scoped and cannot affect another learner's data.
+
+---
+
+## 28. How to extend the project
+
+### 28.1 Add a new catalog provider
+
+1. Add the provider key only if it is a real product requirement.
+2. Decide whether it is linkable or catalog-only.
+3. Add raw DTO schemas inside `apps/core-api/src/integrations/<provider>`.
+4. Implement `ProblemProvider` methods and capability statuses.
+5. Add a canonical URL builder with host and identifier validation.
+6. Register a request gate and provider configuration.
+7. Add the provider to server/app composition.
+8. Update `ProviderKeySchema`, frontend labels, filters, analytics records, and
+   mocks atomically.
+9. Add migrations only for genuinely new persisted fields or constraints.
+10. Add fixtures for valid, partial, blocked, malformed, rate-limited, and
+    changed-schema responses.
+11. Add a redacted live smoke test that is opt-in.
+12. Update this document's capability matrix and limitation section.
+
+### 28.2 Add a provider account activity source
+
+The source must provide a concrete problem identifier and an evidence meaning.
+Implement a `ProviderActivityDataFetcher` that returns normalized submissions,
+solved observations, ratings, and participations. Use a bounded recent window
+if all-time coverage is unavailable and set `complete: false`.
+
+Never infer IDs from solved totals. Preserve null timestamps when the source has
+no trustworthy time. Enrich tags in a separate validated detail request so a
+detail failure does not discard an otherwise valid accepted observation.
+
+### 28.3 Add a shared contract field
+
+1. Add the field and validation to `packages/shared-contracts`.
+2. Update every producer, repository serializer, API response, frontend type
+   consumer, mock, and fixture.
+3. Decide whether the field belongs in raw provider DTOs, normalized contracts,
+   or persistence only.
+4. Add backward-compatible handling for old database rows.
+5. Add a migration if the field is persisted.
+6. Run contract, provider, API, frontend, type-check, and build suites.
+
+### 28.4 Add a frontend page
+
+1. Define its API response contract first.
+2. Add a central API function and TanStack Query hook.
+3. Keep filters in URL parameters where they affect retrieval.
+4. Implement loading, empty, success, partial/stale, and error states.
+5. Reuse existing layout, provider labels, links, and notification patterns.
+6. Add responsive and keyboard-accessible markup.
+7. Add MSW handlers and page/component tests.
+
+### 28.5 Add an AI feature
+
+1. Keep deterministic filtering and fallback independent of the model.
+2. Define a bounded Pydantic request/response contract in FastAPI.
+3. Send derived metadata, not raw credentials, full statements, or arbitrary
+   URLs.
+4. Validate IDs and reasons in both FastAPI and Express.
+5. Add timeout, unavailable, malformed-output, and audit-failure paths.
+6. Make the feature kill-switchable and report fallback state honestly.
+
+---
+
+## 29. Planning framework for future work
+
+Use this sequence for any future feature proposal.
+
+### Step 1 — Define the user outcome
+
+Write what the learner can do after the feature and what evidence the product
+will show. Avoid describing an implementation before defining the outcome.
+
+### Step 2 — Confirm the provider/data boundary
+
+Classify the data as public metadata, public aggregate profile data, concrete
+public activity, authenticated data, premium content, private data, or learner
+data. Only the permitted classes should enter the current architecture.
+
+### Step 3 — Define completeness
+
+State whether the source is complete, bounded, partial, stale, or unknown. Add
+the exact source limit, cursor, pagination rule, and failure behavior.
+
+### Step 4 — Choose ownership and persistence
+
+Decide whether the behavior belongs in React, Express, FastAPI, Prisma core,
+Alembic AI, or an external provider. Do not add a second migration owner for an
+existing table.
+
+### Step 5 — Design the contract first
+
+Define identifiers, canonical URLs, timestamps, tags, native values, normalized
+values, provenance, completeness, and deletion semantics before implementation.
+
+### Step 6 — Define failure and rollback behavior
+
+Document timeout, rate-limit, block, schema-drift, stale-cache, retry, circuit
+breaker, and partial-result behavior. Every external feature needs a kill
+switch or a safe disable path.
+
+### Step 7 — Implement the smallest vertical slice
+
+Prefer one provider/source, one route, one persistence path, one UI state, and
+one acceptance test before broadening coverage.
+
+### Step 8 — Verify in layers
+
+Run contract tests, adapter fixtures, repository tests, API tests, frontend tests,
+type-check/build, and then opt-in live/browser checks. Label which layer each
+piece of evidence proves.
+
+### Step 9 — Update this document
+
+Record the implemented files, API contract, migration, configuration, tests,
+operational limits, and remaining gaps. This document is the planning baseline;
+it should never claim live or production acceptance without corresponding
+evidence.

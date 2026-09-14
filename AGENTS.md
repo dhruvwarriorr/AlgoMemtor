@@ -8,7 +8,7 @@ working tree may have moved since it was last updated.
 ## Start every task here
 
 1. Run `git status --short --branch` before editing.
-2. Read the relevant section of `docs/ROADMAP.md` and the files/tests that own the
+2. Read the relevant section of `docs/PROJECT_DOCUMENTATION.md` and the files/tests that own the
    behavior.
 3. Inspect package scripts, shared contracts, environment examples, and local
    conventions before introducing a new pattern.
@@ -29,12 +29,9 @@ it in proportion to risk.
 Use this order when documents disagree:
 
 1. The user's current task and explicit exclusions.
-2. `docs/ROADMAP.md` for build order, milestone status, and acceptance checks.
-3. `docs/adr/0001-foundational-architecture.md` for accepted architecture.
-4. `docs/PROJECT_DOCUMENTATION.md` for detailed product and engineering rules.
-5. `docs/AlgoMemtor_MVP_Blueprint.md` for the approved MVP boundary.
-6. `README.md` for current setup and operator-facing guidance.
-7. `docs/CP_Mentor_AI_Project_Vision.md` for longer-term direction.
+2. `docs/PROJECT_DOCUMENTATION.md` for product, architecture, build order,
+   milestone status, acceptance checks, and engineering rules.
+3. `README.md` for current setup and operator-facing guidance.
 
 The `.docx` files under `docs/` and `apps/web/README.md` are useful historical
 references, but they can lag the Markdown roadmap, current contracts, and source.
@@ -75,7 +72,7 @@ learner profile
 - Do not add Monaco, an embedded IDE, code execution, Judge0, internal judging,
   learner source-code storage, drafts, submissions, or verdict storage.
 - Use official or explicitly permitted provider APIs or feeds for catalog data.
-  The Week 8 public solved-count exception in ADR 0002 permits the backend to
+  The public solved-count and activity behavior in the project documentation permits the backend to
   read the public CodeChef profile page and LeetCode website GraphQL response
   after explicit learner consent. Never scrape problem content, use browser
   automation, request credentials, or bypass authentication, CAPTCHA, access
@@ -452,7 +449,7 @@ Update documentation when behavior, environment variables, public contracts,
 milestone acceptance, or architecture changes. Do not mark roadmap acceptance
 boxes complete without the evidence they require.
 
-Create or update an ADR when changing:
+Record a decision in `docs/PROJECT_DOCUMENTATION.md` when changing:
 
 - service ownership;
 - provider/content boundaries;

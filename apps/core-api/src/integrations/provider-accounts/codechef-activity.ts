@@ -4,6 +4,7 @@ import {
   ContestParticipationSchema,
   ProviderRatingChangeSchema,
   ProviderSolvedProblemSchema,
+  ProviderSubmissionSchema,
   type ContestParticipation,
   type ProviderRatingChange,
   type ProviderSolvedProblem,
@@ -14,6 +15,7 @@ import {
 import { isCodeChefChallengePage } from './codechef-public-stats.js'
 import { ProviderPublicStatsError } from './provider-public-stats.js'
 import {
+  fetchProviderJson,
   fetchProviderText,
   isProviderHostnameAllowed,
   type ProviderHttpRequest,
@@ -35,6 +37,19 @@ const ratingEntrySchema = z.object({
   getmonth: z.string().trim().max(2).optional(),
   getday: z.string().trim().max(2).optional(),
   rank: z.union([z.number(), z.string()]).optional(),
+})
+
+const recentActivityEnvelopeSchema = z.object({
+  max_page: z.number().int().nonnegative().optional(),
+  content: z.string().max(4_000_000),
+})
+
+const problemDetailSchema = z.object({
+  problem_code: z.string().trim().min(1).max(128),
+  problem_name: z.string().trim().max(512).optional(),
+  contest_code: z.string().trim().max(128).optional(),
+  computed_tags: z.array(z.string().trim().min(1).max(128)).optional(),
+  user_tags: z.array(z.string().trim().min(1).max(128)).optional(),
 })
 
 const numberFrom = (value: unknown) => {
@@ -105,6 +120,80 @@ const problemCodesFromHtml = (html: string) => {
 const problemUrl = (code: string) =>
   `https://www.codechef.com/problems/${encodeURIComponent(code)}`
 
+const parseRecentDate = (value: string | undefined) => {
+  if (value === undefined) return null
+  const match =
+    /^(\d{1,2}):(\d{2})\s*(AM|PM)\s+(\d{1,2})\/(\d{1,2})\/(\d{2})$/i.exec(
+      value.trim(),
+    )
+  if (match === null) return null
+  let hour = Number(match[1])
+  const minute = Number(match[2])
+  const meridiem = match[3]?.toUpperCase()
+  if (meridiem === 'PM' && hour !== 12) hour += 12
+  if (meridiem === 'AM' && hour === 12) hour = 0
+  const date = new Date(
+    Date.UTC(
+      2000 + Number(match[6]),
+      Number(match[5]) - 1,
+      Number(match[4]),
+      hour,
+      minute,
+    ) -
+      5.5 * 60 * 60 * 1000,
+  )
+  return Number.isFinite(date.getTime()) ? date : null
+}
+
+const recentRows = (html: string) => {
+  const rows: Array<{
+    code: string
+    contestCode?: string
+    title?: string
+    occurredAt: Date | null
+    verdict: string
+    language?: string
+    solutionId?: string
+  }> = []
+  for (const rowMatch of html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)) {
+    const row = rowMatch[1] ?? ''
+    const problem = /href=['"]\/([^/'"]+\/)?problems\/([A-Za-z0-9_+-]+)/i.exec(
+      row,
+    )
+    if (problem?.[2] === undefined) continue
+    const code = problem[2].toUpperCase()
+    const contestCode = problem[1]?.replace(/\/$/, '')
+    const problemTitle =
+      /<td[^>]*title=['"]([^'"]+)['"][^>]*>\s*<a[^>]*>\s*([^<]+)/i.exec(row)
+    const timeTitle =
+      /<td[^>]*title=['"](\d{1,2}:\d{2}\s*(?:AM|PM)\s+\d{1,2}\/\d{1,2}\/\d{2})['"]/i.exec(
+        row,
+      )
+    const language =
+      /<td[^>]*title=['"]([^'"]+)['"][^>]*>\s*[^<]*\s*<\/td>\s*<td[^>]*title=['"]View['"]/i.exec(
+        row,
+      )
+    const solution = /href=['"]\/viewsolution\/(\d+)['"]/i.exec(row)
+    const accepted = /title=['"]accepted['"]/i.test(row)
+    const result =
+      /<td[^>]*title=['"]([^'"]*)['"][^>]*>\s*<span[^>]*title=['"]([^'"]+)['"]/i.exec(
+        row,
+      )
+    rows.push({
+      code,
+      ...(contestCode === undefined ? {} : { contestCode }),
+      ...(problemTitle?.[2] === undefined
+        ? {}
+        : { title: problemTitle[2].trim() }),
+      occurredAt: parseRecentDate(timeTitle?.[1]),
+      verdict: accepted ? 'accepted' : (result?.[2] ?? 'unknown').trim(),
+      ...(language?.[1] === undefined ? {} : { language: language[1].trim() }),
+      ...(solution?.[1] === undefined ? {} : { solutionId: solution[1] }),
+    })
+  }
+  return rows
+}
+
 export type CodeChefActivityFetcherOptions = {
   baseUrl?: string
   timeoutMs?: number
@@ -121,6 +210,7 @@ export class CodeChefActivityFetcher implements ProviderActivityDataFetcher {
   private readonly maxAttempts: number
   private readonly requestGate: RequestGate
   private readonly fetchImpl: typeof fetch
+  private readonly recentEndpoint: URL
 
   constructor(options: CodeChefActivityFetcherOptions = {}) {
     this.baseUrl = new URL(options.baseUrl ?? 'https://www.codechef.com/users/')
@@ -129,6 +219,7 @@ export class CodeChefActivityFetcher implements ProviderActivityDataFetcher {
     this.requestGate =
       options.requestGate ?? new RequestGate({ minIntervalMs: 1000 })
     this.fetchImpl = options.fetchImpl ?? fetch
+    this.recentEndpoint = new URL('/recent/user', this.baseUrl)
     const hasCustomFetch = options.fetchImpl !== undefined
     if (
       this.baseUrl.protocol !== 'https:' ||
@@ -178,32 +269,131 @@ export class CodeChefActivityFetcher implements ProviderActivityDataFetcher {
     }
 
     const fetchedAt = new Date()
-    const sourceUrl = profileUrl.toString()
-    const solvedProblems: ProviderSolvedProblem[] = problemCodesFromHtml(
-      html,
-    ).map((externalId) => {
-      const canonicalUrl = problemUrl(externalId)
-      return ProviderSolvedProblemSchema.parse({
+    const recentUrl = new URL(this.recentEndpoint)
+    recentUrl.searchParams.set('page', '0')
+    recentUrl.searchParams.set('user_handle', handle)
+    let recentRowsData: ReturnType<typeof recentRows> = []
+    let recentSourceUrl = recentUrl.toString()
+    try {
+      const recentText = await fetchProviderText({
         provider: this.provider,
-        externalId,
-        canonicalUrl,
-        occurredAt: null,
-        firstObservedAt: fetchedAt.toISOString(),
-        lastObservedAt: fetchedAt.toISOString(),
-        completeness: 'partial',
-        provenance: {
+        url: recentUrl,
+        allowedHostname: 'www.codechef.com',
+        requestGate: this.requestGate,
+        fetchImpl: this.fetchImpl,
+        timeoutMs: this.timeoutMs,
+        maxAttempts: this.maxAttempts,
+        maxResponseBytes: 4_000_000,
+        ...(signal === undefined ? {} : { signal }),
+      } satisfies ProviderHttpRequest)
+      let recentBody: unknown
+      try {
+        recentBody = JSON.parse(recentText) as unknown
+      } catch {
+        recentBody = undefined
+      }
+      const parsedRecent = recentActivityEnvelopeSchema.safeParse(recentBody)
+      if (
+        parsedRecent.success &&
+        !isCodeChefChallengePage(parsedRecent.data.content)
+      ) {
+        recentRowsData = recentRows(parsedRecent.data.content)
+      }
+    } catch {
+      recentRowsData = []
+      recentSourceUrl = profileUrl.toString()
+    }
+
+    const rows: ReturnType<typeof recentRows> =
+      recentRowsData.length > 0
+        ? recentRowsData
+        : problemCodesFromHtml(html).map((code) => ({
+            code,
+            occurredAt: null,
+            verdict: 'accepted',
+          }))
+    const acceptedCodes = [
+      ...new Set(
+        rows
+          .filter((row) => row.verdict.toLowerCase().includes('accept'))
+          .map((row) => row.code),
+      ),
+    ]
+    const details = new Map<string, z.infer<typeof problemDetailSchema>>()
+    for (const code of acceptedCodes.slice(0, 25)) {
+      const row = rows.find((item) => item.code === code)
+      const contest = row?.contestCode ?? 'PRACTICE'
+      const detailUrl = new URL(
+        `/api/contests/${encodeURIComponent(contest)}/problems/${encodeURIComponent(code)}`,
+        this.baseUrl,
+      )
+      try {
+        const detail = problemDetailSchema.safeParse(
+          await fetchProviderJson({
+            provider: this.provider,
+            url: detailUrl,
+            allowedHostname: 'www.codechef.com',
+            requestGate: this.requestGate,
+            fetchImpl: this.fetchImpl,
+            timeoutMs: this.timeoutMs,
+            maxAttempts: this.maxAttempts,
+            maxResponseBytes: 2_000_000,
+            ...(signal === undefined ? {} : { signal }),
+          } satisfies ProviderHttpRequest),
+        )
+        if (detail.success) details.set(code, detail.data)
+      } catch {
+        continue
+      }
+    }
+
+    const solvedProblems: ProviderSolvedProblem[] = rows
+      .filter((row) => row.verdict.toLowerCase().includes('accept'))
+      .map((row) => {
+        const externalId = row.code
+        const canonicalUrl = problemUrl(externalId)
+        const detail = details.get(externalId)
+        const providerTags = [
+          ...(detail?.computed_tags ?? []),
+          ...(detail?.user_tags ?? []),
+        ]
+        const topics = providerTags.map((tag) =>
+          tag
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, ''),
+        )
+        return ProviderSolvedProblemSchema.parse({
           provider: this.provider,
-          providerId: externalId,
+          externalId,
           canonicalUrl,
-          sourceUrl,
-          extractionStrategy: 'sanitized_html',
-          schemaVersion: 'codechef-profile-solved-links-v1',
+          occurredAt: row.occurredAt?.toISOString() ?? null,
+          firstObservedAt: fetchedAt.toISOString(),
+          lastObservedAt: fetchedAt.toISOString(),
+          ...(row.solutionId === undefined
+            ? {}
+            : { sourceSubmissionId: row.solutionId }),
+          ...(providerTags.length === 0 ? {} : { providerTags }),
+          ...(topics.length === 0 ? {} : { topics }),
           completeness: 'partial',
-          fetchedAt: fetchedAt.toISOString(),
-          stale: false,
-        },
+          provenance: {
+            provider: this.provider,
+            providerId: externalId,
+            canonicalUrl,
+            sourceUrl: recentSourceUrl,
+            extractionStrategy:
+              details === undefined ? 'sanitized_html' : 'official_json',
+            schemaVersion:
+              details === undefined
+                ? 'codechef-recent-activity-v1'
+                : 'codechef-recent-activity-tags-v1',
+            completeness: 'partial',
+            fetchedAt: fetchedAt.toISOString(),
+            stale: false,
+          },
+        })
       })
-    })
 
     const ratingEntries = extractRatingEntries(html)
       .map((entry, index) => ({
@@ -246,7 +436,7 @@ export class CodeChefActivityFetcher implements ProviderActivityDataFetcher {
             provider: this.provider,
             providerId: eventId,
             canonicalUrl: `https://www.codechef.com/contests/${encodeURIComponent(contestId)}`,
-            sourceUrl,
+            sourceUrl: profileUrl.toString(),
             extractionStrategy: 'embedded_json',
             schemaVersion: 'codechef-rating-history-v1',
             completeness: 'partial',
@@ -275,7 +465,7 @@ export class CodeChefActivityFetcher implements ProviderActivityDataFetcher {
             provider: this.provider,
             providerId: eventId,
             canonicalUrl: `https://www.codechef.com/contests/${encodeURIComponent(contestId)}`,
-            sourceUrl,
+            sourceUrl: profileUrl.toString(),
             extractionStrategy: 'embedded_json',
             schemaVersion: 'codechef-rating-history-v1',
             completeness: 'partial',
@@ -287,7 +477,37 @@ export class CodeChefActivityFetcher implements ProviderActivityDataFetcher {
       previousRating = rating
     }
 
-    const submissions: ProviderSubmission[] = []
+    const submissions: ProviderSubmission[] = rows.map((row, index) => {
+      const eventId =
+        row.solutionId ??
+        `recent:${row.code}:${row.occurredAt?.toISOString() ?? index}`
+      const canonicalUrl = problemUrl(row.code)
+      return ProviderSubmissionSchema.parse({
+        provider: this.provider,
+        externalId: row.code,
+        eventId,
+        ...(row.title === undefined ? {} : { problemTitle: row.title }),
+        canonicalUrl,
+        verdict: row.verdict,
+        ...(row.language === undefined ? {} : { language: row.language }),
+        ...(row.occurredAt === null
+          ? {}
+          : { occurredAt: row.occurredAt.toISOString() }),
+        isAccepted: row.verdict.toLowerCase().includes('accept'),
+        completeness: 'partial',
+        provenance: {
+          provider: this.provider,
+          providerId: eventId,
+          canonicalUrl,
+          sourceUrl: recentSourceUrl,
+          extractionStrategy: 'official_json',
+          schemaVersion: 'codechef-recent-submissions-v1',
+          completeness: 'partial',
+          fetchedAt: fetchedAt.toISOString(),
+          stale: false,
+        },
+      })
+    })
     return {
       submissions,
       solvedProblems,

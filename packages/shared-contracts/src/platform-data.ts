@@ -105,6 +105,8 @@ export const ProviderSolvedProblemSchema = z
     firstObservedAt: z.iso.datetime(),
     lastObservedAt: z.iso.datetime(),
     sourceSubmissionId: nonEmptyStringSchema.optional(),
+    providerTags: z.array(nonEmptyStringSchema).optional(),
+    topics: z.array(nonEmptyStringSchema).optional(),
     completeness: CompletenessSchema,
     provenance: ProviderProvenanceSchema,
   })
@@ -267,6 +269,8 @@ export const ProviderActivityEventSchema = z
     occurredAt: z.iso.datetime().nullable(),
     verdict: nonEmptyStringSchema.optional(),
     language: nonEmptyStringSchema.optional(),
+    providerTags: z.array(nonEmptyStringSchema).optional(),
+    topics: z.array(nonEmptyStringSchema).optional(),
     ratingDelta: z.number().finite().optional(),
     rank: z.number().int().positive().optional(),
     source: z.enum(['provider', 'manual', 'system']),

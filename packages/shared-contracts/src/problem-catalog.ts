@@ -9,7 +9,12 @@ const httpsUrlSchema = z
     message: 'Only HTTPS URLs are allowed.',
   })
 
-export const ProviderKeySchema = z.enum(['codeforces', 'codechef', 'leetcode'])
+export const ProviderKeySchema = z.enum([
+  'codeforces',
+  'codechef',
+  'leetcode',
+  'cses',
+])
 
 export type ProviderKey = z.infer<typeof ProviderKeySchema>
 

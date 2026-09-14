@@ -40,6 +40,7 @@ const providerLabels: Record<ProviderKey, string> = {
   codeforces: 'Codeforces',
   codechef: 'CodeChef',
   leetcode: 'LeetCode',
+  cses: 'CSES',
 }
 
 export function RecommendationCard({

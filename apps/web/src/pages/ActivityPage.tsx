@@ -82,6 +82,11 @@ function ActivityEvent({ event }: { event: ProviderActivityEvent }) {
               {detail.join(' · ')}
             </p>
           ) : null}
+          {event.providerTags !== undefined && event.providerTags.length > 0 ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Tags: {event.providerTags.join(', ')}
+            </p>
+          ) : null}
         </div>
         <time
           className="shrink-0 text-right text-xs text-muted-foreground"

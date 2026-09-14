@@ -28,9 +28,10 @@ The web application must not:
 
 ## Current implementation stage
 
-The frontend shell and metadata-only mock contracts are in place. The visible
-catalog, filters, safe outbound-link component, and live provider gateway remain
-later roadmap work.
+The frontend shell, normalized provider catalog, filters, safe outbound links,
+profile/activity/contest/analytics pages, recommendations, progress, and live
+provider gateway are implemented. CSES is catalog-only; provider account
+history remains bounded by the public data each platform exposes.
 
 ## Development
 
@@ -56,5 +57,3 @@ fictional or permitted metadata only, never copied statements or test cases.
 ## Related documentation
 
 - [Project documentation](../../docs/PROJECT_DOCUMENTATION.md)
-- [Development roadmap](../../docs/ROADMAP.md)
-- [MVP blueprint](../../docs/AlgoMemtor_MVP_Blueprint.md)

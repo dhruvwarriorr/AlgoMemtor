@@ -1,9 +1,13 @@
-import type { LinkableProvider } from '@algomemtor/shared-contracts'
+import type {
+  LinkableProvider,
+  ProviderKey,
+} from '@algomemtor/shared-contracts'
 
-export const providerLabels: Record<LinkableProvider, string> = {
+export const providerLabels: Record<ProviderKey, string> = {
   codeforces: 'Codeforces',
   codechef: 'CodeChef',
   leetcode: 'LeetCode',
+  cses: 'CSES',
 }
 
 export const providerOptions: readonly LinkableProvider[] = [

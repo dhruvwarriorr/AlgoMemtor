@@ -38,7 +38,8 @@ export class ProblemCatalogService {
   private label(provider: ProviderKey) {
     if (provider === 'codeforces') return 'Codeforces'
     if (provider === 'codechef') return 'CodeChef'
-    return 'LeetCode'
+    if (provider === 'leetcode') return 'LeetCode'
+    return 'CSES'
   }
 
   private async searchAll(

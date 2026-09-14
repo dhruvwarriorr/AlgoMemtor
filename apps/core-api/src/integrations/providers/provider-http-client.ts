@@ -36,7 +36,9 @@ const providerTestHostname = (provider: ProviderKey) =>
     ? 'codeforces.test'
     : provider === 'codechef'
       ? 'codechef.test'
-      : 'leetcode.test'
+      : provider === 'leetcode'
+        ? 'leetcode.test'
+        : 'cses.test'
 
 export const isProviderHostnameAllowed = (
   provider: ProviderKey,

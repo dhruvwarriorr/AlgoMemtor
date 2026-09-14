@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
 import {
+  LinkableProviderSchema,
   ProviderSyncStateSchema,
   type ProviderKey,
 } from '@algomemtor/shared-contracts'
@@ -138,7 +139,7 @@ export class ProviderSyncWorker {
       const account =
         await this.options.providerAccountRepository.findByAuthUserIdAndProvider(
           job.userId,
-          job.provider,
+          LinkableProviderSchema.parse(job.provider),
         )
       await this.options.repository.saveState(
         job.userId,
@@ -264,7 +265,7 @@ export class ProviderSyncWorker {
     const account =
       await this.options.providerAccountRepository.findByAuthUserIdAndProvider(
         job.userId,
-        job.provider,
+        LinkableProviderSchema.parse(job.provider),
       )
     if (account === null || !account.syncEnabled) return undefined
     const nextRunAt = new Date(
@@ -302,7 +303,7 @@ export class ProviderSyncWorker {
     const account =
       await this.options.providerAccountRepository.findByAuthUserIdAndProvider(
         job.userId,
-        job.provider,
+        LinkableProviderSchema.parse(job.provider),
       )
     if (
       account === null ||
@@ -316,7 +317,10 @@ export class ProviderSyncWorker {
     }
     let partial = false
     try {
-      await this.options.statsService.refresh(job.userId, job.provider)
+      await this.options.statsService.refresh(
+        job.userId,
+        LinkableProviderSchema.parse(job.provider),
+      )
     } catch (error) {
       if (
         error instanceof ProviderAccountChangedError ||
@@ -332,7 +336,10 @@ export class ProviderSyncWorker {
     }
     if (this.options.profileService !== undefined) {
       try {
-        await this.options.profileService.refresh(job.userId, job.provider)
+        await this.options.profileService.refresh(
+          job.userId,
+          LinkableProviderSchema.parse(job.provider),
+        )
       } catch (error) {
         partial = true
         this.options.logger?.warn('provider_profile_sync_failed', {

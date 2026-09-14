@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import type {
   ExternalContestsQuery,
   LinkableProvider,
+  ProviderKey,
 } from '@algomemtor/shared-contracts'
 
 import { useAuth } from '@/features/auth/useAuth'
@@ -64,10 +65,7 @@ export function useAnalytics(provider?: LinkableProvider) {
   })
 }
 
-export function useProblemDetail(
-  provider: LinkableProvider,
-  externalId: string,
-) {
+export function useProblemDetail(provider: ProviderKey, externalId: string) {
   const { user } = useAuth()
   return useQuery({
     queryKey: [

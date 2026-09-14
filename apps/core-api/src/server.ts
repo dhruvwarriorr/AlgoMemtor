@@ -25,6 +25,7 @@ import { CodeforcesProfileFetcher } from './integrations/provider-accounts/codef
 import { LeetCodeProfileFetcher } from './integrations/provider-accounts/leetcode-profile.js'
 import { CodeChefProvider } from './integrations/codechef/codechef-provider.js'
 import { LeetCodeProvider } from './integrations/leetcode/leetcode-provider.js'
+import { CsesProvider } from './integrations/cses/cses-provider.js'
 import { CodeforcesContestProvider } from './integrations/codeforces/codeforces-contest-provider.js'
 import { CodeChefContestProvider } from './integrations/codechef/codechef-contest-provider.js'
 import { LeetCodeContestProvider } from './integrations/leetcode/leetcode-contest-provider.js'
@@ -70,6 +71,7 @@ const codechefRequestGate = new RequestGate({
 const leetcodeRequestGate = new RequestGate({
   minIntervalMs: providerConfig.leetcode.minRequestIntervalMs,
 })
+const csesRequestGate = new RequestGate({ minIntervalMs: 1000 })
 const codeforcesProvider = new CodeforcesProvider({
   ...codeforcesConfig,
   cacheTtlMs: providerConfig.catalogCacheTtlMs,
@@ -105,6 +107,10 @@ const problemProviders = [
   ...(providerConfig.enabled.leetcode && providerConfig.leetcode.catalogEnabled
     ? [leetcodeProvider]
     : []),
+  new CsesProvider({
+    cacheTtlMs: providerConfig.catalogCacheTtlMs,
+    requestGate: csesRequestGate,
+  }),
 ]
 
 if (problemProviders.length === 0) {

@@ -290,6 +290,8 @@ model ProviderSolvedObservation {
   externalId         String          @map("external_id") @db.VarChar(128)
   providerEventId    String?         @map("provider_event_id") @db.VarChar(128)
   canonicalUrl       String          @map("canonical_url") @db.VarChar(2048)
+  providerTags       String[]        @default([]) @map("provider_tags")
+  normalizedTopics   String[]        @default([]) @map("normalized_topics")
   occurredAt         DateTime?       @map("occurred_at") @db.Timestamptz(3)
   firstObservedAt    DateTime        @default(now()) @map("first_observed_at") @db.Timestamptz(3)
   lastObservedAt     DateTime        @default(now()) @map("last_observed_at") @db.Timestamptz(3)

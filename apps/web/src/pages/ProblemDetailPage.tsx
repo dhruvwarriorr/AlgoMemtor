@@ -1,5 +1,5 @@
 import { Link, useParams } from 'react-router-dom'
-import { LinkableProviderSchema } from '@algomemtor/shared-contracts'
+import { ProviderKeySchema } from '@algomemtor/shared-contracts'
 
 import PageContainer from '@/components/layout/PageContainer'
 import PageHeader from '@/components/layout/PageHeader'
@@ -21,7 +21,7 @@ function decodeParam(value: string | undefined) {
 
 function ProblemDetailPage() {
   const params = useParams<{ provider: string; externalId: string }>()
-  const providerResult = LinkableProviderSchema.safeParse(params.provider)
+  const providerResult = ProviderKeySchema.safeParse(params.provider)
   const provider = providerResult.success ? providerResult.data : undefined
   const externalId = decodeParam(params.externalId)
   const detailQuery = useProblemDetail(

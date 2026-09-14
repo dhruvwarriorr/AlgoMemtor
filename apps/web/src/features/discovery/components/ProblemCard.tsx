@@ -15,6 +15,7 @@ const providerLabels: Record<ProviderKey, string> = {
   codeforces: 'Codeforces',
   codechef: 'CodeChef',
   leetcode: 'LeetCode',
+  cses: 'CSES',
 }
 
 const difficultyLabels: Record<NormalizedDifficulty, string> = {

@@ -12,13 +12,14 @@ copy or persist external problem statements, examples, constraints, starter code
 editorials, hidden tests, or judge data. It does not embed Monaco, compile learner
 code, or replace the source platform's editor and judge.
 
-The repository now includes the external-metadata catalog and the first live
-Codeforces provider gateway. React consumes the same normalized `/api/*`
-contract in mocked and live modes; Express owns provider validation,
-normalization, safe URLs, filtering, caching, rate handling, and freshness. The
-current implementation also adds bounded Gemini ranking through FastAPI, manual
-progress, bookmarks, analytics, timers, and learner-memory retrieval, with
-deterministic fallbacks when AI or provider services are unavailable.
+The repository includes a unified Codeforces, CodeChef, LeetCode, and CSES
+catalog. React consumes the same normalized `/api/*` contract in mocked and live
+modes; Express owns provider validation, normalization, safe URLs, filtering,
+caching, rate handling, account observations, and freshness. The current
+implementation also adds bounded Gemini ranking through FastAPI, provider
+profiles/activity/contests, manual progress, bookmarks, analytics, timers, and
+learner-memory retrieval, with deterministic fallbacks when AI or provider
+services are unavailable.
 
 ## Product principles
 
@@ -26,7 +27,8 @@ deterministic fallbacks when AI or provider services are unavailable.
 - Respect the source: show attribution and open the canonical external URL.
 - Store metadata, not copied problem content.
 - Prefer official or explicitly permitted APIs for problem metadata. The narrow
-  public solved-count exception is documented in ADR 0002.
+  public solved-count and activity behavior is documented in the complete
+  project documentation.
 - Be honest about evidence: opening a problem is not the same as solving it.
 - Keep AI optional: filtering and outbound links must still work if AI is down.
 - Add providers through adapters so one provider cannot define the whole product.
@@ -43,6 +45,9 @@ The MVP will support:
 - outbound-click history, bookmarks, and manual completion status;
 - optional provider-account linking and explicitly consented public solved-count
   refreshes for Codeforces, CodeChef, and LeetCode;
+- bounded public submission/activity observations and provider tag enrichment
+  for Codeforces, CodeChef, and LeetCode;
+- CSES public problem catalog discovery; and
 - evidence-backed learner preferences and progress; and
 - graceful provider and AI failure states.
 
@@ -52,7 +57,8 @@ The MVP will not include:
 - an embedded code editor or compiler;
 - Judge0 or another code-execution service;
 - code drafts or submission storage;
-- scraping problem content, browser automation, or unofficial private APIs;
+- unpermitted/private content scraping, browser automation, or unofficial private
+  APIs;
 - claims that a redirect proves a problem was solved; or
 - real-time contests, duels, payments, or a marketplace.
 
@@ -64,7 +70,7 @@ Learner profile and goals
           v
 Express provider gateway ----> Supported external provider APIs
           |                         |
-          |                         +-- metadata only
+          |                         +-- validated metadata and permitted public observations
           v
 Normalized candidate problems
           |
@@ -114,17 +120,18 @@ Browser
 | PostgreSQL        | Learner data, normalized metadata cache, bookmarks, recommendation history, and outbound events    |
 | External provider | Canonical statement, examples, editor, submissions, judging, and authoritative solve status        |
 
-The first provider should be one with a documented, permitted metadata API.
 Codeforces is the reference integration because its official
 `problemset.problems` endpoint exposes identifiers, names, ratings, tags, and
-statistics that can be normalized into redirect cards. Additional providers are
-added only after confirming their current API and usage terms.
+statistics that can be normalized into redirect cards. CodeChef and LeetCode
+use validated public JSON/GraphQL/HTML strategies with bounded activity; CSES
+is currently catalog-only. Each provider capability remains subject to current
+terms, attribution, rate limits, and an independent kill switch.
 
 ## AI ranking, progress, and learner memory (current local implementation)
 
 For an authenticated recommendation request, Express obtains the normalized
-Codeforces snapshot, applies the deterministic Week 10 rules, and sends at most
-40 unique metadata candidates to FastAPI. The browser never calls FastAPI. The
+configured provider snapshots, applies deterministic filtering rules, and sends
+at most 40 unique metadata candidates to FastAPI. The browser never calls FastAPI. The
 core service calls `POST /internal/recommendations/rank` with the shared
 `X-Internal-Service-Token` only when its AI client is configured. FastAPI uses
 `langchain-google-genai` and the configured Gemini model with Pydantic structured
@@ -209,11 +216,7 @@ expired according to provider-specific policy.
 ├── packages/
 │   └── shared-contracts/     # Shared TypeScript request/response schemas
 ├── docs/
-│   ├── PROJECT_DOCUMENTATION.md
-│   ├── ROADMAP.md
-│   ├── AlgoMemtor_MVP_Blueprint.md
-│   ├── CP_Mentor_AI_Project_Vision.md
-│   └── adr/
+│   └── PROJECT_DOCUMENTATION.md
 ├── docker-compose.yml
 └── package.json
 ```
@@ -415,21 +418,14 @@ authenticated browser acceptance.
 
 ## Documentation
 
-- [Project documentation](docs/PROJECT_DOCUMENTATION.md)
-- [Beginner roadmap](docs/ROADMAP.md)
-- [MVP blueprint](docs/AlgoMemtor_MVP_Blueprint.md)
-- [Long-term product vision](docs/CP_Mentor_AI_Project_Vision.md)
-- [Foundational architecture ADR](docs/adr/0001-foundational-architecture.md)
-- [Public provider statistics ADR](docs/adr/0002-public-provider-profile-statistics.md)
-- [Provider-verified activity deferral ADR](docs/adr/0003-provider-verified-activity-deferral.md)
-- [Codeforces public activity evidence ADR](docs/adr/0004-codeforces-public-activity-evidence.md)
+- [Complete project documentation](docs/PROJECT_DOCUMENTATION.md)
 
 ## Security and compliance boundaries
 
 - Do not scrape problem content or use undocumented private endpoints. The
   narrow public solved-count and consented Codeforces activity exceptions are
-  documented in ADR 0002 and ADR 0004 and remain user-triggered, size-limited,
-  and subject to provider review.
+  documented in the complete project documentation and remain user-triggered,
+  size-limited, and subject to provider review.
 - Confirm API terms, attribution rules, rate limits, and caching rules per provider.
 - Construct or validate canonical URLs on the server; never trust an arbitrary URL
   supplied by the browser or an LLM.

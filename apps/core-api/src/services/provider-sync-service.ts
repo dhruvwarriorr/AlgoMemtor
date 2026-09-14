@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
 import {
-  ProviderKeySchema,
+  LinkableProviderSchema,
   ProviderSyncJobSchema,
   ProviderSyncRequestResponseSchema,
   ProviderSyncStateSchema,
@@ -24,7 +24,9 @@ const providerLabel = (provider: ProviderKey) =>
     ? 'Codeforces'
     : provider === 'codechef'
       ? 'CodeChef'
-      : 'LeetCode'
+      : provider === 'leetcode'
+        ? 'LeetCode'
+        : 'CSES'
 
 const toJob = (job: ProviderSyncJobRecord) =>
   ProviderSyncJobSchema.parse({
@@ -66,7 +68,7 @@ export class ProviderSyncService {
     authUserId: string,
     provider: ProviderKey,
   ): Promise<ProviderSyncRequestResponse> {
-    const validatedProvider = ProviderKeySchema.parse(provider)
+    const validatedProvider = LinkableProviderSchema.parse(provider)
     const account =
       await this.options.providerAccountRepository.findByAuthUserIdAndProvider(
         authUserId,
@@ -114,7 +116,7 @@ export class ProviderSyncService {
     authUserId: string,
     provider: ProviderKey,
   ): Promise<ProviderSyncStatusResponse> {
-    const validatedProvider = ProviderKeySchema.parse(provider)
+    const validatedProvider = LinkableProviderSchema.parse(provider)
     const account =
       await this.options.providerAccountRepository.findByAuthUserIdAndProvider(
         authUserId,
@@ -142,7 +144,7 @@ export class ProviderSyncService {
   async deleteHistory(authUserId: string, provider: ProviderKey) {
     await this.options.repository.deleteHistory(
       authUserId,
-      ProviderKeySchema.parse(provider),
+      LinkableProviderSchema.parse(provider),
     )
   }
 }

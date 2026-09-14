@@ -9,6 +9,7 @@ import {
   UnifiedProfileResponseSchema,
   type ExternalContestsQuery,
   type LinkableProvider,
+  type ProviderKey,
   type ProviderSyncRequestResponse,
   type ProviderSyncStatusResponse,
 } from '@algomemtor/shared-contracts'
@@ -77,7 +78,7 @@ export function fetchContests(
 }
 
 export function fetchProblemDetail(
-  provider: LinkableProvider,
+  provider: ProviderKey,
   externalId: string,
   { signal }: { signal?: AbortSignal } = {},
 ) {

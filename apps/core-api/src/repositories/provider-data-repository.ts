@@ -121,6 +121,8 @@ const solvedFromRecord = (record: {
   provider: string
   externalId: string
   canonicalUrl: string
+  providerTags: string[]
+  normalizedTopics: string[]
   occurredAt: Date | null
   firstObservedAt: Date
   lastObservedAt: Date
@@ -140,6 +142,12 @@ const solvedFromRecord = (record: {
     ...(record.providerEventId === null
       ? {}
       : { sourceSubmissionId: record.providerEventId }),
+    ...(record.providerTags.length === 0
+      ? {}
+      : { providerTags: record.providerTags }),
+    ...(record.normalizedTopics.length === 0
+      ? {}
+      : { topics: record.normalizedTopics }),
     completeness: record.completeness,
     provenance: provenance(
       {
@@ -470,6 +478,8 @@ export class PrismaProviderDataRepository implements ProviderDataRepository {
             externalId: parsed.externalId,
             providerEventId: parsed.sourceSubmissionId ?? null,
             canonicalUrl: parsed.canonicalUrl,
+            providerTags: parsed.providerTags ?? [],
+            normalizedTopics: parsed.topics ?? [],
             occurredAt,
             firstObservedAt: new Date(parsed.firstObservedAt),
             lastObservedAt: new Date(parsed.lastObservedAt),
@@ -481,6 +491,8 @@ export class PrismaProviderDataRepository implements ProviderDataRepository {
           update: {
             providerEventId: parsed.sourceSubmissionId ?? null,
             occurredAt,
+            providerTags: parsed.providerTags ?? [],
+            normalizedTopics: parsed.topics ?? [],
             lastObservedAt: new Date(parsed.lastObservedAt),
             completeness: parsed.completeness,
             extractionStrategy: parsed.provenance.extractionStrategy,

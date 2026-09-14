@@ -745,6 +745,7 @@ export const handlers: RequestHandler[] = [
       codeforces: provider === undefined || provider === 'codeforces' ? 245 : 0,
       codechef: provider === undefined || provider === 'codechef' ? 118 : 0,
       leetcode: provider === undefined || provider === 'leetcode' ? 176 : 0,
+      cses: 0,
     }
     return HttpResponse.json(
       UnifiedAnalyticsSchema.parse({

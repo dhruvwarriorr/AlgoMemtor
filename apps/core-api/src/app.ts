@@ -17,6 +17,7 @@ import {
   LearnerMemoryActionSchema,
   LearnerMemorySchema,
   LinkableProviderSchema,
+  ProviderKeySchema,
   LinkProviderAccountRequestSchema,
   ProviderAccountResponseSchema,
   ProviderAccountsResponseSchema,
@@ -84,6 +85,7 @@ import { ProviderError } from './errors/provider-error.js'
 import { CodeforcesProvider } from './integrations/codeforces/codeforces-provider.js'
 import { CodeChefProvider } from './integrations/codechef/codechef-provider.js'
 import { LeetCodeProvider } from './integrations/leetcode/leetcode-provider.js'
+import { CsesProvider } from './integrations/cses/cses-provider.js'
 import { CodeforcesContestProvider } from './integrations/codeforces/codeforces-contest-provider.js'
 import { CodeChefContestProvider } from './integrations/codechef/codechef-contest-provider.js'
 import { LeetCodeContestProvider } from './integrations/leetcode/leetcode-contest-provider.js'
@@ -220,7 +222,9 @@ const providerMessage = (error: ProviderError) => {
       ? 'Codeforces'
       : error.provider === 'codechef'
         ? 'CodeChef'
-        : 'LeetCode'
+        : error.provider === 'leetcode'
+          ? 'LeetCode'
+          : 'CSES'
 
   if (error.code === 'PROVIDER_RATE_LIMITED') {
     return `${providerName} is temporarily rate limiting catalog requests.`
@@ -322,6 +326,7 @@ const defaultProviders = (): readonly ProblemProvider[] => {
   const codeforcesRequestGate = new RequestGate({
     minIntervalMs: config.codeforces.minRequestIntervalMs,
   })
+  const csesRequestGate = new RequestGate({ minIntervalMs: 1000 })
   return [
     ...(config.enabled.codeforces && config.codeforces.catalogEnabled
       ? [
@@ -352,6 +357,10 @@ const defaultProviders = (): readonly ProblemProvider[] => {
           }),
         ]
       : []),
+    new CsesProvider({
+      cacheTtlMs: config.catalogCacheTtlMs,
+      requestGate: csesRequestGate,
+    }),
   ]
 }
 
@@ -483,7 +492,9 @@ const publicStatsMessage = (error: ProviderPublicStatsError) => {
       ? 'Codeforces'
       : error.provider === 'codechef'
         ? 'CodeChef'
-        : 'LeetCode'
+        : error.provider === 'leetcode'
+          ? 'LeetCode'
+          : 'CSES'
 
   if (error.code === 'PROVIDER_ACCOUNT_NOT_FOUND') {
     return `No public ${providerName} profile was found for that handle.`
@@ -659,16 +670,23 @@ export const createApp = (options: CreateAppOptions = {}) => {
     provider: z.infer<typeof LinkableProviderSchema>,
   ): Promise<string[]> => {
     if (!memoryManagementEnabled) return []
-    const [submissions, solvedProblems, actions, bookmarks, reflections, timers, batches] =
-      await Promise.all([
-        providerDataRepository.listSubmissions(authUserId, provider),
-        providerDataRepository.listSolvedProblems(authUserId, provider),
-        problemActionRepository.listByAuthUserId(authUserId),
-        bookmarkRepository.listByAuthUserId(authUserId),
-        progressRepository.listReflections(authUserId),
-        progressRepository.listTimerSessions(authUserId),
-        recommendationRepository.listBatchesByAuthUserId(authUserId),
-      ])
+    const [
+      submissions,
+      solvedProblems,
+      actions,
+      bookmarks,
+      reflections,
+      timers,
+      batches,
+    ] = await Promise.all([
+      providerDataRepository.listSubmissions(authUserId, provider),
+      providerDataRepository.listSolvedProblems(authUserId, provider),
+      problemActionRepository.listByAuthUserId(authUserId),
+      bookmarkRepository.listByAuthUserId(authUserId),
+      progressRepository.listReflections(authUserId),
+      progressRepository.listTimerSessions(authUserId),
+      recommendationRepository.listBatchesByAuthUserId(authUserId),
+    ])
 
     const externalIds = new Set<string>()
     const addReference = (candidate: {
@@ -758,9 +776,12 @@ export const createApp = (options: CreateAppOptions = {}) => {
     const activeHandles = new Map(
       accounts.map((account) => [account.provider, account.externalHandle]),
     )
-    const profiles = profileSnapshots.filter(
-      (profile) => activeHandles.get(profile.provider) === profile.handle,
-    )
+    const profiles = profileSnapshots.filter((profile) => {
+      const provider = LinkableProviderSchema.safeParse(profile.provider)
+      return (
+        provider.success && activeHandles.get(provider.data) === profile.handle
+      )
+    })
     const profileByProvider = new Map(
       profiles.map((profile) => [profile.provider, profile]),
     )
@@ -2482,7 +2503,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
     '/api/problems/:provider/:externalId',
     requireAuthenticated,
     async (request, response) => {
-      const providerResult = LinkableProviderSchema.safeParse(
+      const providerResult = ProviderKeySchema.safeParse(
         pathParam(request, 'provider'),
       )
       const externalId = pathParam(request, 'externalId')
@@ -2668,6 +2689,10 @@ export const createApp = (options: CreateAppOptions = {}) => {
         externalId: solved.externalId,
         canonicalUrl: solved.canonicalUrl,
         occurredAt: solved.occurredAt,
+        ...(solved.providerTags === undefined
+          ? {}
+          : { providerTags: solved.providerTags }),
+        ...(solved.topics === undefined ? {} : { topics: solved.topics }),
         source: 'provider' as const,
         completeness: solved.completeness,
       })),
@@ -2800,11 +2825,17 @@ export const createApp = (options: CreateAppOptions = {}) => {
       leetcode:
         profileProviders.find((item) => item.provider === 'leetcode')
           ?.solvedCount ?? 0,
+      cses: 0,
     }
     const solvedByDifficulty = { easy: 0, medium: 0, hard: 0 }
     const solvedOverTime: Record<string, number> = {}
     const topicCounts: Record<string, number> = {}
     const languageCounts: Record<string, number> = {}
+    const profileTopicProviders = new Set(
+      profileSnapshots
+        .filter((snapshot) => Object.keys(snapshot.topicCounts).length > 0)
+        .map((snapshot) => snapshot.provider),
+    )
     const solvedReferences = [
       ...solvedProblems.map((problem) => ({
         provider: problem.provider,
@@ -2859,7 +2890,17 @@ export const createApp = (options: CreateAppOptions = {}) => {
       if (problem?.normalizedDifficulty !== undefined) {
         solvedByDifficulty[problem.normalizedDifficulty] += 1
       }
-      for (const topic of problem?.topics ?? []) {
+      if (profileTopicProviders.has(reference.provider)) continue
+      const observation = solvedProblems.find(
+        (solved) =>
+          solved.provider === reference.provider &&
+          solved.externalId === reference.externalId,
+      )
+      const topics = new Set([
+        ...(problem?.topics ?? []),
+        ...(observation?.topics ?? []),
+      ])
+      for (const topic of topics) {
         topicCounts[topic] = (topicCounts[topic] ?? 0) + 1
       }
     }
@@ -2889,13 +2930,12 @@ export const createApp = (options: CreateAppOptions = {}) => {
     for (const date of solvedDates.values()) {
       solvedOverTime[date] = (solvedOverTime[date] ?? 0) + 1
     }
-    if (uniqueSolvedReferences.length === 0) {
-      for (const providerProfile of profileSnapshots) {
-        for (const [topic, count] of Object.entries(
-          providerProfile.topicCounts,
-        )) {
-          topicCounts[topic] = (topicCounts[topic] ?? 0) + count
-        }
+    for (const providerProfile of profileSnapshots) {
+      if (Object.keys(providerProfile.topicCounts).length === 0) continue
+      for (const [topic, count] of Object.entries(
+        providerProfile.topicCounts,
+      )) {
+        topicCounts[topic] = (topicCounts[topic] ?? 0) + count
       }
     }
     for (const providerProfile of profileSnapshots) {
@@ -3272,6 +3312,8 @@ export const createApp = (options: CreateAppOptions = {}) => {
         requestId: response.locals.requestId as string,
         httpStatus: invalidJson ? 400 : 500,
         errorCode: invalidJson ? 'INVALID_JSON' : 'INTERNAL_SERVER_ERROR',
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
       })
 
       response

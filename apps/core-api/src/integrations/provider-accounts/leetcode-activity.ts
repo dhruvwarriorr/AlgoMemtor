@@ -41,6 +41,23 @@ const RecentSubmissionEnvelopeSchema = z.object({
   errors: z.array(z.object({ message: z.string().max(1000) })).optional(),
 })
 
+const QuestionTagSchema = z.object({
+  name: z.string().trim().min(1).max(128),
+  slug: z.string().trim().min(1).max(128),
+})
+
+const QuestionDetailSchema = z.object({
+  questionId: z.string().trim().min(1).max(128).nullish(),
+  title: z.string().trim().min(1).max(512).nullish(),
+  titleSlug: z.string().trim().min(1).max(256).nullish(),
+  topicTags: z.array(QuestionTagSchema).nullish(),
+})
+
+const QuestionDetailsEnvelopeSchema = z.object({
+  data: z.record(z.string(), z.unknown()).optional(),
+  errors: z.array(z.object({ message: z.string().max(1000) })).optional(),
+})
+
 const ContestHistorySchema = z.object({
   attended: z.boolean().optional(),
   rating: z.number().finite().optional(),
@@ -65,6 +82,14 @@ const ContestHistoryEnvelopeSchema = z.object({
 
 const recentSubmissionsQuery = `query recentSubmissionList($username: String!, $limit: Int!) { recentSubmissionList(username: $username, limit: $limit) { title titleSlug timestamp statusDisplay lang } }`
 const contestHistoryQuery = `query userContestHistory($username: String!) { userContestRankingHistory(username: $username) { attended rating ranking contest { title startTime } } }`
+
+const questionDetailsQuery = (slugs: readonly string[]) =>
+  `query recentQuestionDetails { ${slugs
+    .map(
+      (slug, index) =>
+        `q${index}: question(titleSlug: ${JSON.stringify(slug)}) { questionId title titleSlug topicTags { name slug } }`,
+    )
+    .join(' ')} }`
 
 const timestampToDate = (value: string | number | null | undefined) => {
   if (value === undefined || value === null) return null
@@ -159,6 +184,41 @@ export class LeetCodeActivityFetcher implements ProviderActivityDataFetcher {
     } satisfies ProviderHttpRequest)
   }
 
+  private async questionDetails(
+    slugs: readonly string[],
+    signal?: AbortSignal,
+  ) {
+    const uniqueSlugs = [
+      ...new Set(
+        slugs.filter((slug) => /^[a-z0-9-]+$/i.test(slug)).slice(0, 50),
+      ),
+    ]
+    if (uniqueSlugs.length === 0) {
+      return new Map<string, z.infer<typeof QuestionDetailSchema>>()
+    }
+    try {
+      const body = await this.request(
+        questionDetailsQuery(uniqueSlugs),
+        {},
+        signal,
+      )
+      const envelope = QuestionDetailsEnvelopeSchema.safeParse(body)
+      if (!envelope.success || envelope.data.errors?.length) {
+        return new Map<string, z.infer<typeof QuestionDetailSchema>>()
+      }
+      const details = new Map<string, z.infer<typeof QuestionDetailSchema>>()
+      for (const [index, slug] of uniqueSlugs.entries()) {
+        const parsed = QuestionDetailSchema.safeParse(
+          envelope.data.data?.[`q${index}`],
+        )
+        if (parsed.success) details.set(slug, parsed.data)
+      }
+      return details
+    } catch {
+      return new Map<string, z.infer<typeof QuestionDetailSchema>>()
+    }
+  }
+
   async fetchActivityData(
     handle: PublicProviderHandle,
     signal?: AbortSignal,
@@ -167,7 +227,13 @@ export class LeetCodeActivityFetcher implements ProviderActivityDataFetcher {
     const submissions: ProviderSubmission[] = []
     const solvedByProblem = new Map<
       string,
-      { occurredAt: Date | null; eventId?: string; titleSlug: string }
+      {
+        occurredAt: Date | null
+        eventId?: string
+        titleSlug: string
+        providerTags?: string[]
+        topics?: string[]
+      }
     >()
     let complete = true
     let invalid = 0
@@ -191,7 +257,7 @@ export class LeetCodeActivityFetcher implements ProviderActivityDataFetcher {
     }
     if (recent.length >= this.recentLimit) complete = false
 
-    for (const [index, raw] of recent.entries()) {
+    const parsedRecent = recent.flatMap((raw) => {
       const parsed = RecentSubmissionSchema.safeParse(raw)
       if (
         !parsed.success ||
@@ -199,31 +265,41 @@ export class LeetCodeActivityFetcher implements ProviderActivityDataFetcher {
         parsed.data.titleSlug === null
       ) {
         invalid += 1
-        continue
+        return []
       }
-      const occurredAt = timestampToDate(parsed.data.timestamp)
+      return [parsed.data]
+    })
+    const detailSlugs = parsedRecent.flatMap((item) =>
+      item.titleSlug === undefined || item.titleSlug === null
+        ? []
+        : [item.titleSlug],
+    )
+    const detailsBySlug = await this.questionDetails(detailSlugs, signal)
+
+    for (const [index, parsed] of parsedRecent.entries()) {
+      if (parsed.titleSlug === undefined || parsed.titleSlug === null) continue
+      const occurredAt = timestampToDate(parsed.timestamp)
       if (
-        parsed.data.timestamp !== undefined &&
-        parsed.data.timestamp !== null &&
+        parsed.timestamp !== undefined &&
+        parsed.timestamp !== null &&
         occurredAt === null
       )
         invalid += 1
-      const externalId = parsed.data.titleSlug
-      const eventId = `recent:${externalId}:${parsed.data.timestamp ?? index}`
-      const canonicalUrl = problemUrl(parsed.data.titleSlug)
-      const verdict = parsed.data.statusDisplay?.trim() || 'UNKNOWN'
+      const details = detailsBySlug.get(parsed.titleSlug)
+      const externalId = details?.questionId ?? parsed.titleSlug
+      const eventId = `recent:${parsed.titleSlug}:${parsed.timestamp ?? index}`
+      const canonicalUrl = problemUrl(parsed.titleSlug)
+      const verdict = parsed.statusDisplay?.trim() || 'UNKNOWN'
       const submission = ProviderSubmissionSchema.parse({
         provider: this.provider,
         externalId,
         eventId,
-        ...(parsed.data.title === undefined
+        ...((details?.title ?? parsed.title) === undefined
           ? {}
-          : { problemTitle: parsed.data.title }),
+          : { problemTitle: details?.title ?? parsed.title }),
         canonicalUrl,
         verdict,
-        ...(parsed.data.lang?.trim()
-          ? { language: parsed.data.lang.trim() }
-          : {}),
+        ...(parsed.lang?.trim() ? { language: parsed.lang.trim() } : {}),
         ...(occurredAt === null
           ? {}
           : { occurredAt: occurredAt.toISOString() }),
@@ -253,7 +329,13 @@ export class LeetCodeActivityFetcher implements ProviderActivityDataFetcher {
           solvedByProblem.set(externalId, {
             occurredAt,
             eventId,
-            titleSlug: parsed.data.titleSlug,
+            titleSlug: parsed.titleSlug,
+            ...(details?.topicTags == null
+              ? {}
+              : {
+                  providerTags: details.topicTags.map((tag) => tag.name),
+                  topics: details.topicTags.map((tag) => tag.slug),
+                }),
           })
         }
       }
@@ -272,6 +354,10 @@ export class LeetCodeActivityFetcher implements ProviderActivityDataFetcher {
           ...(value.eventId === undefined
             ? {}
             : { sourceSubmissionId: value.eventId }),
+          ...(value.providerTags === undefined
+            ? {}
+            : { providerTags: value.providerTags }),
+          ...(value.topics === undefined ? {} : { topics: value.topics }),
           completeness: 'partial',
           provenance: {
             provider: this.provider,

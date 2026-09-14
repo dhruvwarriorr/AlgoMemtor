@@ -147,7 +147,9 @@ function AnalyticsPage() {
     )
   }
 
-  const providerSolved = (['codeforces', 'codechef', 'leetcode'] as const).map(
+  const providerSolved = (
+    ['codeforces', 'codechef', 'leetcode', 'cses'] as const
+  ).map(
     (key) =>
       [providerLabels[key], analytics.solvedByProvider[key]] as [
         string,
