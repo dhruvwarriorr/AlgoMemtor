@@ -5,6 +5,18 @@ import type {
   PublicProviderHandle,
 } from '@algomemtor/shared-contracts'
 
+export type ProviderVerifiedActivityEvent = {
+  externalId: string
+  providerEventId: string
+  occurredAt: Date
+}
+
+export type ProviderVerifiedActivityFetchResult = {
+  events: ProviderVerifiedActivityEvent[]
+  complete: boolean
+  fetchedAt: Date
+}
+
 export type ProviderPublicStatsFetchResult = {
   solvedCount: number
   complete: boolean
@@ -18,6 +30,14 @@ export interface ProviderPublicStatsFetcher {
     handle: PublicProviderHandle,
     signal?: AbortSignal,
   ): Promise<ProviderPublicStatsFetchResult>
+}
+
+export interface ProviderVerifiedActivityFetcher {
+  readonly provider: LinkableProvider
+  fetchVerifiedActivity(
+    handle: PublicProviderHandle,
+    signal?: AbortSignal,
+  ): Promise<ProviderVerifiedActivityFetchResult>
 }
 
 export class ProviderPublicStatsError extends Error {

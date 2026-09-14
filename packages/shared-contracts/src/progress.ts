@@ -24,6 +24,18 @@ export type ProblemReference = z.infer<typeof ProblemReferenceSchema>
 export const EvidenceSourceSchema = z.enum(['manual', 'provider_verified'])
 export type EvidenceSource = z.infer<typeof EvidenceSourceSchema>
 
+export const ProgressEvidenceSummarySchema = z
+  .object({
+    provider: z.literal('codeforces'),
+    occurredAt: z.iso.datetime(),
+    observedAt: z.iso.datetime(),
+  })
+  .strict()
+
+export type ProgressEvidenceSummary = z.infer<
+  typeof ProgressEvidenceSummarySchema
+>
+
 export const PerceivedDifficultySchema = NormalizedDifficultySchema
 export type PerceivedDifficulty = z.infer<typeof PerceivedDifficultySchema>
 
@@ -84,6 +96,7 @@ export const LearnerProgressSchema = z
     problem: ProblemReferenceSchema,
     status: LearnerProblemStatusSchema,
     evidenceSource: EvidenceSourceSchema.optional(),
+    evidence: ProgressEvidenceSummarySchema.optional(),
     statusActionId: identifierSchema.optional(),
     bookmarked: z.boolean(),
     latestReflection: ProblemReflectionSchema.optional(),
@@ -165,6 +178,7 @@ export const ProgressHistoryEventSchema = z
     occurredAt: z.iso.datetime(),
     status: LearnerProblemStatusSchema.optional(),
     evidenceSource: EvidenceSourceSchema.optional(),
+    evidence: ProgressEvidenceSummarySchema.optional(),
     durationSeconds: z.number().int().nonnegative().optional(),
     recommendationItemId: identifierSchema.optional(),
     sourceContext: z.string().trim().min(1).max(64).optional(),

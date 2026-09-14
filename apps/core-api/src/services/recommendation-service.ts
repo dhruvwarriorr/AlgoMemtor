@@ -100,7 +100,7 @@ const serializeFeedback = (feedback: RecommendationFeedbackRecord) => ({
 })
 
 const latestStatusByIdentity = (actions: readonly ProblemActionRecord[]) => {
-  const latest = new Map<string, ProblemActionRecord>()
+  const grouped = new Map<string, ProblemActionRecord[]>()
 
   for (const action of actions
     .filter((item) => item.actionType === 'status_changed')
@@ -109,9 +109,18 @@ const latestStatusByIdentity = (actions: readonly ProblemActionRecord[]) => {
         left.occurredAt.getTime() - right.occurredAt.getTime() ||
         left.id.localeCompare(right.id),
     )) {
-    latest.set(identity(action.provider, action.externalId), action)
+    const key = identity(action.provider, action.externalId)
+    const values = grouped.get(key) ?? []
+    values.push(action)
+    grouped.set(key, values)
   }
 
+  const latest = new Map<string, ProblemActionRecord>()
+  for (const [key, values] of grouped) {
+    const manual = values.filter((value) => value.evidenceSource === 'manual')
+    const current = manual.at(-1) ?? values.at(-1)
+    if (current !== undefined) latest.set(key, current)
+  }
   return latest
 }
 

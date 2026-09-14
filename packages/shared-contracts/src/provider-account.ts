@@ -62,6 +62,50 @@ export type ProviderPublicStatsErrorCode = z.infer<
   typeof ProviderPublicStatsErrorCodeSchema
 >
 
+export const ProviderVerifiedActivityStatusSchema = z.enum([
+  'not_enabled',
+  'not_synced',
+  'synced',
+  'partial',
+  'error',
+])
+
+export type ProviderVerifiedActivityStatus = z.infer<
+  typeof ProviderVerifiedActivityStatusSchema
+>
+
+export const ProviderVerifiedActivityErrorCodeSchema = z.enum([
+  'PROVIDER_ACTIVITY_CONSENT_REQUIRED',
+  'PROVIDER_ACTIVITY_COOLDOWN',
+  'PROVIDER_ACCOUNT_NOT_FOUND',
+  'PROVIDER_TIMEOUT',
+  'PROVIDER_RATE_LIMITED',
+  'PROVIDER_UNAVAILABLE',
+  'PROVIDER_INVALID_RESPONSE',
+])
+
+export type ProviderVerifiedActivityErrorCode = z.infer<
+  typeof ProviderVerifiedActivityErrorCodeSchema
+>
+
+export const ProviderVerifiedActivitySchema = z
+  .object({
+    enabled: z.boolean(),
+    status: ProviderVerifiedActivityStatusSchema,
+    consentedAt: z.iso.datetime({ offset: true }).optional(),
+    lastAttemptedAt: z.iso.datetime({ offset: true }).optional(),
+    lastSucceededAt: z.iso.datetime({ offset: true }).optional(),
+    acceptedProblemCount: z.number().int().nonnegative().optional(),
+    complete: z.boolean().optional(),
+    errorCode: ProviderVerifiedActivityErrorCodeSchema.optional(),
+    retryAfter: z.iso.datetime({ offset: true }).optional(),
+  })
+  .strict()
+
+export type ProviderVerifiedActivity = z.infer<
+  typeof ProviderVerifiedActivitySchema
+>
+
 const ProviderPublicStatsAvailableSchema = z
   .object({
     status: z.literal('available'),
@@ -121,6 +165,37 @@ export type RefreshProviderPublicStatsRequest = z.infer<
   typeof RefreshProviderPublicStatsRequestSchema
 >
 
+export const SetProviderActivityConsentRequestSchema = z
+  .object({
+    enabled: z.boolean(),
+    policyVersion: z.literal('codeforces-public-activity-v1'),
+  })
+  .strict()
+
+export type SetProviderActivityConsentRequest = z.infer<
+  typeof SetProviderActivityConsentRequestSchema
+>
+
+export const ProviderActivitySyncResponseSchema = z
+  .object({
+    data: z
+      .object({
+        provider: z.literal('codeforces'),
+        discovered: z.number().int().nonnegative(),
+        added: z.number().int().nonnegative(),
+        confirmedSolved: z.number().int().nonnegative(),
+        complete: z.boolean(),
+        syncedAt: z.iso.datetime({ offset: true }),
+        nextAllowedAt: z.iso.datetime({ offset: true }),
+      })
+      .strict(),
+  })
+  .strict()
+
+export type ProviderActivitySyncResponse = z.infer<
+  typeof ProviderActivitySyncResponseSchema
+>
+
 const canonicalProfileUrl = (
   provider: LinkableProvider,
   handle: PublicProviderHandle,
@@ -146,6 +221,7 @@ export const ProviderAccountSchema = z
     consentScope: ProviderAccountConsentScopeSchema,
     verification: z.literal('not_verified'),
     activityAccess: ProviderAccountActivityAccessSchema,
+    verifiedActivity: ProviderVerifiedActivitySchema,
     publicStatsConsentAt: z.iso.datetime({ offset: true }).optional(),
     publicStats: ProviderPublicStatsSchema,
     linkedAt: z.iso.datetime({ offset: true }),
@@ -156,6 +232,7 @@ export const ProviderAccountSchema = z
     (
       {
         activityAccess,
+        verifiedActivity,
         handle,
         profileUrl,
         provider,
@@ -205,6 +282,43 @@ export const ProviderAccountSchema = z
           message:
             'Public statistics access, consent, and sync state must agree.',
           path: ['activityAccess'],
+        })
+      }
+
+      const activityStatusEnabled = verifiedActivity.enabled
+      const activityStatusNotEnabled = verifiedActivity.status === 'not_enabled'
+      if (activityStatusEnabled === activityStatusNotEnabled) {
+        context.addIssue({
+          code: 'custom',
+          message:
+            'Verified activity consent and status must agree.',
+          path: ['verifiedActivity', 'status'],
+        })
+      }
+
+      if (
+        verifiedActivity.status === 'synced' ||
+        verifiedActivity.status === 'partial'
+      ) {
+        if (
+          verifiedActivity.lastSucceededAt === undefined ||
+          verifiedActivity.acceptedProblemCount === undefined ||
+          verifiedActivity.complete === undefined
+        ) {
+          context.addIssue({
+            code: 'custom',
+            message:
+              'Successful verified activity requires a sync timestamp, count, and completeness flag.',
+            path: ['verifiedActivity'],
+          })
+        }
+      }
+
+      if (verifiedActivity.status === 'error' && verifiedActivity.errorCode === undefined) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Verified activity errors require a stable error code.',
+          path: ['verifiedActivity', 'errorCode'],
         })
       }
     },

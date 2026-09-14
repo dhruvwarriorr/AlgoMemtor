@@ -117,6 +117,10 @@ export interface ProblemActionRepository {
     provider: ProviderKey,
     externalId: string,
   ): Promise<void>
+  deleteProviderVerifiedByAuthUserId(
+    authUserId: string,
+    provider: ProviderKey,
+  ): Promise<void>
 }
 
 const parseAuthUserId = (authUserId: string) =>
@@ -249,6 +253,22 @@ export class InMemoryProblemActionRepository implements ProblemActionRepository 
       actions.filter(
         (action) =>
           action.provider !== provider || action.externalId !== externalId,
+      ),
+    )
+  }
+
+  async deleteProviderVerifiedByAuthUserId(
+    authUserId: string,
+    provider: ProviderKey,
+  ) {
+    const ownerId = parseAuthUserId(authUserId)
+    const actions = this.actionsByAuthUserId.get(ownerId) ?? []
+    this.actionsByAuthUserId.set(
+      ownerId,
+      actions.filter(
+        (action) =>
+          action.provider !== provider ||
+          action.evidenceSource !== 'provider_verified',
       ),
     )
   }
@@ -385,6 +405,21 @@ export class PrismaProblemActionRepository implements ProblemActionRepository {
     if (user === null) return
     await this.prisma.problemAction.deleteMany({
       where: { userId: user.id, provider, externalId },
+    })
+  }
+
+  async deleteProviderVerifiedByAuthUserId(
+    authUserId: string,
+    provider: ProviderKey,
+  ) {
+    const ownerId = parseAuthUserId(authUserId)
+    const user = await this.prisma.coreUser.findUnique({
+      where: { authUserId: ownerId },
+      select: { id: true },
+    })
+    if (user === null) return
+    await this.prisma.problemAction.deleteMany({
+      where: { userId: user.id, provider, evidenceSource: 'provider_verified' },
     })
   }
 }

@@ -4,7 +4,9 @@ import {
   LinkProviderAccountRequestSchema,
   ProviderAccountSchema,
   ProviderAccountsResponseSchema,
+  ProviderActivitySyncResponseSchema,
   RefreshProviderPublicStatsRequestSchema,
+  SetProviderActivityConsentRequestSchema,
 } from '../src/provider-account.js'
 
 const account = {
@@ -14,6 +16,7 @@ const account = {
   consentScope: 'store_public_profile_reference',
   verification: 'not_verified',
   activityAccess: 'not_enabled',
+  verifiedActivity: { enabled: false, status: 'not_enabled' },
   publicStats: { status: 'not_synced' },
   linkedAt: '2026-08-27T12:00:00.000Z',
   updatedAt: '2026-08-27T12:00:00.000Z',
@@ -104,5 +107,42 @@ describe('provider account contracts', () => {
         },
       }).success,
     ).toBe(false)
+  })
+
+  it('validates consented verified activity states and sync summaries', () => {
+    expect(
+      SetProviderActivityConsentRequestSchema.parse({
+        enabled: true,
+        policyVersion: 'codeforces-public-activity-v1',
+      }),
+    ).toEqual({
+      enabled: true,
+      policyVersion: 'codeforces-public-activity-v1',
+    })
+    expect(
+      ProviderAccountSchema.safeParse({
+        ...account,
+        verifiedActivity: {
+          enabled: true,
+          status: 'synced',
+          lastSucceededAt: '2026-08-27T12:01:00.000Z',
+          acceptedProblemCount: 3,
+          complete: true,
+        },
+      }).success,
+    ).toBe(true)
+    expect(
+      ProviderActivitySyncResponseSchema.parse({
+        data: {
+          provider: 'codeforces',
+          discovered: 3,
+          added: 2,
+          confirmedSolved: 2,
+          complete: true,
+          syncedAt: '2026-08-27T12:01:00.000Z',
+          nextAllowedAt: '2026-08-27T12:16:00.000Z',
+        },
+      }).data.confirmedSolved,
+    ).toBe(2)
   })
 })

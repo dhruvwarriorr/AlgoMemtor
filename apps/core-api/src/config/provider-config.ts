@@ -15,6 +15,8 @@ const CodeforcesProviderEnvironmentSchema = z.object({
   PROVIDER_TIMEOUT_MS: positiveIntegerFromEnvironment(8000),
   PROVIDER_MAX_ATTEMPTS: positiveIntegerFromEnvironment(2),
   CODEFORCES_MIN_REQUEST_INTERVAL_MS: nonNegativeIntegerFromEnvironment(2100),
+  PROVIDER_ACTIVITY_MIN_REFRESH_INTERVAL_MS:
+    positiveIntegerFromEnvironment(900_000),
 })
 
 export type CodeforcesProviderConfig = {
@@ -23,6 +25,7 @@ export type CodeforcesProviderConfig = {
   timeoutMs: number
   maxAttempts: number
   minRequestIntervalMs: number
+  activityMinRefreshIntervalMs: number
 }
 
 export const readCodeforcesProviderConfig = (
@@ -51,5 +54,7 @@ export const readCodeforcesProviderConfig = (
     timeoutMs: parsed.PROVIDER_TIMEOUT_MS,
     maxAttempts: parsed.PROVIDER_MAX_ATTEMPTS,
     minRequestIntervalMs: parsed.CODEFORCES_MIN_REQUEST_INTERVAL_MS,
+    activityMinRefreshIntervalMs:
+      parsed.PROVIDER_ACTIVITY_MIN_REFRESH_INTERVAL_MS,
   }
 }

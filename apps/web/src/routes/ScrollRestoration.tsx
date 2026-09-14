@@ -1,15 +1,7 @@
 import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 
-const storagePrefix = 'algomemtor:scroll:'
-
-function locationKey({
-  hash,
-  pathname,
-  search,
-}: ReturnType<typeof useLocation>) {
-  return `${storagePrefix}${pathname}${search}${hash}`
-}
+import { scrollLocationKey } from './scroll-location'
 
 export function ScrollRestoration() {
   const location = useLocation()
@@ -23,7 +15,7 @@ export function ScrollRestoration() {
   }, [])
 
   useEffect(() => {
-    const key = locationKey(location)
+    const key = scrollLocationKey(location)
     let frame: number | null = null
 
     function save() {

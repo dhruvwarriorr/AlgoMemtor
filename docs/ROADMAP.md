@@ -830,10 +830,10 @@ consented user activity access.
 9. Rate-limit manual sync.
 10. Add reconciliation tests.
 
-If reliable verification is not permitted, ship Week 12 without Week 13 and label
-provider verification as deferred. Do not fake it. See
-`docs/adr/0003-provider-verified-activity-deferral.md` for the CodeChef and
-LeetCode decision and the incomplete Week 13 gate.
+Codeforces public activity is the permitted Week 13 implementation. CodeChef and
+LeetCode remain aggregate-only under
+`docs/adr/0003-provider-verified-activity-deferral.md`; do not claim individual
+verification for those providers.
 
 ### Acceptance checks
 
@@ -869,8 +869,9 @@ Remember useful learner patterns without creating an opaque permanent profile.
 3. Link every memory to evidence.
 4. Add confidence and status.
 5. Let users inspect, correct, archive, and delete memories.
-6. Use simple SQL retrieval first.
-7. Add embeddings only when semantic retrieval is measurably helpful.
+6. Keep vector retrieval first with SQL fallback, and compare both modes.
+7. Require a measured retrieval/ranking gate before treating semantic retrieval
+   as release-ready.
 8. Exclude low-confidence memories from strong claims.
 9. Test memory influence on recommendations.
 
@@ -884,7 +885,10 @@ bounded RAG input to the recommendation ranker. Raw notes, prompts, provider
 URLs, and problem content are excluded from memory and audit persistence.
 Local tests cover the contracts and failure boundaries; live PostgreSQL,
 Gemini, embedding, worker-restart, and authenticated-browser evidence remain
-release gates rather than being marked complete here.
+release gates rather than being marked complete here. The isolated evaluation
+harness uses unique temporary learner IDs, three repeated runs, cleanup in a
+`finally` path, vector-vs-SQL recall@5, ranking improvement, privacy, latency,
+and cost gates.
 
 ### Acceptance checks
 

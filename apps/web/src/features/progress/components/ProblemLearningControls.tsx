@@ -34,6 +34,7 @@ const statusLabels: Record<LearnerProblemStatus, string> = {
 type ProblemLearningControlsProps = {
   problem: ProblemReference
   initialStatus?: LearnerProblemStatus
+  evidenceSource?: 'manual' | 'provider_verified'
   initialBookmarked?: boolean
   recommendationItemId?: string
   sourceContext?: string
@@ -52,6 +53,7 @@ function ProblemLearningControlsContent({
   problem,
   initialBookmarked = false,
   initialStatus = 'unsolved',
+  evidenceSource,
   recommendationItemId,
   sourceContext,
   compact = false,
@@ -167,6 +169,13 @@ function ProblemLearningControlsContent({
         className={compact ? 'flex flex-wrap items-center gap-2' : 'space-y-3'}
         data-problem-key={problemKey(problem)}
       >
+        {evidenceSource !== undefined ? (
+          <p className="text-xs text-muted-foreground">
+            {evidenceSource === 'manual'
+              ? 'Marked by you'
+              : 'Confirmed on linked public Codeforces profile'}
+          </p>
+        ) : null}
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
             <span className="sr-only">Status for {problem.externalId}</span>

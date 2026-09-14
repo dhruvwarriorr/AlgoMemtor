@@ -26,6 +26,10 @@ import type {
   ProblemActionRecord,
   ProblemActionRepository,
 } from '../repositories/problem-action-repository.js'
+import type {
+  ProviderAccountRepository,
+  ProviderVerifiedActivityRecord,
+} from '../repositories/provider-account-repository.js'
 import {
   ActiveTimerError,
   type ProgressRepository,
@@ -54,6 +58,7 @@ const decodeCursor = (value: string | undefined) => {
 
 const currentStatuses = (actions: readonly ProblemActionRecord[]) => {
   const statuses = new Map<string, ProblemActionRecord>()
+  const grouped = new Map<string, ProblemActionRecord[]>()
   for (const action of actions
     .filter((item) => item.actionType === 'status_changed')
     .sort(
@@ -61,7 +66,13 @@ const currentStatuses = (actions: readonly ProblemActionRecord[]) => {
         left.occurredAt.getTime() - right.occurredAt.getTime() ||
         left.id.localeCompare(right.id),
     )) {
-    statuses.set(identity(action), action)
+    const values = grouped.get(identity(action)) ?? []
+    values.push(action)
+    grouped.set(identity(action), values)
+  }
+  for (const [key, values] of grouped) {
+    const manual = values.filter((value) => value.evidenceSource === 'manual')
+    statuses.set(key, manual.at(-1) ?? values.at(-1)!)
   }
   return statuses
 }
@@ -90,7 +101,32 @@ const addDays = (value: string, amount: number) => {
   return date.toISOString().slice(0, 10)
 }
 
-const actionToHistory = (action: ProblemActionRecord) => {
+const activityByActionId = (
+  records: readonly ProviderVerifiedActivityRecord[],
+) =>
+  new Map(
+    records
+      .filter((record) => record.progressActionId !== null)
+      .map((record) => [record.progressActionId as string, record]),
+  )
+
+const activityEvidence = (
+  action: ProblemActionRecord,
+  recordsByAction: ReadonlyMap<string, ProviderVerifiedActivityRecord>,
+) => {
+  if (action.evidenceSource !== 'provider_verified') return undefined
+  const record = recordsByAction.get(action.id)
+  return {
+    provider: 'codeforces' as const,
+    occurredAt: (record?.occurredAt ?? action.occurredAt).toISOString(),
+    observedAt: (record?.lastObservedAt ?? action.occurredAt).toISOString(),
+  }
+}
+
+const actionToHistory = (
+  action: ProblemActionRecord,
+  recordsByAction: ReadonlyMap<string, ProviderVerifiedActivityRecord>,
+) => {
   const eventType =
     action.actionType === 'bookmarked'
       ? 'bookmark_added'
@@ -104,6 +140,7 @@ const actionToHistory = (action: ProblemActionRecord) => {
           ? action.actionType
           : undefined
   if (eventType === undefined) return null
+  const evidence = activityEvidence(action, recordsByAction)
   return {
     id: action.id,
     eventType,
@@ -115,6 +152,7 @@ const actionToHistory = (action: ProblemActionRecord) => {
     ...(action.evidenceSource === undefined
       ? {}
       : { evidenceSource: action.evidenceSource }),
+    ...(evidence === undefined ? {} : { evidence }),
     ...(action.recommendationItemId === undefined
       ? {}
       : { recommendationItemId: action.recommendationItemId }),
@@ -130,6 +168,7 @@ export type ProgressServiceOptions = {
   bookmarkRepository: BookmarkRepository
   recommendationRepository?: RecommendationRepository
   provider: ProblemProvider
+  providerAccountRepository?: ProviderAccountRepository
   learnerProfileRepository?: LearnerProfileRepository
   logger: { warn(event: string, fields?: Record<string, unknown>): void }
   timezoneForLearner?: (authUserId: string) => Promise<string>
@@ -251,13 +290,27 @@ export class ProgressService {
   }
 
   async getProgress(authUserId: string, reference: ProblemReference) {
-    const [actions, reflections, timers, bookmarks] = await Promise.all([
-      this.options.actionRepository.listByAuthUserId(authUserId),
-      this.options.progressRepository.listReflections(authUserId, reference),
-      this.options.progressRepository.listTimerSessions(authUserId, reference),
-      this.options.bookmarkRepository.listByAuthUserId(authUserId),
-    ])
+    const [actions, reflections, timers, bookmarks, verifiedActivity] =
+      await Promise.all([
+        this.options.actionRepository.listByAuthUserId(authUserId),
+        this.options.progressRepository.listReflections(authUserId, reference),
+        this.options.progressRepository.listTimerSessions(
+          authUserId,
+          reference,
+        ),
+        this.options.bookmarkRepository.listByAuthUserId(authUserId),
+        this.options.providerAccountRepository === undefined
+          ? Promise.resolve([])
+          : this.options.providerAccountRepository.listVerifiedActivityByAuthUserId(
+              authUserId,
+            ),
+      ])
+    const verifiedByAction = activityByActionId(verifiedActivity)
     const latestStatus = currentStatuses(actions).get(identity(reference))
+    const latestEvidence =
+      latestStatus === undefined
+        ? undefined
+        : activityEvidence(latestStatus, verifiedByAction)
     const latestReflection = reflections[0]
     const focusedSeconds = timers
       .filter((timer) => timer.state !== 'discarded')
@@ -272,6 +325,7 @@ export class ProgressService {
         ...(latestStatus?.evidenceSource === undefined
           ? {}
           : { evidenceSource: latestStatus.evidenceSource }),
+        ...(latestEvidence === undefined ? {} : { evidence: latestEvidence }),
         ...(latestStatus?.id === undefined
           ? {}
           : { statusActionId: latestStatus.id }),
@@ -288,11 +342,17 @@ export class ProgressService {
   }
 
   async history(authUserId: string, query: ProgressHistoryQuery) {
-    const [actions, reflections, timers] = await Promise.all([
+    const [actions, reflections, timers, verifiedActivity] = await Promise.all([
       this.options.actionRepository.listByAuthUserId(authUserId),
       this.options.progressRepository.listReflections(authUserId),
       this.options.progressRepository.listTimerSessions(authUserId),
+      this.options.providerAccountRepository === undefined
+        ? Promise.resolve([])
+        : this.options.providerAccountRepository.listVerifiedActivityByAuthUserId(
+            authUserId,
+          ),
     ])
+    const verifiedByAction = activityByActionId(verifiedActivity)
     const providerResult = query.topic
       ? await this.options.provider.search({})
       : undefined
@@ -303,7 +363,9 @@ export class ProgressService {
       ]),
     )
     const events = [
-      ...actions.map(actionToHistory).filter((event) => event !== null),
+      ...actions
+        .map((action) => actionToHistory(action, verifiedByAction))
+        .filter((event) => event !== null),
       ...reflections.map((reflection) => ({
         id: reflection.id,
         eventType: 'reflection_created' as const,

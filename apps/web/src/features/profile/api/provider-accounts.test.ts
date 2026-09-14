@@ -15,6 +15,8 @@ import {
   fetchProviderAccounts,
   linkProviderAccount,
   refreshProviderPublicStats,
+  setProviderActivityConsent,
+  syncProviderActivity,
 } from './provider-accounts'
 
 const account = {
@@ -24,6 +26,7 @@ const account = {
   consentScope: 'store_public_profile_reference' as const,
   verification: 'not_verified' as const,
   activityAccess: 'not_enabled' as const,
+  verifiedActivity: { enabled: false, status: 'not_enabled' as const },
   publicStats: { status: 'not_synced' as const },
   linkedAt: '2026-08-27T12:00:00.000Z',
   updatedAt: '2026-08-27T12:00:00.000Z',
@@ -111,6 +114,52 @@ describe('provider account API', () => {
     expect(authenticatedFetchMock).toHaveBeenCalledWith(
       '/api/provider-accounts/codeforces',
       expect.objectContaining({ method: 'DELETE' }),
+    )
+  })
+
+  it('enables consented Codeforces activity and requests a manual sync', async () => {
+    const consented = {
+      ...account,
+      verifiedActivity: {
+        enabled: true,
+        status: 'not_synced' as const,
+        consentedAt: '2026-08-27T12:01:00.000Z',
+      },
+    }
+    authenticatedFetchMock.mockResolvedValueOnce(
+      Response.json({ data: consented }),
+    )
+    await expect(
+      setProviderActivityConsent('codeforces', {
+        enabled: true,
+        policyVersion: 'codeforces-public-activity-v1',
+      }),
+    ).resolves.toEqual({ data: consented })
+    const [consentUrl, consentInit] = authenticatedFetchMock.mock.calls[0] ?? []
+    expect(consentUrl).toBe(
+      '/api/provider-accounts/codeforces/activity-consent',
+    )
+    expect(parseRequestBody(consentInit)).toEqual({
+      enabled: true,
+      policyVersion: 'codeforces-public-activity-v1',
+    })
+
+    const sync = {
+      data: {
+        provider: 'codeforces' as const,
+        discovered: 2,
+        added: 1,
+        confirmedSolved: 1,
+        complete: true,
+        syncedAt: '2026-08-27T12:02:00.000Z',
+        nextAllowedAt: '2026-08-27T12:17:00.000Z',
+      },
+    }
+    authenticatedFetchMock.mockResolvedValueOnce(Response.json(sync))
+    await expect(syncProviderActivity('codeforces')).resolves.toEqual(sync)
+    expect(authenticatedFetchMock).toHaveBeenLastCalledWith(
+      '/api/provider-accounts/codeforces/activity-sync',
+      expect.objectContaining({ method: 'POST' }),
     )
   })
 

@@ -12,6 +12,8 @@ import {
   fetchProviderAccounts,
   linkProviderAccount,
   refreshProviderPublicStats,
+  setProviderActivityConsent,
+  syncProviderActivity,
 } from '../api/provider-accounts'
 
 export const providerAccountsQueryKey = (authUserId: string) =>
@@ -88,6 +90,47 @@ export function useRefreshProviderPublicStats() {
         return
       }
 
+      await queryClient.invalidateQueries({
+        queryKey: providerAccountsQueryKey(user.id),
+      })
+    },
+  })
+}
+
+export function useSetProviderActivityConsent() {
+  const queryClient = useQueryClient()
+  const { user } = useAuth()
+
+  return useMutation({
+    mutationFn: ({
+      provider,
+      enabled,
+    }: {
+      provider: LinkableProvider
+      enabled: boolean
+    }) =>
+      setProviderActivityConsent(provider, {
+        enabled,
+        policyVersion: 'codeforces-public-activity-v1',
+      }),
+    onSuccess: (response) => {
+      if (!user) return
+      queryClient.setQueryData<ProviderAccountsResponse>(
+        providerAccountsQueryKey(user.id),
+        (current) => replaceProviderAccount(current, response.data),
+      )
+    },
+  })
+}
+
+export function useSyncProviderActivity() {
+  const queryClient = useQueryClient()
+  const { user } = useAuth()
+
+  return useMutation({
+    mutationFn: (provider: LinkableProvider) => syncProviderActivity(provider),
+    onSettled: async () => {
+      if (!user) return
       await queryClient.invalidateQueries({
         queryKey: providerAccountsQueryKey(user.id),
       })

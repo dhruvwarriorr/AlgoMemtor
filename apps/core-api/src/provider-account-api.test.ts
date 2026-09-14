@@ -12,6 +12,7 @@ import type { SupabaseJwtVerifier } from './auth/supabase-jwt.js'
 import { CodeforcesProvider } from './integrations/codeforces/codeforces-provider.js'
 import {
   ProviderPublicStatsError,
+  type ProviderVerifiedActivityFetcher,
   type ProviderPublicStatsFetcher,
 } from './integrations/provider-accounts/provider-public-stats.js'
 import { InMemoryProviderAccountRepository } from './repositories/provider-account-repository.js'
@@ -43,6 +44,7 @@ afterEach(async () => {
 
 function startApp(
   providerPublicStatsFetchers?: readonly ProviderPublicStatsFetcher[],
+  providerVerifiedActivityFetchers?: readonly ProviderVerifiedActivityFetcher[],
 ) {
   const provider = new CodeforcesProvider({
     baseUrl: 'https://mock.codeforces.test/api',
@@ -59,6 +61,9 @@ function startApp(
     ...(providerPublicStatsFetchers === undefined
       ? {}
       : { providerPublicStatsFetchers }),
+    ...(providerVerifiedActivityFetchers === undefined
+      ? {}
+      : { providerVerifiedActivityFetchers }),
   }).listen(0)
   servers.push(server)
 
@@ -95,6 +100,99 @@ function refreshStats(
 }
 
 describe('provider account API', () => {
+  it('requires activity consent and exposes idempotent Codeforces activity sync', async () => {
+    const fetchVerifiedActivity = vi.fn(async () => ({
+      events: [
+        {
+          externalId: '1A',
+          providerEventId: '100',
+          occurredAt: new Date('2026-08-27T11:00:00.000Z'),
+        },
+      ],
+      complete: true,
+      fetchedAt: new Date('2026-08-27T12:00:00.000Z'),
+    }))
+    const fetcher = {
+      provider: 'codeforces' as const,
+      fetchSolvedCount: async () => ({
+        solvedCount: 0,
+        complete: true,
+        source: 'codeforces_api' as const,
+        fetchedAt: new Date('2026-08-27T12:00:00.000Z'),
+      }),
+      fetchVerifiedActivity,
+    }
+    const baseUrl = startApp([fetcher], [fetcher])
+    await saveAccount(baseUrl, 'codeforces', {
+      handle: 'tourist',
+      consent: true,
+    })
+
+    const missingConsent = await fetch(
+      `${baseUrl}/api/provider-accounts/codeforces/activity-sync`,
+      { method: 'POST', headers: firstAuthorization },
+    )
+    expect(missingConsent.status).toBe(400)
+    expect(
+      ApiErrorResponseSchema.parse(await missingConsent.json()).error.code,
+    ).toBe('PROVIDER_ACTIVITY_CONSENT_REQUIRED')
+
+    const consentResponse = await fetch(
+      `${baseUrl}/api/provider-accounts/codeforces/activity-consent`,
+      {
+        method: 'PUT',
+        headers: { ...firstAuthorization, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          enabled: true,
+          policyVersion: 'codeforces-public-activity-v1',
+        }),
+      },
+    )
+    expect(consentResponse.status).toBe(200)
+    expect(
+      ProviderAccountResponseSchema.parse(await consentResponse.json()).data
+        .verifiedActivity,
+    ).toMatchObject({ enabled: true, status: 'not_synced' })
+
+    const syncResponse = await fetch(
+      `${baseUrl}/api/provider-accounts/codeforces/activity-sync`,
+      { method: 'POST', headers: firstAuthorization },
+    )
+    expect(syncResponse.status).toBe(200)
+    expect(await syncResponse.json()).toMatchObject({
+      data: {
+        provider: 'codeforces',
+        discovered: 1,
+        added: 1,
+        confirmedSolved: 1,
+        complete: true,
+      },
+    })
+    expect(fetchVerifiedActivity).toHaveBeenCalledTimes(1)
+
+    const progress = await fetch(
+      `${baseUrl}/api/problems/codeforces/1A/progress`,
+      { headers: firstAuthorization },
+    )
+    expect((await progress.json()).data).toMatchObject({
+      status: 'solved',
+      evidenceSource: 'provider_verified',
+      evidence: {
+        provider: 'codeforces',
+        occurredAt: '2026-08-27T11:00:00.000Z',
+      },
+    })
+
+    const cooldown = await fetch(
+      `${baseUrl}/api/provider-accounts/codeforces/activity-sync`,
+      { method: 'POST', headers: firstAuthorization },
+    )
+    expect(cooldown.status).toBe(429)
+    expect(
+      ApiErrorResponseSchema.parse(await cooldown.json()).error,
+    ).toMatchObject({ code: 'PROVIDER_ACTIVITY_COOLDOWN' })
+  })
+
   it('requires authentication for every account operation', async () => {
     const baseUrl = startApp()
     const getResponse = await fetch(`${baseUrl}/api/provider-accounts`)

@@ -168,6 +168,16 @@ estimated cost against the deterministic baseline. The local harness does not
 by itself establish live Gemini quality, latency, cost, or authenticated browser
 acceptance.
 
+The isolated Phase 10 memory harness is in
+`apps/ai-api/app/evaluation/memory_rag_eval.py`. Its tests run with
+`uv run --project apps/ai-api pytest apps/ai-api/tests/test_memory_rag_eval.py`
+and enforce vector-vs-SQL recall@5, three-run median ranking improvement,
+privacy/unknown-ID, p95 latency, and cost gates. A deployment adapter must
+provide the database-backed store and ranker, explicit evidence/memory
+fixtures, and at least three scenarios per memory category before these gates
+can be used as live Gemini or PostgreSQL evidence. The top-level `run` helper
+enables that strict matrix validation by default.
+
 ## Data boundary
 
 AlgoMemtor may cache:
@@ -412,12 +422,14 @@ authenticated browser acceptance.
 - [Foundational architecture ADR](docs/adr/0001-foundational-architecture.md)
 - [Public provider statistics ADR](docs/adr/0002-public-provider-profile-statistics.md)
 - [Provider-verified activity deferral ADR](docs/adr/0003-provider-verified-activity-deferral.md)
+- [Codeforces public activity evidence ADR](docs/adr/0004-codeforces-public-activity-evidence.md)
 
 ## Security and compliance boundaries
 
 - Do not scrape problem content or use undocumented private endpoints. The
-  narrow public solved-count exception is documented in ADR 0002 and remains
-  user-triggered, size-limited, and subject to provider review.
+  narrow public solved-count and consented Codeforces activity exceptions are
+  documented in ADR 0002 and ADR 0004 and remain user-triggered, size-limited,
+  and subject to provider review.
 - Confirm API terms, attribution rules, rate limits, and caching rules per provider.
 - Construct or validate canonical URLs on the server; never trust an arbitrary URL
   supplied by the browser or an LLM.

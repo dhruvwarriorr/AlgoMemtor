@@ -39,6 +39,12 @@ const codeforcesRequestGate = new RequestGate({
   minIntervalMs: codeforcesConfig.minRequestIntervalMs,
 })
 const problemMetadataCache = new PrismaExternalProblemCacheRepository(prisma)
+const codeforcesPublicStatsFetcher = new CodeforcesPublicStatsFetcher({
+  baseUrl: codeforcesConfig.baseUrl,
+  timeoutMs: codeforcesConfig.timeoutMs,
+  maxAttempts: codeforcesConfig.maxAttempts,
+  requestGate: codeforcesRequestGate,
+})
 
 await prisma.$connect()
 
@@ -63,14 +69,13 @@ const app = createApp({
   recommendationRepository: new PrismaRecommendationRepository(prisma),
   providerAccountRepository: new PrismaProviderAccountRepository(prisma),
   providerPublicStatsFetchers: [
-    new CodeforcesPublicStatsFetcher({
-      baseUrl: codeforcesConfig.baseUrl,
-      timeoutMs: codeforcesConfig.timeoutMs,
-      requestGate: codeforcesRequestGate,
-    }),
+    codeforcesPublicStatsFetcher,
     new CodeChefPublicStatsFetcher(),
     new LeetCodePublicStatsFetcher(),
   ],
+  providerVerifiedActivityFetchers: [codeforcesPublicStatsFetcher],
+  providerActivityMinRefreshIntervalMs:
+    codeforcesConfig.activityMinRefreshIntervalMs,
 })
 
 const server = app.listen(port, () => {

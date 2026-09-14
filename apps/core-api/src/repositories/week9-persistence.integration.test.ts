@@ -457,6 +457,94 @@ describe.skipIf(!hasTestDatabase)('Week 9 Prisma persistence', () => {
     ])
   })
 
+  it('persists Codeforces activity idempotently and removes generated evidence on revocation', async () => {
+    const occurredAt = new Date('2026-09-11T01:00:00.000Z')
+    const observedAt = new Date('2026-09-14T01:00:00.000Z')
+    await providerAccounts.upsertByAuthUserId(
+      TEST_AUTH_USER_A,
+      PROVIDER,
+      'activity_owner_a',
+    )
+    await providerAccounts.setVerifiedActivityConsent(
+      TEST_AUTH_USER_A,
+      PROVIDER,
+      true,
+      observedAt,
+    )
+
+    const activity = {
+      events: [
+        {
+          externalId: TEST_CACHE_EXTERNAL_ID_A,
+          providerEventId: 'cf-submit-activity-1',
+          occurredAt,
+        },
+      ],
+      complete: true,
+      fetchedAt: observedAt,
+      attemptedAt: observedAt,
+    }
+    const first = await providerAccounts.saveVerifiedActivitySuccess(
+      TEST_AUTH_USER_A,
+      PROVIDER,
+      'activity_owner_a',
+      activity,
+    )
+    expect(first?.added).toHaveLength(1)
+
+    const action = await problemActions.appendByAuthUserId(TEST_AUTH_USER_A, {
+      provider: PROVIDER,
+      externalId: TEST_CACHE_EXTERNAL_ID_A,
+      actionType: 'status_changed',
+      learnerStatus: 'solved',
+      evidenceSource: 'provider_verified',
+      occurredAt,
+    })
+    await providerAccounts.linkVerifiedActivityAction(
+      TEST_AUTH_USER_A,
+      PROVIDER,
+      TEST_CACHE_EXTERNAL_ID_A,
+      action.id,
+    )
+
+    const repeated = await providerAccounts.saveVerifiedActivitySuccess(
+      TEST_AUTH_USER_A,
+      PROVIDER,
+      'activity_owner_a',
+      activity,
+    )
+    expect(repeated?.added).toHaveLength(0)
+    await expect(
+      providerAccounts.listVerifiedActivityByAuthUserId(TEST_AUTH_USER_B),
+    ).resolves.toEqual([])
+    await expect(
+      providerAccounts.listVerifiedActivityByAuthUserId(TEST_AUTH_USER_A),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        externalId: TEST_CACHE_EXTERNAL_ID_A,
+        providerEventId: 'cf-submit-activity-1',
+        progressActionId: action.id,
+      }),
+    ])
+
+    await providerAccounts.setVerifiedActivityConsent(
+      TEST_AUTH_USER_A,
+      PROVIDER,
+      false,
+      new Date('2026-09-14T01:05:00.000Z'),
+    )
+    await problemActions.deleteProviderVerifiedByAuthUserId(
+      TEST_AUTH_USER_A,
+      PROVIDER,
+    )
+    await expect(
+      providerAccounts.listVerifiedActivityByAuthUserId(TEST_AUTH_USER_A),
+    ).resolves.toEqual([])
+    await expect(
+      problemActions.listByAuthUserId(TEST_AUTH_USER_A),
+    ).resolves.toEqual([])
+  })
+
   it('isolates every learner-owned repository by auth subject', async () => {
     await learnerProfiles.upsertByAuthUserId(TEST_AUTH_USER_A, validProfile)
     await providerAccounts.upsertByAuthUserId(

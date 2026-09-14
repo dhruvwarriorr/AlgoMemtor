@@ -86,7 +86,7 @@ async def test_ranking_audit_migration_and_repository_store_only_preference_hash
             revision = await connection.scalar(
                 text("SELECT version_num FROM public.ai_alembic_version")
             )
-            assert revision == "202609120000"
+            assert revision == "202609130200"
 
             column_result = await connection.execute(
                 text(

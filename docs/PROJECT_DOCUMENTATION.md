@@ -439,7 +439,11 @@ PROVIDER_CACHE_TTL_SECONDS=
 PROVIDER_TIMEOUT_MS=8000
 PROVIDER_MAX_ATTEMPTS=2
 CODEFORCES_MIN_REQUEST_INTERVAL_MS=2100
+PROVIDER_ACTIVITY_MIN_REFRESH_INTERVAL_MS=900000
 ```
+
+`PROVIDER_ACTIVITY_MIN_REFRESH_INTERVAL_MS` controls the per-learner cooldown
+for manual Codeforces activity synchronization; the default is 15 minutes.
 
 AI API variables may include:
 
@@ -1102,13 +1106,20 @@ outbound opens, and status changes. Question status is always `unsolved`,
 `provider_verified` evidence source. An outbound open remains only an `opened`
 event.
 
-### Provider-confirmed activity (deferred)
+### Provider-confirmed activity
 
-There is intentionally no `core.verified_activity` table or model. CodeChef and
-LeetCode aggregate solved-count integrations do not provide an approved,
-reliable individual-activity interface for this phase. Their totals remain
-separate from learner status and memory evidence. See ADR 0003; Week 13
-verification acceptance remains incomplete.
+`core.provider_verified_activity` stores consented Codeforces accepted-problem
+evidence from the official public `user.status` endpoint. It contains only the
+provider/problem identifiers, provider event ID, occurrence/observation
+timestamps, and linked progress-action ID. A linked public handle is not proof
+of account ownership. Manual status changes remain authoritative for the current
+label, while provider evidence remains visible in history.
+
+CodeChef and LeetCode aggregate solved-count integrations do not provide an
+approved, reliable individual-activity interface for this phase. Their totals
+remain separate from learner status and memory evidence. See ADR 0003 and ADR
+0004; live provider, database, and browser acceptance remains required before
+marking every Week 13 gate complete.
 
 ### `core.recommendation_batches`
 
@@ -1134,8 +1145,10 @@ Stores memory text, category, confidence, status, and timestamps.
 ### `ai.memory_evidence`
 
 Links each memory to permitted manual progress, reflections, timers, profile
-preferences, or recommendation feedback. Provider-confirmed activity is not
-used because Week 13 is deferred.
+preferences, or recommendation feedback. Provider-confirmed Codeforces activity
+may be used only when the learner has enabled the explicit public-activity
+consent policy; no raw provider payload or source code is shared with the AI
+service.
 
 ### `ai.ranking_audits`
 
@@ -1368,6 +1381,17 @@ least five percentage points of weighted improvement, p95 latency below eight
 seconds, and average estimated cost at or below $0.02. Local validation and
 tests are not evidence of live Gemini or embedding quality, latency, cost, worker
 restart behavior, or browser acceptance.
+
+Phase 10 also includes an isolated memory-RAG harness at
+`apps/ai-api/app/evaluation/memory_rag_eval.py`. It uses unique temporary
+learner IDs, cleans every run in a `finally` path, repeats each case three times,
+compares vector and SQL recall@5, and applies the ranking improvement, privacy,
+unknown-ID, p95 latency, and cost gates. It remains an adapter-driven live
+evaluation rather than a claim that local unit fixtures prove deployment
+quality. Strict runs require explicit evidence/memory fixtures, at least three
+scenarios for each of the five memory categories, and the conflicting-evidence,
+correction, consent-revocation, deletion, irrelevant-memory,
+embedding-failure, and LLM-failure scenarios.
 
 ## 18.4 End-to-end tests
 

@@ -72,6 +72,37 @@ export function serializeProviderAccount(
     consentScope: record.consentScope,
     verification: record.verificationStatus,
     activityAccess: record.activityAccess,
+    verifiedActivity: {
+      enabled: record.verifiedActivity.enabled,
+      status: record.verifiedActivity.status,
+      ...(record.verifiedActivity.consentedAt === null
+        ? {}
+        : { consentedAt: record.verifiedActivity.consentedAt.toISOString() }),
+      ...(record.verifiedActivity.lastAttemptedAt === null
+        ? {}
+        : {
+            lastAttemptedAt:
+              record.verifiedActivity.lastAttemptedAt.toISOString(),
+          }),
+      ...(record.verifiedActivity.lastSucceededAt === null
+        ? {}
+        : {
+            lastSucceededAt:
+              record.verifiedActivity.lastSucceededAt.toISOString(),
+          }),
+      ...(record.verifiedActivity.acceptedProblemCount === null
+        ? {}
+        : { acceptedProblemCount: record.verifiedActivity.acceptedProblemCount }),
+      ...(record.verifiedActivity.complete === null
+        ? {}
+        : { complete: record.verifiedActivity.complete }),
+      ...(record.verifiedActivity.errorCode === null
+        ? {}
+        : { errorCode: record.verifiedActivity.errorCode }),
+      ...(record.verifiedActivity.retryAfter === null
+        ? {}
+        : { retryAfter: record.verifiedActivity.retryAfter.toISOString() }),
+    },
     ...(record.publicStatsConsentAt === null
       ? {}
       : { publicStatsConsentAt: record.publicStatsConsentAt.toISOString() }),

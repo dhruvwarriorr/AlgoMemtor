@@ -2,11 +2,14 @@ import {
   DisconnectProviderAccountResponseSchema,
   ProviderAccountResponseSchema,
   ProviderAccountsResponseSchema,
+  ProviderActivitySyncResponseSchema,
   RefreshProviderPublicStatsRequestSchema,
+  SetProviderActivityConsentRequestSchema,
   type LinkableProvider,
   type LinkProviderAccountRequest,
   type ProviderAccountResponse,
   type ProviderAccountsResponse,
+  type ProviderActivitySyncResponse,
   type RefreshProviderPublicStatsRequest,
 } from '@algomemtor/shared-contracts'
 
@@ -62,6 +65,35 @@ export function refreshProviderPublicStats(
       headers: { 'content-type': 'application/json' },
       method: 'POST',
       schema: ProviderAccountResponseSchema,
+    },
+  )
+}
+
+export function setProviderActivityConsent(
+  provider: LinkableProvider,
+  consent: { enabled: boolean; policyVersion: 'codeforces-public-activity-v1' },
+) {
+  return requestJson<ProviderAccountResponse>(
+    `/api/provider-accounts/${encodeURIComponent(provider)}/activity-consent`,
+    {
+      authentication: 'required',
+      body: JSON.stringify(
+        SetProviderActivityConsentRequestSchema.parse(consent),
+      ),
+      headers: { 'content-type': 'application/json' },
+      method: 'PUT',
+      schema: ProviderAccountResponseSchema,
+    },
+  )
+}
+
+export function syncProviderActivity(provider: LinkableProvider) {
+  return requestJson<ProviderActivitySyncResponse>(
+    `/api/provider-accounts/${encodeURIComponent(provider)}/activity-sync`,
+    {
+      authentication: 'required',
+      method: 'POST',
+      schema: ProviderActivitySyncResponseSchema,
     },
   )
 }

@@ -50,7 +50,11 @@ const createStatisticsKey = (
     : `contest:${statistics.contestId}:${index}`
 }
 
-const createExternalId = (problem: CodeforcesProblem) => {
+export const createCodeforcesExternalId = (problem: {
+  contestId?: number | undefined
+  problemsetName?: string | undefined
+  index: string
+}) => {
   const index = normalizeIndex(problem.index)
 
   if (problem.contestId !== undefined) {
@@ -137,7 +141,7 @@ export const normalizeCodeforcesProblems = (
       return []
     }
 
-    const externalId = createExternalId(problem)
+    const externalId = createCodeforcesExternalId(problem)
     const problemKey = createProblemKey(problem)
 
     if (externalId === undefined || problemKey === undefined) {

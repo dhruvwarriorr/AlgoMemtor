@@ -280,6 +280,72 @@ describe('Phase 9 core progress API', () => {
     ])
   })
 
+  it('lets a manual correction control the current status while retaining provider evidence', async () => {
+    const app = startApp()
+    await app.actionRepository.appendByAuthUserId(userId, {
+      provider: 'codeforces',
+      externalId: '1900A',
+      actionType: 'status_changed',
+      learnerStatus: 'solved',
+      evidenceSource: 'provider_verified',
+      occurredAt: new Date('2026-09-14T12:00:00.000Z'),
+    })
+    await app.actionRepository.appendByAuthUserId(userId, {
+      provider: 'codeforces',
+      externalId: '1900A',
+      actionType: 'status_changed',
+      learnerStatus: 'attempted',
+      evidenceSource: 'manual',
+      occurredAt: new Date('2026-09-13T12:00:00.000Z'),
+    })
+
+    const progressResponse = await jsonRequest(
+      app.baseUrl,
+      '/api/problems/codeforces/1900A/progress',
+    )
+    expect(progressResponse.status).toBe(200)
+    expect(ProgressResponseSchema.parse(await progressResponse.json()).data).toMatchObject({
+      status: 'attempted',
+      evidenceSource: 'manual',
+    })
+
+    const historyResponse = await jsonRequest(
+      app.baseUrl,
+      '/api/progress/history?eventType=status_changed',
+    )
+    const history = ProgressHistoryResponseSchema.parse(
+      await historyResponse.json(),
+    )
+    expect(history.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ evidenceSource: 'provider_verified' }),
+        expect.objectContaining({ evidenceSource: 'manual' }),
+      ]),
+    )
+  })
+
+  it('invalidates recommendations after repeated reflection evidence', async () => {
+    const app = startApp()
+    const first = await jsonRequest(app.baseUrl, '/api/recommendations')
+    expect(first.status).toBe(200)
+    await jsonRequest(app.baseUrl, '/api/problems/codeforces/1900A/reflections', {
+      method: 'POST',
+      body: { perceivedDifficulty: 'hard', note: 'Graph traversal felt difficult.' },
+    })
+    app.clock.advance(1)
+    await jsonRequest(app.baseUrl, '/api/problems/codeforces/1900A/reflections', {
+      method: 'POST',
+      body: { perceivedDifficulty: 'hard', note: 'Graph traversal still felt difficult.' },
+    })
+
+    const second = await jsonRequest(app.baseUrl, '/api/recommendations')
+    expect(second.status).toBe(200)
+    const batches = await app.recommendationRepository.listBatchesByAuthUserId(
+      userId,
+    )
+    expect(batches.length).toBeGreaterThanOrEqual(2)
+  })
+
   it('filters progress history to status events with the requested learner status', async () => {
     const app = startApp()
 

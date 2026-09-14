@@ -142,3 +142,31 @@ def repeats_preference_text(preference: str | None, reason: str) -> bool:
         " ".join(preference_words[index : index + 4]) in normalized_reason
         for index in range(len(preference_words) - 3)
     )
+
+
+def repeats_memory_text(memory_statements: list[str], reason: str) -> bool:
+    normalized_reason = " ".join(re.findall(r"[a-z0-9]+", reason.lower()))
+    for statement in memory_statements:
+        words = re.findall(r"[a-z0-9]+", statement.lower())
+        if len(words) < 4:
+            continue
+        if any(
+            " ".join(words[index : index + 4]) in normalized_reason
+            for index in range(len(words) - 3)
+        ):
+            return True
+    return False
+
+
+def repeats_identifier(identifiers: list[str], reason: str) -> bool:
+    normalized_reason = " ".join(re.findall(r"[a-z0-9]+", reason.lower()))
+    for identifier in identifiers:
+        normalized_identifier = " ".join(re.findall(r"[a-z0-9]+", identifier.lower()))
+        if len(normalized_identifier) < 3:
+            continue
+        if re.search(
+            rf"(?<![a-z0-9]){re.escape(normalized_identifier)}(?![a-z0-9])",
+            normalized_reason,
+        ):
+            return True
+    return False

@@ -14,6 +14,7 @@ from app.memory_models import (
     MemoryCorrectionRequest,
     MemoryEvidenceDeleteRequest,
     MemoryProcessRequest,
+    MemoryRetrievalResponse,
     ReflectionGenerationOutput,
     StoredMemory,
 )
@@ -31,6 +32,9 @@ from app.memory_service import (
     MemoryService,
     get_memory_service,
 )
+from app.ranking_audit import NullRankingAuditRepository
+from app.ranking_models import ModelRankingOutput, RankedItem, RankingRequest
+from app.ranking_service import ModelResult, RankingService
 from app.settings import AiSettings, get_ai_settings
 from fastapi.testclient import TestClient
 
@@ -333,6 +337,51 @@ class FakeEmbedder:
         return [0.01] * 768
 
 
+class RepositoryMemoryRetriever:
+    def __init__(self, repository: FakeMemoryRepository) -> None:
+        self.repository = repository
+
+    async def retrieve(self, learner_id: UUID, query: str | None, limit: int):
+        items = [
+            memory
+            for memory in self.repository.memories.values()
+            if memory.learnerId == learner_id and memory.status == "active"
+        ]
+        return MemoryRetrievalResponse(
+            learnerId=learner_id,
+            query=query,
+            retrievalMode="sql",
+            items=items[:limit],
+        )
+
+
+class ReflectionDrivenRankingModel:
+    async def rank(self, request: RankingRequest) -> ModelResult:
+        return await self.rank_with_memories(request, [])
+
+    async def rank_with_memories(
+        self, request: RankingRequest, memories: list[StoredMemory]
+    ) -> ModelResult:
+        candidates = (
+            list(reversed(request.candidates)) if memories else request.candidates
+        )
+        return ModelResult(
+            output=ModelRankingOutput(
+                items=[
+                    RankedItem(
+                        provider=candidate.provider,
+                        externalId=candidate.externalId,
+                        score=0.9,
+                        reason="A recent topic weakness suggests focused practice.",
+                    )
+                    for candidate in candidates
+                ]
+            ),
+            input_tokens=10,
+            output_tokens=10,
+        )
+
+
 def service_for(
     repository: FakeMemoryRepository,
     *,
@@ -398,6 +447,40 @@ async def test_empty_reflection_does_not_prompt_model_or_invent_memory() -> None
     assert response.fallbackReason == "not_eligible"
     assert response.memoryIds == []
     assert model.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_click_only_evidence_does_not_create_an_active_memory() -> None:
+    repository = FakeMemoryRepository()
+    model = FakeModel(
+        ReflectionGenerationOutput(
+            summary="Should not be called.",
+            memories=[
+                GeneratedMemory(
+                    category="topic_weakness",
+                    statement="A click is not evidence of a weakness.",
+                    structuredValue={"topic": "graphs"},
+                    confidence=0.95,
+                )
+            ],
+        )
+    )
+    service = service_for(repository, model=model)
+    request = process_request(
+        evidenceType="outbound_open",
+        note=None,
+        perceivedDifficulty=None,
+        topic=None,
+        problemProvider="codeforces",
+        problemExternalId="1900A",
+    )
+
+    response = await service.process(request)
+
+    assert response.fallbackReason == "not_eligible"
+    assert response.memoryIds == []
+    assert model.calls == 0
+    assert repository.persisted and repository.persisted[0][1] == []
 
 
 @pytest.mark.asyncio
@@ -530,6 +613,94 @@ async def test_prior_support_activates_non_preference_memory() -> None:
     await service.process(process_request())
 
     assert repository.persisted[0][1][0].status == "active"
+
+
+@pytest.mark.asyncio
+async def test_repeated_reflections_feed_active_memory_into_next_recommendation() -> (
+    None
+):
+    output = ReflectionGenerationOutput(
+        summary="The learner needs more graph practice.",
+        memories=[
+            GeneratedMemory(
+                category="topic_weakness",
+                statement="The learner may need guided graph practice.",
+                structuredValue={"topic": "graphs"},
+                confidence=0.9,
+            )
+        ],
+    )
+    repository = FakeMemoryRepository()
+    repository.consistent_support = True
+    memory_service = service_for(
+        repository,
+        model=FakeModel(output),
+        embedder=FakeEmbedder(),
+    )
+
+    for index in range(2):
+        response = await memory_service.process(
+            process_request(
+                evidenceId=uuid4(),
+                idempotencyKey=f"memory:reflection:e2e-{index}",
+            )
+        )
+        assert response.memoryIds
+
+    active_memories = [
+        memory for memory in repository.memories.values() if memory.status == "active"
+    ]
+    assert active_memories
+
+    request = RankingRequest.model_validate(
+        {
+            "requestId": "reflection_e2e",
+            "learnerId": str(LEARNER_ID),
+            "expectedCount": 2,
+            "learner": {
+                "goal": "improve_problem_solving",
+                "experience": "beginner",
+                "focusTopics": ["graphs"],
+                "preferredTopics": ["strings"],
+                "preferredDifficulty": {"min": 800, "max": 1200},
+                "learningPreferences": ["solve_problems_directly"],
+            },
+            "candidates": [
+                {
+                    "provider": "codeforces",
+                    "externalId": "900A",
+                    "title": "First candidate",
+                    "normalizedDifficulty": "easy",
+                    "topics": ["graphs"],
+                },
+                {
+                    "provider": "codeforces",
+                    "externalId": "901A",
+                    "title": "Second candidate",
+                    "normalizedDifficulty": "medium",
+                    "topics": ["strings"],
+                },
+            ],
+        }
+    )
+    model = ReflectionDrivenRankingModel()
+    baseline = await RankingService(
+        settings(memory_rag_enabled=False),
+        NullRankingAuditRepository(),
+        model,
+    ).rank(request)
+    influenced = await RankingService(
+        settings(),
+        NullRankingAuditRepository(),
+        model,
+        RepositoryMemoryRetriever(repository),
+    ).rank(request)
+
+    assert baseline.fallback is False
+    assert influenced.fallback is False
+    assert [item.externalId for item in influenced.items] == [
+        item.externalId for item in reversed(baseline.items)
+    ]
 
 
 @pytest.mark.asyncio

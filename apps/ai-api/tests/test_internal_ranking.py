@@ -2,11 +2,13 @@ import asyncio
 import hashlib
 import hmac
 import json
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
 import pytest
 from app.main import app
+from app.memory_models import MemoryRetrievalResponse, StoredMemory
 from app.ranking_audit import NullRankingAuditRepository, RankingAudit
 from app.ranking_models import (
     ModelRankingOutput,
@@ -104,6 +106,70 @@ class WaitingModel:
         del request
         await asyncio.Event().wait()
         raise AssertionError("The timeout should cancel the model call.")
+
+
+class StaticMemoryRetriever:
+    def __init__(self, memory: StoredMemory) -> None:
+        self.memory = memory
+
+    async def retrieve(self, learner_id: UUID, query: str | None, limit: int):
+        return MemoryRetrievalResponse(
+            learnerId=learner_id,
+            query=query,
+            retrievalMode="vector",
+            items=[self.memory][:limit],
+        )
+
+
+class MemoryAwareModel:
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+
+    async def rank(self, request: RankingRequest) -> ModelResult:
+        return ModelResult(
+            output=ModelRankingOutput(
+                items=[
+                    ranked_item(candidate.externalId, self.reason)
+                    for candidate in request.candidates
+                ]
+            ),
+            input_tokens=10,
+            output_tokens=10,
+        )
+
+    async def rank_with_memories(
+        self, request: RankingRequest, memories: list[StoredMemory]
+    ) -> ModelResult:
+        del memories
+        return await self.rank(request)
+
+
+class MemoryInfluencedModel:
+    async def rank(self, request: RankingRequest) -> ModelResult:
+        return ModelResult(
+            output=ModelRankingOutput(
+                items=[
+                    ranked_item(candidate.externalId)
+                    for candidate in request.candidates
+                ]
+            ),
+            input_tokens=10,
+            output_tokens=10,
+        )
+
+    async def rank_with_memories(
+        self, request: RankingRequest, memories: list[StoredMemory]
+    ) -> ModelResult:
+        candidates = (
+            list(reversed(request.candidates)) if memories else request.candidates
+        )
+        return ModelResult(
+            output=ModelRankingOutput(
+                items=[ranked_item(candidate.externalId) for candidate in candidates]
+            ),
+            input_tokens=10,
+            output_tokens=10,
+        )
 
 
 class MemoryAuditRepository:
@@ -442,3 +508,102 @@ def test_internal_endpoint_is_unavailable_without_a_configured_token() -> None:
         app.dependency_overrides.clear()
 
     assert response.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_memory_statement_is_never_repeated_in_recommendation_reason() -> None:
+    request = ranking_request()
+    memory = StoredMemory(
+        id=UUID("00000000-0000-4000-8000-000000000010"),
+        learnerId=UUID(LEARNER_ID),
+        category="topic_weakness",
+        statement="The learner struggles with graph traversal patterns.",
+        structuredValue={"topic": "graphs"},
+        confidence=0.9,
+        status="active",
+        evidenceIds=[UUID("00000000-0000-4000-8000-000000000011")],
+        createdAt=datetime.now(UTC),
+        updatedAt=datetime.now(UTC),
+    )
+    unsafe = RankingService(
+        settings(),
+        NullRankingAuditRepository(),
+        MemoryAwareModel("The learner struggles with graph traversal patterns."),
+        StaticMemoryRetriever(memory),
+    )
+    safe = RankingService(
+        settings(),
+        NullRankingAuditRepository(),
+        MemoryAwareModel("A recent topic weakness suggests focused graph practice."),
+        StaticMemoryRetriever(memory),
+    )
+
+    unsafe_response, safe_response = await asyncio.gather(
+        unsafe.rank(request), safe.rank(request)
+    )
+
+    assert unsafe_response.fallback is True
+    assert unsafe_response.fallbackReason == "invalid_output"
+    assert safe_response.fallback is False
+
+
+@pytest.mark.asyncio
+async def test_identifier_in_recommendation_reason_falls_back() -> None:
+    request = ranking_request()
+    response = await RankingService(
+        settings(),
+        NullRankingAuditRepository(),
+        MemoryAwareModel("Try candidate 900A next."),
+    ).rank(request)
+
+    assert response.fallback is True
+    assert response.fallbackReason == "invalid_output"
+
+
+@pytest.mark.asyncio
+async def test_learner_identifier_in_recommendation_reason_falls_back() -> None:
+    request = ranking_request()
+    response = await RankingService(
+        settings(),
+        NullRankingAuditRepository(),
+        MemoryAwareModel(f"Keep learner {request.learnerId} in mind."),
+    ).rank(request)
+
+    assert response.fallback is True
+    assert response.fallbackReason == "invalid_output"
+
+
+@pytest.mark.asyncio
+async def test_active_memory_influences_the_next_ranked_recommendation() -> None:
+    memory = StoredMemory(
+        id=UUID("00000000-0000-4000-8000-000000000012"),
+        learnerId=UUID(LEARNER_ID),
+        category="topic_weakness",
+        statement="The learner needs more graph practice.",
+        structuredValue={"topic": "graphs"},
+        confidence=0.9,
+        status="active",
+        evidenceIds=[UUID("00000000-0000-4000-8000-000000000013")],
+        createdAt=datetime.now(UTC),
+        updatedAt=datetime.now(UTC),
+    )
+    without_memory = RankingService(
+        settings(memory_rag_enabled=False),
+        NullRankingAuditRepository(),
+        MemoryInfluencedModel(),
+    )
+    with_memory = RankingService(
+        settings(),
+        NullRankingAuditRepository(),
+        MemoryInfluencedModel(),
+        StaticMemoryRetriever(memory),
+    )
+
+    baseline = await without_memory.rank(ranking_request())
+    influenced = await with_memory.rank(ranking_request())
+
+    assert baseline.fallback is False
+    assert influenced.fallback is False
+    assert [item.externalId for item in influenced.items] == [
+        item.externalId for item in reversed(baseline.items)
+    ]

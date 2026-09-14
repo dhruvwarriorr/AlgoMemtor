@@ -11,6 +11,7 @@ import {
   ProviderAccountResponseSchema,
   ProviderAccountSchema,
   ProviderAccountsResponseSchema,
+  ProviderActivitySyncResponseSchema,
   RecommendationDismissalResponseSchema,
   RecommendationDismissalsResponseSchema,
   RecommendationFeedbackInputSchema,
@@ -20,6 +21,7 @@ import {
   ProvidersResponseSchema,
   SaveLearnerProfileRequestSchema,
   RefreshProviderPublicStatsRequestSchema,
+  SetProviderActivityConsentRequestSchema,
   TopicsResponseSchema,
   type LearnerProfile,
   type LinkableProvider,
@@ -227,6 +229,9 @@ export const handlers: RequestHandler[] = [
       profileUrl: profileUrl(providerResult.data, accountResult.data.handle),
       consentScope: 'store_public_profile_reference',
       verification: 'not_verified',
+      verifiedActivity: preserveStats
+        ? existing.verifiedActivity
+        : { enabled: false, status: 'not_enabled' },
       ...(preserveStats
         ? {
             activityAccess: existing.activityAccess,
@@ -279,6 +284,144 @@ export const handlers: RequestHandler[] = [
       }),
     )
   }),
+  http.put(
+    '/api/provider-accounts/:provider/activity-consent',
+    async ({ params, request }) => {
+      const providerResult = LinkableProviderSchema.safeParse(params.provider)
+      const consentResult = SetProviderActivityConsentRequestSchema.safeParse(
+        await request.json().catch(() => null),
+      )
+      const account = providerResult.success
+        ? providerAccounts.find(
+            ({ provider }) => provider === providerResult.data,
+          )
+        : undefined
+      if (!providerResult.success || providerResult.data !== 'codeforces') {
+        return HttpResponse.json(
+          createApiError(
+            'UNSUPPORTED_ACTIVITY_PROVIDER',
+            'Only Codeforces public activity is available in this phase.',
+            [],
+          ),
+          { status: 400 },
+        )
+      }
+      if (!consentResult.success) {
+        return HttpResponse.json(
+          createApiError(
+            'PROVIDER_ACTIVITY_CONSENT_REQUIRED',
+            'Explicit activity consent is required.',
+            consentResult.error.issues,
+          ),
+          { status: 400 },
+        )
+      }
+      if (account === undefined) {
+        return HttpResponse.json(
+          createApiError(
+            'PROVIDER_ACCOUNT_NOT_LINKED',
+            'Link this provider account before changing activity consent.',
+            [],
+          ),
+          { status: 404 },
+        )
+      }
+      const now = new Date().toISOString()
+      const updatedAccount = ProviderAccountSchema.parse({
+        ...account,
+        verifiedActivity: consentResult.data.enabled
+          ? {
+              ...account.verifiedActivity,
+              enabled: true,
+              status:
+                account.verifiedActivity.status === 'not_enabled'
+                  ? 'not_synced'
+                  : account.verifiedActivity.status,
+              consentedAt: account.verifiedActivity.consentedAt ?? now,
+            }
+          : { enabled: false, status: 'not_enabled' },
+        updatedAt: now,
+      })
+      providerAccounts = providerAccounts.map((candidate) =>
+        candidate.provider === updatedAccount.provider
+          ? updatedAccount
+          : candidate,
+      )
+      return HttpResponse.json(
+        ProviderAccountResponseSchema.parse({ data: updatedAccount }),
+      )
+    },
+  ),
+  http.post('/api/provider-accounts/:provider/activity-sync', ({ params }) => {
+    const providerResult = LinkableProviderSchema.safeParse(params.provider)
+    const account = providerResult.success
+      ? providerAccounts.find(
+          ({ provider }) => provider === providerResult.data,
+        )
+      : undefined
+    if (!providerResult.success || providerResult.data !== 'codeforces') {
+      return HttpResponse.json(
+        createApiError(
+          'UNSUPPORTED_ACTIVITY_PROVIDER',
+          'Only Codeforces public activity is available in this phase.',
+          [],
+        ),
+        { status: 400 },
+      )
+    }
+    if (account === undefined) {
+      return HttpResponse.json(
+        createApiError(
+          'PROVIDER_ACCOUNT_NOT_LINKED',
+          'Link this provider account before synchronizing activity.',
+          [],
+        ),
+        { status: 404 },
+      )
+    }
+    if (!account.verifiedActivity.enabled) {
+      return HttpResponse.json(
+        createApiError(
+          'PROVIDER_ACTIVITY_CONSENT_REQUIRED',
+          'Enable activity consent before synchronizing.',
+          [],
+        ),
+        { status: 400 },
+      )
+    }
+    const now = new Date().toISOString()
+    const updatedAccount = ProviderAccountSchema.parse({
+      ...account,
+      verifiedActivity: {
+        ...account.verifiedActivity,
+        status: 'synced',
+        lastAttemptedAt: now,
+        lastSucceededAt: now,
+        acceptedProblemCount:
+          account.verifiedActivity.acceptedProblemCount ?? 1,
+        complete: true,
+      },
+      updatedAt: now,
+    })
+    providerAccounts = providerAccounts.map((candidate) =>
+      candidate.provider === updatedAccount.provider
+        ? updatedAccount
+        : candidate,
+    )
+    return HttpResponse.json(
+      ProviderActivitySyncResponseSchema.parse({
+        data: {
+          provider: 'codeforces',
+          discovered: 1,
+          added: 1,
+          confirmedSolved: 1,
+          complete: true,
+          syncedAt: now,
+          nextAllowedAt: new Date(Date.now() + 900_000).toISOString(),
+        },
+      }),
+    )
+  }),
   http.post(
     '/api/provider-accounts/:provider/public-stats/refresh',
     async ({ params, request }) => {
@@ -318,6 +461,7 @@ export const handlers: RequestHandler[] = [
       const updatedAccount = ProviderAccountSchema.parse({
         ...account,
         activityAccess: 'public_solved_count',
+        verifiedActivity: account.verifiedActivity,
         publicStatsConsentAt: account.publicStatsConsentAt ?? now,
         publicStats: {
           status: 'available',

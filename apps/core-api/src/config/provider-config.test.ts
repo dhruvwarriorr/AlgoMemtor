@@ -10,6 +10,7 @@ describe('readCodeforcesProviderConfig', () => {
       timeoutMs: 8000,
       maxAttempts: 2,
       minRequestIntervalMs: 2100,
+      activityMinRefreshIntervalMs: 900_000,
     })
   })
 

@@ -330,6 +330,7 @@ function ProgressHistoryItem({ event }: { event: ProgressHistoryEvent }) {
   const progressQuery = useProblemProgress(event.problem)
   const progress = progressQuery.data?.data
   const eventStatus = event.status ?? progress?.status ?? 'unsolved'
+  const evidenceSource = event.evidenceSource ?? progress?.evidenceSource
   const eventBookmarked =
     progress?.bookmarked ?? event.eventType === 'bookmark_added'
 
@@ -366,6 +367,7 @@ function ProgressHistoryItem({ event }: { event: ProgressHistoryEvent }) {
       ) : null}
       <div className="mt-4 border-t border-border pt-3">
         <ProblemLearningControls
+          evidenceSource={evidenceSource}
           initialBookmarked={eventBookmarked}
           initialStatus={eventStatus}
           problem={event.problem}

@@ -23,6 +23,8 @@ import {
   RecommendationFeedbackInputSchema,
   RecommendationRestorationResponseSchema,
   RefreshProviderPublicStatsRequestSchema,
+  ProviderActivitySyncResponseSchema,
+  SetProviderActivityConsentRequestSchema,
   ResolveTimerRequestSchema,
   SaveAiConsentRequestSchema,
   SaveBookmarkRequestSchema,
@@ -73,6 +75,7 @@ import { CodeforcesPublicStatsFetcher } from './integrations/provider-accounts/c
 import { LeetCodePublicStatsFetcher } from './integrations/provider-accounts/leetcode-public-stats.js'
 import {
   ProviderPublicStatsError,
+  type ProviderVerifiedActivityFetcher,
   type ProviderPublicStatsFetcher,
 } from './integrations/provider-accounts/provider-public-stats.js'
 import type { ProblemProvider } from './integrations/providers/problem-provider.js'
@@ -119,6 +122,13 @@ import {
   ProviderAccountNotLinkedError,
   ProviderAccountStatsService,
 } from './services/provider-account-stats-service.js'
+import {
+  ProviderActivityChangedError,
+  ProviderActivityConsentRequiredError,
+  ProviderActivityCooldownError,
+  ProviderActivityNotLinkedError,
+  ProviderActivityService,
+} from './services/provider-activity-service.js'
 import { serializeProviderAccount } from './services/provider-account-service.js'
 import {
   structuredLogger,
@@ -134,6 +144,8 @@ export type CreateAppOptions = {
   recommendationRepository?: RecommendationRepository
   providerAccountRepository?: ProviderAccountRepository
   providerPublicStatsFetchers?: readonly ProviderPublicStatsFetcher[]
+  providerVerifiedActivityFetchers?: readonly ProviderVerifiedActivityFetcher[]
+  providerActivityMinRefreshIntervalMs?: number
   problemProvider?: ProblemProvider
   logger?: StructuredLogger
   aiRecommendationClient?: AiRecommendationClient
@@ -257,11 +269,13 @@ const latestLearnerStatuses = (
     externalId: string
     actionType: string
     learnerStatus?: 'unsolved' | 'attempted' | 'solved' | undefined
+    evidenceSource?: 'manual' | 'provider_verified' | undefined
     occurredAt: Date
     id: string
   }[],
 ) => {
   const statuses = new Map<string, 'unsolved' | 'attempted' | 'solved'>()
+  const grouped = new Map<string, (typeof actions)[number][]>()
   for (const action of actions
     .filter((item) => item.actionType === 'status_changed')
     .sort(
@@ -269,12 +283,17 @@ const latestLearnerStatuses = (
         left.occurredAt.getTime() - right.occurredAt.getTime() ||
         left.id.localeCompare(right.id),
     )) {
-    if (action.learnerStatus !== undefined) {
-      statuses.set(
-        `${action.provider}:${action.externalId}`,
-        action.learnerStatus,
-      )
-    }
+    if (action.learnerStatus === undefined) continue
+    const key = `${action.provider}:${action.externalId}`
+    const values = grouped.get(key) ?? []
+    values.push(action)
+    grouped.set(key, values)
+  }
+  for (const [key, values] of grouped) {
+    const manual = values.filter((item) => item.evidenceSource === 'manual')
+    const latest = manual.at(-1) ?? values.at(-1)
+    if (latest?.learnerStatus !== undefined)
+      statuses.set(key, latest.learnerStatus)
   }
   return statuses
 }
@@ -377,11 +396,28 @@ export const createApp = (options: CreateAppOptions = {}) => {
     logger,
     memoryGenerationEnabled: process.env.MEMORY_GENERATION_ENABLED !== 'false',
   })
+  const providerPublicStatsFetchers =
+    options.providerPublicStatsFetchers ?? defaultProviderPublicStatsFetchers()
   const providerAccountStatsService = new ProviderAccountStatsService({
     repository: providerAccountRepository,
+    fetchers: providerPublicStatsFetchers,
+    logger,
+  })
+  const providerActivityService = new ProviderActivityService({
+    repository: providerAccountRepository,
+    actionRepository: problemActionRepository,
     fetchers:
-      options.providerPublicStatsFetchers ??
-      defaultProviderPublicStatsFetchers(),
+      options.providerVerifiedActivityFetchers ??
+      (providerPublicStatsFetchers.filter(
+        (fetcher) =>
+          typeof (fetcher as { fetchVerifiedActivity?: unknown })
+            .fetchVerifiedActivity === 'function',
+      ) as unknown as readonly ProviderVerifiedActivityFetcher[]),
+    ...(options.providerActivityMinRefreshIntervalMs === undefined
+      ? {}
+      : {
+          minRefreshIntervalMs: options.providerActivityMinRefreshIntervalMs,
+        }),
     logger,
   })
   const progressService = new ProgressService({
@@ -390,6 +426,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
     bookmarkRepository,
     recommendationRepository,
     provider,
+    providerAccountRepository,
     learnerProfileRepository,
     logger,
     timezoneForLearner: async (authUserId) => {
@@ -681,11 +718,28 @@ export const createApp = (options: CreateAppOptions = {}) => {
         return
       }
 
+      const authUserId = authenticatedSubject(response)
+      const previousAccount =
+        await providerAccountRepository.findByAuthUserIdAndProvider(
+          authUserId,
+          providerResult.data,
+        )
       const account = await providerAccountRepository.upsertByAuthUserId(
-        authenticatedSubject(response),
+        authUserId,
         providerResult.data,
         accountResult.data.handle,
       )
+      if (
+        previousAccount !== null &&
+        previousAccount.externalHandle !== accountResult.data.handle
+      ) {
+        if (providerResult.data === 'codeforces') {
+          await problemActionRepository.deleteProviderVerifiedByAuthUserId(
+            authUserId,
+            providerResult.data,
+          )
+        }
+      }
 
       response.json(
         ProviderAccountResponseSchema.parse({
@@ -719,6 +773,12 @@ export const createApp = (options: CreateAppOptions = {}) => {
         authenticatedSubject(response),
         providerResult.data,
       )
+      if (providerResult.data === 'codeforces') {
+        await problemActionRepository.deleteProviderVerifiedByAuthUserId(
+          authenticatedSubject(response),
+          providerResult.data,
+        )
+      }
       response.json(
         DisconnectProviderAccountResponseSchema.parse({
           data: { provider: providerResult.data },
@@ -809,6 +869,172 @@ export const createApp = (options: CreateAppOptions = {}) => {
           return
         }
 
+        throw error
+      }
+    },
+  )
+
+  app.put(
+    '/api/provider-accounts/:provider/activity-consent',
+    requireAuthenticated,
+    async (request, response) => {
+      const providerResult = LinkableProviderSchema.safeParse(
+        request.params.provider,
+      )
+      const consentResult = SetProviderActivityConsentRequestSchema.safeParse(
+        request.body,
+      )
+      if (!providerResult.success) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'UNSUPPORTED_LINK_PROVIDER',
+              'That provider cannot supply verified activity.',
+            ),
+          )
+        return
+      }
+      if (providerResult.data !== 'codeforces') {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'UNSUPPORTED_ACTIVITY_PROVIDER',
+              'Only Codeforces public activity can be enabled in this phase.',
+            ),
+          )
+        return
+      }
+      if (!consentResult.success) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'PROVIDER_ACTIVITY_CONSENT_REQUIRED',
+              'The Codeforces public-activity policy must be accepted explicitly.',
+              { details: consentResult.error.issues },
+            ),
+          )
+        return
+      }
+      const account = await providerActivityService.setConsent(
+        authenticatedSubject(response),
+        providerResult.data,
+        consentResult.data.enabled,
+      )
+      if (account === null) {
+        response
+          .status(404)
+          .json(
+            createApiError(
+              'PROVIDER_ACCOUNT_NOT_LINKED',
+              'Link this Codeforces account before changing activity consent.',
+            ),
+          )
+        return
+      }
+      response.json(
+        ProviderAccountResponseSchema.parse({
+          data: serializeProviderAccount(account),
+        }),
+      )
+    },
+  )
+
+  app.post(
+    '/api/provider-accounts/:provider/activity-sync',
+    requireAuthenticated,
+    async (request, response) => {
+      const providerResult = LinkableProviderSchema.safeParse(
+        request.params.provider,
+      )
+      if (!providerResult.success || providerResult.data !== 'codeforces') {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'UNSUPPORTED_ACTIVITY_PROVIDER',
+              'Only Codeforces public activity can be synchronized in this phase.',
+            ),
+          )
+        return
+      }
+      try {
+        const result = await providerActivityService.sync(
+          authenticatedSubject(response),
+          providerResult.data,
+        )
+        response.json(
+          ProviderActivitySyncResponseSchema.parse({
+            data: {
+              provider: result.provider,
+              discovered: result.discovered,
+              added: result.added,
+              confirmedSolved: result.confirmedSolved,
+              complete: result.complete,
+              syncedAt: result.syncedAt.toISOString(),
+              nextAllowedAt: result.nextAllowedAt.toISOString(),
+            },
+          }),
+        )
+      } catch (error) {
+        if (error instanceof ProviderActivityNotLinkedError) {
+          response
+            .status(404)
+            .json(
+              createApiError(
+                'PROVIDER_ACCOUNT_NOT_LINKED',
+                'Link this Codeforces account before synchronizing activity.',
+              ),
+            )
+          return
+        }
+        if (error instanceof ProviderActivityConsentRequiredError) {
+          response
+            .status(400)
+            .json(
+              createApiError(
+                'PROVIDER_ACTIVITY_CONSENT_REQUIRED',
+                'Enable Codeforces public activity consent before synchronizing.',
+              ),
+            )
+          return
+        }
+        if (error instanceof ProviderActivityCooldownError) {
+          response.status(429).json(
+            createApiError(
+              'PROVIDER_ACTIVITY_COOLDOWN',
+              'Codeforces activity was synchronized too recently.',
+              {
+                retryable: true,
+                details: { retryAfter: error.retryAfter.toISOString() },
+              },
+            ),
+          )
+          return
+        }
+        if (error instanceof ProviderActivityChangedError) {
+          response
+            .status(409)
+            .json(
+              createApiError(
+                'PROVIDER_ACCOUNT_CHANGED',
+                'The linked Codeforces handle changed during synchronization. Try again.',
+                { retryable: true },
+              ),
+            )
+          return
+        }
+        if (error instanceof ProviderPublicStatsError) {
+          response.status(publicStatsStatusCode(error)).json(
+            createApiError(error.code, publicStatsMessage(error), {
+              retryable: error.retryable,
+              details: { provider: error.provider },
+            }),
+          )
+          return
+        }
         throw error
       }
     },

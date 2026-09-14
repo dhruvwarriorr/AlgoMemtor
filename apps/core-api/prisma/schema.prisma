@@ -9,9 +9,9 @@ datasource db {
 }
 
 model CoreUser {
-  id                     String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  authUserId             String                   @unique @map("auth_user_id") @db.Uuid
-  createdAt              DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  id                     String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  authUserId             String                     @unique @map("auth_user_id") @db.Uuid
+  createdAt              DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
   learnerProfile         LearnerProfile?
   providerAccounts       ProviderAccount[]
   bookmarks              Bookmark[]
@@ -22,6 +22,7 @@ model CoreUser {
   timerSessions          ProblemTimerSession[]
   aiConsents             LearnerAiConsent[]
   outboxJobs             OutboxJob[]
+  verifiedActivities     ProviderVerifiedActivity[]
 
   @@map("users")
   @@schema("core")
@@ -41,27 +42,58 @@ model LearnerProfile {
 }
 
 model ProviderAccount {
-  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId               String    @map("user_id") @db.Uuid
-  provider             String    @db.VarChar(32)
-  externalHandle       String    @map("external_handle") @db.VarChar(64)
-  consentScope         String    @map("consent_scope") @db.VarChar(64)
-  verificationStatus   String    @default("not_verified") @map("verification_status") @db.VarChar(32)
-  activityAccess       String    @default("not_enabled") @map("activity_access") @db.VarChar(32)
-  publicStatsConsentAt DateTime? @map("public_stats_consent_at") @db.Timestamptz(3)
-  solvedCount          Int?      @map("solved_count")
-  statsComplete        Boolean?  @map("stats_complete")
-  statsSource          String?   @map("stats_source") @db.VarChar(64)
-  statsFetchedAt       DateTime? @map("stats_fetched_at") @db.Timestamptz(3)
-  statsAttemptedAt     DateTime? @map("stats_attempted_at") @db.Timestamptz(3)
-  statsErrorCode       String?   @map("stats_error_code") @db.VarChar(64)
-  statsErrorRetryable  Boolean?  @map("stats_error_retryable")
-  linkedAt             DateTime  @default(now()) @map("linked_at") @db.Timestamptz(3)
-  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
-  user                 CoreUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                           String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                       String                     @map("user_id") @db.Uuid
+  provider                     String                     @db.VarChar(32)
+  externalHandle               String                     @map("external_handle") @db.VarChar(64)
+  consentScope                 String                     @map("consent_scope") @db.VarChar(64)
+  verificationStatus           String                     @default("not_verified") @map("verification_status") @db.VarChar(32)
+  activityAccess               String                     @default("not_enabled") @map("activity_access") @db.VarChar(32)
+  publicStatsConsentAt         DateTime?                  @map("public_stats_consent_at") @db.Timestamptz(3)
+  solvedCount                  Int?                       @map("solved_count")
+  statsComplete                Boolean?                   @map("stats_complete")
+  statsSource                  String?                    @map("stats_source") @db.VarChar(64)
+  statsFetchedAt               DateTime?                  @map("stats_fetched_at") @db.Timestamptz(3)
+  statsAttemptedAt             DateTime?                  @map("stats_attempted_at") @db.Timestamptz(3)
+  statsErrorCode               String?                    @map("stats_error_code") @db.VarChar(64)
+  statsErrorRetryable          Boolean?                   @map("stats_error_retryable")
+  activityConsentAt            DateTime?                  @map("activity_consent_at") @db.Timestamptz(3)
+  activitySyncStatus           String                     @default("not_enabled") @map("activity_sync_status") @db.VarChar(16)
+  activityLastAttemptedAt      DateTime?                  @map("activity_last_attempted_at") @db.Timestamptz(3)
+  activityLastSucceededAt      DateTime?                  @map("activity_last_succeeded_at") @db.Timestamptz(3)
+  activityAcceptedProblemCount Int?                       @map("activity_accepted_problem_count")
+  activityComplete             Boolean?                   @map("activity_complete")
+  activityErrorCode            String?                    @map("activity_error_code") @db.VarChar(64)
+  activityRetryAfter           DateTime?                  @map("activity_retry_after") @db.Timestamptz(3)
+  linkedAt                     DateTime                   @default(now()) @map("linked_at") @db.Timestamptz(3)
+  updatedAt                    DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user                         CoreUser                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  verifiedActivities           ProviderVerifiedActivity[]
 
   @@unique([userId, provider])
   @@map("provider_accounts")
+  @@schema("core")
+}
+
+model ProviderVerifiedActivity {
+  id                 String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId             String          @map("user_id") @db.Uuid
+  providerAccountId  String          @map("provider_account_id") @db.Uuid
+  provider           String          @db.VarChar(32)
+  externalId         String          @map("external_id") @db.VarChar(128)
+  providerEventId    String          @map("provider_event_id") @db.VarChar(96)
+  providerOccurredAt DateTime        @map("provider_occurred_at") @db.Timestamptz(3)
+  firstObservedAt    DateTime        @default(now()) @map("first_observed_at") @db.Timestamptz(3)
+  lastObservedAt     DateTime        @default(now()) @map("last_observed_at") @db.Timestamptz(3)
+  progressActionId   String?         @unique @map("progress_action_id") @db.Uuid
+  user               CoreUser        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  providerAccount    ProviderAccount @relation(fields: [providerAccountId], references: [id], onDelete: Cascade)
+  progressAction     ProblemAction?  @relation(fields: [progressActionId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, provider, externalId])
+  @@unique([providerAccountId, providerEventId])
+  @@index([userId, providerOccurredAt])
+  @@map("provider_verified_activity")
   @@schema("core")
 }
 
@@ -153,20 +185,21 @@ model RecommendationItem {
 }
 
 model ProblemAction {
-  id                    String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId                String               @map("user_id") @db.Uuid
-  provider              String               @db.VarChar(32)
-  externalId            String               @map("external_id") @db.VarChar(128)
-  actionType            String               @map("action_type") @db.VarChar(32)
-  learnerStatus         String?              @map("learner_status") @db.VarChar(16)
-  evidenceSource        String?              @map("evidence_source") @db.VarChar(32)
-  recommendationBatchId String?              @map("recommendation_batch_id") @db.Uuid
-  recommendationItemId  String?              @map("recommendation_item_id") @db.Uuid
-  sourceContext         String?              @map("source_context") @db.VarChar(64)
-  occurredAt            DateTime             @default(now()) @map("occurred_at") @db.Timestamptz(3)
-  user                  CoreUser             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  recommendationBatch   RecommendationBatch? @relation(fields: [recommendationBatchId], references: [id], onDelete: SetNull)
-  recommendationItem    RecommendationItem?  @relation(fields: [recommendationItemId], references: [id], onDelete: SetNull)
+  id                    String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                String                    @map("user_id") @db.Uuid
+  provider              String                    @db.VarChar(32)
+  externalId            String                    @map("external_id") @db.VarChar(128)
+  actionType            String                    @map("action_type") @db.VarChar(32)
+  learnerStatus         String?                   @map("learner_status") @db.VarChar(16)
+  evidenceSource        String?                   @map("evidence_source") @db.VarChar(32)
+  recommendationBatchId String?                   @map("recommendation_batch_id") @db.Uuid
+  recommendationItemId  String?                   @map("recommendation_item_id") @db.Uuid
+  sourceContext         String?                   @map("source_context") @db.VarChar(64)
+  occurredAt            DateTime                  @default(now()) @map("occurred_at") @db.Timestamptz(3)
+  user                  CoreUser                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recommendationBatch   RecommendationBatch?      @relation(fields: [recommendationBatchId], references: [id], onDelete: SetNull)
+  recommendationItem    RecommendationItem?       @relation(fields: [recommendationItemId], references: [id], onDelete: SetNull)
+  verifiedActivity      ProviderVerifiedActivity?
 
   @@index([userId, provider, externalId, occurredAt])
   @@index([userId, actionType, occurredAt])
@@ -230,23 +263,23 @@ model LearnerAiConsent {
 }
 
 model OutboxJob {
-  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId         String    @map("user_id") @db.Uuid
-  jobType        String    @map("job_type") @db.VarChar(64)
-  evidenceType   String    @map("evidence_type") @db.VarChar(64)
-  evidenceId     String?   @map("evidence_id") @db.Uuid
-  evidenceIds    Json?     @map("evidence_ids") @db.JsonB
-  problemProvider String?  @map("problem_provider") @db.VarChar(32)
-  problemExternalId String? @map("problem_external_id") @db.VarChar(128)
-  idempotencyKey String    @unique @map("idempotency_key") @db.VarChar(160)
-  status         String    @default("pending") @db.VarChar(16)
-  attempts       Int       @default(0)
-  nextAttemptAt  DateTime  @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
-  safeErrorCode  String?   @map("safe_error_code") @db.VarChar(64)
-  lockedAt       DateTime? @map("locked_at") @db.Timestamptz(3)
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
-  user           CoreUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  jobType           String    @map("job_type") @db.VarChar(64)
+  evidenceType      String    @map("evidence_type") @db.VarChar(64)
+  evidenceId        String?   @map("evidence_id") @db.Uuid
+  evidenceIds       Json?     @map("evidence_ids") @db.JsonB
+  problemProvider   String?   @map("problem_provider") @db.VarChar(32)
+  problemExternalId String?   @map("problem_external_id") @db.VarChar(128)
+  idempotencyKey    String    @unique @map("idempotency_key") @db.VarChar(160)
+  status            String    @default("pending") @db.VarChar(16)
+  attempts          Int       @default(0)
+  nextAttemptAt     DateTime  @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
+  safeErrorCode     String?   @map("safe_error_code") @db.VarChar(64)
+  lockedAt          DateTime? @map("locked_at") @db.Timestamptz(3)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user              CoreUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([status, nextAttemptAt])
   @@index([userId, createdAt])

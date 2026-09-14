@@ -17,6 +17,8 @@ import {
   useLinkProviderAccount,
   useProviderAccounts,
   useRefreshProviderPublicStats,
+  useSetProviderActivityConsent,
+  useSyncProviderActivity,
 } from '../hooks/useProviderAccounts'
 
 const providers: readonly {
@@ -114,14 +116,21 @@ function ProviderAccountCard({
   const linkAccount = useLinkProviderAccount()
   const disconnectAccount = useDisconnectProviderAccount()
   const refreshStats = useRefreshProviderPublicStats()
+  const setActivityConsent = useSetProviderActivityConsent()
+  const syncActivity = useSyncProviderActivity()
   const [handle, setHandle] = useState(account?.handle ?? '')
   const [consent, setConsent] = useState(false)
   const [statsConsent, setStatsConsent] = useState(false)
+  const [activityConsent, setActivityConsentChecked] = useState(
+    account?.verifiedActivity.enabled ?? false,
+  )
   const [validationError, setValidationError] = useState<string | null>(null)
   const isBusy =
     linkAccount.isPending ||
     disconnectAccount.isPending ||
-    refreshStats.isPending
+    refreshStats.isPending ||
+    setActivityConsent.isPending ||
+    syncActivity.isPending
   const fieldId = `${idPrefix}-${provider}-handle`
   const consentId = `${idPrefix}-${provider}-consent`
   const statsConsentId = `${idPrefix}-${provider}-stats-consent`
@@ -163,6 +172,7 @@ function ProviderAccountCard({
       setHandle('')
       setConsent(false)
       setStatsConsent(false)
+      setActivityConsentChecked(false)
       notify({
         title: `${label} profile disconnected`,
         description: 'The saved public handle was removed.',
@@ -191,8 +201,41 @@ function ProviderAccountCard({
     }
   }
 
+  async function handleActivityConsent(enabled: boolean) {
+    try {
+      await setActivityConsent.mutateAsync({ provider, enabled })
+      setActivityConsentChecked(enabled)
+      if (!enabled) {
+        notify({
+          title: `${label} activity consent removed`,
+          description: 'Provider-derived activity evidence was removed.',
+          tone: 'success',
+        })
+      }
+    } catch {
+      setActivityConsentChecked(account?.verifiedActivity.enabled ?? false)
+    }
+  }
+
+  async function handleActivitySync() {
+    try {
+      const result = await syncActivity.mutateAsync(provider)
+      notify({
+        title: `${label} activity synchronized`,
+        description: `${result.data.confirmedSolved} new accepted problem${result.data.confirmedSolved === 1 ? '' : 's'} recorded.`,
+        tone: 'success',
+      })
+    } catch {
+      // The mutation error and persisted state are rendered below.
+    }
+  }
+
   const mutationError =
-    linkAccount.error ?? disconnectAccount.error ?? refreshStats.error
+    linkAccount.error ??
+    disconnectAccount.error ??
+    refreshStats.error ??
+    setActivityConsent.error ??
+    syncActivity.error
 
   return (
     <article className="flex min-w-0 flex-col gap-4 rounded-lg border border-border bg-background p-4">
@@ -217,6 +260,54 @@ function ProviderAccountCard({
       </div>
 
       {account ? <PublicStatsSummary account={account} /> : null}
+
+      {account && provider === 'codeforces' ? (
+        <div className="space-y-3 rounded-md border border-border bg-muted/30 p-3">
+          <label
+            className="flex min-w-0 items-start gap-3 text-sm text-foreground"
+            htmlFor={`${idPrefix}-${provider}-activity-consent`}
+          >
+            <input
+              checked={activityConsent}
+              className="mt-0.5 size-4 shrink-0 rounded accent-primary"
+              disabled={isBusy}
+              id={`${idPrefix}-${provider}-activity-consent`}
+              onChange={(event) => {
+                const enabled = event.currentTarget.checked
+                setActivityConsentChecked(enabled)
+                void handleActivityConsent(enabled)
+              }}
+              type="checkbox"
+            />
+            <span>
+              I consent to a manual Codeforces public-activity sync. This reads
+              accepted submissions from the linked public handle; it does not
+              prove that the handle belongs to me and never collects source
+              code.
+            </span>
+          </label>
+          <p className="text-sm text-muted-foreground">
+            Activity status:{' '}
+            {account.verifiedActivity.status === 'not_enabled'
+              ? 'Not enabled'
+              : account.verifiedActivity.status === 'not_synced'
+                ? 'Not synchronized'
+                : account.verifiedActivity.status === 'partial'
+                  ? 'Partial recent-submission window'
+                  : account.verifiedActivity.status === 'error'
+                    ? 'Last sync failed'
+                    : 'Synchronized'}
+          </p>
+          <Button
+            disabled={isBusy || !activityConsent}
+            onClick={() => void handleActivitySync()}
+            type="button"
+            variant="outline"
+          >
+            {syncActivity.isPending ? 'Syncing activity…' : 'Sync activity'}
+          </Button>
+        </div>
+      ) : null}
 
       <form
         className="space-y-3"

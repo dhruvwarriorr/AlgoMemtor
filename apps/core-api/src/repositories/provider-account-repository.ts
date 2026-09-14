@@ -1,9 +1,13 @@
+import { randomUUID } from 'node:crypto'
+
 import {
   LinkableProviderSchema,
   ProviderAccountActivityAccessSchema,
   ProviderAccountConsentScopeSchema,
   ProviderPublicStatsErrorCodeSchema,
   ProviderPublicStatsSourceSchema,
+  ProviderVerifiedActivityErrorCodeSchema,
+  ProviderVerifiedActivityStatusSchema,
   PublicProviderHandleSchema,
   type LinkableProvider,
   type ProviderAccountActivityAccess,
@@ -14,6 +18,48 @@ import {
 } from '@algomemtor/shared-contracts'
 
 import type { PrismaClient } from '../generated/prisma/client.js'
+import type {
+  ProviderVerifiedActivityEvent,
+  ProviderVerifiedActivityFetchResult,
+} from '../integrations/provider-accounts/provider-public-stats.js'
+
+export type ProviderVerifiedActivityState = {
+  enabled: boolean
+  status: 'not_enabled' | 'not_synced' | 'synced' | 'partial' | 'error'
+  consentedAt: Date | null
+  lastAttemptedAt: Date | null
+  lastSucceededAt: Date | null
+  acceptedProblemCount: number | null
+  complete: boolean | null
+  errorCode:
+    | 'PROVIDER_ACTIVITY_CONSENT_REQUIRED'
+    | 'PROVIDER_ACTIVITY_COOLDOWN'
+    | 'PROVIDER_ACCOUNT_NOT_FOUND'
+    | 'PROVIDER_TIMEOUT'
+    | 'PROVIDER_RATE_LIMITED'
+    | 'PROVIDER_UNAVAILABLE'
+    | 'PROVIDER_INVALID_RESPONSE'
+    | null
+  retryAfter: Date | null
+}
+
+export type ProviderVerifiedActivitySuccess =
+  ProviderVerifiedActivityFetchResult & {
+    attemptedAt: Date
+  }
+
+export type ProviderVerifiedActivityFailure = {
+  errorCode: ProviderVerifiedActivityState['errorCode']
+  attemptedAt: Date
+  retryAfter?: Date
+}
+
+export type ProviderVerifiedActivityRecord = ProviderVerifiedActivityEvent & {
+  id: string
+  firstObservedAt: Date
+  lastObservedAt: Date
+  progressActionId: string | null
+}
 
 export type ProviderAccountRecord = {
   provider: LinkableProvider
@@ -29,6 +75,7 @@ export type ProviderAccountRecord = {
   statsAttemptedAt: Date | null
   statsErrorCode: ProviderPublicStatsErrorCode | null
   statsErrorRetryable: boolean | null
+  verifiedActivity: ProviderVerifiedActivityState
   linkedAt: Date
   updatedAt: Date
 }
@@ -53,6 +100,9 @@ export interface ProviderAccountRepository {
     authUserId: string,
     provider: LinkableProvider,
   ): Promise<ProviderAccountRecord | null>
+  listVerifiedActivityByAuthUserId(
+    authUserId: string,
+  ): Promise<ProviderVerifiedActivityRecord[]>
   upsertByAuthUserId(
     authUserId: string,
     provider: LinkableProvider,
@@ -70,6 +120,34 @@ export interface ProviderAccountRepository {
     expectedHandle: PublicProviderHandle,
     failure: ProviderPublicStatsFailure,
   ): Promise<ProviderAccountRecord | null>
+  setVerifiedActivityConsent(
+    authUserId: string,
+    provider: LinkableProvider,
+    enabled: boolean,
+    occurredAt: Date,
+  ): Promise<ProviderAccountRecord | null>
+  saveVerifiedActivitySuccess(
+    authUserId: string,
+    provider: LinkableProvider,
+    expectedHandle: PublicProviderHandle,
+    activity: ProviderVerifiedActivitySuccess,
+  ): Promise<{
+    record: ProviderAccountRecord
+    added: ProviderVerifiedActivityRecord[]
+    pending: ProviderVerifiedActivityRecord[]
+  } | null>
+  saveVerifiedActivityFailure(
+    authUserId: string,
+    provider: LinkableProvider,
+    expectedHandle: PublicProviderHandle,
+    failure: ProviderVerifiedActivityFailure,
+  ): Promise<ProviderAccountRecord | null>
+  linkVerifiedActivityAction(
+    authUserId: string,
+    provider: LinkableProvider,
+    externalId: string,
+    actionId: string,
+  ): Promise<void>
   deleteByAuthUserId(
     authUserId: string,
     provider: LinkableProvider,
@@ -88,12 +166,27 @@ const createUnlinkedStats = () => ({
   statsAttemptedAt: null,
   statsErrorCode: null,
   statsErrorRetryable: null,
+  verifiedActivity: {
+    enabled: false,
+    status: 'not_enabled' as const,
+    consentedAt: null,
+    lastAttemptedAt: null,
+    lastSucceededAt: null,
+    acceptedProblemCount: null,
+    complete: null,
+    errorCode: null,
+    retryAfter: null,
+  },
 })
 
 export class InMemoryProviderAccountRepository implements ProviderAccountRepository {
   private readonly recordsByAuthUserId = new Map<
     string,
     Map<LinkableProvider, ProviderAccountRecord>
+  >()
+  private readonly activityByAuthUserId = new Map<
+    string,
+    Map<LinkableProvider, Map<string, ProviderVerifiedActivityRecord>>
   >()
 
   constructor(private readonly now: () => Date = () => new Date()) {}
@@ -109,6 +202,13 @@ export class InMemoryProviderAccountRepository implements ProviderAccountReposit
     provider: LinkableProvider,
   ) {
     return this.recordsByAuthUserId.get(authUserId)?.get(provider) ?? null
+  }
+
+  async listVerifiedActivityByAuthUserId(authUserId: string) {
+    const byProvider = this.activityByAuthUserId.get(authUserId)
+    return [...(byProvider?.values() ?? [])].flatMap((events) =>
+      [...events.values()].map((event) => ({ ...event })),
+    )
   }
 
   async upsertByAuthUserId(
@@ -138,6 +238,7 @@ export class InMemoryProviderAccountRepository implements ProviderAccountReposit
             statsAttemptedAt: existing.statsAttemptedAt,
             statsErrorCode: existing.statsErrorCode,
             statsErrorRetryable: existing.statsErrorRetryable,
+            verifiedActivity: existing.verifiedActivity,
           }
         : createUnlinkedStats()),
       linkedAt: existing?.linkedAt ?? now,
@@ -185,6 +286,165 @@ export class InMemoryProviderAccountRepository implements ProviderAccountReposit
     return record
   }
 
+  async setVerifiedActivityConsent(
+    authUserId: string,
+    provider: LinkableProvider,
+    enabled: boolean,
+    occurredAt: Date,
+  ) {
+    const records = this.recordsByAuthUserId.get(authUserId)
+    const existing = records?.get(provider)
+    if (records === undefined || existing === undefined) return null
+    const current = existing.verifiedActivity
+    const updatedState = enabled
+      ? {
+          ...current,
+          enabled: true,
+          status:
+            current.status === 'not_enabled' || current.status === 'error'
+              ? ('not_synced' as const)
+              : current.status,
+          consentedAt: current.consentedAt ?? occurredAt,
+          errorCode: null,
+          retryAfter: null,
+        }
+      : createUnlinkedStats().verifiedActivity
+    const updated = {
+      ...existing,
+      verifiedActivity: updatedState,
+      updatedAt: occurredAt,
+    }
+    records.set(provider, updated)
+    if (!enabled) {
+      this.activityByAuthUserId.get(authUserId)?.delete(provider)
+    }
+    return updated
+  }
+
+  async saveVerifiedActivitySuccess(
+    authUserId: string,
+    provider: LinkableProvider,
+    expectedHandle: PublicProviderHandle,
+    activity: ProviderVerifiedActivitySuccess,
+  ) {
+    const records = this.recordsByAuthUserId.get(authUserId)
+    const existing = records?.get(provider)
+    if (
+      records === undefined ||
+      existing === undefined ||
+      existing.externalHandle !== expectedHandle ||
+      !existing.verifiedActivity.enabled
+    ) {
+      return null
+    }
+    const byProvider =
+      this.activityByAuthUserId.get(authUserId) ??
+      new Map<LinkableProvider, Map<string, ProviderVerifiedActivityRecord>>()
+    const events =
+      byProvider.get(provider) ??
+      new Map<string, ProviderVerifiedActivityRecord>()
+    const added: ProviderVerifiedActivityRecord[] = []
+    const pending: ProviderVerifiedActivityRecord[] = []
+    for (const event of activity.events) {
+      const current = events.get(event.externalId)
+      if (current === undefined) {
+        const value = {
+          ...event,
+          id: randomUUID(),
+          firstObservedAt: activity.attemptedAt,
+          lastObservedAt: activity.attemptedAt,
+          progressActionId: null,
+        }
+        events.set(event.externalId, value)
+        added.push(value)
+      } else {
+        const updated = {
+          ...current,
+          lastObservedAt: activity.attemptedAt,
+          ...(event.occurredAt < current.occurredAt
+            ? {
+                occurredAt: event.occurredAt,
+                providerEventId: event.providerEventId,
+              }
+            : {}),
+        }
+        events.set(event.externalId, updated)
+        // Keep previously observed records without an action in the work list.
+        // This lets a later retry recover if action persistence failed after
+        // the evidence row was written.
+        if (updated.progressActionId === null) {
+          pending.push(updated)
+        }
+      }
+    }
+    byProvider.set(provider, events)
+    this.activityByAuthUserId.set(authUserId, byProvider)
+    const updated = {
+      ...existing,
+      verifiedActivity: {
+        ...existing.verifiedActivity,
+        enabled: true,
+        status: activity.complete ? ('synced' as const) : ('partial' as const),
+        lastAttemptedAt: activity.attemptedAt,
+        lastSucceededAt: activity.attemptedAt,
+        acceptedProblemCount: events.size,
+        complete: activity.complete,
+        errorCode: null,
+        retryAfter: null,
+      },
+      updatedAt: activity.attemptedAt,
+    }
+    records.set(provider, updated)
+    return { record: updated, added, pending }
+  }
+
+  async saveVerifiedActivityFailure(
+    authUserId: string,
+    provider: LinkableProvider,
+    expectedHandle: PublicProviderHandle,
+    failure: ProviderVerifiedActivityFailure,
+  ) {
+    const records = this.recordsByAuthUserId.get(authUserId)
+    const existing = records?.get(provider)
+    if (
+      records === undefined ||
+      existing === undefined ||
+      existing.externalHandle !== expectedHandle ||
+      !existing.verifiedActivity.enabled
+    ) {
+      return null
+    }
+    const updated = {
+      ...existing,
+      verifiedActivity: {
+        ...existing.verifiedActivity,
+        enabled: true,
+        status: 'error' as const,
+        lastAttemptedAt: failure.attemptedAt,
+        errorCode: failure.errorCode,
+        retryAfter: failure.retryAfter ?? null,
+      },
+      updatedAt: failure.attemptedAt,
+    }
+    records.set(provider, updated)
+    return updated
+  }
+
+  async linkVerifiedActivityAction(
+    authUserId: string,
+    provider: LinkableProvider,
+    externalId: string,
+    actionId: string,
+  ) {
+    const activity = this.activityByAuthUserId
+      .get(authUserId)
+      ?.get(provider)
+      ?.get(externalId)
+    if (activity !== undefined && activity.progressActionId === null) {
+      activity.progressActionId = actionId
+    }
+  }
+
   async savePublicStatsFailure(
     authUserId: string,
     provider: LinkableProvider,
@@ -220,9 +480,13 @@ export class InMemoryProviderAccountRepository implements ProviderAccountReposit
   async deleteByAuthUserId(authUserId: string, provider: LinkableProvider) {
     const records = this.recordsByAuthUserId.get(authUserId)
     records?.delete(provider)
+    this.activityByAuthUserId.get(authUserId)?.delete(provider)
 
     if (records?.size === 0) {
       this.recordsByAuthUserId.delete(authUserId)
+    }
+    if (this.activityByAuthUserId.get(authUserId)?.size === 0) {
+      this.activityByAuthUserId.delete(authUserId)
     }
   }
 }
@@ -241,6 +505,14 @@ const recordFromDatabase = (record: {
   statsAttemptedAt: Date | null
   statsErrorCode: string | null
   statsErrorRetryable: boolean | null
+  activityConsentAt: Date | null
+  activitySyncStatus: string
+  activityLastAttemptedAt: Date | null
+  activityLastSucceededAt: Date | null
+  activityAcceptedProblemCount: number | null
+  activityComplete: boolean | null
+  activityErrorCode: string | null
+  activityRetryAfter: Date | null
   linkedAt: Date
   updatedAt: Date
 }): ProviderAccountRecord => {
@@ -270,10 +542,46 @@ const recordFromDatabase = (record: {
         ? null
         : ProviderPublicStatsErrorCodeSchema.parse(record.statsErrorCode),
     statsErrorRetryable: record.statsErrorRetryable,
+    verifiedActivity: {
+      enabled: record.activityConsentAt !== null,
+      status: ProviderVerifiedActivityStatusSchema.parse(
+        record.activitySyncStatus,
+      ),
+      consentedAt: record.activityConsentAt,
+      lastAttemptedAt: record.activityLastAttemptedAt,
+      lastSucceededAt: record.activityLastSucceededAt,
+      acceptedProblemCount: record.activityAcceptedProblemCount,
+      complete: record.activityComplete,
+      errorCode:
+        record.activityErrorCode === null
+          ? null
+          : ProviderVerifiedActivityErrorCodeSchema.parse(
+              record.activityErrorCode,
+            ),
+      retryAfter: record.activityRetryAfter,
+    },
     linkedAt: record.linkedAt,
     updatedAt: record.updatedAt,
   }
 }
+
+const verifiedActivityFromDatabase = (record: {
+  id: string
+  externalId: string
+  providerEventId: string
+  providerOccurredAt: Date
+  firstObservedAt: Date
+  lastObservedAt: Date
+  progressActionId: string | null
+}): ProviderVerifiedActivityRecord => ({
+  id: record.id,
+  externalId: record.externalId,
+  providerEventId: record.providerEventId,
+  occurredAt: record.providerOccurredAt,
+  firstObservedAt: record.firstObservedAt,
+  lastObservedAt: record.lastObservedAt,
+  progressActionId: record.progressActionId,
+})
 
 export class PrismaProviderAccountRepository implements ProviderAccountRepository {
   constructor(private readonly prisma: PrismaClient) {}
@@ -309,6 +617,19 @@ export class PrismaProviderAccountRepository implements ProviderAccountRepositor
     return record === undefined ? null : recordFromDatabase(record)
   }
 
+  async listVerifiedActivityByAuthUserId(authUserId: string) {
+    const user = await this.prisma.coreUser.findUnique({
+      where: { authUserId },
+      select: { id: true },
+    })
+    if (user === null) return []
+    const records = await this.prisma.providerVerifiedActivity.findMany({
+      where: { userId: user.id },
+      orderBy: { providerOccurredAt: 'asc' },
+    })
+    return records.map(verifiedActivityFromDatabase)
+  }
+
   async upsertByAuthUserId(
     authUserId: string,
     provider: LinkableProvider,
@@ -338,6 +659,12 @@ export class PrismaProviderAccountRepository implements ProviderAccountRepositor
 
       const handleChanged = existing.externalHandle !== handle
 
+      if (handleChanged) {
+        await transaction.providerVerifiedActivity.deleteMany({
+          where: { providerAccountId: existing.id },
+        })
+      }
+
       return transaction.providerAccount.update({
         where: { id: existing.id },
         data: {
@@ -355,6 +682,14 @@ export class PrismaProviderAccountRepository implements ProviderAccountRepositor
                 statsAttemptedAt: null,
                 statsErrorCode: null,
                 statsErrorRetryable: null,
+                activityConsentAt: null,
+                activitySyncStatus: 'not_enabled',
+                activityLastAttemptedAt: null,
+                activityLastSucceededAt: null,
+                activityAcceptedProblemCount: null,
+                activityComplete: null,
+                activityErrorCode: null,
+                activityRetryAfter: null,
               }
             : {}),
         },
@@ -410,6 +745,217 @@ export class PrismaProviderAccountRepository implements ProviderAccountRepositor
     )
 
     return record === null ? null : recordFromDatabase(record)
+  }
+
+  async setVerifiedActivityConsent(
+    authUserId: string,
+    provider: LinkableProvider,
+    enabled: boolean,
+    occurredAt: Date,
+  ) {
+    const user = await this.prisma.coreUser.findUnique({
+      where: { authUserId },
+      select: { id: true },
+    })
+    if (user === null) return null
+    const account = await this.prisma.providerAccount.findUnique({
+      where: { userId_provider: { userId: user.id, provider } },
+    })
+    if (account === null) return null
+    if (!enabled) {
+      await this.prisma.providerVerifiedActivity.deleteMany({
+        where: { providerAccountId: account.id },
+      })
+    }
+    const updated = await this.prisma.providerAccount.update({
+      where: { id: account.id },
+      data: enabled
+        ? {
+            activityConsentAt: account.activityConsentAt ?? occurredAt,
+            activitySyncStatus:
+              account.activitySyncStatus === 'not_enabled' ||
+              account.activitySyncStatus === 'error'
+                ? 'not_synced'
+                : account.activitySyncStatus,
+            activityErrorCode: null,
+            activityRetryAfter: null,
+          }
+        : {
+            activityConsentAt: null,
+            activitySyncStatus: 'not_enabled',
+            activityLastAttemptedAt: null,
+            activityLastSucceededAt: null,
+            activityAcceptedProblemCount: null,
+            activityComplete: null,
+            activityErrorCode: null,
+            activityRetryAfter: null,
+          },
+    })
+    return recordFromDatabase(updated)
+  }
+
+  async saveVerifiedActivitySuccess(
+    authUserId: string,
+    provider: LinkableProvider,
+    expectedHandle: PublicProviderHandle,
+    activity: ProviderVerifiedActivitySuccess,
+  ) {
+    const result = await this.prisma.$transaction(async (transaction) => {
+      const user = await transaction.coreUser.findUnique({
+        where: { authUserId },
+        select: { id: true },
+      })
+      if (user === null) return null
+      const account = await transaction.providerAccount.findUnique({
+        where: { userId_provider: { userId: user.id, provider } },
+      })
+      if (
+        account === null ||
+        account.externalHandle !== expectedHandle ||
+        account.activityConsentAt === null
+      ) {
+        return null
+      }
+      const added: ProviderVerifiedActivityRecord[] = []
+      const pending: ProviderVerifiedActivityRecord[] = []
+      for (const event of activity.events) {
+        const existing = await transaction.providerVerifiedActivity.findUnique({
+          where: {
+            userId_provider_externalId: {
+              userId: user.id,
+              provider,
+              externalId: event.externalId,
+            },
+          },
+        })
+        if (existing === null) {
+          const created = await transaction.providerVerifiedActivity.create({
+            data: {
+              userId: user.id,
+              providerAccountId: account.id,
+              provider,
+              externalId: event.externalId,
+              providerEventId: event.providerEventId,
+              providerOccurredAt: event.occurredAt,
+              firstObservedAt: activity.attemptedAt,
+              lastObservedAt: activity.attemptedAt,
+            },
+          })
+          added.push({
+            externalId: created.externalId,
+            providerEventId: created.providerEventId,
+            occurredAt: created.providerOccurredAt,
+            id: created.id,
+            firstObservedAt: created.firstObservedAt,
+            lastObservedAt: created.lastObservedAt,
+            progressActionId: created.progressActionId,
+          })
+        } else {
+          const occurredAt =
+            event.occurredAt < existing.providerOccurredAt
+              ? event.occurredAt
+              : existing.providerOccurredAt
+          const providerEventId =
+            event.occurredAt < existing.providerOccurredAt
+              ? event.providerEventId
+              : existing.providerEventId
+          await transaction.providerVerifiedActivity.update({
+            where: { id: existing.id },
+            data: {
+              lastObservedAt: activity.attemptedAt,
+              ...(event.occurredAt < existing.providerOccurredAt
+                ? {
+                    providerOccurredAt: event.occurredAt,
+                    providerEventId: event.providerEventId,
+                  }
+                : {}),
+            },
+          })
+          if (existing.progressActionId === null) {
+            pending.push({
+              externalId: existing.externalId,
+              providerEventId,
+              occurredAt,
+              id: existing.id,
+              firstObservedAt: existing.firstObservedAt,
+              lastObservedAt: activity.attemptedAt,
+              progressActionId: null,
+            })
+          }
+        }
+      }
+      const updated = await transaction.providerAccount.update({
+        where: { id: account.id },
+        data: {
+          activitySyncStatus: activity.complete ? 'synced' : 'partial',
+          activityLastAttemptedAt: activity.attemptedAt,
+          activityLastSucceededAt: activity.attemptedAt,
+          activityAcceptedProblemCount:
+            await transaction.providerVerifiedActivity.count({
+              where: { providerAccountId: account.id },
+            }),
+          activityComplete: activity.complete,
+          activityErrorCode: null,
+          activityRetryAfter: null,
+        },
+      })
+      return { record: recordFromDatabase(updated), added, pending }
+    })
+    return result
+  }
+
+  async saveVerifiedActivityFailure(
+    authUserId: string,
+    provider: LinkableProvider,
+    expectedHandle: PublicProviderHandle,
+    failure: ProviderVerifiedActivityFailure,
+  ) {
+    const user = await this.prisma.coreUser.findUnique({
+      where: { authUserId },
+      select: { id: true },
+    })
+    if (user === null) return null
+    const account = await this.prisma.providerAccount.findUnique({
+      where: { userId_provider: { userId: user.id, provider } },
+    })
+    if (
+      account === null ||
+      account.externalHandle !== expectedHandle ||
+      account.activityConsentAt === null
+    )
+      return null
+    const updated = await this.prisma.providerAccount.update({
+      where: { id: account.id },
+      data: {
+        activitySyncStatus: 'error',
+        activityLastAttemptedAt: failure.attemptedAt,
+        activityErrorCode: failure.errorCode,
+        activityRetryAfter: failure.retryAfter ?? null,
+      },
+    })
+    return recordFromDatabase(updated)
+  }
+
+  async linkVerifiedActivityAction(
+    authUserId: string,
+    provider: LinkableProvider,
+    externalId: string,
+    actionId: string,
+  ) {
+    const user = await this.prisma.coreUser.findUnique({
+      where: { authUserId },
+      select: { id: true },
+    })
+    if (user === null) return
+    await this.prisma.providerVerifiedActivity.updateMany({
+      where: {
+        userId: user.id,
+        provider,
+        externalId,
+        progressActionId: null,
+      },
+      data: { progressActionId: actionId },
+    })
   }
 
   async deleteByAuthUserId(authUserId: string, provider: LinkableProvider) {
