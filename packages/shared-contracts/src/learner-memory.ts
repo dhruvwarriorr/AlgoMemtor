@@ -8,6 +8,21 @@ export const LearnerMemoryCategorySchema = z.enum([
   'topic_weakness',
   'scheduling_preference',
   'recommendation_feedback_pattern',
+  'learning_goal',
+  'topic_strength',
+  'coding_style',
+  'problem_solving_approach',
+  'learning_pace',
+  'time_availability',
+  'mistake_pattern',
+  'contest_performance',
+  'explanation_preference',
+  'communication_preference',
+  'user_instruction',
+  'conversation_summary',
+  'learning_milestone',
+  'bloom_level',
+  'spaced_repetition_state',
 ])
 export type LearnerMemoryCategory = z.infer<typeof LearnerMemoryCategorySchema>
 

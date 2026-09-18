@@ -13,12 +13,27 @@ import {
 } from '../hooks/useLearnerMemories'
 import type { LearnerMemory, LearnerMemoryCategory } from '../contracts'
 
-const categoryLabels: Record<LearnerMemoryCategory, string> = {
+const categoryLabels: Record<string, string> = {
   preference: 'Preference',
   difficulty_calibration: 'Difficulty calibration',
   topic_weakness: 'Topic weakness',
   scheduling_preference: 'Scheduling preference',
   recommendation_feedback_pattern: 'Recommendation feedback pattern',
+  learning_goal: 'Learning goal',
+  topic_strength: 'Topic strength',
+  coding_style: 'Coding style',
+  problem_solving_approach: 'Problem-solving approach',
+  learning_pace: 'Learning pace',
+  time_availability: 'Time availability',
+  mistake_pattern: 'Mistake pattern',
+  contest_performance: 'Contest performance',
+  explanation_preference: 'Explanation preference',
+  communication_preference: 'Communication preference',
+  user_instruction: 'User instruction',
+  conversation_summary: 'Conversation summary',
+  learning_milestone: 'Learning milestone',
+  bloom_level: 'Bloom level',
+  spaced_repetition_state: 'Spaced repetition state',
 }
 
 const categories = Object.keys(categoryLabels) as LearnerMemoryCategory[]

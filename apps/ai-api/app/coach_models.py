@@ -11,7 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 _UNSAFE_COACH_TEXT = re.compile(
     r"(?:https?://|www\.)\S+|"
     r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|"
-    r"\b(?:bearer|token|api[_ -]?key)\s*[:=]?\s*\S+",
+    r"\bbearer\s+[A-Za-z0-9._~+/=-]{12,}|"
+    r"\b(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token)\s*[:=]\s*\S+",
     re.IGNORECASE,
 )
 
@@ -22,6 +23,8 @@ CoachActionType = Literal[
     "bookmark_problem",
     "refresh_recommendations",
     "update_profile",
+    "request_next_hint",
+    "mark_problem_solved",
 ]
 CoachTopicStatus = Literal[
     "working_on", "practiced", "completed", "revisit", "skip_for_now"
@@ -43,6 +46,15 @@ CoachCheckInType = Literal[
     "focus_transition",
     "focus_progress",
     "inactivity",
+    "spaced_repetition_due",
+    "goal_progress_milestone",
+    "goal_off_track",
+    "streak_risk",
+    "difficulty_plateau",
+    "topic_mastery_achieved",
+    "contest_prep_reminder",
+    "morning_warm_up",
+    "insight_of_the_day",
 ]
 
 
@@ -148,9 +160,27 @@ class CoachProposal(CoachStrictModel):
             "topic_weakness",
             "scheduling_preference",
             "recommendation_feedback_pattern",
+            "learning_goal",
+            "topic_strength",
+            "coding_style",
+            "problem_solving_approach",
+            "learning_pace",
+            "time_availability",
+            "mistake_pattern",
+            "contest_performance",
+            "explanation_preference",
+            "communication_preference",
+            "user_instruction",
+            "conversation_summary",
+            "learning_milestone",
+            "bloom_level",
+            "spaced_repetition_state",
         ]
         | None
     ) = None
+    hintLevel: int | None = Field(default=None, ge=1, le=10)
+    hintLadderId: UUID | None = None
+    problemSolvedAfterHintLevel: int | None = Field(default=None, ge=1, le=10)
 
     @field_validator("label", "reason", "memoryText")
     @classmethod
@@ -173,6 +203,11 @@ class CoachProposal(CoachStrictModel):
             )
         if self.actionType == "bookmark_problem" and self.problem is None:
             raise ValueError("A bookmark proposal needs a problem.")
+        if (
+            self.actionType in {"request_next_hint", "mark_problem_solved"}
+            and self.problem is None
+        ):
+            raise ValueError("A hint action needs a problem reference.")
         if self.actionType == "save_memory" and (
             self.memoryText is None or self.memoryCategory is None
         ):

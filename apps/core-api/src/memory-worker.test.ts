@@ -34,6 +34,7 @@ const createWorker = (
   now: () => Date,
   coachCheckInRefresh?: MemoryWorkerOptions['coachCheckInRefresh'],
   aiCoachClient?: AiCoachClient,
+  coachRepository?: MemoryWorkerOptions['coachRepository'],
 ) => {
   const logger = { info: vi.fn(), warn: vi.fn() }
   const options: MemoryWorkerOptions = {
@@ -43,6 +44,7 @@ const createWorker = (
     logger,
     ...(aiCoachClient === undefined ? {} : { aiCoachClient }),
     ...(coachCheckInRefresh === undefined ? {} : { coachCheckInRefresh }),
+    ...(coachRepository === undefined ? {} : { coachRepository }),
   }
   return { worker: new MemoryWorker(options), logger }
 }
@@ -52,7 +54,11 @@ describe('memory worker', () => {
     let currentTime = new Date('2026-09-13T12:00:00.000Z')
     const now = () => new Date(currentTime)
     const repository: ProgressRepository = new InMemoryProgressRepository(now)
-    await repository.saveConsent(learnerId, true, 'personalized-coaching-rag-v2')
+    await repository.saveConsent(
+      learnerId,
+      true,
+      'personalized-coaching-rag-v2',
+    )
     repository.getMemoryEvidence = async () => ({
       occurredAt: now(),
       perceivedDifficulty: 'medium',
@@ -177,6 +183,60 @@ describe('memory worker', () => {
     expect(await worker.processOnce()).toBe(false)
   })
 
+  it('extracts only sanitized recent conversation turns for coach memory jobs', async () => {
+    const now = () => new Date('2026-09-13T14:30:00.000Z')
+    const repository: ProgressRepository = new InMemoryProgressRepository(now)
+    await repository.saveConsent(
+      learnerId,
+      true,
+      'personalized-coaching-rag-v2',
+    )
+    const coachRepository = new InMemoryCoachRepository(now)
+    const conversation = await coachRepository.createConversation(learnerId)
+    await coachRepository.appendMessage(learnerId, conversation.id, {
+      role: 'user',
+      content: 'I prefer progressive hints and struggle with graph DP.',
+      evidence: [],
+      proposals: [],
+    })
+    await coachRepository.appendMessage(learnerId, conversation.id, {
+      role: 'assistant',
+      content:
+        '```cpp\nsecret source code\n``` Let us start with an invariant.',
+      evidence: [],
+      proposals: [],
+    })
+    const payloads: Array<{ note?: string; evidenceType: string }> = []
+    const client = createClient(async (request) => {
+      payloads.push({
+        ...(request.note === undefined ? {} : { note: request.note }),
+        evidenceType: request.evidenceType,
+      })
+      return { status: 'processed' }
+    })
+    const { worker } = createWorker(
+      repository,
+      client,
+      now,
+      undefined,
+      undefined,
+      coachRepository,
+    )
+    await repository.enqueueJob({
+      authUserId: learnerId,
+      jobType: 'memory_generation',
+      evidenceType: 'coach_conversation',
+      evidenceId: conversation.id,
+      idempotencyKey: 'memory:coach-conversation-test',
+    })
+
+    expect(await worker.processOnce()).toBe(true)
+    expect(payloads[0]?.evidenceType).toBe('coach_conversation')
+    expect(payloads[0]?.note).toContain('progressive hints')
+    expect(payloads[0]?.note).toContain('[code omitted]')
+    expect(payloads[0]?.note).not.toContain('secret source code')
+  })
+
   it('retries coach audit deletion through the durable outbox', async () => {
     const now = () => new Date('2026-09-13T15:00:00.000Z')
     const repository: ProgressRepository = new InMemoryProgressRepository(now)
@@ -212,7 +272,11 @@ describe('memory worker', () => {
   it('schedules due coach refreshes for consented learners without a page open', async () => {
     const now = () => new Date('2026-09-13T14:00:00.000Z')
     const repository: ProgressRepository = new InMemoryProgressRepository(now)
-    await repository.saveConsent(learnerId, true, 'personalized-coaching-rag-v2')
+    await repository.saveConsent(
+      learnerId,
+      true,
+      'personalized-coaching-rag-v2',
+    )
     const coachRepository = new InMemoryCoachRepository(now)
     await coachRepository.savePreferences(learnerId, {
       weeklyEnabled: true,

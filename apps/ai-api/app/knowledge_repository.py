@@ -12,7 +12,7 @@ from pgvector.sqlalchemy import VECTOR
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from .knowledge_base import KNOWLEDGE_CHUNKS, KnowledgeChunk
+from .knowledge_base import KNOWLEDGE_CHUNKS, KnowledgeChunk, _expanded_tokens
 from .settings import get_ai_settings
 
 metadata = sa.MetaData()
@@ -40,13 +40,20 @@ knowledge_chunks = sa.Table(
     sa.Column("topic", sa.String(length=80)),
     sa.Column("title", sa.String(length=200)),
     sa.Column("content", sa.String(length=4_000)),
+    sa.Column("difficulty_level", sa.String(length=32)),
+    sa.Column("prerequisites", sa.JSON()),
+    sa.Column("related_topics", sa.JSON()),
+    sa.Column("usage_count", sa.Integer(), nullable=False, server_default="0"),
+    sa.Column("avg_helpfulness", sa.Numeric(3, 2)),
+    sa.Column("updated_at", sa.DateTime(timezone=True)),
+    sa.Column("content_checksum", sa.String(length=64)),
     sa.Column("embedding", VECTOR(768)),
     sa.Column("embedding_model", sa.String(length=128)),
     schema="ai",
 )
 
 _SOURCE_KEY = "algomemtor-core-cp-dsa"
-_SOURCE_VERSION = "coach-knowledge-v1"
+_SOURCE_VERSION = "coach-knowledge-v2"
 _STOP_WORDS = {
     "a",
     "an",
@@ -132,6 +139,15 @@ class KnowledgeRepository:
                             topic=chunk.topic,
                             title=chunk.title,
                             content=chunk.content,
+                            difficulty_level="intermediate",
+                            prerequisites=[],
+                            related_topics=[chunk.topic],
+                            usage_count=0,
+                            avg_helpfulness=None,
+                            updated_at=sa.func.now(),
+                            content_checksum=hashlib.sha256(
+                                chunk.content.encode()
+                            ).hexdigest(),
                             embedding=None,
                             embedding_model=None,
                         )
@@ -142,6 +158,10 @@ class KnowledgeRepository:
                                 "topic": chunk.topic,
                                 "title": chunk.title,
                                 "content": chunk.content,
+                                "content_checksum": hashlib.sha256(
+                                    chunk.content.encode()
+                                ).hexdigest(),
+                                "updated_at": sa.func.now(),
                             },
                         )
                     )
@@ -189,7 +209,7 @@ class KnowledgeRepository:
         for result in results:
             if isinstance(result, asyncio.CancelledError):
                 raise result
-            if isinstance(result, BaseException):
+            if isinstance(result, Exception):
                 continue
             chunk_key, vector = result
             await connection.execute(
@@ -229,8 +249,8 @@ class KnowledgeRepository:
                 statement,
                 {} if query_embedding is None else {"query_embedding": query_embedding},
             )
-            query_tokens = _tokens(query)
-            scored: list[tuple[int, str, KnowledgeChunk]] = []
+            query_tokens = _expanded_tokens(query)
+            row_items: list[tuple[KnowledgeChunk, float]] = []
             for row in rows.mappings():
                 chunk = KnowledgeChunk(
                     id=row["chunk_key"],
@@ -238,16 +258,44 @@ class KnowledgeRepository:
                     title=row["title"],
                     content=row["content"],
                 )
-                overlap = len(
-                    query_tokens
-                    & _tokens(f"{chunk.topic} {chunk.title} {chunk.content}")
-                )
                 semantic = 0.0
                 if distance is not None and row.get("distance") is not None:
                     semantic = max(0.0, 1.0 - float(row["distance"]))
-                score = overlap * 10 + round(semantic * 5)
-                if score:
-                    scored.append((score, chunk.id, chunk))
+                row_items.append((chunk, semantic))
+            semantic_rank = {
+                chunk.id: rank
+                for rank, (chunk, _) in enumerate(
+                    sorted(row_items, key=lambda item: -item[1])
+                )
+            }
+            keyword_rank = {
+                chunk.id: rank
+                for rank, (chunk, _) in enumerate(
+                    sorted(
+                        row_items,
+                        key=lambda item: (
+                            -len(
+                                query_tokens
+                                & _expanded_tokens(
+                                    f"{item[0].topic} {item[0].title} {item[0].content}"
+                                )
+                            )
+                        ),
+                    )
+                )
+            }
+            scored: list[tuple[float, str, KnowledgeChunk]] = []
+            for chunk, semantic in row_items:
+                keyword_overlap = len(
+                    query_tokens
+                    & _expanded_tokens(f"{chunk.topic} {chunk.title} {chunk.content}")
+                )
+                if query_tokens and keyword_overlap == 0 and semantic <= 0:
+                    continue
+                score = 1 / (60 + semantic_rank[chunk.id]) + 1 / (
+                    60 + keyword_rank[chunk.id]
+                )
+                scored.append((score, chunk.id, chunk))
             scored.sort(key=lambda item: (-item[0], item[1]))
             topics: set[str] = set()
             for _, _, chunk in scored:

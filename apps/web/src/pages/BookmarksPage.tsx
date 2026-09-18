@@ -31,7 +31,9 @@ function BookmarkCard({ bookmark }: { bookmark: Bookmark }) {
     <article className="flex min-w-0 flex-col gap-4 rounded-xl border border-border bg-card p-4 shadow-sm sm:p-5">
       <header className="min-w-0 space-y-2">
         <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">Codeforces</span>
+          <span className="font-medium capitalize text-foreground">
+            {problem.provider}
+          </span>
           <span aria-hidden="true">•</span>
           <span className="break-all">{problem.externalId}</span>
           <span className="rounded-full bg-muted px-2 py-0.5 font-medium text-foreground">

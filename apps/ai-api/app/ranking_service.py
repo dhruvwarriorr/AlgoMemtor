@@ -10,7 +10,10 @@ from uuid import UUID
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import create_async_engine
 
+from .knowledge_base import retrieve_knowledge
+from .knowledge_repository import KnowledgeRepository
 from .memory_models import MemoryRetrievalResponse, StoredMemory
 from .ranking_audit import (
     NullRankingAuditRepository,
@@ -61,6 +64,15 @@ class MemoryRetriever(Protocol):
     ) -> MemoryRetrievalResponse: ...
 
 
+class KnowledgeRetriever(Protocol):
+    async def search(
+        self,
+        query: str,
+        limit: int = 8,
+        query_embedding: list[float] | None = None,
+    ) -> list[object]: ...
+
+
 class RankingNotConfiguredError(RuntimeError):
     pass
 
@@ -70,11 +82,11 @@ class GeminiRankingModel:
         model = ChatGoogleGenerativeAI(
             model=settings.llm_model,
             api_key=settings.llm_api_key,
-            temperature=1.0,
+            temperature=0.3,
             thinking_level="low",
             max_tokens=settings.llm_max_output_tokens,
             timeout=settings.llm_timeout_seconds,
-            max_retries=0,
+            max_retries=2,
         )
         self.structured_model = model.with_structured_output(
             ModelRankingOutput,
@@ -86,7 +98,10 @@ class GeminiRankingModel:
         return await self.rank_with_memories(request, [])
 
     async def rank_with_memories(
-        self, request: RankingRequest, memories: list[StoredMemory]
+        self,
+        request: RankingRequest,
+        memories: list[StoredMemory],
+        knowledge: list[dict[str, object]] | None = None,
     ) -> ModelResult:
         model_payload = {
             "expectedCount": request.expectedCount,
@@ -103,8 +118,10 @@ class GeminiRankingModel:
                     "statement": memory.statement,
                     "confidence": memory.confidence,
                 }
-                for memory in memories[:5]
+                for memory in memories[:20]
             ]
+        if knowledge:
+            model_payload["knowledge"] = knowledge
         result: dict[str, Any] = await self.structured_model.ainvoke(
             [
                 ("system", SYSTEM_PROMPT),
@@ -130,11 +147,13 @@ class RankingService:
         audit_repository: RankingAuditRepository | NullRankingAuditRepository,
         model: RankingModel | None = None,
         memory_retriever: MemoryRetriever | None = None,
+        knowledge_retriever: KnowledgeRetriever | None = None,
     ) -> None:
         self.settings = settings
         self.audit_repository = audit_repository
         self.model = model
         self.memory_retriever = memory_retriever
+        self.knowledge_retriever = knowledge_retriever
 
     def get_model(self) -> RankingModel:
         if self.model is not None:
@@ -262,7 +281,7 @@ class RankingService:
         audit_id = audit_result[0]
         if isinstance(audit_id, asyncio.CancelledError):
             raise audit_id
-        if isinstance(audit_id, BaseException):
+        if isinstance(audit_id, Exception):
             safe_log(
                 "ai_ranking_audit_failed",
                 {"requestId": request.requestId, "fallback": response.fallback},
@@ -277,29 +296,50 @@ class RankingService:
         fallback_reason: str | None = None
         items: list[RankedItem] = []
         memories: list[StoredMemory] = []
+        candidate_topics = sorted(
+            {topic for candidate in request.candidates for topic in candidate.topics}
+        )[:25]
+        retrieval_query = (
+            f"{request.learner.goal} {request.learner.experience} "
+            f"{' '.join(request.learner.focusTopics)} "
+            f"{' '.join(request.learner.preferredTopics)} "
+            f"{' '.join(candidate_topics)}"
+        )
+        knowledge: list[dict[str, object]] = []
+        try:
+            if self.knowledge_retriever is not None:
+                chunks = await self.knowledge_retriever.search(retrieval_query, limit=8)
+                knowledge = [
+                    {
+                        "id": getattr(chunk, "id", ""),
+                        "topic": getattr(chunk, "topic", ""),
+                        "title": getattr(chunk, "title", ""),
+                        "content": getattr(chunk, "content", ""),
+                    }
+                    for chunk in chunks
+                ]
+        except (OSError, RuntimeError, TypeError, ValueError):
+            knowledge = []
+        if not knowledge:
+            knowledge = [
+                {
+                    "id": chunk.id,
+                    "topic": chunk.topic,
+                    "title": chunk.title,
+                    "content": chunk.content,
+                }
+                for chunk in retrieve_knowledge(retrieval_query, limit=8)
+            ]
 
         if self.settings.memory_rag_enabled and self.memory_retriever is not None:
-            query = json.dumps(
-                {
-                    "focusTopics": request.learner.focusTopics,
-                    "preferredTopics": request.learner.preferredTopics,
-                    "preferredDifficulty": request.learner.preferredDifficulty.model_dump(),
-                    "candidateTopics": sorted(
-                        {
-                            topic
-                            for candidate in request.candidates
-                            for topic in candidate.topics
-                        }
-                    )[:25],
-                    "candidateDifficulties": sorted(
-                        {
-                            candidate.normalizedDifficulty
-                            for candidate in request.candidates
-                            if candidate.normalizedDifficulty is not None
-                        }
-                    ),
-                },
-                separators=(",", ":"),
+            query = (
+                f"Learner is preparing for {request.learner.goal} at "
+                f"{request.learner.experience} level. Focus topics: "
+                f"{', '.join(request.learner.focusTopics)}. Preferred topics: "
+                f"{', '.join(request.learner.preferredTopics)}. Candidate topics: "
+                f"{', '.join(candidate_topics)}. Target difficulty "
+                f"{request.learner.preferredDifficulty.min:g}-"
+                f"{request.learner.preferredDifficulty.max:g}."
             )
             try:
                 retrieved = await self.memory_retriever.retrieve(
@@ -307,7 +347,7 @@ class RankingService:
                     query,
                     self.settings.memory_retrieval_limit,
                 )
-                memories = retrieved.items[:5]
+                memories = retrieved.items[: self.settings.memory_retrieval_limit]
             except asyncio.CancelledError:
                 raise
             except RANKING_RETRIEVAL_ERRORS:
@@ -319,11 +359,13 @@ class RankingService:
         try:
             model = self.get_model()
             rank_with_memories = getattr(model, "rank_with_memories", None)
-            model_call = (
-                rank_with_memories(request, memories)
-                if callable(rank_with_memories)
-                else model.rank(request)
-            )
+            if callable(rank_with_memories):
+                try:
+                    model_call = rank_with_memories(request, memories, knowledge)
+                except TypeError:
+                    model_call = rank_with_memories(request, memories)
+            else:
+                model_call = model.rank(request)
             async with asyncio.timeout(self.settings.llm_timeout_seconds):
                 model_result = await asyncio.gather(model_call, return_exceptions=True)
             result = model_result[0]
@@ -332,7 +374,7 @@ class RankingService:
             if isinstance(result, (ValidationError, TypeError, ValueError)):
                 fallback_reason = "invalid_output"
                 items = []
-            elif isinstance(result, BaseException):
+            elif isinstance(result, Exception):
                 fallback_reason = "provider_error"
                 items = []
             else:
@@ -368,8 +410,17 @@ class RankingService:
 def get_ranking_service() -> RankingService:
     from .memory_service import get_memory_service
 
+    settings = get_ai_settings()
+    knowledge_repository = (
+        KnowledgeRepository(
+            create_async_engine(settings.database_url, pool_pre_ping=True)
+        )
+        if settings.database_url
+        else None
+    )
     return RankingService(
-        get_ai_settings(),
+        settings,
         get_ranking_audit_repository(),
         memory_retriever=get_memory_service(),
+        knowledge_retriever=knowledge_repository,
     )

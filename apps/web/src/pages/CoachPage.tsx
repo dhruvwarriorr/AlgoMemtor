@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type {
   CoachManualTopicStatus,
@@ -12,6 +12,7 @@ import {
   Check,
   LoaderCircle,
   MessageCircle,
+  Pencil,
   Plus,
   RefreshCw,
   Send,
@@ -24,6 +25,7 @@ import PageHeader from '@/components/layout/PageHeader'
 import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { Button } from '@/components/ui/button'
+import { Dialog } from '@/components/ui/dialog'
 import { useNotification } from '@/app/useNotification'
 import { useAiConsent } from '@/features/profile/hooks/useLearnerSettings'
 import { recordProblemAction } from '@/features/progress/api/progress'
@@ -306,7 +308,19 @@ function CoachPage() {
   const [content, setContent] = useState('')
   const [transientContext, setTransientContext] = useState('')
   const [showInbox, setShowInbox] = useState(false)
+  const [renameTarget, setRenameTarget] = useState<{
+    id: string
+    title: string
+  } | null>(null)
+  const [renameTitle, setRenameTitle] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<{
+    id: string
+    title: string
+  } | null>(null)
   const sendAbortController = useRef<AbortController | null>(null)
+  const messageEndRef = useRef<HTMLDivElement | null>(null)
+  const nearPageBottomRef = useRef(true)
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false)
 
   const conversations = useMemo(
     () => conversationsQuery.data?.data ?? [],
@@ -318,6 +332,40 @@ function CoachPage() {
     ? selectedConversationId
     : (conversations[0]?.id ?? null)
   const conversationQuery = useCoachConversation(activeConversationId)
+  useEffect(() => {
+    nearPageBottomRef.current = true
+  }, [activeConversationId])
+  useEffect(() => {
+    const updateScrollPosition = () => {
+      const nearBottom =
+        window.innerHeight + window.scrollY >=
+        document.documentElement.scrollHeight - 420
+      nearPageBottomRef.current = nearBottom
+      setShowJumpToLatest(!nearBottom)
+    }
+    updateScrollPosition()
+    window.addEventListener('scroll', updateScrollPosition, { passive: true })
+    window.addEventListener('resize', updateScrollPosition)
+    return () => {
+      window.removeEventListener('scroll', updateScrollPosition)
+      window.removeEventListener('resize', updateScrollPosition)
+    }
+  }, [])
+  useEffect(() => {
+    if (conversationQuery.isPending || !nearPageBottomRef.current) return
+    const frame = window.requestAnimationFrame(() => {
+      messageEndRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+      })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [
+    activeConversationId,
+    conversationQuery.data?.messages.length,
+    conversationQuery.isPending,
+    sendMessage.isPending,
+  ])
   const roadmap = roadmapQuery.data?.data
   const consentEnabled =
     consentQuery.data?.data?.enabled === true &&
@@ -535,36 +583,26 @@ function CoachPage() {
                     <Button
                       aria-label={`Rename ${conversation.title}`}
                       onClick={() => {
-                        const title = window
-                          .prompt('Conversation name', conversation.title)
-                          ?.trim()
-                        if (title)
-                          void renameConversation.mutateAsync({
-                            conversationId: conversation.id,
-                            title,
-                          })
+                        setRenameTarget({
+                          id: conversation.id,
+                          title: conversation.title,
+                        })
+                        setRenameTitle(conversation.title)
                       }}
                       size="icon-xs"
                       type="button"
                       variant="ghost"
                     >
-                      ✎
+                      <Pencil aria-hidden="true" />
                     </Button>
                     <Button
                       aria-label={`Delete ${conversation.title}`}
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            'Delete this conversation and its saved messages?',
-                          )
-                        )
-                          void deleteConversation
-                            .mutateAsync(conversation.id)
-                            .then(() => {
-                              if (activeConversationId === conversation.id)
-                                setSelectedConversationId(null)
-                            })
-                      }}
+                      onClick={() =>
+                        setDeleteTarget({
+                          id: conversation.id,
+                          title: conversation.title,
+                        })
+                      }
                       size="icon-xs"
                       type="button"
                       variant="ghost"
@@ -736,6 +774,25 @@ function CoachPage() {
                 </p>
               </div>
             )}
+            <div aria-hidden="true" ref={messageEndRef} />
+            {showJumpToLatest ? (
+              <Button
+                className="mx-auto"
+                onClick={() => {
+                  nearPageBottomRef.current = true
+                  setShowJumpToLatest(false)
+                  messageEndRef.current?.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'nearest',
+                  })
+                }}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Jump to latest
+              </Button>
+            ) : null}
             {sendMessage.isPending ? (
               <div
                 className="flex items-center gap-2 text-sm text-muted-foreground"
@@ -1101,6 +1158,96 @@ function CoachPage() {
           </div>
         ) : null}
       </section>
+
+      <Dialog
+        onClose={() => setRenameTarget(null)}
+        open={renameTarget !== null}
+        title="Rename conversation"
+      >
+        <form
+          className="space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault()
+            const title = renameTitle.trim()
+            if (!renameTarget || !title || renameConversation.isPending) return
+            void renameConversation
+              .mutateAsync({ conversationId: renameTarget.id, title })
+              .then(() => setRenameTarget(null))
+          }}
+        >
+          <label
+            className="block text-sm font-medium text-foreground"
+            htmlFor="conversation-title"
+          >
+            Conversation name
+          </label>
+          <input
+            autoFocus
+            className="mt-1 h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            id="conversation-title"
+            maxLength={120}
+            onChange={(event) => setRenameTitle(event.target.value)}
+            value={renameTitle}
+          />
+          <div className="flex justify-end gap-2">
+            <Button
+              onClick={() => setRenameTarget(null)}
+              type="button"
+              variant="outline"
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={!renameTitle.trim() || renameConversation.isPending}
+              type="submit"
+            >
+              {renameConversation.isPending ? 'Saving…' : 'Save name'}
+            </Button>
+          </div>
+        </form>
+      </Dialog>
+
+      <Dialog
+        onClose={() => setDeleteTarget(null)}
+        open={deleteTarget !== null}
+        title="Delete conversation?"
+      >
+        <div className="space-y-4">
+          <p className="text-sm leading-6 text-muted-foreground">
+            Delete “{deleteTarget?.title}” and its saved messages? This cannot
+            be undone.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button
+              onClick={() => setDeleteTarget(null)}
+              type="button"
+              variant="outline"
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={deleteConversation.isPending || deleteTarget === null}
+              onClick={() => {
+                if (!deleteTarget) return
+                void deleteConversation
+                  .mutateAsync(deleteTarget.id)
+                  .then(() => {
+                    if (activeConversationId === deleteTarget.id) {
+                      setSelectedConversationId(null)
+                    }
+                    setDeleteTarget(null)
+                  })
+              }}
+              type="button"
+              variant="destructive"
+            >
+              {deleteConversation.isPending
+                ? 'Deleting…'
+                : 'Delete conversation'}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </PageContainer>
   )
 }

@@ -23,8 +23,13 @@ function SettingPage() {
 
   async function handleSubmit(profile: SaveLearnerProfileRequest) {
     setSuccessMessage(null)
-    await saveProfile.mutateAsync(profile)
-    setSuccessMessage('Your learner profile changes have been saved.')
+    try {
+      await saveProfile.mutateAsync(profile)
+      setSuccessMessage('Your learner profile changes have been saved.')
+    } catch {
+      // The form renders the mutation's validated error state. Catching here
+      // prevents an unhandled rejection from escaping the submit handler.
+    }
   }
 
   function handleChange() {

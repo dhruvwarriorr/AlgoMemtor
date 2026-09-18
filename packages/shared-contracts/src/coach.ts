@@ -460,6 +460,8 @@ export const CoachActionTypeSchema = z.enum([
   'bookmark_problem',
   'refresh_recommendations',
   'update_profile',
+  'request_next_hint',
+  'mark_problem_solved',
 ])
 export type CoachActionType = z.infer<typeof CoachActionTypeSchema>
 
@@ -492,8 +494,26 @@ export const CoachActionProposalSchema = z
         'topic_weakness',
         'scheduling_preference',
         'recommendation_feedback_pattern',
+        'learning_goal',
+        'topic_strength',
+        'coding_style',
+        'problem_solving_approach',
+        'learning_pace',
+        'time_availability',
+        'mistake_pattern',
+        'contest_performance',
+        'explanation_preference',
+        'communication_preference',
+        'user_instruction',
+        'conversation_summary',
+        'learning_milestone',
+        'bloom_level',
+        'spaced_repetition_state',
       ])
       .optional(),
+    hintLevel: z.number().int().min(1).max(10).optional(),
+    hintLadderId: identifierSchema.optional(),
+    problemSolvedAfterHintLevel: z.number().int().min(1).max(10).optional(),
   })
   .strict()
   .superRefine((proposal, context) => {
@@ -525,6 +545,17 @@ export const CoachActionProposalSchema = z
       context.addIssue({
         code: 'custom',
         message: 'A bookmark proposal needs a problem.',
+        path: ['problem'],
+      })
+    }
+    if (
+      (proposal.actionType === 'request_next_hint' ||
+        proposal.actionType === 'mark_problem_solved') &&
+      proposal.problem === undefined
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A hint action needs a problem reference.',
         path: ['problem'],
       })
     }
@@ -617,6 +648,15 @@ export const CoachCheckInTypeSchema = z.enum([
   'focus_transition',
   'focus_progress',
   'inactivity',
+  'spaced_repetition_due',
+  'goal_progress_milestone',
+  'goal_off_track',
+  'streak_risk',
+  'difficulty_plateau',
+  'topic_mastery_achieved',
+  'contest_prep_reminder',
+  'morning_warm_up',
+  'insight_of_the_day',
 ])
 export type CoachCheckInType = z.infer<typeof CoachCheckInTypeSchema>
 

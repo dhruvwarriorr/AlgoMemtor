@@ -35,6 +35,21 @@ const aiMemorySchema = z
       'topic_weakness',
       'scheduling_preference',
       'recommendation_feedback_pattern',
+      'learning_goal',
+      'topic_strength',
+      'coding_style',
+      'problem_solving_approach',
+      'learning_pace',
+      'time_availability',
+      'mistake_pattern',
+      'contest_performance',
+      'explanation_preference',
+      'communication_preference',
+      'user_instruction',
+      'conversation_summary',
+      'learning_milestone',
+      'bloom_level',
+      'spaced_repetition_state',
     ]),
     statement: z.string().trim().min(1).max(500),
     structuredValue: z.record(z.string(), z.unknown()).default({}),
@@ -310,9 +325,9 @@ export class HttpAiMemoryClient implements AiMemoryClient {
     return result.data
   }
 
-  async retrieveMemories(learnerId: string, query: string, limit = 5) {
+  async retrieveMemories(learnerId: string, query: string, limit = 15) {
     const payload = await this.request(
-      `/internal/learners/${encodeURIComponent(learnerId)}/memories?query=${encodeURIComponent(query)}&limit=${Math.min(5, Math.max(1, limit))}`,
+      `/internal/learners/${encodeURIComponent(learnerId)}/memories?query=${encodeURIComponent(query)}&limit=${Math.min(20, Math.max(1, limit))}`,
       'GET',
     )
     const result = z

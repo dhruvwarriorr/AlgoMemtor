@@ -7,6 +7,10 @@ import {
 
 import { ProviderError } from '../../errors/provider-error.js'
 import { RequestGate } from '../../utils/request-gate.js'
+import {
+  structuredLogger,
+  type StructuredLogger,
+} from '../../utils/structured-logger.js'
 import { filterProblems } from '../providers/problem-filters.js'
 import {
   CachedCatalogProvider,
@@ -49,6 +53,7 @@ export type CodeChefProviderOptions = {
   contentCache?: ProblemContentCacheRepository
   catalogEnabled?: boolean
   contentEnabled?: boolean
+  logger?: StructuredLogger
 }
 
 const numeric = (value: string | number | null | undefined) => {
@@ -98,6 +103,7 @@ export class CodeChefProvider implements ProblemProvider {
   private readonly contentRepository: ProblemContentCacheRepository | undefined
   private readonly catalogEnabled: boolean
   private readonly contentEnabled: boolean
+  private readonly logger: StructuredLogger
 
   constructor(options: CodeChefProviderOptions = {}) {
     const baseUrl = options.baseUrl ?? 'https://www.codechef.com'
@@ -139,6 +145,7 @@ export class CodeChefProvider implements ProblemProvider {
     this.contentRepository = options.contentCache
     this.catalogEnabled = options.catalogEnabled ?? true
     this.contentEnabled = options.contentEnabled ?? true
+    this.logger = options.logger ?? structuredLogger
     this.capabilities = {
       catalog: this.catalogEnabled ? 'supported' : 'disabled',
       problem_content: this.contentEnabled ? 'supported' : 'disabled',
@@ -212,8 +219,10 @@ export class CodeChefProvider implements ProblemProvider {
           }
           this.contentCache.set(externalId, cached)
         }
-      } catch {
-        // A cache read failure must not prevent a fresh provider request.
+      } catch (error) {
+        this.logger.warn('codechef_content_cache_read_failed', {
+          errorCode: error instanceof Error ? error.name : 'CACHE_READ_FAILED',
+        })
       }
     }
     const now = Date.now()

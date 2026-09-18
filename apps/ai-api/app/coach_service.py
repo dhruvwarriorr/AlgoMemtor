@@ -31,6 +31,15 @@ from .coach_models import (
 from .knowledge_base import retrieve_knowledge
 from .knowledge_repository import KnowledgeRepository
 from .memory_model import GeminiMemoryEmbedder, MemoryEmbeddingError
+from .pedagogy import (
+    bloom_prompt,
+    detect_frustration,
+    detect_mistake_patterns,
+    infer_bloom_level,
+    infer_teaching_style,
+    mistake_prompt,
+    teaching_prompt,
+)
 from .settings import AiSettings, get_ai_settings
 from .web_grounding import ground_public_question, should_ground_on_web
 
@@ -53,7 +62,8 @@ study-planning topics; redirect unrelated requests politely. The context may inc
 an `excludedTopics` list derived from explicit learner preferences. Never mention,
 recommend, explain, chart, cite, or repeat an excluded topic. If the learner asks
 about one, acknowledge the preference without naming it and redirect to an allowed
-topic.
+topic. The `userInstructions` list contains persistent learner rules and must be
+applied before choosing teaching style, topics, examples, or recommendations.
 """
 
 
@@ -87,7 +97,7 @@ class GeminiCoachModel:
             thinking_level="low",
             max_tokens=settings.llm_max_output_tokens,
             timeout=settings.llm_timeout_seconds,
-            max_retries=0,
+            max_retries=2,
         )
         self.structured_model = model.with_structured_output(
             CoachModelOutput,
@@ -95,16 +105,23 @@ class GeminiCoachModel:
             include_raw=True,
         )
 
-    async def respond(self, request: CoachRequest) -> CoachModelOutput:
+    async def respond(self, request: CoachRequest) -> CoachModelResult:
         payload: dict[str, Any] = {
             "question": request.question,
             "context": request.context,
         }
         if request.transientContext:
             payload["transientContext"] = request.transientContext
+        guidance = request.context.get("coachingGuidance")
+        guidance_prompt = (
+            guidance.get("prompt", "") if isinstance(guidance, dict) else ""
+        )
         result: dict[str, Any] = await self.structured_model.ainvoke(
             [
-                ("system", SYSTEM_PROMPT),
+                (
+                    "system",
+                    SYSTEM_PROMPT + "\n" + str(guidance_prompt),
+                ),
                 ("human", json.dumps(payload, separators=(",", ":"))),
             ]
         )
@@ -144,7 +161,17 @@ class CoachService:
             else None
         )
 
-    async def _retrieve_knowledge(self, query: str):
+    async def _retrieve_knowledge(self, query: str, excluded_topics: object = None):
+        excluded = (
+            {str(topic).strip().lower().replace("_", "-") for topic in excluded_topics}
+            if isinstance(excluded_topics, list)
+            else set()
+        )
+
+        def allowed(chunk: object) -> bool:
+            topic = str(getattr(chunk, "topic", "")).strip().lower()
+            return topic not in excluded and topic.replace(" ", "-") not in excluded
+
         if (
             self.settings.coach_knowledge_rag_enabled
             and self.knowledge_repository is not None
@@ -169,21 +196,20 @@ class CoachService:
                         ValueError,
                     ):
                         query_embedding = None
-                await self.knowledge_repository.seed_default(
-                    self.embedder,
-                    self.settings.embedding_model,
-                    self.settings.embedding_timeout_seconds,
-                )
                 stored = await self.knowledge_repository.search(
                     query, limit=8, query_embedding=query_embedding
                 )
                 if stored:
-                    return stored
+                    return [chunk for chunk in stored if allowed(chunk)]
             except asyncio.CancelledError:
                 raise
             except Exception:  # noqa: BLE001
-                return retrieve_knowledge(query, limit=8)
-        return retrieve_knowledge(query, limit=8)
+                return [
+                    chunk
+                    for chunk in retrieve_knowledge(query, limit=8)
+                    if allowed(chunk)
+                ]
+        return [chunk for chunk in retrieve_knowledge(query, limit=8) if allowed(chunk)]
 
     def get_model(self) -> CoachModel:
         if self.model is not None:
@@ -210,7 +236,9 @@ class CoachService:
         input_tokens: int | None = None
         output_tokens: int | None = None
         effective_request = request
-        chunks = await self._retrieve_knowledge(request.question)
+        chunks = await self._retrieve_knowledge(
+            request.question, request.context.get("excludedTopics")
+        )
         retrieval: dict[str, object] = {
             "knowledge": [
                 {
@@ -281,11 +309,36 @@ class CoachService:
                         # Grounding metadata is untrusted; keep only citations
                         # that pass the strict public-source contract.
                         continue
+        raw_recent_turns = request.context.get("recentTurns")
+        recent_turns = (
+            [item for item in raw_recent_turns if isinstance(item, dict)]
+            if isinstance(raw_recent_turns, list)
+            else []
+        )
+        recent_text = "\n".join(str(item.get("content", "")) for item in recent_turns)
+        bloom_level = infer_bloom_level(request.question, recent_turns)
+        mistake_patterns = detect_mistake_patterns(recent_text)
+        teaching_style = infer_teaching_style(request.context)
+        frustration = detect_frustration(request.question)
         effective_request = request.model_copy(
             update={
                 "context": {
                     **request.context,
                     "retrieval": retrieval,
+                    "coachingGuidance": {
+                        "style": teaching_style.value,
+                        "frustration": round(frustration, 3),
+                        "bloomLevel": bloom_level,
+                        "mistakePatterns": list(mistake_patterns),
+                        "prompt": teaching_prompt(
+                            teaching_style,
+                            frustration,
+                        )
+                        + "\n"
+                        + bloom_prompt(bloom_level)
+                        + "\n"
+                        + mistake_prompt(mistake_patterns),
+                    },
                 }
             }
         )
@@ -334,7 +387,7 @@ class CoachService:
                 output_tokens=output_tokens,
             )
             raise CoachGenerationError("Coach generation failed safely.") from error
-        except BaseException as error:
+        except Exception as error:
             if isinstance(error, asyncio.CancelledError):
                 raise
             await self._save_audit(
@@ -399,7 +452,7 @@ class CoachService:
                 await self.audit_repository.save(audit)
         except asyncio.CancelledError:
             raise
-        except BaseException:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             # Audit persistence must never leak context or make coaching fail.
             return
 

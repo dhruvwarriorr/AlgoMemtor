@@ -1,7 +1,11 @@
+import json
+import logging
+from contextlib import asynccontextmanager
 from typing import Annotated
 from uuid import UUID, uuid4
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 
 from .auth import AuthenticatedUser, require_authenticated_user
 from .coach_models import (
@@ -22,6 +26,8 @@ from .memory_models import (
     MemoryActionResponse,
     MemoryCleanupRequest,
     MemoryCleanupResponse,
+    MemoryConsolidationRequest,
+    MemoryConsolidationResponse,
     MemoryCorrectionRequest,
     MemoryDeleteRequest,
     MemoryEvidenceCleanupResponse,
@@ -36,13 +42,53 @@ from .memory_repository import (
     MemoryOwnershipError,
     MemoryRepositoryError,
     MemoryStorageError,
+    NullMemoryRepository,
 )
 from .memory_service import MemoryNotFoundError, MemoryService, get_memory_service
 from .ranking_models import RankingRequest, RankingResponse
 from .ranking_service import RankingService, get_ranking_service
+from .rate_limit import InMemoryRateLimiter, rate_limit_internal_request
+from .settings import get_ai_settings
 
-app = FastAPI(title="AlgoMemtor AI API", version="0.1.0")
 OPTIONAL_CLEANUP_BODY = Body(default=None)
+logger = logging.getLogger(__name__)
+internal_rate_limiter = InMemoryRateLimiter(
+    limit=get_ai_settings().internal_rate_limit_per_minute
+)
+
+
+async def initialize_ai_resources() -> None:
+    """Warm durable RAG resources once per worker, outside request paths."""
+    coach = get_coach_service()
+    if coach.knowledge_repository is not None:
+        try:
+            await coach.knowledge_repository.seed_default(
+                coach.embedder,
+                coach.settings.embedding_model,
+                coach.settings.embedding_timeout_seconds,
+            )
+        except Exception:
+            logger.warning(
+                "Knowledge index warm-up failed; static retrieval remains available",
+                exc_info=True,
+            )
+    memory_service = get_memory_service()
+    if isinstance(memory_service.repository, NullMemoryRepository):
+        logger.warning("Memory persistence disabled: DATABASE_URL not configured")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    await initialize_ai_resources()
+    yield
+
+
+app = FastAPI(title="AlgoMemtor AI API", version="0.1.0", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def limit_internal_requests(request, call_next):
+    return await rate_limit_internal_request(request, call_next, internal_rate_limiter)
 
 
 @app.get("/health")
@@ -100,6 +146,51 @@ async def respond_as_coach(
             for proposal in output.proposals
         ],
         citations=output.citations,
+    )
+
+
+@app.post(
+    "/internal/coach/respond/stream",
+    dependencies=[Depends(require_internal_service)],
+)
+async def stream_coach_response(request: CoachRequest) -> StreamingResponse:
+    """Return one validated response event using the coach's SSE transport.
+
+    Generation remains atomically validated before anything is emitted. This
+    gives clients a cancelable streaming contract without exposing partial or
+    malformed model output.
+    """
+    service = get_coach_service()
+    try:
+        output = await service.respond(request)
+    except CoachNotConfiguredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The AI coach is not configured.",
+        ) from error
+    except CoachGenerationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The AI coach is temporarily unavailable.",
+        ) from error
+    payload = CoachResponse(
+        answer=output.answer,
+        evidence=output.evidence,
+        proposals=[
+            CoachResponseProposal(id=uuid4(), **proposal.model_dump())
+            for proposal in output.proposals
+        ],
+        citations=output.citations,
+    ).model_dump(mode="json", exclude_none=True)
+
+    async def events():
+        yield f"event: coach.response\ndata: {json.dumps(payload)}\n\n"
+        yield "event: done\ndata: {}\n\n"
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
@@ -217,7 +308,7 @@ async def retrieve_learner_memories(
     learner_id: UUID,
     service: Annotated[MemoryService, Depends(get_memory_service)],
     query: Annotated[str | None, Query(max_length=500)] = None,
-    limit: Annotated[int, Query(ge=1, le=5)] = 5,
+    limit: Annotated[int, Query(ge=1, le=20)] = 15,
 ) -> MemoryRetrievalResponse:
     try:
         return await service.retrieve(learner_id, query, limit)
@@ -238,6 +329,24 @@ async def list_learner_memories(
     try:
         return await service.list_memories(learner_id)
     except (MemoryNotFoundError, MemoryRepositoryError) as error:
+        _raise_memory_http_error(error)
+        raise AssertionError("Memory error handler did not raise.")
+
+
+@app.post(
+    "/internal/learners/{learner_id}/memories/consolidate",
+    response_model=MemoryConsolidationResponse,
+    response_model_exclude_none=True,
+    dependencies=[Depends(require_internal_service)],
+)
+async def consolidate_learner_memories(
+    learner_id: UUID,
+    request: MemoryConsolidationRequest,
+    service: Annotated[MemoryService, Depends(get_memory_service)],
+) -> MemoryConsolidationResponse:
+    try:
+        return await service.consolidate(learner_id, request)
+    except (MemoryConflictError, MemoryNotFoundError, MemoryRepositoryError) as error:
         _raise_memory_http_error(error)
         raise AssertionError("Memory error handler did not raise.")
 

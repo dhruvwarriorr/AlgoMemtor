@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
@@ -12,6 +12,21 @@ MemoryCategory = Literal[
     "topic_weakness",
     "scheduling_preference",
     "recommendation_feedback_pattern",
+    "learning_goal",
+    "topic_strength",
+    "coding_style",
+    "problem_solving_approach",
+    "learning_pace",
+    "time_availability",
+    "mistake_pattern",
+    "contest_performance",
+    "explanation_preference",
+    "communication_preference",
+    "user_instruction",
+    "conversation_summary",
+    "learning_milestone",
+    "bloom_level",
+    "spaced_repetition_state",
 ]
 MemoryStatus = Literal["proposed", "active", "archived"]
 MemoryAction = Literal["propose", "approve", "correct", "archive", "restore", "delete"]
@@ -25,6 +40,10 @@ EvidenceType = Literal[
     "bookmark",
     "outbound_open",
     "analytics",
+    "coach_conversation",
+    "hint_ladder_outcome",
+    "contest_performance",
+    "frustration",
 ]
 MemoryFallbackReason = Literal[
     "not_configured",
@@ -113,9 +132,7 @@ class MemoryProcessRequest(MemoryStrictModel):
 class GeneratedMemory(MemoryStrictModel):
     category: MemoryCategory
     statement: str = Field(min_length=1, max_length=500)
-    structuredValue: dict[str, str | int | float | bool] = Field(
-        default_factory=dict, max_length=16
-    )
+    structuredValue: dict[str, Any] = Field(default_factory=dict, max_length=16)
     confidence: float = Field(ge=0, le=1)
 
 
@@ -132,9 +149,7 @@ class StoredMemory(MemoryStrictModel):
     learnerId: UUID
     category: MemoryCategory
     statement: str = Field(min_length=1, max_length=500)
-    structuredValue: dict[str, str | int | float | bool] = Field(
-        default_factory=dict, max_length=16
-    )
+    structuredValue: dict[str, Any] = Field(default_factory=dict, max_length=16)
     confidence: float = Field(ge=0, le=1)
     status: MemoryStatus
     evidenceIds: list[UUID] = Field(min_length=1, max_length=64)
@@ -165,16 +180,14 @@ class MemoryRetrievalResponse(MemoryStrictModel):
     learnerId: UUID
     query: str | None = None
     retrievalMode: RetrievalMode
-    items: list[StoredMemory] = Field(max_length=5)
+    items: list[StoredMemory] = Field(max_length=20)
 
 
 class MemoryCorrectionRequest(MemoryStrictModel):
     requestId: str = Field(min_length=1, max_length=160, pattern=r"^[A-Za-z0-9:_-]+$")
     statement: str = Field(min_length=1, max_length=500)
     category: MemoryCategory | None = None
-    structuredValue: dict[str, str | int | float | bool] | None = Field(
-        default=None, max_length=16
-    )
+    structuredValue: dict[str, Any] | None = Field(default=None, max_length=16)
     confidence: float | None = Field(default=None, ge=0, le=1)
 
 
@@ -186,6 +199,19 @@ class MemoryProposalRequest(MemoryStrictModel):
     requestId: str = Field(min_length=1, max_length=160, pattern=r"^\S+$")
     statement: str = Field(min_length=1, max_length=500)
     category: MemoryCategory
+
+
+class MemoryConsolidationRequest(MemoryStrictModel):
+    requestId: str = Field(min_length=1, max_length=160, pattern=r"^\S+$")
+    memoryIds: list[UUID] = Field(min_length=2, max_length=8)
+    statement: str = Field(min_length=1, max_length=500)
+    category: MemoryCategory
+    confidence: float = Field(default=0.8, ge=0, le=1)
+
+
+class MemoryConsolidationResponse(MemoryStrictModel):
+    requestId: str
+    memory: StoredMemory
 
 
 class MemoryDeleteRequest(MemoryStrictModel):

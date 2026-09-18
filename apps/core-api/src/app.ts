@@ -149,6 +149,7 @@ import {
 } from './repositories/recommendation-repository.js'
 import {
   InMemoryProviderAccountRepository,
+  ProviderAccountHandleClaimedError,
   type ProviderAccountRepository,
 } from './repositories/provider-account-repository.js'
 import {
@@ -735,6 +736,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
     aiMemoryClient,
     aiCoachClient,
     logger,
+    memoryGenerationEnabled: process.env.MEMORY_GENERATION_ENABLED !== 'false',
   })
   const internalServiceToken =
     options.internalServiceToken ??
@@ -884,6 +886,35 @@ export const createApp = (options: CreateAppOptions = {}) => {
         statuses.get(`${problem.provider}:${problem.externalId}`) ?? 'unsolved',
       bookmarked: bookmarked.has(`${problem.provider}:${problem.externalId}`),
     }))
+  }
+
+  const recommendationFeedForLearner = async (
+    authUserId: string,
+    refresh: boolean,
+    requestId: string,
+    signal: AbortSignal,
+  ) => {
+    const feed = await recommendationService.getFeed(
+      authUserId,
+      refresh,
+      requestId,
+      signal,
+    )
+    if (!progressEnabled || feed.data === null) return feed
+    const decoratedProblems = await decorateProblemsForLearner(
+      authUserId,
+      feed.data.items.map((item) => item.problem),
+    )
+    return {
+      ...feed,
+      data: {
+        ...feed.data,
+        items: feed.data.items.map((item, index) => ({
+          ...item,
+          problem: decoratedProblems[index] ?? item.problem,
+        })),
+      },
+    }
   }
 
   const providerFreshness = () =>
@@ -1268,11 +1299,27 @@ export const createApp = (options: CreateAppOptions = {}) => {
       }
 
       const authUserId = authenticatedSubject(response)
-      const account = await providerAccountRepository.upsertByAuthUserId(
-        authUserId,
-        providerResult.data,
-        accountResult.data.handle,
-      )
+      let account
+      try {
+        account = await providerAccountRepository.upsertByAuthUserId(
+          authUserId,
+          providerResult.data,
+          accountResult.data.handle,
+        )
+      } catch (error) {
+        if (error instanceof ProviderAccountHandleClaimedError) {
+          response
+            .status(409)
+            .json(
+              createApiError(
+                'PROVIDER_HANDLE_ALREADY_LINKED',
+                'That public provider handle is already linked to another learner.',
+              ),
+            )
+          return
+        }
+        throw error
+      }
 
       try {
         await providerSyncService.requestManualSync(
@@ -3563,31 +3610,13 @@ export const createApp = (options: CreateAppOptions = {}) => {
     async (request, response) => {
       const cancellation = abortSignalForResponse(request, response)
       try {
-        const feed = await recommendationService.getFeed(
+        const feed = await recommendationFeedForLearner(
           authenticatedSubject(response),
           false,
           response.locals.requestId as string,
           cancellation.signal,
         )
-        response.json(
-          progressEnabled && feed.data !== null
-            ? {
-                ...feed,
-                data: {
-                  ...feed.data,
-                  items: await decorateProblemsForLearner(
-                    authenticatedSubject(response),
-                    feed.data.items.map((item) => item.problem),
-                  ).then((problems) =>
-                    feed.data?.items.map((item, index) => ({
-                      ...item,
-                      problem: problems[index] ?? item.problem,
-                    })),
-                  ),
-                },
-              }
-            : feed,
-        )
+        response.json(feed)
       } catch (error) {
         if (!respondWithProviderError(error, response)) {
           throw error
@@ -3604,31 +3633,13 @@ export const createApp = (options: CreateAppOptions = {}) => {
     async (request, response) => {
       const cancellation = abortSignalForResponse(request, response)
       try {
-        const feed = await recommendationService.getFeed(
+        const feed = await recommendationFeedForLearner(
           authenticatedSubject(response),
           true,
           response.locals.requestId as string,
           cancellation.signal,
         )
-        response.json(
-          progressEnabled && feed.data !== null
-            ? {
-                ...feed,
-                data: {
-                  ...feed.data,
-                  items: await decorateProblemsForLearner(
-                    authenticatedSubject(response),
-                    feed.data.items.map((item) => item.problem),
-                  ).then((problems) =>
-                    feed.data?.items.map((item, index) => ({
-                      ...item,
-                      problem: problems[index] ?? item.problem,
-                    })),
-                  ),
-                },
-              }
-            : feed,
-        )
+        response.json(feed)
       } catch (error) {
         if (!respondWithProviderError(error, response)) {
           throw error

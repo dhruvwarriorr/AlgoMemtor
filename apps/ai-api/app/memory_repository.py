@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -24,6 +26,8 @@ from .memory_models import (
     StoredMemory,
 )
 from .settings import get_ai_settings
+
+logger = logging.getLogger(__name__)
 
 memory_metadata = sa.MetaData()
 
@@ -81,6 +85,7 @@ learner_memories = sa.Table(
     sa.Column("memory_key", sa.String(length=64), nullable=False),
     sa.Column("category", sa.String(length=40), nullable=False),
     sa.Column("statement", sa.String(length=500), nullable=False),
+    sa.Column("statement_tsv", postgresql.TSVECTOR(), nullable=True),
     sa.Column("structured_value", postgresql.JSONB(), nullable=False),
     sa.Column("confidence", sa.Numeric(4, 3), nullable=False),
     sa.Column("status", sa.String(length=16), nullable=False),
@@ -538,13 +543,27 @@ class MemoryRepository:
                         ),
                         "structured_value": memory_insert.excluded.structured_value,
                         "updated_at": sa.func.now(),
-                        "embedding": sa.func.coalesce(
-                            learner_memories.c.embedding,
-                            memory_insert.excluded.embedding,
+                        "embedding": sa.case(
+                            (
+                                learner_memories.c.statement
+                                != memory_insert.excluded.statement,
+                                memory_insert.excluded.embedding,
+                            ),
+                            else_=sa.func.coalesce(
+                                learner_memories.c.embedding,
+                                memory_insert.excluded.embedding,
+                            ),
                         ),
-                        "embedding_model": sa.func.coalesce(
-                            learner_memories.c.embedding_model,
-                            memory_insert.excluded.embedding_model,
+                        "embedding_model": sa.case(
+                            (
+                                learner_memories.c.statement
+                                != memory_insert.excluded.statement,
+                                memory_insert.excluded.embedding_model,
+                            ),
+                            else_=sa.func.coalesce(
+                                learner_memories.c.embedding_model,
+                                memory_insert.excluded.embedding_model,
+                            ),
                         ),
                     },
                 ).returning(learner_memories.c.id)
@@ -704,17 +723,33 @@ class MemoryRepository:
         self,
         learner_id: UUID,
         *,
+        query: str | None = None,
         limit: int,
         confidence_threshold: float,
     ) -> list[StoredMemory]:
+        conditions = [
+            learner_memories.c.learner_id == learner_id,
+            learner_memories.c.status == "active",
+            learner_memories.c.confidence >= Decimal(str(confidence_threshold)),
+        ]
+        tokens = re.findall(r"[a-z0-9][a-z0-9-]*", (query or "").lower())
+        rank = sa.literal(0.0)
+        if tokens:
+            text_query = sa.func.plainto_tsquery("english", query or "")
+            tsv_match = learner_memories.c.statement_tsv.op("@@")(text_query)
+            keyword_match = sa.or_(
+                *[
+                    learner_memories.c.statement.ilike(f"%{token}%")
+                    for token in tokens[:12]
+                ]
+            )
+            conditions.append(sa.or_(tsv_match, keyword_match))
+            rank = sa.func.ts_rank_cd(learner_memories.c.statement_tsv, text_query)
         statement = (
             sa.select(learner_memories)
-            .where(
-                learner_memories.c.learner_id == learner_id,
-                learner_memories.c.status == "active",
-                learner_memories.c.confidence >= Decimal(str(confidence_threshold)),
-            )
+            .where(*conditions)
             .order_by(
+                rank.desc(),
                 learner_memories.c.confidence.desc(),
                 learner_memories.c.updated_at.desc(),
             )
@@ -755,6 +790,129 @@ class MemoryRepository:
             result = await connection.execute(statement)
             rows = result.mappings().all()
             return [await self._stored_memory(connection, row) for row in rows]
+
+    async def list_memories_by_category(
+        self,
+        learner_id: UUID,
+        *,
+        categories: list[str],
+        status: str = "active",
+        limit: int = 20,
+    ) -> list[StoredMemory]:
+        if not categories:
+            return []
+        statement = (
+            sa.select(learner_memories)
+            .where(
+                learner_memories.c.learner_id == learner_id,
+                learner_memories.c.status == status,
+                learner_memories.c.category.in_(categories),
+            )
+            .order_by(
+                learner_memories.c.learner_corrected.desc(),
+                learner_memories.c.confidence.desc(),
+                learner_memories.c.updated_at.desc(),
+            )
+            .limit(min(limit, 20))
+        )
+        async with self.engine.connect() as connection:
+            result = await connection.execute(statement)
+            rows = result.mappings().all()
+            return [await self._stored_memory(connection, row) for row in rows]
+
+    async def consolidate_memories(
+        self,
+        learner_id: UUID,
+        *,
+        memory_ids: list[UUID],
+        statement_text: str,
+        category: str,
+        confidence: float,
+    ) -> StoredMemory | None:
+        """Create one durable summary and archive its source memories."""
+        from sqlalchemy.dialects.postgresql import insert
+
+        if len(memory_ids) < 2:
+            raise MemoryConflictError("Consolidation needs at least two memories.")
+        memory_key = hashlib.sha256(
+            f"consolidated:{category}:{statement_text}".encode()
+        ).hexdigest()[:64]
+        async with self.engine.begin() as connection:
+            result = await connection.execute(
+                sa.select(learner_memories).where(
+                    learner_memories.c.learner_id == learner_id,
+                    learner_memories.c.id.in_(memory_ids),
+                    learner_memories.c.status == "active",
+                )
+            )
+            source_rows = result.mappings().all()
+            if len(source_rows) < 2:
+                return None
+            evidence_result = await connection.execute(
+                sa.select(
+                    memory_evidence_links.c.evidence_id,
+                    memory_evidence_links.c.support_strength,
+                ).where(memory_evidence_links.c.memory_id.in_(memory_ids))
+            )
+            evidence_rows = evidence_result.mappings().all()
+            inserted = await connection.execute(
+                insert(learner_memories)
+                .values(
+                    id=uuid4(),
+                    learner_id=learner_id,
+                    memory_key=memory_key,
+                    category=category,
+                    statement=statement_text,
+                    structured_value={
+                        "consolidatedFrom": [str(item) for item in memory_ids]
+                    },
+                    confidence=Decimal(str(confidence)),
+                    status="active",
+                    version=max(int(row["version"]) for row in source_rows) + 1,
+                    learner_corrected=False,
+                    embedding=None,
+                    embedding_model=None,
+                )
+                .on_conflict_do_update(
+                    index_elements=[
+                        learner_memories.c.learner_id,
+                        learner_memories.c.memory_key,
+                    ],
+                    set_={
+                        "statement": statement_text,
+                        "category": category,
+                        "confidence": Decimal(str(confidence)),
+                        "status": "active",
+                        "updated_at": sa.func.now(),
+                    },
+                )
+                .returning(learner_memories)
+            )
+            row = inserted.mappings().one()
+            for evidence in evidence_rows:
+                await connection.execute(
+                    insert(memory_evidence_links)
+                    .values(
+                        memory_id=row["id"],
+                        evidence_id=evidence["evidence_id"],
+                        support_strength=evidence["support_strength"],
+                    )
+                    .on_conflict_do_nothing()
+                )
+            await connection.execute(
+                sa.update(learner_memories)
+                .where(
+                    learner_memories.c.learner_id == learner_id,
+                    learner_memories.c.id.in_(memory_ids),
+                    learner_memories.c.id != row["id"],
+                )
+                .values(
+                    status="archived",
+                    archived_at=sa.func.now(),
+                    updated_at=sa.func.now(),
+                )
+            )
+            return await self._stored_memory(connection, row)
 
     async def create_proposed_memory(
         self,
@@ -1260,5 +1418,6 @@ class NullMemoryRepository:
 def get_memory_repository() -> MemoryRepository | NullMemoryRepository:
     database_url = get_ai_settings().database_url
     if not database_url:
+        logger.warning("Memory persistence disabled: DATABASE_URL not configured")
         return NullMemoryRepository()
     return MemoryRepository(create_async_engine(database_url, pool_pre_ping=True))

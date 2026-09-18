@@ -30,6 +30,7 @@ function RecommendationsPage() {
   const [lastDismissed, setLastDismissed] = useState<{
     provider: string
     externalId: string
+    title: string
   } | null>(null)
 
   const feed = recommendationsQuery.data?.data
@@ -77,11 +78,13 @@ function RecommendationsPage() {
   }
 
   function dismiss(itemId: string) {
+    const item = feed?.items.find((candidate) => candidate.id === itemId)
     dismissMutation.mutate(itemId, {
       onSuccess: (response) => {
         setLastDismissed({
           provider: response.data.provider,
           externalId: response.data.externalId,
+          title: item?.problem.title ?? response.data.externalId,
         })
       },
       onError: (error) => {
@@ -229,9 +232,7 @@ function RecommendationsPage() {
           className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/50 p-3 text-sm"
           role="status"
         >
-          <span>
-            {lastDismissed.provider}:{lastDismissed.externalId} was dismissed.
-          </span>
+          <span>{lastDismissed.title} was dismissed.</span>
           <Button
             disabled={restoreMutation.isPending}
             onClick={() =>
@@ -289,7 +290,8 @@ function RecommendationsPage() {
                     {item.problem?.title ?? item.externalId}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    Codeforces · {item.externalId}
+                    <span className="capitalize">{item.provider}</span> ·{' '}
+                    {item.externalId}
                   </p>
                 </div>
                 <Button

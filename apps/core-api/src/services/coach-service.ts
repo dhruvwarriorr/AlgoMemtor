@@ -642,6 +642,30 @@ const coachActivityTrends = (
   })
 }
 
+const coachMomentum = (trends: CoachContextSnapshot['activityTrends']) => {
+  const points = trends.find((trend) => trend.windowDays === 30)?.points ?? []
+  const recent = points.slice(-7)
+  const prior = points.slice(-14, -7)
+  const average = (values: typeof points) =>
+    values.length === 0
+      ? 0
+      : values.reduce((sum, point) => sum + point.solved, 0) / values.length
+  const recentAverage = average(recent)
+  const priorAverage = average(prior)
+  const state:
+    'accelerating' | 'steady' | 'plateauing' | 'declining' | 'inactive' =
+    recentAverage === 0 && priorAverage === 0
+      ? 'inactive'
+      : priorAverage > 0 && recentAverage < priorAverage * 0.6
+        ? 'declining'
+        : priorAverage > 0 && recentAverage > priorAverage * 1.3
+          ? 'accelerating'
+          : recentAverage < priorAverage * 0.9
+            ? 'plateauing'
+            : 'steady'
+  return { state, recentAverage, priorAverage }
+}
+
 const omitCodeAndProblemText = (content: string) => {
   const withoutFences = content.replace(/```[\s\S]*?```/g, '[code omitted]')
   const withoutInlineCode = withoutFences
@@ -677,7 +701,7 @@ const redactCoachContextText = (content: string, maxLength: number) =>
       '[id omitted]',
     )
     .replace(
-      /\b(?:bearer|token|api[_ -]?key)\s*[:=]?\s*\S+/gi,
+      /\bbearer\s+[A-Za-z0-9._~+/=-]{12,}|\b(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token)\s*[:=]\s*\S+/gi,
       '[secret omitted]',
     )
     .slice(0, maxLength)
@@ -685,6 +709,22 @@ const redactCoachContextText = (content: string, maxLength: number) =>
 
 const coachContextForAi = (context: CoachContextSnapshot) => ({
   ...context,
+  userInstructions: [
+    ...(() => {
+      const profile = asRecord(context.profile)
+      return [
+        profile?.recommendationPreference,
+        profile?.additionalConsiderations,
+      ].filter((value): value is string => typeof value === 'string')
+    })(),
+    ...context.memories
+      .filter(
+        (memory) =>
+          memory.category === 'user_instruction' ||
+          memory.category === 'preference',
+      )
+      .map((memory) => memory.statement),
+  ].slice(0, 12),
   // Canonical links are owned by Express and rendered only after the learner
   // receives a validated response.  The model needs a trusted problem
   // identity and metadata, not a URL it could repeat or transform.
@@ -749,7 +789,7 @@ const safeLearnerProfile = (
 const unsafeCoachTextPatterns = [
   /(?:https?:\/\/|www\.)\S+/i,
   /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i,
-  /\b(?:bearer|token|api[_ -]?key)\s*[:=]?\s*\S+/i,
+  /\bbearer\s+[A-Za-z0-9._~+/=-]{12,}|\b(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token)\s*[:=]\s*\S+/i,
   /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i,
 ]
 
@@ -913,6 +953,11 @@ export type CoachContextSnapshot = {
     windowDays: 30 | 90
     points: Array<{ date: string; attempted: number; solved: number }>
   }>
+  momentum: {
+    state: 'accelerating' | 'steady' | 'plateauing' | 'declining' | 'inactive'
+    recentAverage: number
+    priorAverage: number
+  }
   conversationSummary?: string
   recentTurns: Array<{ role: 'user' | 'assistant'; content: string }>
   dataCompleteness: 'complete' | 'partial' | 'unknown'
@@ -1318,6 +1363,7 @@ export type CoachServiceOptions = {
   aiMemoryClient: AiMemoryClient
   aiCoachClient: AiCoachClient
   logger: StructuredLogger
+  memoryGenerationEnabled?: boolean
   now?: () => Date
 }
 
@@ -1645,6 +1691,7 @@ export class CoachService {
         reflections,
         timers,
         actions,
+        recommendationFeedback,
       ] = await Promise.all([
         safeList(
           this.options.providerDataRepository.listContestParticipations(userId),
@@ -1657,6 +1704,11 @@ export class CoachService {
         safeList(this.options.progressRepository.listReflections(userId)),
         safeList(this.options.progressRepository.listTimerSessions(userId)),
         safeList(this.options.problemActionRepository.listByAuthUserId(userId)),
+        safeList(
+          this.options.recommendationRepository?.listFeedbackByAuthUserId(
+            userId,
+          ) ?? Promise.resolve([]),
+        ),
       ])
       const latestContest = contests
         .slice()
@@ -1804,6 +1856,70 @@ export class CoachService {
       }
 
       const roadmap = await ensureRoadmap()
+      const observedSolvedKeys = new Set([
+        ...solved.map((problem) =>
+          identity(problem.provider, problem.externalId),
+        ),
+        ...actions
+          .filter(
+            (action) =>
+              action.actionType === 'status_changed' &&
+              action.learnerStatus === 'solved',
+          )
+          .map((action) => identity(action.provider, action.externalId)),
+      ])
+      const solvedMilestone = Math.floor(observedSolvedKeys.size / 5) * 5
+      if (solvedMilestone >= 5) {
+        const solvedCompleteness =
+          solved.length > 0 &&
+          solved.every(
+            (problem) => problem.provenance.completeness === 'complete',
+          )
+            ? 'complete'
+            : solved.length > 0
+              ? 'partial'
+              : 'unknown'
+        await addEvent(
+          'goal_progress_milestone',
+          `goal-milestone:${solvedMilestone}`,
+          `You reached ${solvedMilestone} observed solves`,
+          `You have at least ${solvedMilestone} observed solved problems across your connected activity. Keep the next practice block small and deliberate, then ask the coach whether the current goal should move to a harder band.`,
+          [
+            fallbackEvidence(
+              'activity',
+              `At least ${solvedMilestone} unique solved observations are available.`,
+              solvedCompleteness,
+              solved.some((problem) => problem.provenance.stale),
+            ),
+          ],
+        )
+      }
+      const recentFeedbackCutoff = now.getTime() - 30 * 86_400_000
+      const recentHardFeedback = recommendationFeedback.filter(
+        (feedback) =>
+          feedback.perceivedDifficulty === 'too_hard' &&
+          feedback.createdAt.getTime() >= recentFeedbackCutoff,
+      )
+      if (recentHardFeedback.length >= 3) {
+        await addEvent(
+          'difficulty_plateau',
+          `difficulty-plateau:${recentHardFeedback
+            .map((feedback) => feedback.createdAt.toISOString())
+            .sort()
+            .slice(-3)
+            .join(',')}`,
+          'Your current difficulty may be too steep',
+          `At least ${recentHardFeedback.length} recent recommendation ratings marked the problem as too hard. Treat that as a calibration signal, not a verdict: ask the coach for one foundation problem and a progressive hint ladder before increasing difficulty again.`,
+          [
+            fallbackEvidence(
+              'recommendations',
+              `${recentHardFeedback.length} recent difficulty ratings were marked too hard.`,
+              'complete',
+              false,
+            ),
+          ],
+        )
+      }
       if (
         previousRoadmap !== null &&
         roadmap.version > previousRoadmap.version
@@ -1912,6 +2028,100 @@ export class CoachService {
               'partial',
               submissions.some((submission) => submission.provenance.stale) ||
                 solved.some((problem) => problem.provenance.stale),
+            ),
+          ],
+        )
+      }
+      if (
+        profile?.goal !== undefined &&
+        latestActivity !== undefined &&
+        now.getTime() - latestActivity >= 14 * 86_400_000
+      ) {
+        await addEvent(
+          'goal_off_track',
+          `goal-off-track:${profile.goal}:${local.date}`,
+          'Your learning goal needs a reset point',
+          `Your recorded activity has been quiet for at least two weeks while your goal is ${profile.goal.replaceAll('_', ' ')}. This is a planning signal, not a judgment: choose a ten-minute restart step or adjust the target with the coach before adding more difficulty.`,
+          [
+            fallbackEvidence(
+              'profile',
+              `The active learner goal is ${profile.goal.replaceAll('_', ' ')}.`,
+              'complete',
+              false,
+            ),
+            fallbackEvidence(
+              'activity',
+              'No meaningful activity has been observed for at least 14 days.',
+              'partial',
+              true,
+            ),
+          ],
+        )
+      }
+      const reviewTopics = roadmap.topics
+        .filter(
+          (topic) =>
+            topic.assessment === 'revisit' || topic.lane === 'revisit_later',
+        )
+        .slice(0, 3)
+      if (reviewTopics.length > 0) {
+        await addEvent(
+          'spaced_repetition_due',
+          `review-due:${reviewTopics.map((topic) => topic.topic).join(',')}`,
+          'A few topics are due for review',
+          `A short retrieval review would reinforce ${reviewTopics.map((topic) => topic.name).join(', ')}. Manual roadmap statuses remain authoritative; ask the coach for one small recall prompt per topic.`,
+          [
+            fallbackEvidence(
+              'roadmap',
+              `${reviewTopics.length} topic assessment${reviewTopics.length === 1 ? '' : 's'} indicate a revisit window.`,
+              roadmap.dataCompleteness,
+              roadmap.staleProviders.length > 0,
+            ),
+          ],
+        )
+      }
+      const newlyComfortable = roadmap.topics.filter((topic) => {
+        const prior = previousRoadmap?.topics.find(
+          (candidate) => candidate.topic === topic.topic,
+        )
+        return (
+          topic.assessment === 'comfortable' &&
+          prior !== undefined &&
+          prior.assessment !== 'comfortable'
+        )
+      })
+      if (newlyComfortable.length > 0) {
+        await addEvent(
+          'topic_mastery_achieved',
+          `mastery:${roadmap.version}:${newlyComfortable.map((topic) => topic.topic).join(',')}`,
+          'You crossed a topic milestone',
+          `${newlyComfortable.map((topic) => topic.name).join(', ')} now has comfortable evidence. Celebrate the progress, then choose whether to reinforce it or move to a prerequisite-adjacent challenge.`,
+          [
+            fallbackEvidence(
+              'roadmap',
+              `The deterministic assessment moved to comfortable for ${newlyComfortable.map((topic) => topic.name).join(', ')}.`,
+              roadmap.dataCompleteness,
+              roadmap.staleProviders.length > 0,
+            ),
+          ],
+        )
+      }
+      if (
+        latestActivity !== undefined &&
+        now.getTime() - latestActivity >= 2 * 86_400_000 &&
+        now.getTime() - latestActivity < 7 * 86_400_000
+      ) {
+        await addEvent(
+          'streak_risk',
+          `streak-risk:${local.date}`,
+          'Keep your practice streak gentle',
+          'No meaningful practice has been observed for two local days. A ten-minute review or one easy trusted problem is enough; adjust the plan if your schedule changed.',
+          [
+            fallbackEvidence(
+              'activity',
+              'Recent activity is quieter than the previous practice window.',
+              'partial',
+              true,
             ),
           ],
         )
@@ -2094,6 +2304,21 @@ export class CoachService {
         message,
       ),
     )
+    if (this.options.memoryGenerationEnabled !== false) {
+      try {
+        await this.options.progressRepository.enqueueJob({
+          authUserId: userId,
+          jobType: 'memory_generation',
+          evidenceType: 'coach_conversation',
+          evidenceId: conversationId,
+          idempotencyKey: `memory:coach_conversation:${conversationId}:${savedAssistant.id}`,
+        })
+      } catch {
+        this.options.logger.warn('coach_conversation_memory_enqueue_failed', {
+          errorCode: 'OUTBOX_UNAVAILABLE',
+        })
+      }
+    }
     return CoachResponseSchema.parse({
       message: savedAssistant,
       roadmap: context.roadmap,
@@ -2175,6 +2400,30 @@ export class CoachService {
         userId,
         proposal.problem,
       )
+    } else if (
+      proposal.actionType === 'mark_problem_solved' &&
+      proposal.problem !== undefined
+    ) {
+      const actions =
+        await this.options.problemActionRepository.listByAuthUserId(userId)
+      const current = statusByIdentity(actions).get(
+        identity(proposal.problem.provider, proposal.problem.externalId),
+      )
+      if (current !== 'solved') {
+        await this.options.problemActionRepository.appendByAuthUserId(userId, {
+          ...proposal.problem,
+          actionType: 'status_changed',
+          learnerStatus: 'solved',
+          evidenceSource: 'manual',
+          sourceContext: 'coach',
+        })
+      }
+    } else if (
+      proposal.actionType === 'request_next_hint' &&
+      proposal.problem !== undefined
+    ) {
+      // Confirmation records progression through the hint ladder. The next
+      // message asks the model for the next validated hint.
     } else if (
       proposal.actionType === 'save_memory' &&
       proposal.memoryText !== undefined &&
@@ -2290,13 +2539,17 @@ export class CoachService {
       }
       if (
         proposal.actionType === 'set_problem_status' ||
-        proposal.actionType === 'bookmark_problem'
+        proposal.actionType === 'bookmark_problem' ||
+        proposal.actionType === 'request_next_hint' ||
+        proposal.actionType === 'mark_problem_solved'
       ) {
         return proposal.problem !== undefined &&
           allowedProblems.has(
             identity(proposal.problem.provider, proposal.problem.externalId),
           ) &&
           (proposal.actionType === 'bookmark_problem' ||
+            proposal.actionType === 'request_next_hint' ||
+            proposal.actionType === 'mark_problem_solved' ||
             proposal.learnerStatus !== undefined)
           ? [proposal]
           : []
@@ -2415,7 +2668,7 @@ export class CoachService {
         : this.options.aiMemoryClient.retrieveMemories(
             userId,
             redactCoachContextText(query, 500),
-            5,
+            15,
           )
       ).catch(() => {
         contextDataFailed = true
@@ -2444,6 +2697,7 @@ export class CoachService {
       preferences.timezone,
       this.now(),
     )
+    const momentum = coachMomentum(activityTrends)
     const roadmapTransitions = roadmapRevisions
       .slice()
       .sort((left, right) => right.version - left.version)
@@ -2504,7 +2758,7 @@ export class CoachService {
       })),
       memories: memories
         .filter((memory) => memory.status === 'active')
-        .slice(0, 5)
+        .slice(0, 15)
         .map(({ category, statement, confidence }) => ({
           category,
           statement: redactExcludedCoachTopics(
@@ -2652,6 +2906,7 @@ export class CoachService {
           createdAt,
         })),
       activityTrends,
+      momentum,
       ...(conversation?.data.summary === undefined
         ? {}
         : {
@@ -2676,6 +2931,10 @@ export class CoachService {
     context: CoachContextSnapshot,
   ): AiCoachResult {
     const lower = question.toLowerCase()
+    const frustrationMatches = [
+      /\b(stuck|frustrated|confused|lost|give up|can't do|cant do|impossible)\b/i,
+      /\b(don't understand|still don't|not getting it|wasted|hours|quit)\b/i,
+    ].filter((pattern) => pattern.test(question)).length
     const focus = context.roadmap.topics.filter(
       (topic) => topic.lane === 'current_focus',
     )
@@ -2693,6 +2952,16 @@ export class CoachService {
       return {
         answer:
           'I will respect that preference and keep the excluded area out of this coaching answer. Ask me about another allowed topic, your recent progress, or your next practice step.',
+        evidence,
+        proposals: [],
+        citations: [],
+        fallback: true,
+      }
+    }
+    if (frustrationMatches >= 2) {
+      return {
+        answer:
+          'It sounds like this practice block has become frustrating. Let us shrink the next step to one tiny trace or one easier trusted problem. Tell me whether you want a simpler example, a progressive hint, or a short break before we continue.',
         evidence,
         proposals: [],
         citations: [],

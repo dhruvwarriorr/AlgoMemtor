@@ -14,6 +14,8 @@ const navigationItems = [
   { label: 'Problems', to: '/problems' },
   { label: 'Activity', to: '/activity' },
   { label: 'Contests', to: '/contests' },
+  { label: 'Recommendations', to: '/recommendations' },
+  { label: 'Bookmarks', to: '/bookmarks' },
   { label: 'Coach', to: '/coach' },
   { label: 'Analytics', to: '/analytics' },
   { label: 'Progress', to: '/progress' },
@@ -35,30 +37,27 @@ function Topbar() {
     window.requestAnimationFrame(() => menuButtonRef.current?.focus())
   }, [])
 
-  const handleSignOut = useCallback(() => {
+  const handleSignOut = useCallback(async () => {
     if (isSigningOut) {
       return
     }
 
     setIsSigningOut(true)
-    void navigate('/', { replace: true })
-
-    void signOut().then(
-      () => {
-        setIsSigningOut(false)
-      },
-      (error: unknown) => {
-        setIsSigningOut(false)
-        notify({
-          title: 'Unable to sign out',
-          description:
-            error instanceof Error
-              ? error.message
-              : 'Please try signing out again.',
-          tone: 'error',
-        })
-      },
-    )
+    try {
+      await signOut()
+      await navigate('/', { replace: true })
+    } catch (error: unknown) {
+      notify({
+        title: 'Unable to sign out',
+        description:
+          error instanceof Error
+            ? error.message
+            : 'Please try signing out again.',
+        tone: 'error',
+      })
+    } finally {
+      setIsSigningOut(false)
+    }
   }, [isSigningOut, navigate, notify, signOut])
 
   useEffect(() => {
@@ -113,7 +112,7 @@ function Topbar() {
             {status === 'authenticated' ? (
               <Button
                 disabled={isSigningOut}
-                onClick={handleSignOut}
+                onClick={() => void handleSignOut()}
                 type="button"
                 variant="outline"
               >
@@ -155,7 +154,7 @@ function Topbar() {
         isOpen={isMobileMenuOpen}
         isSigningOut={isSigningOut}
         onClose={closeMobileMenu}
-        onSignOut={handleSignOut}
+        onSignOut={() => void handleSignOut()}
       />
     </>
   )

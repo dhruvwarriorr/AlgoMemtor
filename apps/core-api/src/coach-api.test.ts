@@ -629,6 +629,10 @@ describe('coach API', () => {
       coachResponse.roadmap.topics.map((topic) => topic.topic),
     ).not.toContain('linked-lists')
     expect(captured?.context.excludedTopics).toEqual(['linked-lists'])
+    expect(captured?.context.userInstructions).toHaveLength(1)
+    expect(
+      JSON.stringify(captured?.context.userInstructions).toLowerCase(),
+    ).not.toContain('linked list')
     expect(
       JSON.stringify(captured?.context.profile).toLowerCase(),
     ).not.toContain('linked list')

@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -17,6 +18,7 @@ from .memory_audit import (
     get_memory_audit_repository,
     safe_memory_log,
 )
+from .memory_consolidation import decayed_confidence
 from .memory_model import (
     GeminiMemoryEmbedder,
     GeminiMemoryGenerationModel,
@@ -28,6 +30,8 @@ from .memory_model import (
 from .memory_models import (
     GeneratedMemory,
     MemoryActionResponse,
+    MemoryConsolidationRequest,
+    MemoryConsolidationResponse,
     MemoryCorrectionRequest,
     MemoryFallbackReason,
     MemoryProcessRequest,
@@ -65,6 +69,21 @@ AUTO_MEMORY_CATEGORIES = {
     "topic_weakness",
     "scheduling_preference",
     "recommendation_feedback_pattern",
+    "learning_goal",
+    "topic_strength",
+    "coding_style",
+    "problem_solving_approach",
+    "learning_pace",
+    "time_availability",
+    "mistake_pattern",
+    "contest_performance",
+    "explanation_preference",
+    "communication_preference",
+    "user_instruction",
+    "conversation_summary",
+    "learning_milestone",
+    "bloom_level",
+    "spaced_repetition_state",
 }
 AUTO_MEMORY_EVIDENCE_TYPES = {
     "reflection",
@@ -72,8 +91,34 @@ AUTO_MEMORY_EVIDENCE_TYPES = {
     "recommendation_feedback",
     "profile_preference",
     "bookmark",
+    "coach_conversation",
+    "hint_ladder_outcome",
+    "contest_performance",
+    "frustration",
 }
 MEMORY_GENERATION_INVALID_ERRORS = (TypeError, ValueError, MemoryEmbeddingError)
+
+
+def _dedupe_memories(memories: list[StoredMemory], limit: int) -> list[StoredMemory]:
+    seen: set[UUID] = set()
+    result: list[StoredMemory] = []
+    for memory in memories:
+        if memory.id in seen:
+            continue
+        seen.add(memory.id)
+        result.append(memory)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _decay_retrieved_memories(
+    memories: list[StoredMemory], *, now: datetime | None = None
+) -> list[StoredMemory]:
+    return [
+        memory.model_copy(update={"confidence": decayed_confidence(memory, now=now)})
+        for memory in memories
+    ]
 
 
 @dataclass(frozen=True)
@@ -137,7 +182,6 @@ class MemoryService:
     def fallback_output(
         self, request: MemoryProcessRequest
     ) -> ReflectionGenerationOutput:
-        context = redacted_evidence_payload(request)
         signals: list[str] = []
         memories: list[GeneratedMemory] = []
         difficulty = request.perceivedDifficulty
@@ -197,8 +241,26 @@ class MemoryService:
             signals.append(
                 f"The learner recorded {request.timeSpentMinutes} minutes of work."
             )
-        if context.get("note") and not signals:
-            signals.append("The learner provided a reflection.")
+        if request.note:
+            note = redact_text(request.note, 500)
+            if note and re.search(
+                r"\b(always|never|don't|do not|avoid|prefer|focus|want)\b",
+                note,
+                re.IGNORECASE,
+            ):
+                signals.append(
+                    "The learner provided a persistent coaching instruction."
+                )
+                memories.append(
+                    GeneratedMemory(
+                        category="user_instruction",
+                        statement=f"Learner instruction: {note[:430].rstrip()}",
+                        structuredValue={"instruction": note},
+                        confidence=min(1.0, request.evidenceStrength),
+                    )
+                )
+            elif note and not signals:
+                signals.append("The learner provided a reflection.")
         if signals:
             summary = " ".join(signals)[:800]
         else:
@@ -267,7 +329,7 @@ class MemoryService:
             reason = "invalid_output"
         except asyncio.CancelledError:
             raise
-        except BaseException as error:
+        except Exception as error:
             if isinstance(error, asyncio.CancelledError):
                 raise
             reason = "provider_error"
@@ -358,7 +420,7 @@ class MemoryService:
         for result in results:
             if isinstance(result, asyncio.CancelledError):
                 raise result
-            if isinstance(result, BaseException):
+            if isinstance(result, Exception):
                 failed = True
                 embeddings.append(None)
             else:
@@ -376,7 +438,7 @@ class MemoryService:
                 "ai_memory_audit_failed",
                 {"requestId": request_id, "errorCode": "AUDIT_TIMEOUT"},
             )
-        except BaseException as error:
+        except Exception as error:
             if isinstance(error, asyncio.CancelledError):
                 raise
             safe_memory_log("ai_memory_audit_failed", {"requestId": request_id})
@@ -508,7 +570,7 @@ class MemoryService:
                 claim.lease_started_at,
             )
             raise
-        except BaseException as error:
+        except Exception as error:
             if isinstance(error, asyncio.CancelledError):
                 raise
             await self._mark_failed(
@@ -571,7 +633,7 @@ class MemoryService:
                 error_code,
                 lease_started_at,
             )
-        except BaseException as error:
+        except Exception as error:
             if isinstance(error, asyncio.CancelledError):
                 raise
             safe_memory_log(
@@ -582,8 +644,44 @@ class MemoryService:
     async def retrieve(
         self, learner_id: UUID, query: str | None, limit: int
     ) -> MemoryRetrievalResponse:
-        bounded_limit = min(self.settings.memory_retrieval_limit, limit, 5)
+        bounded_limit = min(self.settings.memory_retrieval_limit, limit, 20)
         clean_query = None if query is None else redact_text(query, 500)
+        always_include: list[StoredMemory] = []
+        list_by_category = getattr(self.repository, "list_memories_by_category", None)
+        if callable(list_by_category):
+            try:
+                always_include = await list_by_category(
+                    learner_id,
+                    categories=["user_instruction", "preference"],
+                    status="active",
+                    limit=min(5, bounded_limit),
+                )
+            except asyncio.CancelledError:
+                raise
+            except (OSError, RuntimeError, TypeError, ValueError) as error:
+                safe_memory_log(
+                    "memory_instruction_retrieval_failed",
+                    {"errorType": type(error).__name__},
+                )
+                always_include = []
+        if not always_include:
+            list_memories = getattr(self.repository, "list_memories", None)
+            if callable(list_memories):
+                try:
+                    all_memories = await list_memories(learner_id)
+                    always_include = [
+                        memory
+                        for memory in all_memories
+                        if memory.status == "active"
+                        and memory.category in {"user_instruction", "preference"}
+                    ][: min(5, bounded_limit)]
+                except asyncio.CancelledError:
+                    raise
+                except (OSError, RuntimeError, TypeError, ValueError) as error:
+                    safe_memory_log(
+                        "memory_category_retrieval_failed",
+                        {"errorType": type(error).__name__},
+                    )
         if clean_query:
             try:
                 embedder = self.get_embedder()
@@ -593,7 +691,7 @@ class MemoryService:
                     )
             except asyncio.CancelledError:
                 raise
-            except BaseException as error:
+            except Exception as error:
                 if isinstance(error, asyncio.CancelledError):
                     raise
                 embedding = None
@@ -606,16 +704,37 @@ class MemoryService:
                         confidence_threshold=self.settings.memory_min_confidence,
                         similarity_threshold=self.settings.memory_similarity_threshold,
                     )
-                    if items:
+                    keyword_items: list[StoredMemory] = []
+                    search_sql = getattr(self.repository, "search_sql", None)
+                    if callable(search_sql) and clean_query:
+                        try:
+                            keyword_items = await search_sql(
+                                learner_id,
+                                query=clean_query,
+                                limit=bounded_limit,
+                                confidence_threshold=self.settings.memory_min_confidence,
+                            )
+                        except TypeError:
+                            keyword_items = await search_sql(
+                                learner_id,
+                                limit=bounded_limit,
+                                confidence_threshold=self.settings.memory_min_confidence,
+                            )
+                        except (OSError, RuntimeError, ValueError):
+                            keyword_items = []
+                    if items or keyword_items:
+                        combined = _dedupe_memories(
+                            [*always_include, *items, *keyword_items], bounded_limit
+                        )
                         return MemoryRetrievalResponse(
                             learnerId=learner_id,
                             query=clean_query,
                             retrievalMode="vector",
-                            items=items,
+                            items=_decay_retrieved_memories(combined),
                         )
                 except asyncio.CancelledError:
                     raise
-                except BaseException as error:
+                except Exception as error:
                     if isinstance(error, asyncio.CancelledError):
                         raise
                     safe_memory_log(
@@ -623,11 +742,19 @@ class MemoryService:
                         {"learnerId": str(learner_id)},
                     )
         try:
-            items = await self.repository.search_sql(
-                learner_id,
-                limit=bounded_limit,
-                confidence_threshold=self.settings.memory_min_confidence,
-            )
+            try:
+                items = await self.repository.search_sql(
+                    learner_id,
+                    query=clean_query,
+                    limit=bounded_limit,
+                    confidence_threshold=self.settings.memory_min_confidence,
+                )
+            except TypeError:
+                items = await self.repository.search_sql(
+                    learner_id,
+                    limit=bounded_limit,
+                    confidence_threshold=self.settings.memory_min_confidence,
+                )
         except MemoryStorageError:
             raise
         except Exception as error:
@@ -636,11 +763,35 @@ class MemoryService:
             learnerId=learner_id,
             query=clean_query,
             retrievalMode="sql",
-            items=items,
+            items=_decay_retrieved_memories(
+                _dedupe_memories([*always_include, *items], bounded_limit)
+            ),
         )
 
     async def list_memories(self, learner_id: UUID) -> list[StoredMemory]:
         return await self.repository.list_memories(learner_id)
+
+    async def consolidate(
+        self, learner_id: UUID, request: MemoryConsolidationRequest
+    ) -> MemoryConsolidationResponse:
+        cleaned = redact_text(request.statement, 500)
+        if cleaned != request.statement or contains_sensitive_text(cleaned):
+            raise MemoryConflictError(
+                "A consolidated memory contains text that cannot be retained safely."
+            )
+        consolidate = getattr(self.repository, "consolidate_memories", None)
+        if not callable(consolidate):
+            raise MemoryStorageError("Memory consolidation is unavailable.")
+        memory = await consolidate(
+            learner_id,
+            memory_ids=request.memoryIds,
+            statement_text=cleaned,
+            category=request.category,
+            confidence=request.confidence,
+        )
+        if memory is None:
+            raise MemoryConflictError("The source memories are no longer active.")
+        return MemoryConsolidationResponse(requestId=request.requestId, memory=memory)
 
     async def propose(
         self, learner_id: UUID, request: MemoryProposalRequest

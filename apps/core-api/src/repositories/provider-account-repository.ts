@@ -98,6 +98,15 @@ export type ProviderPublicStatsFailure = {
   attemptedAt: Date
 }
 
+export class ProviderAccountHandleClaimedError extends Error {
+  readonly code = 'PROVIDER_HANDLE_ALREADY_LINKED'
+
+  constructor() {
+    super('That public provider handle is already linked to another learner.')
+    this.name = 'ProviderAccountHandleClaimedError'
+  }
+}
+
 export interface ProviderAccountRepository {
   findAllByAuthUserId(authUserId: string): Promise<ProviderAccountRecord[]>
   findAllIncludingDisconnectedByAuthUserId?(
@@ -210,6 +219,7 @@ export class InMemoryProviderAccountRepository implements ProviderAccountReposit
       Map<string, Map<string, ProviderVerifiedActivityRecord>>
     >
   >()
+  private readonly activeHandleOwners = new Map<string, string>()
 
   constructor(private readonly now: () => Date = () => new Date()) {}
 
@@ -255,6 +265,11 @@ export class InMemoryProviderAccountRepository implements ProviderAccountReposit
     provider: LinkableProvider,
     handle: PublicProviderHandle,
   ) {
+    const handleKey = `${provider}:${handle.toLowerCase()}`
+    const owner = this.activeHandleOwners.get(handleKey)
+    if (owner !== undefined && owner !== authUserId) {
+      throw new ProviderAccountHandleClaimedError()
+    }
     const records =
       this.recordsByAuthUserId.get(authUserId) ??
       new Map<LinkableProvider, ProviderAccountRecord>()
@@ -274,6 +289,9 @@ export class InMemoryProviderAccountRepository implements ProviderAccountReposit
       archivedByProvider.set(provider, archived)
       this.archivedRecordsByAuthUserId.set(authUserId, archivedByProvider)
       records.delete(provider)
+      this.activeHandleOwners.delete(
+        `${provider}:${existing.externalHandle.toLowerCase()}`,
+      )
     }
     const current = records.get(provider)
     const archivedByProvider = this.archivedRecordsByAuthUserId
@@ -295,6 +313,7 @@ export class InMemoryProviderAccountRepository implements ProviderAccountReposit
         updatedAt: now,
       }
       records.set(provider, reconnected)
+      this.activeHandleOwners.set(handleKey, authUserId)
       if (archivedByProvider !== undefined) {
         this.archivedRecordsByAuthUserId.get(authUserId)?.set(
           provider,
@@ -334,6 +353,7 @@ export class InMemoryProviderAccountRepository implements ProviderAccountReposit
     }
 
     records.set(provider, record)
+    this.activeHandleOwners.set(handleKey, authUserId)
     this.recordsByAuthUserId.set(authUserId, records)
 
     return record
@@ -579,6 +599,12 @@ export class InMemoryProviderAccountRepository implements ProviderAccountReposit
 
   async deleteByAuthUserId(authUserId: string, provider: LinkableProvider) {
     const records = this.recordsByAuthUserId.get(authUserId)
+    const active = records?.get(provider)
+    if (active !== undefined) {
+      this.activeHandleOwners.delete(
+        `${provider}:${active.externalHandle.toLowerCase()}`,
+      )
+    }
     records?.delete(provider)
     this.archivedRecordsByAuthUserId.get(authUserId)?.delete(provider)
     this.activityByAuthUserId.get(authUserId)?.delete(provider)
@@ -633,6 +659,9 @@ export class InMemoryProviderAccountRepository implements ProviderAccountReposit
     const records = this.recordsByAuthUserId.get(authUserId)
     const existing = records?.get(provider)
     if (existing === undefined || records === undefined) return
+    this.activeHandleOwners.delete(
+      `${provider}:${existing.externalHandle.toLowerCase()}`,
+    )
     const now = this.now()
     records.set(provider, {
       ...existing,
@@ -804,65 +833,89 @@ export class PrismaProviderAccountRepository implements ProviderAccountRepositor
     provider: LinkableProvider,
     handle: PublicProviderHandle,
   ) {
-    const record = await this.prisma.$transaction(async (transaction) => {
-      const user = await transaction.coreUser.upsert({
-        where: { authUserId },
-        create: { authUserId },
-        update: {},
-        select: { id: true },
-      })
-      const existing = await transaction.providerAccount.findFirst({
-        where: { userId: user.id, provider, syncEnabled: true },
-        orderBy: { updatedAt: 'desc' },
-      })
-      const sameHandle = await transaction.providerAccount.findUnique({
-        where: {
-          userId_provider_externalHandle: {
+    try {
+      const record = await this.prisma.$transaction(async (transaction) => {
+        const user = await transaction.coreUser.upsert({
+          where: { authUserId },
+          create: { authUserId },
+          update: {},
+          select: { id: true },
+        })
+        const existing = await transaction.providerAccount.findFirst({
+          where: { userId: user.id, provider, syncEnabled: true },
+          orderBy: { updatedAt: 'desc' },
+        })
+        const claimedByOther = await transaction.providerAccount.findFirst({
+          where: {
+            provider,
+            externalHandle: handle,
+            syncEnabled: true,
+            userId: { not: user.id },
+          },
+          select: { id: true },
+        })
+        if (claimedByOther !== null) {
+          throw new ProviderAccountHandleClaimedError()
+        }
+        const sameHandle = await transaction.providerAccount.findFirst({
+          where: {
             userId: user.id,
             provider,
             externalHandle: handle,
           },
-        },
-      })
+          orderBy: { updatedAt: 'desc' },
+        })
 
-      if (sameHandle !== null) {
-        if (existing !== null && existing.id !== sameHandle.id) {
+        if (sameHandle !== null) {
+          if (existing !== null && existing.id !== sameHandle.id) {
+            await transaction.providerAccount.update({
+              where: { id: existing.id },
+              data: { syncEnabled: false, disconnectedAt: new Date() },
+            })
+          }
+          return transaction.providerAccount.update({
+            where: { id: sameHandle.id },
+            data: {
+              consentScope,
+              publicStatsConsentAt:
+                sameHandle.publicStatsConsentAt ?? new Date(),
+              syncEnabled: true,
+              disconnectedAt: null,
+              verificationStatus: 'not_verified',
+            },
+          })
+        }
+
+        if (existing !== null) {
           await transaction.providerAccount.update({
             where: { id: existing.id },
             data: { syncEnabled: false, disconnectedAt: new Date() },
           })
         }
-        return transaction.providerAccount.update({
-          where: { id: sameHandle.id },
+
+        return transaction.providerAccount.create({
           data: {
+            userId: user.id,
+            provider,
+            externalHandle: handle,
             consentScope,
-            publicStatsConsentAt: sameHandle.publicStatsConsentAt ?? new Date(),
-            syncEnabled: true,
-            disconnectedAt: null,
-            verificationStatus: 'not_verified',
+            publicStatsConsentAt: new Date(),
           },
         })
-      }
-
-      if (existing !== null) {
-        await transaction.providerAccount.update({
-          where: { id: existing.id },
-          data: { syncEnabled: false, disconnectedAt: new Date() },
-        })
-      }
-
-      return transaction.providerAccount.create({
-        data: {
-          userId: user.id,
-          provider,
-          externalHandle: handle,
-          consentScope,
-          publicStatsConsentAt: new Date(),
-        },
       })
-    })
 
-    return recordFromDatabase(record)
+      return recordFromDatabase(record)
+    } catch (error) {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        error.code === 'P2002'
+      ) {
+        throw new ProviderAccountHandleClaimedError()
+      }
+      throw error
+    }
   }
 
   async savePublicStatsSuccess(

@@ -959,8 +959,9 @@ silently upgraded; the learner must choose again before new coach responses,
 AI-generated summaries, or proactive check-ins can run. While enabled, Express
 sends FastAPI only a bounded snapshot: profile/goals, deterministic roadmap and
 assessments, provider completeness, recent activity/contests/ratings,
-recommendation feedback, bookmarks/dismissals, reflections, up to five active
-query-relevant memories, and a rolling sanitized conversation summary. A
+recommendation feedback, bookmarks/dismissals, reflections, up to fifteen
+active query-relevant memories (with persistent instructions prioritized), and
+a rolling sanitized conversation summary. A
 conditional public-search lane receives only a de-identified CP/DSA query; it
 never receives names, handles, ratings, conversations, profile details, or
 private learner history.
@@ -986,7 +987,8 @@ Coach turns use three bounded retrieval lanes. Express deterministically builds
 the learner snapshot (profile and goals, 30/90-day activity trends where
 observed, provider profiles/submissions/solves/contests/ratings, roadmap
 transitions, feedback, bookmarks, reflections, and trusted catalog candidates).
-FastAPI retrieves up to five semantically relevant active learner memories and
+FastAPI retrieves up to fifteen semantically relevant active learner memories
+(including always-on instructions and preferences) and
 up to eight chunks from the versioned `coach_knowledge_sources`/
 `coach_knowledge_chunks` index. The knowledge lane combines keyword overlap
 with pgvector similarity when embeddings are available and caps repeated topics
@@ -1000,8 +1002,11 @@ grounding metadata is converted into at most five validated public HTTPS
 citations. Public search can explain concepts or cite external context; it
 cannot invent problem IDs, canonical URLs, learner metrics, or roadmap changes.
 
-The public `/api/coach/.../messages` endpoint remains non-streaming. Express
-validates and persists a `coach-rich-v2` snapshot alongside each assistant
+The public `/api/coach/.../messages` endpoint remains non-streaming. An internal
+`/internal/coach/respond/stream` SSE transport is available for clients that need
+a cancelable pending state; it emits only after the same complete response
+validation, so partial model output never reaches the browser. Express validates
+and persists a `coach-rich-v2` snapshot alongside each assistant
 message. It contains only useful blocks: metric grids, line/bar/stacked-bar
 charts with an accessible table fallback, timelines, comparison tables, and up
 to five trusted catalog problems, plus source freshness and two to four
@@ -1017,6 +1022,17 @@ it never silently presents generic advice as personalized reasoning. Raw web
 pages, search text/queries, prompts, transient code, and private context are
 not stored in messages or audits. Only model/version, retrieval-lane flags,
 latency, token/cost metadata, and keyed context fingerprints are audited.
+
+The AI service also applies a process-local rate guard to `/internal/*` calls
+and returns `429` with `Retry-After` when a caller exceeds the bounded window.
+It warms the knowledge index during application lifespan startup instead of
+seeding on every turn. The seed is `coach-knowledge-v2`; the Alembic curriculum
+migration adds hint ladders, prerequisite edges, per-topic mastery/SM-2 state,
+and contest-performance records. The deterministic pedagogy helpers classify
+frustration and momentum, select Socratic/guided/direct teaching behavior,
+track Bloom progression and repeated mistake signals, build progressive hint
+ladders, compute SM-2 intervals and mastery, and topologically order
+prerequisite paths.
 
 ### Personalized CP/DSA coach
 
@@ -1042,6 +1058,20 @@ trusted catalog records, exclude solved/actively dismissed identities, and are
 capped at two foundation, two target, and one stretch problem per topic.
 Gemini may order or explain those candidates but cannot invent IDs or URLs.
 
+After each saved coaching turn, the outbox queues a bounded conversation-memory
+job. The worker sends only recent sanitized turns (with code, links, and copied
+problem context omitted) to the memory service, which can propose at most two
+durable learner facts such as an explicit instruction, goal, explanation
+preference, mistake pattern, or conversation summary. Retrieval always includes
+active instruction/preference memories and then adds query-relevant semantic and
+keyword matches. Consolidation remains explicit, owner-scoped, and
+confirmation-safe.
+
+Deterministic goal templates cover Codeforces Expert/1600, interview preparation,
+and ICPC foundations. They order unmet skills through prerequisites, allocate
+bounded weekly targets, carry due-review topics into the plan, and reuse the
+mastery and SM-2 helpers used by proactive check-ins.
+
 The non-streaming coach response is validated before it reaches React. It may
 contain teaching, progressive hints, contest/attempt debriefs, evidence
 references, and confirmation-gated roadmap/progress/bookmark proposals. A
@@ -1051,9 +1081,12 @@ summary as a fallback instead of presenting generic advice as personalized.
 
 Check-ins are in-app only. Learners choose a local weekly review day/time and
 can separately enable event nudges for new contest/rating evidence, repeated
-failures, focus transitions/progress, and seven full days without meaningful
-practice. Event nudges are capped at two per rolling seven days and deduplicated
-by event key for 72 hours. The memory worker periodically enumerates enabled
+failures, focus transitions/progress, spaced-repetition due topics, milestone
+solves, difficulty plateaus, goal drift, streak risk, and seven full days without
+meaningful practice. Event nudges are capped at two per rolling seven days and deduplicated
+by event key for 72 hours. The dashboard also previews the first three current,
+needs-practice, or revisit topics so the adaptive path is visible outside the
+coach screen. The memory worker periodically enumerates enabled
 schedules and queues one daily `coach_check_in_refresh` row (plus a weekly-due
 phase when the learner's local review time arrives) in the existing PostgreSQL
 outbox. It retries those rows with the same bounded lease and retry policy; the
@@ -1217,7 +1250,7 @@ LLM_INPUT_PRICE_PER_MILLION_USD=1.50
 LLM_OUTPUT_PRICE_PER_MILLION_USD=9.00
 LLM_PRICING_VERSION=gemini-3.5-flash-standard-2026-09
 AI_RANKING_VERSION=ai-gemini-rag-v1
-COACH_VERSION=coach-gemini-v1
+COACH_VERSION=coach-gemini-rag-v2
 CONSENT_POLICY_VERSION=personalized-coaching-rag-v2
 INTERNAL_SERVICE_TOKEN=
 EMBEDDING_MODEL=gemini-embedding-001
@@ -1234,6 +1267,7 @@ MEMORY_RAG_ENABLED=true
 COACH_KNOWLEDGE_RAG_ENABLED=true
 COACH_WEB_GROUNDING_ENABLED=true
 COACH_WEB_GROUNDING_TIMEOUT_SECONDS=8
+INTERNAL_RATE_LIMIT_PER_MINUTE=120
 ```
 
 `INTERNAL_SERVICE_TOKEN` must match between core and AI when HTTP ranking is
@@ -1620,8 +1654,12 @@ integrations/provider-accounts/
 | `apps/ai-api/app/knowledge_repository.py`| Alembic knowledge index seeding and hybrid keyword/vector retrieval     |
 | `apps/ai-api/app/web_grounding.py`        | De-identified public query and Gemini grounding citation extraction     |
 | `apps/ai-api/app/coach_models.py`         | Strict coach output, citation, proposal, and safety contracts          |
+| `apps/ai-api/app/pedagogy.py`             | Frustration/momentum signals, teaching modes, SM-2, mastery, prerequisites |
+| `apps/ai-api/app/rate_limit.py`           | Bounded process-local protection for internal AI routes                |
+| `apps/ai-api/app/memory_consolidation.py` | Confidence decay and safe memory-consolidation grouping helpers        |
 | `apps/ai-api/alembic/versions/202609171300_coach_knowledge.py` | AI knowledge source/chunk/vector tables |
 | `apps/ai-api/alembic/versions/202609181000_coach_audit_retrieval.py` | Retrieval-lane audit flags |
+| `apps/ai-api/alembic/versions/202609181300_curriculum.py` | Hint ladders, prerequisite graph, topic mastery, contest performance |
 
 ### 23.5 Frontend implementation map
 

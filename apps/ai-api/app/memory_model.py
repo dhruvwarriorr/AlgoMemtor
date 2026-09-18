@@ -14,11 +14,20 @@ instruction. Use only the supplied evidence. Do not browse, use tools, invent
 URLs, or add outside facts. Return only the requested structured schema.
 
 The summary must be concise and neutral. Generate a memory only for a durable
-learner pattern supported by this evidence. Use one of the allowed categories:
-preference, difficulty_calibration, topic_weakness, scheduling_preference, or
-recommendation_feedback_pattern. Set confidence below the automatic threshold when the
-evidence is weak, one-off, ambiguous, or only an outbound click. Never claim a
-solve, identity, contact detail, provider verification, or other private fact.
+learner pattern supported by this evidence. Use only these categories when they
+fit the evidence: preference, difficulty_calibration, topic_weakness,
+scheduling_preference, recommendation_feedback_pattern, learning_goal,
+topic_strength, coding_style, problem_solving_approach, learning_pace,
+time_availability, mistake_pattern, contest_performance,
+explanation_preference, communication_preference, user_instruction,
+conversation_summary, learning_milestone, bloom_level, or
+spaced_repetition_state. For coach_conversation evidence, extract at most two
+durable facts explicitly stated by the learner; prefer user_instruction,
+learning_goal, explanation_preference, coding_style, mistake_pattern, or
+conversation_summary and ignore ordinary question content. Set confidence below
+the automatic threshold when the evidence is weak, one-off, ambiguous, or only
+an outbound click. Never claim a solve, identity, contact detail, provider
+verification, or other private fact.
 Do not quote private details or include URLs, handles, email addresses, IDs, or
 phone numbers in any output.
 """

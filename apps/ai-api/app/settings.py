@@ -19,9 +19,9 @@ class AiSettings(BaseSettings):
     llm_output_price_per_million_usd: Decimal = Field(default=Decimal("9.00"), ge=0)
     llm_pricing_version: str = "gemini-3.5-flash-standard-2026-09"
     ai_ranking_version: str = "ai-gemini-rag-v1"
-    coach_version: str = "coach-gemini-v1"
+    coach_version: str = "coach-gemini-rag-v2"
     embedding_model: str = "gemini-embedding-001"
-    embedding_dimensions: int = Field(default=768, ge=768, le=768)
+    embedding_dimensions: int = Field(default=768, ge=256, le=3072)
     embedding_timeout_seconds: float = Field(default=4, gt=0, le=30)
     memory_generation_version: str = "memory-gemini-v1"
     memory_prompt_version: str = "memory-prompt-v1"
@@ -30,13 +30,14 @@ class AiSettings(BaseSettings):
     memory_proposed_min_confidence: float = Field(default=0.50, ge=0, le=1)
     memory_min_evidence_strength: float = Field(default=0.75, ge=0, le=1)
     memory_similarity_threshold: float = Field(default=0.75, ge=0, le=1)
-    memory_retrieval_limit: int = Field(default=5, ge=1, le=5)
+    memory_retrieval_limit: int = Field(default=15, ge=1, le=20)
     memory_audit_timeout_seconds: float = Field(default=0.5, gt=0, le=5)
     memory_generation_enabled: bool = True
     memory_rag_enabled: bool = True
     coach_knowledge_rag_enabled: bool = True
     coach_web_grounding_enabled: bool = True
     coach_web_grounding_timeout_seconds: float = Field(default=8, gt=0, le=20)
+    internal_rate_limit_per_minute: int = Field(default=120, ge=10, le=2_000)
 
     @field_validator(
         "llm_model",
@@ -58,7 +59,7 @@ class AiSettings(BaseSettings):
             "llm_model": "gemini-3.5-flash",
             "llm_pricing_version": "gemini-3.5-flash-standard-2026-09",
             "ai_ranking_version": "ai-gemini-rag-v1",
-            "coach_version": "coach-gemini-v1",
+            "coach_version": "coach-gemini-rag-v2",
             "embedding_model": "gemini-embedding-001",
             "memory_generation_version": "memory-gemini-v1",
             "consent_policy_version": "personalized-coaching-rag-v2",
