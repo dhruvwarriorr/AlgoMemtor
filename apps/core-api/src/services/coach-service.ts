@@ -324,6 +324,94 @@ const canonicalTopic = (value: string) => {
   return canonicalTopicAliases[normalized] ?? normalized
 }
 
+export const canonicalCoachTopic = canonicalTopic
+
+const normalizedPreferenceText = (value: string) =>
+  ` ${value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()} `
+
+const topicPreferenceVariants = (topic: TopicDefinition) => {
+  const variants = new Set<string>([
+    topic.slug.replace(/-/g, ' '),
+    topic.name.toLowerCase(),
+  ])
+  Object.entries(canonicalTopicAliases).forEach(([alias, canonical]) => {
+    if (canonical === topic.slug) variants.add(alias.replace(/-/g, ' '))
+  })
+  return [...variants].sort((left, right) => right.length - left.length)
+}
+
+const negativeTopicPreferencePattern =
+  /\b(?:avoid|skip|never|without|exclude|excluded|omit|omitted|no|dont|don t|do not|not mention|not include|not recommend|not want|not interested)\b/
+
+const topicIsExplicitlyExcluded = (text: string, topic: TopicDefinition) => {
+  const normalized = normalizedPreferenceText(text)
+  return topicPreferenceVariants(topic).some((variant) => {
+    const marker = ` ${variant} `
+    let offset = normalized.indexOf(marker)
+    while (offset >= 0) {
+      const contextStart = Math.max(0, offset - 96)
+      const contextEnd = Math.min(
+        normalized.length,
+        offset + marker.length + 96,
+      )
+      if (
+        negativeTopicPreferencePattern.test(
+          normalized.slice(contextStart, contextEnd),
+        )
+      ) {
+        return true
+      }
+      offset = normalized.indexOf(marker, offset + marker.length)
+    }
+    return false
+  })
+}
+
+export const extractCoachTopicExclusions = (preference?: string) => {
+  if (preference === undefined || preference.trim() === '') return []
+  return topicDefinitions
+    .filter((topic) => topicIsExplicitlyExcluded(preference, topic))
+    .map((topic) => topic.slug)
+}
+
+const containsExcludedCoachTopic = (
+  value: string,
+  excludedTopics: readonly string[],
+) => {
+  if (excludedTopics.length === 0) return false
+  const normalized = normalizedPreferenceText(value)
+  return excludedTopics.some((slug) => {
+    const definition = definitionBySlug.get(slug)
+    return (
+      definition !== undefined &&
+      topicPreferenceVariants(definition).some((variant) =>
+        normalized.includes(` ${variant} `),
+      )
+    )
+  })
+}
+
+const redactExcludedCoachTopics = (
+  value: string,
+  excludedTopics: readonly string[],
+) => {
+  if (excludedTopics.length === 0) return value
+  return topicDefinitions.reduce((current, topic) => {
+    if (!excludedTopics.includes(topic.slug)) return current
+    return topicPreferenceVariants(topic).reduce(
+      (text, variant) =>
+        text.replace(
+          new RegExp(`\\b${variant.replace(/ /g, '[\\s-]+')}\\b`, 'gi'),
+          '[topic omitted by learner]',
+        ),
+      current,
+    )
+  }, value)
+}
+
 export const CoachTopicDefinitions = topicDefinitions
 
 export function validateCoachPrerequisiteGraph(
@@ -540,7 +628,9 @@ const coachActivityTrends = (
   if (!hasEvidence) return []
   return ([30, 90] as const).map((windowDays) => {
     const points = Array.from({ length: windowDays }, (_, index) => {
-      const date = new Date(now.getTime() - (windowDays - 1 - index) * 86_400_000)
+      const date = new Date(
+        now.getTime() - (windowDays - 1 - index) * 86_400_000,
+      )
       const key = localDateParts(date, timezone).date
       return {
         date: key,
@@ -616,15 +706,29 @@ const coachContextForAi = (context: CoachContextSnapshot) => ({
 
 const safeLearnerProfile = (
   profile: Awaited<ReturnType<LearnerProfileRepository['findByAuthUserId']>>,
+  excludedTopics: readonly string[] = [],
 ) => {
   if (profile === null) return null
+  const visibleTopic = (topic: string) =>
+    !excludedTopics.includes(canonicalTopic(topic))
   return {
     ...profile,
+    topicPreference:
+      profile.topicPreference.mode === 'selected'
+        ? {
+            ...profile.topicPreference,
+            topics: profile.topicPreference.topics.filter(visibleTopic),
+          }
+        : profile.topicPreference,
+    preferredTopics: profile.preferredTopics.filter(visibleTopic),
     ...(profile.additionalConsiderations === undefined
       ? {}
       : {
           additionalConsiderations: redactCoachContextText(
-            profile.additionalConsiderations,
+            redactExcludedCoachTopics(
+              profile.additionalConsiderations,
+              excludedTopics,
+            ),
             1_000,
           ),
         }),
@@ -632,7 +736,10 @@ const safeLearnerProfile = (
       ? {}
       : {
           recommendationPreference: redactCoachContextText(
-            profile.recommendationPreference,
+            redactExcludedCoachTopics(
+              profile.recommendationPreference,
+              excludedTopics,
+            ),
             500,
           ),
         }),
@@ -714,6 +821,7 @@ const comparableRoadmap = (roadmap: ImprovementRoadmap) =>
 
 export type CoachContextSnapshot = {
   learnerId: string
+  excludedTopics: string[]
   profile: Awaited<ReturnType<LearnerProfileRepository['findByAuthUserId']>>
   preferences: CoachPreferences
   roadmap: ImprovementRoadmap
@@ -849,17 +957,20 @@ const coachRichContentForContext = (
     (topic) => topic.lane === 'needs_more_practice',
   )
   const topicCandidates = [...focus, ...needs].slice(0, 6)
-  const planningQuestion = /\b(next|practice|weak|improve|roadmap|focus)\b/.test(
-    lower,
-  )
+  const planningQuestion =
+    /\b(next|practice|weak|improve|roadmap|focus)\b/.test(lower)
   const analytics = asRecord(context.analytics)
-  const dataAsOf = [
-    context.roadmap.generatedAt,
-    typeof analytics?.generatedAt === 'string' ? analytics.generatedAt : null,
-    ...context.providerProfiles.map((profile) => profile.provenance.fetchedAt),
-  ]
-    .filter((value): value is string => typeof value === 'string')
-    .sort((left, right) => Date.parse(right) - Date.parse(left))[0] ?? generatedAt
+  const dataAsOf =
+    [
+      context.roadmap.generatedAt,
+      typeof analytics?.generatedAt === 'string' ? analytics.generatedAt : null,
+      ...context.providerProfiles.map(
+        (profile) => profile.provenance.fetchedAt,
+      ),
+    ]
+      .filter((value): value is string => typeof value === 'string')
+      .sort((left, right) => Date.parse(right) - Date.parse(left))[0] ??
+    generatedAt
   const hasProviderActivityCitation =
     context.providerProfiles.length > 0 ||
     context.recentSolved.length > 0 ||
@@ -1015,14 +1126,13 @@ const coachRichContentForContext = (
           evidence.totalSubmissions === 0
             ? 0
             : Math.round(
-                (evidence.acceptedSubmissions / evidence.totalSubmissions) * 100,
+                (evidence.acceptedSubmissions / evidence.totalSubmissions) *
+                  100,
               )
         const recency =
           evidence.uniqueProblems === 0
             ? 0
-            : Math.round(
-                100 - Math.min(100, (evidence.recentDays / 90) * 100),
-              )
+            : Math.round(100 - Math.min(100, (evidence.recentDays / 90) * 100))
         return {
           label: topic.name,
           values: {
@@ -1053,7 +1163,8 @@ const coachRichContentForContext = (
       datasetId: 'practice-trend-30d',
       chartType: 'stacked_bar',
       title: 'Recent practice activity',
-      summary: 'Daily attempted and solved records in the available analytics window.',
+      summary:
+        'Daily attempted and solved records in the available analytics window.',
       series: [
         { key: 'attempted', label: 'Attempted' },
         { key: 'solved', label: 'Solved' },
@@ -1122,15 +1233,22 @@ const coachRichContentForContext = (
       )
     })
     .slice(0, 5)
-  if (suggestions.length > 0 && (lower.includes('practice') || lower.includes('next'))) {
+  if (
+    suggestions.length > 0 &&
+    (lower.includes('practice') || lower.includes('next'))
+  ) {
     blocks.push({
       type: 'problem_list',
       title: 'Trusted next problems',
-      reason: 'Selected from the current roadmap focus and validated catalog metadata.',
+      reason:
+        'Selected from the current roadmap focus and validated catalog metadata.',
       problems: suggestions.map((suggestion) => suggestion.problem),
     })
   }
-  if (topicCandidates.length >= 2 && (lower.includes('weak') || lower.includes('next'))) {
+  if (
+    topicCandidates.length >= 2 &&
+    (lower.includes('weak') || lower.includes('next'))
+  ) {
     blocks.push({
       type: 'comparison_table',
       title: 'Why these topics are prioritized',
@@ -1142,18 +1260,20 @@ const coachRichContentForContext = (
         'Accuracy',
         'Recent practice',
       ],
-      rows: topicCandidates.slice(0, 4).map((topic) => [
-        topic.name,
-        `${Math.round(topic.score * 100)}%`,
-        `${Math.round(topic.confidence * 100)}%`,
-        topic.evidence.attemptedProblems,
-        topic.evidence.totalSubmissions === 0
-          ? 'Not observed'
-          : `${Math.round((topic.evidence.acceptedSubmissions / topic.evidence.totalSubmissions) * 100)}%`,
-        topic.evidence.uniqueProblems === 0
-          ? 'Not observed'
-          : `${topic.evidence.recentDays}d ago`,
-      ]),
+      rows: topicCandidates
+        .slice(0, 4)
+        .map((topic) => [
+          topic.name,
+          `${Math.round(topic.score * 100)}%`,
+          `${Math.round(topic.confidence * 100)}%`,
+          topic.evidence.attemptedProblems,
+          topic.evidence.totalSubmissions === 0
+            ? 'Not observed'
+            : `${Math.round((topic.evidence.acceptedSubmissions / topic.evidence.totalSubmissions) * 100)}%`,
+          topic.evidence.uniqueProblems === 0
+            ? 'Not observed'
+            : `${topic.evidence.recentDays}d ago`,
+        ]),
       citationIds: ['roadmap-assessment'],
     })
   }
@@ -1341,11 +1461,17 @@ export class CoachService {
   private sanitizeCheckInResult(
     result: AiCoachCheckInResult,
     fallbackEvidence: CoachEvidenceReference[],
+    excludedTopics: readonly string[] = [],
   ) {
     if (
       !isSafeCoachText(result.content) ||
+      containsExcludedCoachTopic(result.content, excludedTopics) ||
       result.evidence.some(
-        (item) => !isSafeCoachText(item.label) || !isSafeCoachText(item.detail),
+        (item) =>
+          !isSafeCoachText(item.label) ||
+          !isSafeCoachText(item.detail) ||
+          containsExcludedCoachTopic(item.label, excludedTopics) ||
+          containsExcludedCoachTopic(item.detail, excludedTopics),
       )
     ) {
       throw new Error('The AI coach returned unsafe check-in text.')
@@ -1383,7 +1509,11 @@ export class CoachService {
           evidence: input.evidence,
           context: coachContextForAi(context),
         } satisfies AiCoachCheckInRequest)
-        const safe = this.sanitizeCheckInResult(generated, input.evidence)
+        const safe = this.sanitizeCheckInResult(
+          generated,
+          input.evidence,
+          context.excludedTopics,
+        )
         content = safe.content
         evidence = safe.evidence
         fallback = false
@@ -1425,6 +1555,13 @@ export class CoachService {
       this.options.repository.listCheckIns(userId),
       this.options.repository.getRoadmap(userId),
     ])
+    const profile =
+      await this.options.learnerProfileRepository.findByAuthUserId(userId)
+    const excludedTopics = extractCoachTopicExclusions(
+      [profile?.recommendationPreference, profile?.additionalConsiderations]
+        .filter((value): value is string => value !== undefined)
+        .join('\n'),
+    )
     let currentRoadmap: ImprovementRoadmap | undefined
     const ensureRoadmap = async () => {
       currentRoadmap ??= await this.getRoadmap(userId)
@@ -1508,24 +1645,19 @@ export class CoachService {
         reflections,
         timers,
         actions,
-      ] =
-        await Promise.all([
-          safeList(
-            this.options.providerDataRepository.listContestParticipations(
-              userId,
-            ),
-          ),
-          safeList(
-            this.options.providerDataRepository.listRatingChanges(userId),
-          ),
-          safeList(this.options.providerDataRepository.listSubmissions(userId)),
-          safeList(
-            this.options.providerDataRepository.listSolvedProblems(userId),
-          ),
-          safeList(this.options.progressRepository.listReflections(userId)),
-          safeList(this.options.progressRepository.listTimerSessions(userId)),
-          safeList(this.options.problemActionRepository.listByAuthUserId(userId)),
-        ])
+      ] = await Promise.all([
+        safeList(
+          this.options.providerDataRepository.listContestParticipations(userId),
+        ),
+        safeList(this.options.providerDataRepository.listRatingChanges(userId)),
+        safeList(this.options.providerDataRepository.listSubmissions(userId)),
+        safeList(
+          this.options.providerDataRepository.listSolvedProblems(userId),
+        ),
+        safeList(this.options.progressRepository.listReflections(userId)),
+        safeList(this.options.progressRepository.listTimerSessions(userId)),
+        safeList(this.options.problemActionRepository.listByAuthUserId(userId)),
+      ])
       const latestContest = contests
         .slice()
         .sort(
@@ -1598,7 +1730,12 @@ export class CoachService {
           const mapped = topicByProblem.get(key) ?? new Set<string>()
           topics.forEach((value) => {
             const topic = canonicalTopic(value)
-            if (definitionBySlug.has(topic)) mapped.add(topic)
+            if (
+              definitionBySlug.has(topic) &&
+              !excludedTopics.includes(topic)
+            ) {
+              mapped.add(topic)
+            }
           })
           if (mapped.size > 0) topicByProblem.set(key, mapped)
         }
@@ -1874,7 +2011,11 @@ export class CoachService {
       },
     )
     if (userMessage === null) throw new CoachConversationNotFoundError()
-    const context = await this.buildContext(userId, conversationId, input.content)
+    const context = await this.buildContext(
+      userId,
+      conversationId,
+      input.content,
+    )
     const request: AiCoachRequest = {
       requestId: randomUUID(),
       learnerId: userId,
@@ -1917,10 +2058,10 @@ export class CoachService {
     })
     const richContent = CoachRichContentSchema.parse({
       ...baseRichContent,
-      citations: [
-        ...baseRichContent.citations,
-        ...safeModelCitations,
-      ].slice(0, 8),
+      citations: [...baseRichContent.citations, ...safeModelCitations].slice(
+        0,
+        8,
+      ),
     })
     const message = CoachMessageSchema.parse({
       id: randomUUID(),
@@ -2086,14 +2227,41 @@ export class CoachService {
   ): AiCoachResult {
     if (
       !isSafeCoachText(result.answer) ||
+      containsExcludedCoachTopic(result.answer, context.excludedTopics) ||
       result.evidence.some(
-        (item) => !isSafeCoachText(item.label) || !isSafeCoachText(item.detail),
+        (item) =>
+          !isSafeCoachText(item.label) ||
+          !isSafeCoachText(item.detail) ||
+          containsExcludedCoachTopic(item.label, context.excludedTopics) ||
+          containsExcludedCoachTopic(item.detail, context.excludedTopics),
       ) ||
       result.proposals.some(
         (item) =>
           !isSafeCoachText(item.label) ||
           !isSafeCoachText(item.reason) ||
-          (item.memoryText !== undefined && !isSafeCoachText(item.memoryText)),
+          (item.memoryText !== undefined &&
+            !isSafeCoachText(item.memoryText)) ||
+          containsExcludedCoachTopic(item.label, context.excludedTopics) ||
+          containsExcludedCoachTopic(item.reason, context.excludedTopics) ||
+          (item.memoryText !== undefined &&
+            containsExcludedCoachTopic(
+              item.memoryText,
+              context.excludedTopics,
+            )),
+      ) ||
+      (result.citations ?? []).some(
+        (citation) =>
+          containsExcludedCoachTopic(citation.title, context.excludedTopics) ||
+          (citation.detail !== undefined &&
+            containsExcludedCoachTopic(
+              citation.detail,
+              context.excludedTopics,
+            )) ||
+          (citation.publisher !== undefined &&
+            containsExcludedCoachTopic(
+              citation.publisher,
+              context.excludedTopics,
+            )),
       )
     ) {
       this.options.logger.warn('coach_unsafe_output_rejected', {
@@ -2255,11 +2423,19 @@ export class CoachService {
       }),
       this.options.repository.getConversation(userId, conversationId),
     ])
+    const excludedTopics = extractCoachTopicExclusions(
+      [profile?.recommendationPreference, profile?.additionalConsiderations]
+        .filter((value): value is string => value !== undefined)
+        .join('\n'),
+    )
     const recentTurns = (conversation?.messages ?? [])
       .slice(-12)
       .map((message) => ({
         role: message.role,
-        content: redactCoachContextText(message.content, 2_000),
+        content: redactExcludedCoachTopics(
+          redactCoachContextText(message.content, 2_000),
+          excludedTopics,
+        ),
       }))
     const activityTrends = coachActivityTrends(
       actions,
@@ -2287,6 +2463,7 @@ export class CoachService {
             )
           })
           .map((topic) => topic.name)
+          .filter((topic) => !excludedTopics.includes(canonicalTopic(topic)))
         return {
           version: revision.version,
           generatedAt: revision.generatedAt,
@@ -2295,7 +2472,8 @@ export class CoachService {
       })
     return {
       learnerId: userId,
-      profile: safeLearnerProfile(profile),
+      excludedTopics,
+      profile: safeLearnerProfile(profile, excludedTopics),
       preferences,
       roadmap,
       roadmapTransitions,
@@ -2311,7 +2489,11 @@ export class CoachService {
         ...(providerProfile.acceptanceRate === undefined
           ? {}
           : { acceptanceRate: providerProfile.acceptanceRate }),
-        topicCounts: providerProfile.topicCounts,
+        topicCounts: Object.fromEntries(
+          Object.entries(providerProfile.topicCounts).filter(
+            ([topic]) => !excludedTopics.includes(canonicalTopic(topic)),
+          ),
+        ),
         completeness: providerProfile.completeness,
         provenance: {
           completeness: providerProfile.provenance.completeness,
@@ -2325,7 +2507,10 @@ export class CoachService {
         .slice(0, 5)
         .map(({ category, statement, confidence }) => ({
           category,
-          statement: redactCoachContextText(statement, 500),
+          statement: redactExcludedCoachTopics(
+            redactCoachContextText(statement, 500),
+            excludedTopics,
+          ),
           confidence,
         })),
       recentSubmissions: submissions
@@ -2353,8 +2538,12 @@ export class CoachService {
         .map(({ provider, externalId, topics, providerTags, occurredAt }) => ({
           provider,
           externalId,
-          topics,
-          providerTags,
+          topics: (topics ?? []).filter(
+            (topic) => !excludedTopics.includes(canonicalTopic(topic)),
+          ),
+          providerTags: (providerTags ?? []).filter(
+            (topic) => !excludedTopics.includes(canonicalTopic(topic)),
+          ),
           occurredAt,
         })),
       recentRatings: ratings
@@ -2418,7 +2607,12 @@ export class CoachService {
             : { perceivedDifficulty: feedback.perceivedDifficulty }),
           ...(feedback.notes === undefined
             ? {}
-            : { note: redactCoachContextText(feedback.notes, 500) }),
+            : {
+                note: redactExcludedCoachTopics(
+                  redactCoachContextText(feedback.notes, 500),
+                  excludedTopics,
+                ),
+              }),
           createdAt: feedback.createdAt.toISOString(),
         })),
       dismissedProblems: currentDismissalRecords(actions)
@@ -2436,7 +2630,12 @@ export class CoachService {
           perceivedDifficulty,
           ...(note === undefined
             ? {}
-            : { note: redactCoachContextText(note, 500) }),
+            : {
+                note: redactExcludedCoachTopics(
+                  redactCoachContextText(note, 500),
+                  excludedTopics,
+                ),
+              }),
           createdAt,
         })),
       recentTimers: timers
@@ -2457,7 +2656,10 @@ export class CoachService {
         ? {}
         : {
             conversationSummary: redactCoachContextText(
-              conversation.data.summary,
+              redactExcludedCoachTopics(
+                conversation.data.summary,
+                excludedTopics,
+              ),
               1_000,
             ),
           }),
@@ -2487,6 +2689,16 @@ export class CoachService {
         context.dataCompleteness,
       ),
     ]
+    if (containsExcludedCoachTopic(question, context.excludedTopics)) {
+      return {
+        answer:
+          'I will respect that preference and keep the excluded area out of this coaching answer. Ask me about another allowed topic, your recent progress, or your next practice step.',
+        evidence,
+        proposals: [],
+        citations: [],
+        fallback: true,
+      }
+    }
     if (context.analytics !== null)
       evidence.push(
         fallbackEvidence(
@@ -2571,11 +2783,19 @@ export class CoachService {
         return 'For binary search, first prove a monotone predicate: once feasible becomes true, does it stay true (or the reverse)? Then choose one boundary convention, test the first feasible and last infeasible values, and state the answer invariant after every iteration. Progressive hint: write feasible(x) in one sentence before writing the loop.'
       if (lower.includes('dynamic programming') || /\bdp\b/.test(lower))
         return 'Start a dynamic-programming solution by naming the smallest subproblem, its state variables, transition, and base cases. The state should contain exactly the information future choices need. Estimate state count × transition cost before optimizing memory. Progressive hint: what would a parent problem need to know from one smaller subproblem?'
-      if (lower.includes('bfs') || lower.includes('dfs') || lower.includes('graph'))
+      if (
+        lower.includes('bfs') ||
+        lower.includes('dfs') ||
+        lower.includes('graph')
+      )
         return 'Use BFS when the graph is unweighted and distance layers matter; use DFS for reachability, components, cycle checks, and recursive state traversal. Mark visited nodes at the correct time and remember disconnected components. Progressive hint: is every edge the same cost, and do you need the shortest number of edges?'
       if (lower.includes('complexity') || lower.includes('time complexity'))
         return 'Read constraints before choosing a technique. Count the dominant worst-case operations, include sorting and nested loops, and state both time and auxiliary space. Progressive hint: which input-sized term still grows fastest after constants are removed?'
-      if (lower.includes('debug') || lower.includes('wrong answer') || lower.includes('runtime error'))
+      if (
+        lower.includes('debug') ||
+        lower.includes('wrong answer') ||
+        lower.includes('runtime error')
+      )
         return 'Debug by reducing the failure to the smallest counterexample. Check bounds and initialization, integer width, the claimed invariant, and whether the failure is a wrong answer, runtime error, timeout, or compile error. Progressive hint: which assumption becomes false on the first failing iteration?'
       return null
     })()
@@ -2864,6 +3084,12 @@ export class CoachService {
         .filter((contest) => contest.provenance.stale)
         .map((contest) => contest.provider),
     ]
+    const excludedTopics = extractCoachTopicExclusions(
+      [profile?.recommendationPreference, profile?.additionalConsiderations]
+        .filter((value): value is string => value !== undefined)
+        .join('\n'),
+    )
+    const excludedTopicSet = new Set(excludedTopics)
     const dismissed = dismissalByIdentity(actions)
     const opened = new Set(
       actions
@@ -3351,11 +3577,14 @@ export class CoachService {
     })
     const focusTopics =
       profile?.topicPreference.mode === 'selected'
-        ? profile.topicPreference.topics.map(canonicalTopic)
+        ? profile.topicPreference.topics
+            .map(canonicalTopic)
+            .filter((topic) => !excludedTopicSet.has(topic))
         : []
     const candidates = topicItems
       .filter(
         (topic) =>
+          !excludedTopicSet.has(topic.topic) &&
           topic.manualStatus === undefined &&
           (focusTopics.includes(topic.topic) ||
             topic.lane === 'needs_more_practice' ||
@@ -3373,15 +3602,19 @@ export class CoachService {
     const selectedFocus = new Set(
       focusCandidates.slice(0, 2).map((topic) => topic.topic),
     )
-    const roadmapTopics = topicItems.map((topic) => {
-      const focused = selectedFocus.has(topic.topic)
-      const next = focused
-        ? { ...topic, lane: 'current_focus' as const }
-        : topic
-      // Practice sets are intentionally scoped to the current focus.  A topic
-      // can gain a fresh set as soon as the learner moves it into focus.
-      return next.lane === 'current_focus' ? next : { ...next, suggestions: [] }
-    })
+    const roadmapTopics = topicItems
+      .filter((topic) => !excludedTopicSet.has(topic.topic))
+      .map((topic) => {
+        const focused = selectedFocus.has(topic.topic)
+        const next = focused
+          ? { ...topic, lane: 'current_focus' as const }
+          : topic
+        // Practice sets are intentionally scoped to the current focus.  A topic
+        // can gain a fresh set as soon as the learner moves it into focus.
+        return next.lane === 'current_focus'
+          ? next
+          : { ...next, suggestions: [] }
+      })
     return ImprovementRoadmapSchema.parse({
       id: previousRoadmap?.id ?? randomUUID(),
       version: previousRoadmap?.version ?? 1,

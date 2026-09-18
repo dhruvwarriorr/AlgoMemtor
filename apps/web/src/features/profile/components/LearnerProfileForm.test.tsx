@@ -64,7 +64,9 @@ describe('LearnerProfileForm', () => {
       'What should we keep in mind for your next recommendations?',
     )
     expect(markup).toContain('structured profile choices remain authoritative')
-    expect(markup).toContain('standard fallback ignores this note')
+    expect(markup).toContain(
+      'explicit topic exclusions here are respected by the coach',
+    )
     expect(markup).toContain('Do not include personal or sensitive information')
     expect(markup).toContain('Linking a public provider profile is optional')
     expect(markup).toContain('Save learner profile')

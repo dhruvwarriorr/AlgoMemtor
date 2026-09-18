@@ -23,10 +23,12 @@ import type { ProblemProvider } from './integrations/providers/problem-provider.
 import { InMemoryProblemActionRepository } from './repositories/problem-action-repository.js'
 import { InMemoryProgressRepository } from './repositories/progress-repository.js'
 import { InMemoryProviderDataRepository } from './repositories/provider-data-repository.js'
+import { InMemoryLearnerProfileRepository } from './repositories/learner-profile-repository.js'
 import { InMemoryCoachRepository } from './repositories/coach-repository.js'
 import { InMemoryBookmarkRepository } from './repositories/bookmark-repository.js'
 import {
   CoachTopicDefinitions,
+  extractCoachTopicExclusions,
   validateCoachPrerequisiteGraph,
 } from './services/coach-service.js'
 
@@ -122,6 +124,7 @@ const createMemoryClient = (): AiMemoryClient => ({
 const startApp = (options: {
   aiCoachClient?: AiCoachClient
   aiMemoryClient?: AiMemoryClient
+  learnerProfileRepository?: InMemoryLearnerProfileRepository
   coachRepository?: InMemoryCoachRepository
   progressRepository?: InMemoryProgressRepository
   actionRepository?: InMemoryProblemActionRepository
@@ -153,6 +156,9 @@ const startApp = (options: {
     ...(options.aiCoachClient === undefined
       ? {}
       : { aiCoachClient: options.aiCoachClient }),
+    ...(options.learnerProfileRepository === undefined
+      ? {}
+      : { learnerProfileRepository: options.learnerProfileRepository }),
     ...(options.coachRepository === undefined
       ? {}
       : { coachRepository: options.coachRepository }),
@@ -205,6 +211,17 @@ describe('coach API', () => {
         { slug: 'a', name: 'A', prerequisites: ['missing'] },
       ]),
     ).toThrow('Unknown coach prerequisite topic')
+  })
+
+  it('turns explicit free-text topic exclusions into coach constraints', () => {
+    expect(
+      extractCoachTopicExclusions(
+        "I don't want practice linked list, so don't mention it anywhere.",
+      ),
+    ).toEqual(['linked-lists'])
+    expect(
+      extractCoachTopicExclusions('Prefer graph practice this week.'),
+    ).toEqual([])
   })
 
   it('requires authentication and preserves manual roadmap status precedence', async () => {
@@ -548,6 +565,75 @@ describe('coach API', () => {
     expect(JSON.stringify(captured)).not.toContain('https://codeforces.com')
   })
 
+  it('honors a learner topic exclusion in roadmap, rich content, and AI output', async () => {
+    const progressRepository = new InMemoryProgressRepository()
+    await progressRepository.saveConsent(
+      userA,
+      true,
+      'personalized-coaching-rag-v2',
+    )
+    const learnerProfileRepository = new InMemoryLearnerProfileRepository()
+    await learnerProfileRepository.upsertByAuthUserId(userA, {
+      experience: 'intermediate',
+      difficultyComfort: 'medium',
+      goal: 'improve_problem_solving',
+      topicPreference: { mode: 'let_algomemtor_suggest' },
+      preferredTopics: [],
+      platformPreferences: { platforms: ['codeforces'], standings: [] },
+      learningPreferences: ['mixed_approach'],
+      recommendationPreference:
+        "I don't want practice linked list, so don't mention it anywhere.",
+    })
+    let captured: AiCoachRequest | undefined
+    const aiCoachClient: AiCoachClient = {
+      respond: vi.fn(async (request): Promise<AiCoachResult> => {
+        captured = request
+        return {
+          answer: 'Linked Lists are the best next topic.',
+          evidence: [],
+          proposals: [],
+        }
+      }),
+    }
+    const baseUrl = startApp({
+      aiCoachClient,
+      learnerProfileRepository,
+      progressRepository,
+    })
+    const headers = {
+      ...authorization('user-a'),
+      'content-type': 'application/json',
+    }
+    const create = await fetch(`${baseUrl}/api/coach/conversations`, {
+      method: 'POST',
+      headers,
+      body: '{}',
+    })
+    const conversationId = (await create.json()).data.id as string
+    const response = await fetch(
+      `${baseUrl}/api/coach/conversations/${conversationId}/messages`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          content: 'Which topics are weakest right now?',
+        }),
+      },
+    )
+    const body = await response.json()
+    const coachResponse = CoachResponseSchema.parse(body)
+    expect(response.status).toBe(200)
+    expect(coachResponse.message.fallback).toBe(true)
+    expect(JSON.stringify(body).toLowerCase()).not.toContain('linked list')
+    expect(
+      coachResponse.roadmap.topics.map((topic) => topic.topic),
+    ).not.toContain('linked-lists')
+    expect(captured?.context.excludedTopics).toEqual(['linked-lists'])
+    expect(
+      JSON.stringify(captured?.context.profile).toLowerCase(),
+    ).not.toContain('linked list')
+  })
+
   it('builds rich content from deterministic evidence and filters unsafe citations', async () => {
     const progressRepository = new InMemoryProgressRepository()
     await progressRepository.saveConsent(
@@ -622,7 +708,8 @@ describe('coach API', () => {
     expect(richContent?.version).toBe('coach-rich-v2')
     expect(
       richContent?.blocks.some(
-        (block) => block.type === 'chart' && block.datasetId === 'topic-assessments',
+        (block) =>
+          block.type === 'chart' && block.datasetId === 'topic-assessments',
       ),
     ).toBe(true)
     expect(richContent?.citations.map((citation) => citation.id)).toContain(

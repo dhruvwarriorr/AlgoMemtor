@@ -1029,7 +1029,12 @@ provider observations. Fewer than three concrete problems or confidence below
 `needs_practice`, `developing`, `comfortable`, and `revisit` under the
 documented score/evidence thresholds. Manual statuses (`working_on`,
 `practiced`, `completed`, `revisit`, `skip_for_now`) determine the displayed
-roadmap lane and never get overwritten by reassessment.
+roadmap lane for visible topics and never get overwritten by reassessment.
+
+Explicit topic exclusions written in the learner's recommendation note are
+parsed deterministically and removed from coach focus, rich content, fallback
+answers, and trusted practice candidates. The raw note is redacted before it
+reaches the AI model.
 
 The prerequisite graph and provider-tag aliases are deterministic and limited
 to the canonical taxonomy. Optional practice sets are selected by Express from

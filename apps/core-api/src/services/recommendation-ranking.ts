@@ -7,6 +7,10 @@ import {
 } from '@algomemtor/shared-contracts'
 
 import type { ProblemActionRecord } from '../repositories/problem-action-repository.js'
+import {
+  canonicalCoachTopic,
+  extractCoachTopicExclusions,
+} from './coach-service.js'
 
 export const DETERMINISTIC_RANKING_VERSION = 'deterministic-v1'
 export const RECOMMENDATION_BATCH_SIZE = 10
@@ -33,6 +37,7 @@ export type NormalizedRankingProfile = {
   providerPreferred: boolean
   profileSource: 'profile' | 'cold_start'
   recommendationPreference?: string
+  excludedTopics: string[]
 }
 
 export type RecommendationHistory = {
@@ -93,6 +98,14 @@ const actionIdentity = (
 
 const unique = (values: readonly string[]) => [...new Set(values)]
 
+const problemMatchesExcludedTopic = (
+  problem: Pick<ExternalProblemSummary, 'topics' | 'providerTags'>,
+  excludedTopics: readonly string[],
+) =>
+  [...problem.topics, ...problem.providerTags].some((topic) =>
+    excludedTopics.includes(canonicalCoachTopic(topic)),
+  )
+
 export const deriveRankingProfile = (
   profile: LearnerProfile | null,
 ): NormalizedRankingProfile => {
@@ -105,6 +118,7 @@ export const deriveRankingProfile = (
       targetDifficulty: 'easy',
       providerPreferred: true,
       profileSource: 'cold_start',
+      excludedTopics: [],
     }
   }
 
@@ -168,14 +182,27 @@ export const deriveRankingProfile = (
     }
   }
 
+  const excludedTopics = extractCoachTopicExclusions(
+    [profile.recommendationPreference, profile.additionalConsiderations]
+      .filter((value): value is string => value !== undefined)
+      .join('\n'),
+  )
   const focusTopics =
     profile.topicPreference.mode === 'selected'
       ? profile.topicPreference.topics
       : suggestedTopics[profile.experience]
 
   return {
-    focusTopics: unique(focusTopics),
-    preferredTopics: unique(profile.preferredTopics),
+    focusTopics: unique(
+      focusTopics.filter(
+        (topic) => !excludedTopics.includes(canonicalCoachTopic(topic)),
+      ),
+    ),
+    preferredTopics: unique(
+      profile.preferredTopics.filter(
+        (topic) => !excludedTopics.includes(canonicalCoachTopic(topic)),
+      ),
+    ),
     ratingBand,
     preferredProviders,
     ...(targetDifficulty === undefined ? {} : { targetDifficulty }),
@@ -183,6 +210,7 @@ export const deriveRankingProfile = (
       profile.platformPreferences.platforms.length === 0 ||
       preferredProviders.length > 0,
     profileSource: 'profile',
+    excludedTopics,
     ...(profile.recommendationPreference === undefined
       ? {}
       : { recommendationPreference: profile.recommendationPreference }),
@@ -482,6 +510,7 @@ export const rankRecommendations = ({
     const identity = problemIdentity(candidate)
 
     if (
+      !problemMatchesExcludedTopic(candidate, profile.excludedTopics) &&
       !history.solvedProblemIds.has(identity) &&
       !history.dismissedProblemIds.has(identity) &&
       !uniqueCandidates.has(identity)

@@ -92,6 +92,7 @@ const profileSignature = (
         experience: source?.experience ?? null,
         learningPreferences: source?.learningPreferences ?? [],
         recommendationPreference: profile.recommendationPreference ?? null,
+        excludedTopics: profile.excludedTopics,
       }),
     )
     .digest('hex')
@@ -329,7 +330,8 @@ export class RecommendationService {
         learningPreferences: profile?.learningPreferences ?? [
           'solve_problems_directly',
         ],
-        ...(rankingProfile.recommendationPreference === undefined
+        ...(rankingProfile.recommendationPreference === undefined ||
+        rankingProfile.excludedTopics.length > 0
           ? {}
           : {
               recommendationPreference: rankingProfile.recommendationPreference,

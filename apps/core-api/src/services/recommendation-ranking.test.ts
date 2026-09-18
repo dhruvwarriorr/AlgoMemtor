@@ -106,6 +106,35 @@ describe('deterministic recommendation ranking', () => {
     })
   })
 
+  it('removes explicitly excluded topics from the profile and candidates', () => {
+    const excludedProfile = LearnerProfileSchema.parse({
+      ...profile,
+      topicPreference: { mode: 'selected', topics: ['linked-lists', 'graphs'] },
+      preferredTopics: ['linked-lists', 'strings'],
+      recommendationPreference:
+        "I don't want practice linked list, so don't mention it anywhere.",
+    })
+    const rankingProfile = deriveRankingProfile(excludedProfile)
+    const candidates = [
+      problem('150A', 1300, ['linked-list']),
+      problem('151A', 1300, ['linked-lists']),
+      problem('152A', 1300, ['graphs']),
+    ]
+
+    expect(rankingProfile).toMatchObject({
+      focusTopics: ['graphs'],
+      preferredTopics: ['strings'],
+      excludedTopics: ['linked-lists'],
+    })
+    expect(
+      rankRecommendations({
+        candidates,
+        history: deriveRecommendationHistory([], [], candidates),
+        profile: rankingProfile,
+      }).map(({ problem: item }) => item.externalId),
+    ).toEqual(['152A'])
+  })
+
   it('excludes solved and dismissed records and rewards attempted-topic revision', () => {
     const candidates = [
       problem('100A', 1300, ['graphs'], 1_000),

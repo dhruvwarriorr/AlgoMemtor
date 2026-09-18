@@ -1121,9 +1121,9 @@ function LearnerProfileFormFields({
             id={`${idPrefix}-recommendation-preference-help`}
           >
             Optional, up to 500 characters. Your structured profile choices
-            remain authoritative. The standard fallback ignores this note when
-            AI recommendations are unavailable. Do not include personal or
-            sensitive information.
+            remain authoritative, and explicit topic exclusions here are
+            respected by the coach and deterministic recommendations. Do not
+            include personal or sensitive information.
           </p>
           <FieldError
             id={`${idPrefix}-recommendation-preference-error`}
