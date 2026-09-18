@@ -41,6 +41,12 @@ export type LearnerGoal = z.infer<typeof LearnerGoalSchema>
 
 export const OnboardingTopicSchema = z.enum([
   'implementation',
+  'arrays',
+  'hashing',
+  'sliding-window',
+  'linked-lists',
+  'heaps-and-priority-queues',
+  'tries',
   'math',
   'number-theory',
   'sorting',

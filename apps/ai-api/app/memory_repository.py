@@ -4,7 +4,7 @@ import hashlib
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from functools import lru_cache
 from typing import Any
@@ -437,7 +437,7 @@ class MemoryRepository:
         model: str,
         generation_version: str,
         input_hash: str,
-        consent_policy_version: str = "phase9-progress-memory-v1",
+        consent_policy_version: str = "personalized-coaching-rag-v2",
         prompt_version: str = "memory-prompt-v1",
         input_tokens: int | None = None,
         output_tokens: int | None = None,
@@ -755,6 +755,120 @@ class MemoryRepository:
             result = await connection.execute(statement)
             rows = result.mappings().all()
             return [await self._stored_memory(connection, row) for row in rows]
+
+    async def create_proposed_memory(
+        self,
+        learner_id: UUID,
+        *,
+        memory_key: str,
+        category: str,
+        statement: str,
+        confidence: float = 0.5,
+        request_id: str,
+    ) -> tuple[StoredMemory, bool]:
+        """Create an owner-scoped, evidence-backed memory proposal.
+
+        A proposal is deliberately stored with a synthetic, hash-only evidence
+        row.  The row proves provenance without retaining the coach transcript
+        or transient code/problem context, and lets the existing approve/delete
+        lifecycle operate unchanged.
+        """
+        from sqlalchemy.dialects.postgresql import insert
+
+        evidence_id = uuid4()
+        now = datetime.now(UTC)
+        context_hash = hashlib.sha256(
+            f"coach-proposal:{category}:{statement}".encode()
+        ).hexdigest()
+        idempotency_key = f"coach-memory:{request_id}"
+        async with self.engine.begin() as connection:
+            existing_result = await connection.execute(
+                sa.select(learner_memories).where(
+                    learner_memories.c.learner_id == learner_id,
+                    learner_memories.c.memory_key == memory_key,
+                )
+            )
+            existing = existing_result.mappings().first()
+            if existing is not None:
+                return await self._stored_memory(connection, existing), False
+
+            evidence_insert = (
+                insert(memory_evidence)
+                .values(
+                    id=evidence_id,
+                    learner_id=learner_id,
+                    evidence_id=evidence_id,
+                    idempotency_key=idempotency_key,
+                    evidence_type="analytics",
+                    context_hash=context_hash,
+                    has_note=False,
+                    has_structured_context=True,
+                    problem_provider=None,
+                    problem_external_id=None,
+                    evidence_strength=Decimal(str(confidence)),
+                    occurred_at=now,
+                    created_at=now,
+                )
+                .on_conflict_do_nothing(
+                    index_elements=[
+                        memory_evidence.c.learner_id,
+                        memory_evidence.c.idempotency_key,
+                    ]
+                )
+                .returning(memory_evidence.c.id)
+            )
+            inserted_evidence = await connection.scalar(evidence_insert)
+            if inserted_evidence is None:
+                existing_evidence_result = await connection.execute(
+                    sa.select(
+                        memory_evidence.c.id,
+                        memory_evidence.c.context_hash,
+                    ).where(
+                        memory_evidence.c.learner_id == learner_id,
+                        memory_evidence.c.idempotency_key == idempotency_key,
+                    )
+                )
+                existing_evidence = existing_evidence_result.mappings().first()
+                if existing_evidence is None:
+                    raise MemoryStorageError(
+                        "The memory proposal evidence conflict could not be resolved."
+                    )
+                if existing_evidence["context_hash"] != context_hash:
+                    raise MemoryConflictError(
+                        "A memory proposal idempotency key was reused with different content."
+                    )
+                evidence_id = existing_evidence["id"]
+
+            memory_insert = await connection.execute(
+                sa.insert(learner_memories)
+                .values(
+                    id=uuid4(),
+                    learner_id=learner_id,
+                    memory_key=memory_key,
+                    category=category,
+                    statement=statement,
+                    structured_value={},
+                    confidence=Decimal(str(confidence)),
+                    status="proposed",
+                    version=1,
+                    learner_corrected=False,
+                    embedding=None,
+                    embedding_model=None,
+                    created_at=now,
+                    updated_at=now,
+                )
+                .returning(learner_memories)
+            )
+            row = memory_insert.mappings().one()
+            await connection.execute(
+                sa.insert(memory_evidence_links).values(
+                    memory_id=row["id"],
+                    evidence_id=evidence_id,
+                    support_strength=Decimal(str(confidence)),
+                    created_at=now,
+                )
+            )
+            return await self._stored_memory(connection, row), True
 
     async def has_consistent_support(
         self,

@@ -14,6 +14,7 @@ const navigationItems = [
   { label: 'Problems', to: '/problems' },
   { label: 'Activity', to: '/activity' },
   { label: 'Contests', to: '/contests' },
+  { label: 'Coach', to: '/coach' },
   { label: 'Analytics', to: '/analytics' },
   { label: 'Progress', to: '/progress' },
   { label: 'Memory', to: '/memory' },

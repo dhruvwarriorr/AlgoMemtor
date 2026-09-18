@@ -32,6 +32,7 @@ from .memory_models import (
     MemoryFallbackReason,
     MemoryProcessRequest,
     MemoryProcessResponse,
+    MemoryProposalRequest,
     MemoryRetrievalResponse,
     ReflectionGenerationOutput,
     StoredMemory,
@@ -47,6 +48,7 @@ from .memory_repository import (
     get_memory_repository,
 )
 from .memory_safety import (
+    contains_sensitive_text,
     keyed_payload_hash,
     memory_key,
     model_payload,
@@ -604,12 +606,13 @@ class MemoryService:
                         confidence_threshold=self.settings.memory_min_confidence,
                         similarity_threshold=self.settings.memory_similarity_threshold,
                     )
-                    return MemoryRetrievalResponse(
-                        learnerId=learner_id,
-                        query=clean_query,
-                        retrievalMode="vector",
-                        items=items,
-                    )
+                    if items:
+                        return MemoryRetrievalResponse(
+                            learnerId=learner_id,
+                            query=clean_query,
+                            retrievalMode="vector",
+                            items=items,
+                        )
                 except asyncio.CancelledError:
                     raise
                 except BaseException as error:
@@ -638,6 +641,43 @@ class MemoryService:
 
     async def list_memories(self, learner_id: UUID) -> list[StoredMemory]:
         return await self.repository.list_memories(learner_id)
+
+    async def propose(
+        self, learner_id: UUID, request: MemoryProposalRequest
+    ) -> MemoryActionResponse:
+        """Persist a coach-suggested memory in the proposed state.
+
+        The core service has already authenticated the learner and required a
+        separate confirmation click.  We still run the same privacy redaction
+        and validation here because this endpoint is an internal trust boundary.
+        """
+        cleaned = redact_text(request.statement, 500)
+        if (
+            not cleaned
+            or cleaned != request.statement
+            or contains_sensitive_text(cleaned)
+        ):
+            raise MemoryConflictError(
+                "A memory proposal contains text that cannot be retained safely."
+            )
+        memory, created = await self.repository.create_proposed_memory(
+            learner_id,
+            memory_key=memory_key(request.category, cleaned),
+            category=request.category,
+            statement=cleaned,
+            confidence=0.5,
+            request_id=request.requestId,
+        )
+        audit_id = await self._save_control_audit(
+            request.requestId, learner_id, memory, "propose"
+        )
+        return MemoryActionResponse(
+            requestId=request.requestId,
+            action="propose",
+            idempotent=not created,
+            memory=memory,
+            auditId=audit_id,
+        )
 
     async def _save_control_audit(
         self,

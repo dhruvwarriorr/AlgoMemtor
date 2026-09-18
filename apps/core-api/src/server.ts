@@ -17,6 +17,10 @@ import {
   HttpAiMemoryClient,
   UnavailableAiMemoryClient,
 } from './integrations/ai/ai-memory-client.js'
+import {
+  HttpAiCoachClient,
+  UnavailableAiCoachClient,
+} from './integrations/ai/ai-coach-client.js'
 import { CodeChefPublicStatsFetcher } from './integrations/provider-accounts/codechef-public-stats.js'
 import { CodeforcesPublicStatsFetcher } from './integrations/provider-accounts/codeforces-public-stats.js'
 import { LeetCodePublicStatsFetcher } from './integrations/provider-accounts/leetcode-public-stats.js'
@@ -40,6 +44,7 @@ import { PrismaProviderAccountRepository } from './repositories/provider-account
 import { PrismaProviderSyncRepository } from './repositories/provider-sync-repository.js'
 import { PrismaProviderProfileRepository } from './repositories/provider-profile-repository.js'
 import { PrismaProviderDataRepository } from './repositories/provider-data-repository.js'
+import { PrismaCoachRepository } from './repositories/coach-repository.js'
 import { PrismaRecommendationRepository } from './repositories/recommendation-repository.js'
 import { RequestGate } from './utils/request-gate.js'
 import { structuredLogger } from './utils/structured-logger.js'
@@ -162,6 +167,13 @@ const app = createApp({
   aiMemoryClient: aiConfig.configured
     ? new HttpAiMemoryClient(aiConfig)
     : new UnavailableAiMemoryClient(),
+  aiCoachClient: aiConfig.configured
+    ? new HttpAiCoachClient({
+        baseUrl: aiConfig.baseUrl,
+        internalServiceToken: aiConfig.internalServiceToken,
+        timeoutMs: 20_000,
+      })
+    : new UnavailableAiCoachClient(),
   jwtVerifier,
   problemProvider: codeforcesProvider,
   problemProviders,
@@ -175,6 +187,7 @@ const app = createApp({
   providerSyncRepository: new PrismaProviderSyncRepository(prisma),
   providerProfileRepository: profileRepository,
   providerDataRepository,
+  coachRepository: new PrismaCoachRepository(prisma),
   problemMetadataCache,
   providerPublicStatsFetchers: [
     ...(providerConfig.enabled.codeforces && codeforcesConfig.profileEnabled

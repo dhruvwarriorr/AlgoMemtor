@@ -78,7 +78,7 @@ class GeminiRankingModel:
         )
         self.structured_model = model.with_structured_output(
             ModelRankingOutput,
-            method="json_schema",
+            method="function_calling",
             include_raw=True,
         )
 

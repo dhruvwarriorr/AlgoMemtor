@@ -4,8 +4,10 @@ import {
   InMemoryProgressRepository,
   type ProgressRepository,
 } from './repositories/progress-repository.js'
+import { InMemoryCoachRepository } from './repositories/coach-repository.js'
 import { MemoryWorker, type MemoryWorkerOptions } from './memory-worker.js'
 import type { AiMemoryClient } from './integrations/ai/ai-memory-client.js'
+import type { AiCoachClient } from './integrations/ai/ai-coach-client.js'
 
 const learnerId = '11111111-1111-4111-8111-111111111111'
 const evidenceId = '22222222-2222-4222-8222-222222222222'
@@ -30,9 +32,18 @@ const createWorker = (
   repository: ProgressRepository,
   client: AiMemoryClient,
   now: () => Date,
+  coachCheckInRefresh?: MemoryWorkerOptions['coachCheckInRefresh'],
+  aiCoachClient?: AiCoachClient,
 ) => {
   const logger = { info: vi.fn(), warn: vi.fn() }
-  const options: MemoryWorkerOptions = { repository, client, now, logger }
+  const options: MemoryWorkerOptions = {
+    repository,
+    client,
+    now,
+    logger,
+    ...(aiCoachClient === undefined ? {} : { aiCoachClient }),
+    ...(coachCheckInRefresh === undefined ? {} : { coachCheckInRefresh }),
+  }
   return { worker: new MemoryWorker(options), logger }
 }
 
@@ -41,6 +52,7 @@ describe('memory worker', () => {
     let currentTime = new Date('2026-09-13T12:00:00.000Z')
     const now = () => new Date(currentTime)
     const repository: ProgressRepository = new InMemoryProgressRepository(now)
+    await repository.saveConsent(learnerId, true, 'personalized-coaching-rag-v2')
     repository.getMemoryEvidence = async () => ({
       occurredAt: now(),
       perceivedDifficulty: 'medium',
@@ -135,6 +147,93 @@ describe('memory worker', () => {
     expect(logger.info).toHaveBeenCalledWith(
       'memory_outbox_job_completed',
       expect.objectContaining({ jobType: 'problem_data_deletion' }),
+    )
+    expect(await worker.processOnce()).toBe(false)
+  })
+
+  it('runs queued coach check-in refreshes through the durable outbox', async () => {
+    const now = () => new Date('2026-09-13T14:00:00.000Z')
+    const repository: ProgressRepository = new InMemoryProgressRepository(now)
+    const refresh = vi.fn(async () => undefined)
+    const { worker } = createWorker(
+      repository,
+      createClient(async () => ({ status: 'processed' })),
+      now,
+      refresh,
+    )
+
+    await repository.enqueueJob({
+      authUserId: learnerId,
+      jobType: 'coach_check_in_refresh',
+      evidenceType: 'coach_check_in',
+      idempotencyKey: 'coach-check-in-refresh-test',
+    })
+
+    expect(await worker.processOnce()).toBe(true)
+    expect(refresh).toHaveBeenCalledWith(
+      learnerId,
+      'coach-check-in-refresh-test',
+    )
+    expect(await worker.processOnce()).toBe(false)
+  })
+
+  it('retries coach audit deletion through the durable outbox', async () => {
+    const now = () => new Date('2026-09-13T15:00:00.000Z')
+    const repository: ProgressRepository = new InMemoryProgressRepository(now)
+    const deleted: Array<{ learnerId: string; conversationId: string }> = []
+    const aiCoachClient: AiCoachClient = {
+      respond: async () => ({ answer: 'unused', evidence: [], proposals: [] }),
+      deleteConversation: async (authUserId, conversationId) => {
+        deleted.push({ learnerId: authUserId, conversationId })
+      },
+    }
+    const { worker } = createWorker(
+      repository,
+      createClient(async () => ({ status: 'processed' })),
+      now,
+      undefined,
+      aiCoachClient,
+    )
+
+    const conversationId = '33333333-3333-4333-8333-333333333333'
+    await repository.enqueueJob({
+      authUserId: learnerId,
+      jobType: 'coach_conversation_audit_deletion',
+      evidenceType: 'coach_audit',
+      evidenceId: conversationId,
+      idempotencyKey: 'coach-audit-delete-test',
+    })
+
+    expect(await worker.processOnce()).toBe(true)
+    expect(deleted).toEqual([{ learnerId, conversationId }])
+    expect(await worker.processOnce()).toBe(false)
+  })
+
+  it('schedules due coach refreshes for consented learners without a page open', async () => {
+    const now = () => new Date('2026-09-13T14:00:00.000Z')
+    const repository: ProgressRepository = new InMemoryProgressRepository(now)
+    await repository.saveConsent(learnerId, true, 'personalized-coaching-rag-v2')
+    const coachRepository = new InMemoryCoachRepository(now)
+    await coachRepository.savePreferences(learnerId, {
+      weeklyEnabled: true,
+      weeklyDay: 0,
+      weeklyTime: '09:00',
+      eventEnabled: false,
+      timezone: 'UTC',
+    })
+    const refresh = vi.fn(async () => undefined)
+    const worker = new MemoryWorker({
+      repository,
+      client: createClient(async () => ({ status: 'processed' })),
+      coachRepository,
+      coachCheckInRefresh: refresh,
+      now,
+    })
+
+    expect(await worker.processOnce()).toBe(true)
+    expect(refresh).toHaveBeenCalledWith(
+      learnerId,
+      'coach-check-in-refresh:11111111-1111-4111-8111-111111111111:2026-09-13:weekly',
     )
     expect(await worker.processOnce()).toBe(false)
   })

@@ -5,6 +5,7 @@ import ActivityPage from '@/pages/ActivityPage'
 import AnalyticsPage from '@/pages/AnalyticsPage'
 import BookmarksPage from '@/pages/BookmarksPage'
 import ContestsPage from '@/pages/ContestsPage'
+import CoachPage from '@/pages/CoachPage'
 import DashboardPage from '@/pages/DashboardPage'
 import LandingPage from '@/pages/LandingPage'
 import LoginPage from '@/pages/LoginPage'
@@ -36,6 +37,7 @@ function AppRouter() {
           />
           <Route path="activity" element={<ActivityPage />} />
           <Route path="contests" element={<ContestsPage />} />
+          <Route path="coach" element={<CoachPage />} />
           <Route path="analytics" element={<AnalyticsPage />} />
           <Route path="recommendations" element={<RecommendationsPage />} />
           <Route path="bookmarks" element={<BookmarksPage />} />

@@ -53,7 +53,14 @@ const aiMemorySchema = z
 const aiMemoryActionResponseSchema = z
   .object({
     requestId: z.string().trim().min(1).max(160),
-    action: z.enum(['approve', 'correct', 'archive', 'restore', 'delete']),
+    action: z.enum([
+      'propose',
+      'approve',
+      'correct',
+      'archive',
+      'restore',
+      'delete',
+    ]),
     idempotent: z.boolean().default(false),
     memory: aiMemorySchema.optional(),
     auditId: z.uuid().optional(),
@@ -72,6 +79,7 @@ export type AiMemoryActionResponse = z.infer<
 >
 export type AiMemoryProcessResult = z.infer<typeof memoryProcessStatusSchema>
 export type LearnerMemoryAction = 'approve' | 'archive' | 'restore' | 'delete'
+export type LearnerMemoryCategory = AiMemoryRecord['category']
 
 export interface AiMemoryClient {
   processEvidence(
@@ -93,6 +101,16 @@ export interface AiMemoryClient {
     idempotencyKey: string,
   ): Promise<void>
   listMemories(learnerId: string): Promise<AiMemoryRecord[]>
+  retrieveMemories?(
+    learnerId: string,
+    query: string,
+    limit?: number,
+  ): Promise<AiMemoryRecord[]>
+  proposeMemory?(
+    learnerId: string,
+    requestId: string,
+    input: { statement: string; category: LearnerMemoryCategory },
+  ): Promise<AiMemoryActionResponse>
   correctMemory(
     learnerId: string,
     memoryId: string,
@@ -144,6 +162,18 @@ export class UnavailableAiMemoryClient implements AiMemoryClient {
   }
 
   async listMemories(_learnerId: string): Promise<AiMemoryRecord[]> {
+    throw new AiMemoryClientError('AI_MEMORY_NOT_CONFIGURED')
+  }
+
+  async retrieveMemories(
+    _learnerId: string,
+    _query: string,
+    _limit?: number,
+  ): Promise<AiMemoryRecord[]> {
+    throw new AiMemoryClientError('AI_MEMORY_NOT_CONFIGURED')
+  }
+
+  async proposeMemory(): Promise<AiMemoryActionResponse> {
     throw new AiMemoryClientError('AI_MEMORY_NOT_CONFIGURED')
   }
 
@@ -277,6 +307,43 @@ export class HttpAiMemoryClient implements AiMemoryClient {
     const result = z.array(aiMemorySchema).safeParse(payload)
     if (!result.success)
       throw new AiMemoryClientError('AI_MEMORY_INVALID_RESPONSE')
+    return result.data
+  }
+
+  async retrieveMemories(learnerId: string, query: string, limit = 5) {
+    const payload = await this.request(
+      `/internal/learners/${encodeURIComponent(learnerId)}/memories?query=${encodeURIComponent(query)}&limit=${Math.min(5, Math.max(1, limit))}`,
+      'GET',
+    )
+    const result = z
+      .object({ items: z.array(aiMemorySchema) })
+      .passthrough()
+      .safeParse(payload)
+    if (!result.success) {
+      throw new AiMemoryClientError('AI_MEMORY_INVALID_RESPONSE')
+    }
+    return result.data.items
+  }
+
+  async proposeMemory(
+    learnerId: string,
+    requestId: string,
+    input: { statement: string; category: LearnerMemoryCategory },
+  ) {
+    const payload = await this.request(
+      `/internal/learners/${encodeURIComponent(learnerId)}/memories/propose`,
+      'POST',
+      requestId,
+      {
+        requestId,
+        statement: input.statement,
+        category: input.category,
+      },
+    )
+    const result = aiMemoryActionResponseSchema.safeParse(payload)
+    if (!result.success) {
+      throw new AiMemoryClientError('AI_MEMORY_INVALID_RESPONSE')
+    }
     return result.data
   }
 

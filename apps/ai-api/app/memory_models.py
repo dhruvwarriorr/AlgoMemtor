@@ -14,7 +14,7 @@ MemoryCategory = Literal[
     "recommendation_feedback_pattern",
 ]
 MemoryStatus = Literal["proposed", "active", "archived"]
-MemoryAction = Literal["approve", "correct", "archive", "restore", "delete"]
+MemoryAction = Literal["propose", "approve", "correct", "archive", "restore", "delete"]
 EvidenceType = Literal[
     "reflection",
     "manual_progress",
@@ -180,6 +180,12 @@ class MemoryCorrectionRequest(MemoryStrictModel):
 
 class MemoryActionRequest(MemoryStrictModel):
     requestId: str = Field(min_length=1, max_length=160, pattern=r"^\S+$")
+
+
+class MemoryProposalRequest(MemoryStrictModel):
+    requestId: str = Field(min_length=1, max_length=160, pattern=r"^\S+$")
+    statement: str = Field(min_length=1, max_length=500)
+    category: MemoryCategory
 
 
 class MemoryDeleteRequest(MemoryStrictModel):

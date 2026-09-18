@@ -33,6 +33,11 @@ export const topicFixtures = TopicFixturesSchema.parse([
   { id: 'topic_strings', slug: 'strings', name: 'Strings' },
   { id: 'topic_hashing', slug: 'hashing', name: 'Hashing' },
   {
+    id: 'topic_sliding_window',
+    slug: 'sliding-window',
+    name: 'Sliding Window',
+  },
+  {
     id: 'topic_two_pointers',
     slug: 'two-pointers',
     name: 'Two Pointers',
@@ -48,6 +53,12 @@ export const topicFixtures = TopicFixturesSchema.parse([
     slug: 'linked-lists',
     name: 'Linked Lists',
   },
+  {
+    id: 'topic_heaps_and_priority_queues',
+    slug: 'heaps-and-priority-queues',
+    name: 'Heaps and Priority Queues',
+  },
+  { id: 'topic_tries', slug: 'tries', name: 'Tries' },
   { id: 'topic_stacks', slug: 'stacks', name: 'Stacks' },
   { id: 'topic_queues', slug: 'queues', name: 'Queues' },
   { id: 'topic_trees', slug: 'trees', name: 'Trees' },

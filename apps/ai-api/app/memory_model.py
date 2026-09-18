@@ -50,7 +50,7 @@ class GeminiMemoryGenerationModel:
         )
         self.structured_model = model.with_structured_output(
             ReflectionGenerationOutput,
-            method="json_schema",
+            method="function_calling",
             include_raw=True,
         )
 

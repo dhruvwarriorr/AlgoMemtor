@@ -16,10 +16,12 @@ The repository includes a unified Codeforces, CodeChef, LeetCode, and CSES
 catalog. React consumes the same normalized `/api/*` contract in mocked and live
 modes; Express owns provider validation, normalization, safe URLs, filtering,
 caching, rate handling, account observations, and freshness. The current
-implementation also adds bounded Gemini ranking through FastAPI, provider
-profiles/activity/contests, manual progress, bookmarks, analytics, timers, and
-learner-memory retrieval, with deterministic fallbacks when AI or provider
-services are unavailable.
+implementation also adds bounded Gemini ranking and a personalized CP/DSA coach
+through FastAPI, provider profiles/activity/contests, manual progress,
+bookmarks, analytics, timers, learner-memory retrieval, an adaptive roadmap,
+and in-app check-ins. Deterministic fallbacks keep recommendations, roadmap
+assessment, and practice selection usable when AI or provider services are
+unavailable.
 
 ## Product principles
 
@@ -31,6 +33,9 @@ services are unavailable.
   project documentation.
 - Be honest about evidence: opening a problem is not the same as solving it.
 - Keep AI optional: filtering and outbound links must still work if AI is down.
+- Make coaching evidence-aware: the roadmap is deterministic, AI explanations
+  are bounded by an authenticated context snapshot, and learner actions require
+  explicit confirmation.
 - Add providers through adapters so one provider cannot define the whole product.
 
 ## MVP scope
@@ -49,6 +54,9 @@ The MVP will support:
   for Codeforces, CodeChef, and LeetCode;
 - CSES public problem catalog discovery; and
 - evidence-backed learner preferences and progress; and
+- a protected `/coach` workspace with saved conversations, progressive CP/DSA
+  tutoring, an adaptive improvement roadmap, optional practice sets, and
+  in-app check-ins; and
 - graceful provider and AI failure states.
 
 The MVP will not include:
@@ -88,6 +96,9 @@ Canonical external problem URL
           |
           v
 Learner solves on the source platform
+          |
+          v
+Coach context, roadmap assessment, and next practice step
 ```
 
 At product level, AlgoMemtor uses AI to find appropriate problems. At the
@@ -104,21 +115,23 @@ Browser
   |                |
   |                +-- provider adapters and metadata cache
   |                +-- profiles, bookmarks, outbound events, progress
+  |                +-- coach conversations, roadmap, check-ins, safe actions
   |                +-- PostgreSQL (core schema)
                    +-- POST /internal/recommendations/rank
+                   +-- POST /internal/coach/respond and check-in generation
                         -> FastAPI over a server-side token
                              |
-                             +-- Gemini ranking and explanations
+                             +-- Gemini ranking, coaching, and explanations
                              +-- PostgreSQL (ai schema; audits, memories, vectors)
 ```
 
-| Component         | Ownership                                                                                          |
-| ----------------- | -------------------------------------------------------------------------------------------------- |
-| React             | Accessible catalog UI, filters, recommendations, and safe outbound navigation                      |
-| Express           | Authentication-aware product APIs, provider adapters, normalization, caching, and progress records |
-| FastAPI           | Internal bounded Gemini ranking, explanations, learner memory, and vector retrieval |
-| PostgreSQL        | Learner data, normalized metadata cache, bookmarks, recommendation history, and outbound events    |
-| External provider | Canonical statement, examples, editor, submissions, judging, and authoritative solve status        |
+| Component         | Ownership                                                                                               |
+| ----------------- | ------------------------------------------------------------------------------------------------------- |
+| React             | Accessible catalog UI, filters, recommendations, coach workspace, and safe outbound navigation          |
+| Express           | Authentication-aware product APIs, provider adapters, normalization, caching, progress, and coach state |
+| FastAPI           | Internal bounded Gemini ranking, coaching explanations, learner memory, and vector retrieval            |
+| PostgreSQL        | Learner data, normalized metadata cache, roadmap, chats, check-ins, bookmarks, history, and events      |
+| External provider | Canonical statement, examples, editor, submissions, judging, and authoritative solve status             |
 
 Codeforces is the reference integration because its official
 `problemset.problems` endpoint exposes identifiers, names, ratings, tags, and
@@ -184,6 +197,53 @@ provide the database-backed store and ranker, explicit evidence/memory
 fixtures, and at least three scenarios per memory category before these gates
 can be used as live Gemini or PostgreSQL evidence. The top-level `run` helper
 enables that strict matrix validation by default.
+
+## Personalized coach and adaptive roadmap
+
+Authenticated learners can open `/coach` for a persistent CP/DSA tutoring
+workspace. Conversations are owner-scoped and retain sanitized chat text;
+temporary code or copied problem context is sent only for the current request
+and replaced by an omission marker in saved history. The coach teaches with
+progressive hints by default, shows the evidence and freshness used for each
+personalized conclusion, and never executes code or submits to a provider.
+
+Express builds a bounded context snapshot from the learner profile, goals,
+preferences, deterministic roadmap, 30/90-day activity trends where available,
+provider activity and completeness, submissions, solves, ratings, contests,
+progress, reflections, recommendation feedback, bookmarks, dismissals, and up
+to five query-relevant active memories. FastAPI combines that private snapshot
+with up to eight versioned CP/DSA knowledge chunks using hybrid keyword/vector
+retrieval. A relevance router may make one de-identified Gemini Google Search
+grounding call for current/public questions; names, handles, ratings,
+conversations, and private history never enter that search query. The model
+cannot query the core database, invent problem IDs or URLs, or perform writes.
+Roadmap placement comes from the versioned deterministic `topic-assessment-v1`
+engine (30% smoothed success, 25% breadth, 20% target difficulty, 15% recent
+submission accuracy, and 10% recency); Gemini explains the result but does not
+assign mastery. Manual topic statuses always determine the displayed lane.
+
+The roadmap uses the curated prerequisite taxonomy, and Express selects at most
+two foundation, two target, and one stretch problem per topic from trusted
+catalog records. Solved and actively dismissed problems are excluded by
+default. Any coach proposal that would change roadmap status, progress,
+bookmarks, or learner memory is persisted as `proposed` and applied only after
+an authenticated, idempotent confirmation.
+
+The coach also provides in-app check-ins. Learners can choose a local weekly
+review day/time and separately enable event nudges. The memory worker
+periodically queues due owner-scoped refreshes through the durable PostgreSQL
+outbox. Event check-ins are capped at two per rolling seven days and
+deduplicated for 72 hours. Gemini outages leave the deterministic roadmap,
+practice selection, and clearly labelled fallback summaries available.
+
+Assistant messages persist a validated `coach-rich-v2` snapshot when useful:
+metrics, accessible line/bar/stacked-bar charts with tabular fallbacks,
+timelines, comparison tables, trusted problem cards, citations/freshness, and
+clickable follow-up questions. Express hydrates chart values and canonical
+problem links from trusted datasets, so a model cannot fabricate learner
+metrics or external problem identities. Existing messages without rich content
+remain readable. Consent is versioned as
+`personalized-coaching-rag-v2`; older coaching/memory consent must be renewed.
 
 ## Data boundary
 
@@ -274,6 +334,7 @@ Core API:
 
 ```text
 AI_API_URL=http://localhost:8000
+CORE_API_URL=http://localhost:3001
 AI_RANKING_TIMEOUT_MS=8000
 INTERNAL_SERVICE_TOKEN=
 PROGRESS_ENABLED=true
@@ -286,11 +347,14 @@ AI API:
 ```text
 LLM_API_KEY=
 LLM_MODEL=gemini-3.5-flash
-LLM_TIMEOUT_SECONDS=7
+LLM_TIMEOUT_SECONDS=15
 LLM_MAX_OUTPUT_TOKENS=2048
 LLM_INPUT_PRICE_PER_MILLION_USD=1.50
 LLM_OUTPUT_PRICE_PER_MILLION_USD=9.00
 LLM_PRICING_VERSION=gemini-3.5-flash-standard-2026-09
+AI_RANKING_VERSION=ai-gemini-rag-v1
+COACH_VERSION=coach-gemini-v1
+CONSENT_POLICY_VERSION=personalized-coaching-rag-v2
 DATABASE_URL=postgresql+psycopg://algomemtor:algomemtor_local@localhost:5432/algomemtor
 AI_AUDIT_TIMEOUT_SECONDS=0.5
 INTERNAL_SERVICE_TOKEN=
@@ -305,6 +369,9 @@ MEMORY_RETRIEVAL_LIMIT=5
 MEMORY_AUDIT_TIMEOUT_SECONDS=0.5
 MEMORY_GENERATION_ENABLED=true
 MEMORY_RAG_ENABLED=true
+COACH_KNOWLEDGE_RAG_ENABLED=true
+COACH_WEB_GROUNDING_ENABLED=true
+COACH_WEB_GROUNDING_TIMEOUT_SECONDS=8
 ```
 
 The core URL must be HTTPS or an HTTP loopback URL and cannot contain
@@ -354,6 +421,12 @@ baseline. Keep that order for a new database. Prisma records its history in
 `public.ai_alembic_version` table and owns only objects in the `ai` schema.
 `db:seed` safely upserts the normalized topic vocabulary and can be run again.
 
+The compose database uses the `pgvector/pgvector` image. If Docker Desktop is
+unavailable, use a local PostgreSQL installation with the pgvector extension
+instead. Install `postgresql@18` and `pgvector` with Homebrew, start the
+PostgreSQL service, and run `CREATE EXTENSION IF NOT EXISTS vector` once as a
+database administrator before running `npm run db:migrate`.
+
 Stop it with:
 
 ```bash
@@ -375,11 +448,11 @@ npm run dev:ai
 npm run dev:worker
 ```
 
-| Service              | URL                            |
-| -------------------- | ------------------------------ |
-| React                | `http://localhost:5173`        |
-| Express health check | `http://localhost:3001/health` |
-| FastAPI health check | `http://localhost:8000/health` |
+| Service              | URL                                       |
+| -------------------- | ----------------------------------------- |
+| React                | `http://localhost:5173`                   |
+| Express health check | `http://localhost:3001/health`            |
+| FastAPI health check | `http://localhost:8000/health`            |
 | Memory worker        | durable outbox consumer; no HTTP endpoint |
 
 ## Mock-first development

@@ -42,6 +42,7 @@ import { delay, http, HttpResponse, type RequestHandler } from 'msw'
 import { problemFixtures } from './fixtures/problems'
 import { topicFixtures } from './fixtures/topics'
 import { progressHandlers } from './progressHandlers'
+import { coachHandlers } from './coachHandlers'
 
 const mockDelayMs = 300
 const transientScenarioFailureCounts = new Map<string, number>()
@@ -323,6 +324,7 @@ function normalizeSearchText(value: string) {
 
 export const handlers: RequestHandler[] = [
   ...progressHandlers,
+  ...coachHandlers,
   http.get('/api/learner-profile', () =>
     HttpResponse.json(
       LearnerProfileResponseSchema.parse({ data: learnerProfile }),

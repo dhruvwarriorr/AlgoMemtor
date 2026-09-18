@@ -1,9 +1,21 @@
 from typing import Annotated
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, status
 
 from .auth import AuthenticatedUser, require_authenticated_user
+from .coach_models import (
+    CoachCheckInRequest,
+    CoachCheckInResponse,
+    CoachRequest,
+    CoachResponse,
+    CoachResponseProposal,
+)
+from .coach_service import (
+    CoachGenerationError,
+    CoachNotConfiguredError,
+    get_coach_service,
+)
 from .internal_auth import require_internal_service
 from .memory_models import (
     MemoryActionRequest,
@@ -16,6 +28,7 @@ from .memory_models import (
     MemoryEvidenceDeleteRequest,
     MemoryProcessRequest,
     MemoryProcessResponse,
+    MemoryProposalRequest,
     MemoryRetrievalResponse,
 )
 from .memory_repository import (
@@ -55,6 +68,86 @@ async def rank_recommendations(
     service: Annotated[RankingService, Depends(get_ranking_service)],
 ) -> RankingResponse:
     return await service.rank(request)
+
+
+@app.post(
+    "/internal/coach/respond",
+    response_model=CoachResponse,
+    response_model_exclude_none=True,
+    dependencies=[Depends(require_internal_service)],
+)
+async def respond_as_coach(
+    request: CoachRequest,
+) -> CoachResponse:
+    service = get_coach_service()
+    try:
+        output = await service.respond(request)
+    except CoachNotConfiguredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The AI coach is not configured.",
+        ) from error
+    except CoachGenerationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The AI coach is temporarily unavailable.",
+        ) from error
+    return CoachResponse(
+        answer=output.answer,
+        evidence=output.evidence,
+        proposals=[
+            CoachResponseProposal(id=uuid4(), **proposal.model_dump())
+            for proposal in output.proposals
+        ],
+        citations=output.citations,
+    )
+
+
+@app.post(
+    "/internal/coach/check-ins/generate",
+    response_model=CoachCheckInResponse,
+    response_model_exclude_none=True,
+    dependencies=[Depends(require_internal_service)],
+)
+async def generate_coach_check_in(
+    request: CoachCheckInRequest,
+) -> CoachCheckInResponse:
+    service = get_coach_service()
+    try:
+        return await service.generate_check_in(request)
+    except CoachNotConfiguredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The AI coach is not configured.",
+        ) from error
+    except CoachGenerationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The AI coach is temporarily unavailable.",
+        ) from error
+
+
+@app.delete(
+    "/internal/coach/conversations/{learner_id}/{conversation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_internal_service)],
+)
+async def delete_coach_conversation_audit(
+    learner_id: UUID,
+    conversation_id: UUID,
+) -> None:
+    service = get_coach_service()
+    await service.delete_conversation_audit(learner_id, conversation_id)
+
+
+@app.delete(
+    "/internal/coach/learners/{learner_id}/audits",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_internal_service)],
+)
+async def delete_coach_learner_audits(learner_id: UUID) -> None:
+    service = get_coach_service()
+    await service.delete_learner_audits(learner_id)
 
 
 def _raise_memory_http_error(error: Exception) -> None:
@@ -144,6 +237,24 @@ async def list_learner_memories(
 ) -> list:
     try:
         return await service.list_memories(learner_id)
+    except (MemoryNotFoundError, MemoryRepositoryError) as error:
+        _raise_memory_http_error(error)
+        raise AssertionError("Memory error handler did not raise.")
+
+
+@app.post(
+    "/internal/learners/{learner_id}/memories/propose",
+    response_model=MemoryActionResponse,
+    response_model_exclude_none=True,
+    dependencies=[Depends(require_internal_service)],
+)
+async def propose_learner_memory(
+    learner_id: UUID,
+    request: MemoryProposalRequest,
+    service: Annotated[MemoryService, Depends(get_memory_service)],
+) -> MemoryActionResponse:
+    try:
+        return await service.propose(learner_id, request)
     except (MemoryNotFoundError, MemoryRepositoryError) as error:
         _raise_memory_http_error(error)
         raise AssertionError("Memory error handler did not raise.")

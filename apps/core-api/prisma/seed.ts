@@ -10,6 +10,20 @@ const normalizedTopics = [
     slug: 'implementation',
     name: 'Implementation',
   },
+  { id: 'topic_arrays', slug: 'arrays', name: 'Arrays' },
+  { id: 'topic_hashing', slug: 'hashing', name: 'Hashing' },
+  {
+    id: 'topic_sliding_window',
+    slug: 'sliding-window',
+    name: 'Sliding Window',
+  },
+  { id: 'topic_linked_lists', slug: 'linked-lists', name: 'Linked Lists' },
+  {
+    id: 'topic_heaps_and_priority_queues',
+    slug: 'heaps-and-priority-queues',
+    name: 'Heaps and Priority Queues',
+  },
+  { id: 'topic_tries', slug: 'tries', name: 'Tries' },
   { id: 'topic_math', slug: 'math', name: 'Math' },
   {
     id: 'topic_number_theory',
@@ -80,6 +94,40 @@ const normalizedTopics = [
   { id: 'topic_combinatorics', slug: 'combinatorics', name: 'Combinatorics' },
 ] as const
 
+const prerequisites: Record<string, readonly string[]> = {
+  implementation: [],
+  arrays: ['implementation'],
+  math: ['implementation'],
+  strings: ['implementation'],
+  'linked-lists': ['implementation'],
+  sorting: ['arrays'],
+  hashing: ['strings'],
+  'prefix-sums': ['arrays'],
+  'two-pointers': ['arrays'],
+  'sliding-window': ['arrays'],
+  'binary-search': ['sorting', 'arrays'],
+  greedy: ['sorting'],
+  'number-theory': ['math'],
+  combinatorics: ['math'],
+  geometry: ['math'],
+  'stacks-and-queues': ['arrays'],
+  'heaps-and-priority-queues': ['trees'],
+  'recursion-and-backtracking': ['implementation'],
+  trees: ['recursion-and-backtracking'],
+  tries: ['strings'],
+  graphs: ['recursion-and-backtracking'],
+  'bfs-and-dfs': ['graphs', 'stacks-and-queues'],
+  'disjoint-set-union': ['graphs', 'bfs-and-dfs'],
+  'shortest-paths': ['graphs', 'bfs-and-dfs'],
+  'topological-sort': ['graphs', 'bfs-and-dfs'],
+  'minimum-spanning-trees': ['disjoint-set-union', 'shortest-paths'],
+  'dynamic-programming': ['recursion-and-backtracking'],
+  'advanced-dynamic-programming': ['dynamic-programming'],
+  'bit-manipulation': ['implementation'],
+  'segment-trees': ['trees'],
+  'fenwick-trees': ['trees'],
+}
+
 const databaseUrl = process.env.DATABASE_URL
 
 if (databaseUrl === undefined) {
@@ -96,8 +144,12 @@ try {
       where: { slug: topic.slug },
       update: {
         name: topic.name,
+        prerequisites: [...(prerequisites[topic.slug] ?? [])],
       },
-      create: topic,
+      create: {
+        ...topic,
+        prerequisites: [...(prerequisites[topic.slug] ?? [])],
+      },
     })
   }
 } finally {

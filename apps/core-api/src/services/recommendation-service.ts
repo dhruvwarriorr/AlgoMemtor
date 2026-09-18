@@ -68,7 +68,7 @@ const identity = (provider: string, externalId: string) =>
 export const AI_RANKING_VERSION = 'ai-gemini-rag-v1'
 export const AI_FALLBACK_RANKING_VERSION = 'ai-rag-v1-fallback-deterministic-v2'
 export const AI_CANDIDATE_LIMIT = 40
-const AI_POLICY_VERSION = 'phase9-progress-memory-v1'
+const AI_POLICY_VERSION = 'personalized-coaching-rag-v2'
 const reusableRankingVersions = new Set([
   AI_RANKING_VERSION,
   AI_FALLBACK_RANKING_VERSION,

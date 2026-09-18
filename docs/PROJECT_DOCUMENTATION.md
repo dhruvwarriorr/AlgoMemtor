@@ -1,7 +1,7 @@
 # AlgoMemtor — Complete Project Documentation
 
 **Document status:** current implementation reference
-**Last reconciled:** 2026-09-14
+**Last reconciled:** 2026-09-17
 **Repository:** `AlgoMemtor`
 **Document scope:** product behavior, architecture, provider integrations,
 data contracts, operations, testing, privacy, and known limitations.
@@ -65,6 +65,13 @@ learner profile
     -> manual or provider-observed evidence
     -> analytics and learner memory
     -> better next recommendation
+
+The protected Coach experience extends this loop into a persistent learning
+relationship: Express builds a bounded snapshot of the learner's profile,
+roadmap, activity, feedback, and approved memories; FastAPI/LangChain/Gemini
+returns validated teaching, hints, evidence references, and optional actions.
+The coach never executes code, submits problems, or writes learner data without
+an explicit confirmation.
 ```
 
 AlgoMemtor is a discovery, planning, analytics, and mentorship layer. The
@@ -77,10 +84,16 @@ compiler, hidden tests, submissions, verdicts, and account ownership.
 - React talks to the Express API, never directly to external providers.
 - Provider responses, HTML, GraphQL, and AI output are untrusted input.
 - Deterministic filtering and ranking remain usable when Gemini is unavailable.
+- A versioned deterministic topic assessment remains authoritative for roadmap
+  placement; Gemini explains it but does not assign mastery.
+- Manual roadmap statuses take precedence over assessments and are visible as
+  learner-controlled lanes.
 - Aggregate statistics are never presented as individual solve evidence.
 - Partial, stale, blocked, and unavailable data are labeled honestly.
 - User source code, passwords, session cookies, CSRF tokens, and CAPTCHA
   artifacts are never collected or stored.
+- Transient pasted code and copied problem context are processed for one coach
+  request only and replaced by an omission marker in saved conversation history.
 - An outbound link is an `opened` event, not proof that a learner solved a
   problem.
 
@@ -90,31 +103,35 @@ compiler, hidden tests, submissions, verdicts, and account ownership.
 
 The following capabilities are implemented in the current working tree:
 
-| Area | Status | Notes |
-| --- | --- | --- |
-| React/Vite application shell | Implemented | Responsive authenticated application with protected routes |
-| Supabase email authentication | Implemented | JWT verification is owned by Express and FastAPI |
-| Learner onboarding/profile | Implemented | Goals, experience, topics, difficulty, platforms, preferences |
-| Codeforces catalog | Implemented | Official problemset API, normalized metadata, caching, filters |
-| CodeChef catalog | Implemented | Provider adapter with catalog and contest support |
-| LeetCode catalog | Implemented | Public GraphQL/catalog strategy with validation and cache |
-| CSES catalog | Implemented | Public `/problemset/` HTML catalog; catalog-only provider |
-| Provider account linking | Implemented | Codeforces, CodeChef, and LeetCode public handles |
-| Public solved totals | Implemented | Consent-gated provider profile statistics |
-| Codeforces activity | Implemented | Public accepted observations with bounded completeness |
-| CodeChef activity | Implemented | Recent public submissions and accepted observations |
-| LeetCode activity | Implemented | Bounded recent submissions and accepted observations |
-| Provider problem tags | Implemented | CodeChef/LeetCode recent observations; profile aggregate tags for LeetCode |
-| Unified activity | Implemented | Submissions, solves, ratings, and contest participation |
-| Unified analytics | Implemented | Provider totals, difficulty, topics, language, rating, contests |
-| Unified contests | Implemented | Codeforces, CodeChef, and LeetCode contest adapters |
-| Manual progress | Implemented | `unsolved`, `attempted`, `solved`, reflections, timers |
-| Bookmarks and dismissals | Implemented | Owner-scoped persistence and recommendation actions |
-| Deterministic recommendations | Implemented | Validated candidate set and stable fallback |
-| Gemini ranking | Implemented behind configuration | LangChain client, structured output, validation, fallback |
-| Learner memory/RAG | Implemented behind configuration | FastAPI memory generation, retrieval, audit, deletion |
-| Background provider sync | Implemented | PostgreSQL jobs, leases, cooldowns, six-hour schedule |
-| Authenticated full historical LeetCode/CodeChef/CSES import | Not implemented | Requires an approved API, local connector, or user import |
+| Area                                                        | Status                           | Notes                                                                                                      |
+| ----------------------------------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| React/Vite application shell                                | Implemented                      | Responsive authenticated application with protected routes                                                 |
+| Supabase email authentication                               | Implemented                      | JWT verification is owned by Express and FastAPI                                                           |
+| Learner onboarding/profile                                  | Implemented                      | Goals, experience, topics, difficulty, platforms, preferences                                              |
+| Codeforces catalog                                          | Implemented                      | Official problemset API, normalized metadata, caching, filters                                             |
+| CodeChef catalog                                            | Implemented                      | Provider adapter with catalog and contest support                                                          |
+| LeetCode catalog                                            | Implemented                      | Public GraphQL/catalog strategy with validation and cache                                                  |
+| CSES catalog                                                | Implemented                      | Public `/problemset/` HTML catalog; catalog-only provider                                                  |
+| Provider account linking                                    | Implemented                      | Codeforces, CodeChef, and LeetCode public handles                                                          |
+| Public solved totals                                        | Implemented                      | Consent-gated provider profile statistics                                                                  |
+| Codeforces activity                                         | Implemented                      | Public accepted observations with bounded completeness                                                     |
+| CodeChef activity                                           | Implemented                      | Recent public submissions and accepted observations                                                        |
+| LeetCode activity                                           | Implemented                      | Bounded recent submissions and accepted observations                                                       |
+| Provider problem tags                                       | Implemented                      | CodeChef/LeetCode recent observations; profile aggregate tags for LeetCode                                 |
+| Unified activity                                            | Implemented                      | Submissions, solves, ratings, and contest participation                                                    |
+| Unified analytics                                           | Implemented                      | Provider totals, difficulty, topics, language, rating, contests                                            |
+| Unified contests                                            | Implemented                      | Codeforces, CodeChef, and LeetCode contest adapters                                                        |
+| Manual progress                                             | Implemented                      | `unsolved`, `attempted`, `solved`, reflections, timers                                                     |
+| Bookmarks and dismissals                                    | Implemented                      | Owner-scoped persistence and recommendation actions                                                        |
+| Deterministic recommendations                               | Implemented                      | Validated candidate set and stable fallback                                                                |
+| Gemini ranking                                              | Implemented behind configuration | LangChain client, structured output, validation, fallback                                                  |
+| Learner memory/RAG                                          | Implemented behind configuration | FastAPI memory generation, retrieval, audit, deletion                                                      |
+| Personalized CP/DSA coach                                   | Implemented locally              | Protected `/coach`, saved conversations, hybrid learner/knowledge/web retrieval, progressive teaching, validated action proposals |
+| Coach RAG v2 rich responses                                 | Implemented locally              | Versioned knowledge index, conditional public grounding, deterministic charts/metrics/timelines/problems, persisted rich snapshots |
+| Adaptive improvement roadmap                                | Implemented locally              | `topic-assessment-v1`, manual status precedence, prerequisite graph, capped optional problem sets          |
+| In-app coach check-ins                                      | Implemented locally              | Weekly local review and event thresholds with frequency caps and deduplication                             |
+| Background provider sync                                    | Implemented                      | PostgreSQL jobs, leases, cooldowns, six-hour schedule                                                      |
+| Authenticated full historical LeetCode/CodeChef/CSES import | Not implemented                  | Requires an approved API, local connector, or user import                                                  |
 
 Local unit, type-check, build, and mocked integration checks pass when run with
 the documented commands. Live provider behavior and authenticated browser
@@ -132,6 +149,8 @@ Supabase project.
 - provider freshness, completeness, source, and extraction provenance;
 - catalog filters and deterministic recommendation rules;
 - optional bounded AI ranking and explanations;
+- personalized CP/DSA coaching, deterministic topic assessment, and a
+  persistent improvement roadmap;
 - bookmarks, dismissals, outbound-open events, manual statuses, reflections,
   timers, analytics, and learner memory;
 - data deletion, consent, stale-state presentation, and operational controls.
@@ -339,6 +358,8 @@ and delete/archive/restore controls. The learner can inspect and manage memory.
 - `/problems` — unified provider catalog.
 - `/problems/:provider/:externalId` — problem detail.
 - `/recommendations` — ranked practice feed.
+- `/coach` — saved conversations, progressive CP/DSA coaching, roadmap, and
+  in-app check-ins.
 - `/activity` — merged activity timeline.
 - `/contests` — contest catalog and participation.
 - `/analytics` — unified analytics.
@@ -364,6 +385,7 @@ Browser (React + Vite)
   |                +-- provider adapters and HTTP safety layer
   |                +-- normalization, cache, filtering, URL construction
   |                +-- learner data and provider sync queue
+  |                +-- coach context, roadmap assessment, action confirmation
   |                +-- PostgreSQL core schema through Prisma
   |
   +-- never calls providers directly
@@ -371,7 +393,9 @@ Browser (React + Vite)
 Express -- internal token --> FastAPI AI API
                                 +-- JWT verification
                                 +-- bounded Gemini/LangChain ranking
-                                +-- learner memory and retrieval
+                                +-- coach tutoring and validated rich JSON responses
+                                +-- learner-memory and knowledge retrieval
+                                +-- conditional de-identified Gemini Search grounding
                                 +-- PostgreSQL ai schema through Alembic
 
 External providers
@@ -383,16 +407,16 @@ External providers
 
 ### Ownership table
 
-| Component | Responsibility |
-| --- | --- |
-| `apps/web` | Routes, UI, auth state, URL filters, accessible interactions |
-| `apps/core-api` | Authenticated product API, adapters, normalization, persistence, safe URLs |
-| `apps/ai-api` | Gemini ranking, explanations, learner memory, vector retrieval |
-| `packages/shared-contracts` | Runtime-validated TypeScript contracts shared by API, UI, and mocks |
-| Prisma | `core` PostgreSQL schema and migrations |
-| Alembic | `ai` PostgreSQL schema and migrations |
-| Supabase Auth | Application identity and email authentication |
-| Providers | Statements, execution, submissions, judging, authoritative accounts |
+| Component                   | Responsibility                                                                                     |
+| --------------------------- | -------------------------------------------------------------------------------------------------- |
+| `apps/web`                  | Routes, UI, auth state, URL filters, accessible interactions                                       |
+| `apps/core-api`             | Authenticated product API, adapters, normalization, persistence, safe URLs, deterministic coaching |
+| `apps/ai-api`               | Gemini ranking, coaching explanations, learner memory, vector retrieval, keyed audits              |
+| `packages/shared-contracts` | Runtime-validated TypeScript contracts shared by API, UI, and mocks                                |
+| Prisma                      | `core` PostgreSQL schema and migrations                                                            |
+| Alembic                     | `ai` PostgreSQL schema and migrations                                                              |
+| Supabase Auth               | Application identity and email authentication                                                      |
+| Providers                   | Statements, execution, submissions, judging, authoritative accounts                                |
 
 Prisma and Alembic must never manage the same table or schema objects.
 
@@ -407,7 +431,7 @@ Prisma and Alembic must never manage the same table or schema objects.
 │   │   └── src/
 │   │       ├── app/              # providers, auth, theme, notifications
 │   │       ├── components/       # layout, navigation, UI, state components
-│   │       ├── features/         # auth, profile, platform, progress, memory
+│   │       ├── features/         # auth, profile, platform, progress, memory, coach
 │   │       ├── pages/             # route-level screens
 │   │       ├── routes/            # router, protected routes, scroll state
 │   │       └── mocks/             # normalized MSW fixtures and handlers
@@ -419,7 +443,7 @@ Prisma and Alembic must never manage the same table or schema objects.
 │   │       ├── database/           # Prisma client
 │   │       ├── integrations/       # providers, provider accounts, AI client
 │   │       ├── repositories/       # persistence and in-memory implementations
-│   │       ├── services/           # product, sync, recommendation, progress logic
+│   │       ├── services/           # product, sync, recommendation, progress, coach logic
 │   │       ├── utils/              # request gates and shared utilities
 │   │       ├── app.ts              # Express route assembly
 │   │       └── server.ts           # HTTP server and provider wiring
@@ -593,15 +617,15 @@ without sending raw credentials to AlgoMemtor.
 
 ### Provider source failure policy
 
-| Condition | Result |
-| --- | --- |
-| Timeout/network error | Retry eligible failures with bounded exponential jitter |
-| `429` | Honor `Retry-After`; defer instead of immediate retry |
-| `403`, CAPTCHA, login wall, paywall | Disable affected capability; retain stale data |
-| `404`/unknown handle | Stable not-found response; do not fabricate zeros |
-| Malformed schema | Partial valid records or capability-level circuit breaker |
-| Redirect to unapproved host | Reject response |
-| Oversized response | Reject response |
+| Condition                           | Result                                                    |
+| ----------------------------------- | --------------------------------------------------------- |
+| Timeout/network error               | Retry eligible failures with bounded exponential jitter   |
+| `429`                               | Honor `Retry-After`; defer instead of immediate retry     |
+| `403`, CAPTCHA, login wall, paywall | Disable affected capability; retain stale data            |
+| `404`/unknown handle                | Stable not-found response; do not fabricate zeros         |
+| Malformed schema                    | Partial valid records or capability-level circuit breaker |
+| Redirect to unapproved host         | Reject response                                           |
+| Oversized response                  | Reject response                                           |
 
 ---
 
@@ -619,6 +643,12 @@ Concrete solved observations are keyed by `(providerAccount, externalId)` and
 carry optional provider event IDs, timestamps, tags, normalized topics,
 completeness, and provenance. Repeated syncs update observation timestamps
 idempotently.
+
+When a provider activity endpoint returns a different identifier form than the
+catalog (for example, a LeetCode title slug instead of its numeric question
+ID), coach assessment joins the observation to the trusted catalog by its
+normalized canonical URL. This preserves concrete activity evidence without
+claiming that aggregate totals identify particular solved problems.
 
 ### What “all tags” means
 
@@ -689,79 +719,103 @@ The browser uses the central authenticated fetch client.
 
 ### Identity and learner profile
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/health` | Express health check; not learner-authenticated |
-| `GET` | `/api/me` | Authenticated identity |
-| `GET` | `/api/learner-profile` | Load learner profile |
-| `PUT` | `/api/learner-profile` | Create/update onboarding profile |
-| `GET` | `/api/providers` | Enabled provider capabilities |
-| `GET` | `/api/topics` | Normalized topic vocabulary |
+| Method | Path                   | Purpose                                         |
+| ------ | ---------------------- | ----------------------------------------------- |
+| `GET`  | `/health`              | Express health check; not learner-authenticated |
+| `GET`  | `/api/me`              | Authenticated identity                          |
+| `GET`  | `/api/learner-profile` | Load learner profile                            |
+| `PUT`  | `/api/learner-profile` | Create/update onboarding profile                |
+| `GET`  | `/api/providers`       | Enabled provider capabilities                   |
+| `GET`  | `/api/topics`          | Normalized topic vocabulary                     |
 
 ### Provider accounts and sync
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/provider-accounts` | Linked accounts and statistics |
-| `PUT` | `/api/provider-accounts/:provider` | Link/update public handle and consent |
-| `DELETE` | `/api/provider-accounts/:provider` | Disconnect while retaining history policy |
-| `POST` | `/api/provider-accounts/:provider/sync` | Queue asynchronous account sync |
-| `GET` | `/api/provider-accounts/:provider/sync-status` | Read job and capability status |
-| `DELETE` | `/api/provider-accounts/:provider/history` | Permanently remove provider history |
-| `POST` | `/api/provider-accounts/:provider/profile/refresh` | Refresh profile snapshot |
-| `POST` | `/api/provider-accounts/:provider/public-stats/refresh` | Refresh aggregate public totals |
-| `PUT` | `/api/provider-accounts/:provider/activity-consent` | Enable/revoke activity consent |
-| `POST` | `/api/provider-accounts/:provider/activity-sync` | Queue activity synchronization |
+| Method   | Path                                                    | Purpose                                   |
+| -------- | ------------------------------------------------------- | ----------------------------------------- |
+| `GET`    | `/api/provider-accounts`                                | Linked accounts and statistics            |
+| `PUT`    | `/api/provider-accounts/:provider`                      | Link/update public handle and consent     |
+| `DELETE` | `/api/provider-accounts/:provider`                      | Disconnect while retaining history policy |
+| `POST`   | `/api/provider-accounts/:provider/sync`                 | Queue asynchronous account sync           |
+| `GET`    | `/api/provider-accounts/:provider/sync-status`          | Read job and capability status            |
+| `DELETE` | `/api/provider-accounts/:provider/history`              | Permanently remove provider history       |
+| `POST`   | `/api/provider-accounts/:provider/profile/refresh`      | Refresh profile snapshot                  |
+| `POST`   | `/api/provider-accounts/:provider/public-stats/refresh` | Refresh aggregate public totals           |
+| `PUT`    | `/api/provider-accounts/:provider/activity-consent`     | Enable/revoke activity consent            |
+| `POST`   | `/api/provider-accounts/:provider/activity-sync`        | Queue activity synchronization            |
 
 CSES is rejected by account routes because it is not a linkable provider.
 
 ### Catalog and activity
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/problems` | Unified filtered catalog and pagination |
-| `GET` | `/api/problems/:provider/:externalId` | Validated detail and provenance |
-| `GET` | `/api/problems/:provider/:externalId/progress` | Learner progress |
-| `PUT` | `/api/problems/:provider/:externalId/status` | Set manual learner status |
-| `DELETE` | `/api/problems/:provider/:externalId/progress` | Remove progress |
-| `POST` | `/api/problems/:provider/:externalId/open` | Record outbound-open event |
-| `GET` | `/api/activity` | Merged submissions, solves, ratings, contests |
-| `GET` | `/api/contests` | Upcoming and historical contests |
-| `GET` | `/api/analytics` | Unified or provider-filtered analytics |
+| Method   | Path                                           | Purpose                                       |
+| -------- | ---------------------------------------------- | --------------------------------------------- |
+| `GET`    | `/api/problems`                                | Unified filtered catalog and pagination       |
+| `GET`    | `/api/problems/:provider/:externalId`          | Validated detail and provenance               |
+| `GET`    | `/api/problems/:provider/:externalId/progress` | Learner progress                              |
+| `PUT`    | `/api/problems/:provider/:externalId/status`   | Set manual learner status                     |
+| `DELETE` | `/api/problems/:provider/:externalId/progress` | Remove progress                               |
+| `POST`   | `/api/problems/:provider/:externalId/open`     | Record outbound-open event                    |
+| `GET`    | `/api/activity`                                | Merged submissions, solves, ratings, contests |
+| `GET`    | `/api/contests`                                | Upcoming and historical contests              |
+| `GET`    | `/api/analytics`                               | Unified or provider-filtered analytics        |
 
 ### Recommendations and learner actions
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/recommendations` | Current recommendation feed |
-| `POST` | `/api/recommendations/refresh` | Queue/build a refreshed feed |
-| `PATCH` | `/api/recommendation-items/:itemId/feedback` | Save recommendation feedback |
-| `POST` | `/api/recommendation-items/:itemId/dismiss` | Dismiss a recommendation |
-| `GET` | `/api/recommendation-dismissals` | List dismissed items |
-| `DELETE` | `/api/recommendation-dismissals/:provider/:externalId` | Restore dismissed item |
-| `POST` | `/api/recommendation-items/:itemId/impression` | Record impression |
-| `GET` | `/api/bookmarks` | List bookmarks |
-| `POST` | `/api/bookmarks` | Create bookmark |
-| `DELETE` | `/api/bookmarks/:provider/:externalId` | Delete bookmark |
-| `POST` | `/api/problems/:provider/:externalId/reflections` | Save reflection |
-| `POST` | `/api/problems/:provider/:externalId/timer` | Start timer |
-| `POST` | `/api/timers/:sessionId/pause` | Pause timer |
-| `POST` | `/api/timers/:sessionId/resume` | Resume timer |
-| `POST` | `/api/timers/:sessionId/resolve` | Resolve timer |
+| Method   | Path                                                   | Purpose                      |
+| -------- | ------------------------------------------------------ | ---------------------------- |
+| `GET`    | `/api/recommendations`                                 | Current recommendation feed  |
+| `POST`   | `/api/recommendations/refresh`                         | Queue/build a refreshed feed |
+| `PATCH`  | `/api/recommendation-items/:itemId/feedback`           | Save recommendation feedback |
+| `POST`   | `/api/recommendation-items/:itemId/dismiss`            | Dismiss a recommendation     |
+| `GET`    | `/api/recommendation-dismissals`                       | List dismissed items         |
+| `DELETE` | `/api/recommendation-dismissals/:provider/:externalId` | Restore dismissed item       |
+| `POST`   | `/api/recommendation-items/:itemId/impression`         | Record impression            |
+| `GET`    | `/api/bookmarks`                                       | List bookmarks               |
+| `POST`   | `/api/bookmarks`                                       | Create bookmark              |
+| `DELETE` | `/api/bookmarks/:provider/:externalId`                 | Delete bookmark              |
+| `POST`   | `/api/problems/:provider/:externalId/reflections`      | Save reflection              |
+| `POST`   | `/api/problems/:provider/:externalId/timer`            | Start timer                  |
+| `POST`   | `/api/timers/:sessionId/pause`                         | Pause timer                  |
+| `POST`   | `/api/timers/:sessionId/resume`                        | Resume timer                 |
+| `POST`   | `/api/timers/:sessionId/resolve`                       | Resolve timer                |
+
+### Personalized coach and roadmap
+
+| Method   | Path                                                | Purpose                                                           |
+| -------- | --------------------------------------------------- | ----------------------------------------------------------------- |
+| `GET`    | `/api/coach/conversations`                          | List saved owner-scoped coach threads                             |
+| `POST`   | `/api/coach/conversations`                          | Create a named coach thread                                       |
+| `GET`    | `/api/coach/conversations/:conversationId`          | Read sanitized history                                            |
+| `PATCH`  | `/api/coach/conversations/:conversationId`          | Rename a thread                                                   |
+| `DELETE` | `/api/coach/conversations/:conversationId`          | Delete messages, proposals, summaries, and audit references       |
+| `POST`   | `/api/coach/conversations/:conversationId/messages` | Submit a bounded coaching question and optional transient context |
+| `GET`    | `/api/coach/roadmap`                                | Read the persistent deterministic improvement roadmap             |
+| `PATCH`  | `/api/coach/roadmap/topics/:topic/status`           | Set or clear a manual topic status                                |
+| `GET`    | `/api/coach/preferences`                            | Read weekly/event check-in preferences                            |
+| `PUT`    | `/api/coach/preferences`                            | Save weekly local day/time and event preference                   |
+| `GET`    | `/api/coach/check-ins`                              | List generated in-app check-ins and unread count                  |
+| `PATCH`  | `/api/coach/check-ins/:checkInId`                   | Mark a check-in read/unread or dismiss/restore it                 |
+| `POST`   | `/api/coach/action-proposals/:proposalId/confirm`   | Revalidate and apply an explicit learner confirmation             |
+
+The memory worker periodically enumerates enabled learner schedules and queues
+one owner-scoped refresh per local day (with a separate weekly-due phase). It
+calls the internal `POST /internal/coach/check-ins/refresh` endpoint with the
+shared service token for durable scheduled refreshes. The endpoint is not
+exposed to the browser.
 
 ### Progress, memory, consent, and deletion
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/progress/history` | Manual progress history |
-| `GET` | `/api/progress/analytics` | Progress conversion analytics |
-| `GET` | `/api/learner-memories` | List learner memories |
-| `PATCH` | `/api/learner-memories/:memoryId` | Edit/archive/restore memory |
-| `POST` | `/api/learner-memories/:memoryId/action` | Apply memory action |
-| `GET` | `/api/ai-consent` | Read AI-note consent |
-| `PUT` | `/api/ai-consent` | Update AI-note consent |
-| `GET` | `/api/me/data/status` | Deletion/status information |
-| `DELETE` | `/api/me/data` | Cascade-delete learner data |
+| Method   | Path                                     | Purpose                       |
+| -------- | ---------------------------------------- | ----------------------------- |
+| `GET`    | `/api/progress/history`                  | Manual progress history       |
+| `GET`    | `/api/progress/analytics`                | Progress conversion analytics |
+| `GET`    | `/api/learner-memories`                  | List learner memories         |
+| `PATCH`  | `/api/learner-memories/:memoryId`        | Edit/archive/restore memory   |
+| `POST`   | `/api/learner-memories/:memoryId/action` | Apply memory action           |
+| `GET`    | `/api/ai-consent`                        | Read AI-note consent          |
+| `PUT`    | `/api/ai-consent`                        | Update AI-note consent        |
+| `GET`    | `/api/me/data/status`                    | Deletion/status information   |
+| `DELETE` | `/api/me/data`                           | Cascade-delete learner data   |
 
 Stable API errors include `PROVIDER_TIMEOUT`, `PROVIDER_RATE_LIMITED`,
 `PROVIDER_UNAVAILABLE`, `PROVIDER_INVALID_RESPONSE`, `PROVIDER_BLOCKED`,
@@ -805,6 +859,16 @@ Prisma owns the `core` schema. Important tables include:
 - `core.problem_actions` — impressions, opens, dismissals, feedback, status.
 - recommendation batches/items/history tables.
 - progress reflections and timer sessions.
+- `core.coach_conversations`, `core.coach_messages`, and
+  `core.coach_action_proposals` — sanitized saved threads and confirmation-gated
+  actions.
+- `core.coach_roadmaps` and `core.coach_roadmap_revisions` — one current
+  roadmap per learner plus append-only versioned snapshots.
+- `core.coach_topic_statuses` and `core.coach_topic_status_events` — manual
+  status precedence and append-only status history.
+- `core.coach_preferences` and `core.coach_check_ins` — local weekly/event
+  settings and in-app nudges with event keys, fallback labels, and read/
+  dismissed state.
 
 All provider rows retain provider identity and provenance. Unique constraints
 prevent duplicate provider/account/problem observations. Deletion cascades from
@@ -817,6 +881,24 @@ The current working tree includes migrations for:
 
 - solved-observation provider tag/topic arrays; and
 - CSES provider identities and `cses.fi` canonical URLs in relevant tables.
+- personalized coach conversations, roadmaps, status history, check-ins, and
+  prerequisite metadata.
+- `core.coach_messages.rich_content` — validated `coach-rich-v2` response
+  snapshots for charts, metrics, timelines, comparison tables, source
+  citations, and trusted problem lists.
+
+Alembic owns the AI-only tables:
+
+- `ai.coach_invocation_audits` — model/version, explicit knowledge/memory/web
+  retrieval-lane flags, latency, token/cost metadata, and fallback state; the
+  keyed context fingerprint supports correlation without storing raw prompts
+  or private snapshots.
+- `ai.coach_knowledge_sources` and `ai.coach_knowledge_chunks` — versioned
+  original CP/DSA reference chunks, checksums, topic metadata, and optional
+  pgvector embeddings used by hybrid retrieval.
+- `ai.learner_memories` and related evidence/audit tables remain learner-owned
+  and are deleted by the existing consent-revocation and learner-deletion
+  workflows.
 
 Apply core migrations only through Prisma after PostgreSQL is available.
 
@@ -869,9 +951,108 @@ history deletion or full learner deletion.
 - AI receives bounded metadata and derived features, not raw provider pages or
   credentials.
 
+### Personalized coaching and memory consent
+
+The `personalized-coaching-rag-v2` policy is broader than the earlier
+`phase9-progress-memory-v1` note-sharing policy. Existing older consent is not
+silently upgraded; the learner must choose again before new coach responses,
+AI-generated summaries, or proactive check-ins can run. While enabled, Express
+sends FastAPI only a bounded snapshot: profile/goals, deterministic roadmap and
+assessments, provider completeness, recent activity/contests/ratings,
+recommendation feedback, bookmarks/dismissals, reflections, up to five active
+query-relevant memories, and a rolling sanitized conversation summary. A
+conditional public-search lane receives only a de-identified CP/DSA query; it
+never receives names, handles, ratings, conversations, profile details, or
+private learner history.
+
+Safe conversation text is retained until the learner deletes the thread. Code
+blocks and copied problem context supplied as transient context are sent only
+for the current request and saved as an omission marker; they are not logged,
+embedded, or included in AI audits. Audits retain model/version, latency,
+token/cost metadata, conversation/learner ownership, and a keyed context
+fingerprint, never raw prompts or context snapshots. Action proposals are
+revalidated and applied only after an authenticated, idempotent `CONFIRM`.
+Disabling consent stops new coaching/check-ins and queues the existing AI
+cleanup flow for derived summaries, embeddings, and memories; safe chats and
+roadmap data remain until explicit deletion.
+
 ---
 
 ## 15. Recommendations, Gemini, and memory
+
+### Coach RAG v2 retrieval and rich responses
+
+Coach turns use three bounded retrieval lanes. Express deterministically builds
+the learner snapshot (profile and goals, 30/90-day activity trends where
+observed, provider profiles/submissions/solves/contests/ratings, roadmap
+transitions, feedback, bookmarks, reflections, and trusted catalog candidates).
+FastAPI retrieves up to five semantically relevant active learner memories and
+up to eight chunks from the versioned `coach_knowledge_sources`/
+`coach_knowledge_chunks` index. The knowledge lane combines keyword overlap
+with pgvector similarity when embeddings are available and caps repeated topics
+for diversity. Retrieved fields are untrusted reference material and cannot
+override the coach safety instructions.
+
+The relevance router invokes at most one Gemini Google Search grounding call
+when the question requests current/public/external information or internal
+coverage is insufficient. The query is de-identified before the call, and
+grounding metadata is converted into at most five validated public HTTPS
+citations. Public search can explain concepts or cite external context; it
+cannot invent problem IDs, canonical URLs, learner metrics, or roadmap changes.
+
+The public `/api/coach/.../messages` endpoint remains non-streaming. Express
+validates and persists a `coach-rich-v2` snapshot alongside each assistant
+message. It contains only useful blocks: metric grids, line/bar/stacked-bar
+charts with an accessible table fallback, timelines, comparison tables, and up
+to five trusted catalog problems, plus source freshness and two to four
+follow-up questions. Chart numbers and problem links are hydrated from
+deterministic Express datasets; Gemini cannot fabricate them. Existing v1
+messages without `richContent` remain readable.
+
+If Gemini, embeddings, the knowledge database, or Search grounding is
+unavailable, the deterministic composer still returns evidence-backed metrics,
+history, charts, and trusted problems where available. The UI labels the
+explanation as a deterministic fallback and omits unavailable public claims;
+it never silently presents generic advice as personalized reasoning. Raw web
+pages, search text/queries, prompts, transient code, and private context are
+not stored in messages or audits. Only model/version, retrieval-lane flags,
+latency, token/cost metadata, and keyed context fingerprints are audited.
+
+### Personalized CP/DSA coach
+
+`CoachService` owns `topic-assessment-v1`. For each curated taxonomy topic it
+uses smoothed unique-problem success (30%), breadth capped at eight solves
+(25%), target-band difficulty progression (20%), recent submission accuracy
+(15%), and recency (10%). Confidence is reduced for partial, unknown, or stale
+provider observations. Fewer than three concrete problems or confidence below
+0.35 yields `insufficient_evidence`; the other levels are
+`needs_practice`, `developing`, `comfortable`, and `revisit` under the
+documented score/evidence thresholds. Manual statuses (`working_on`,
+`practiced`, `completed`, `revisit`, `skip_for_now`) determine the displayed
+roadmap lane and never get overwritten by reassessment.
+
+The prerequisite graph and provider-tag aliases are deterministic and limited
+to the canonical taxonomy. Optional practice sets are selected by Express from
+trusted catalog records, exclude solved/actively dismissed identities, and are
+capped at two foundation, two target, and one stretch problem per topic.
+Gemini may order or explain those candidates but cannot invent IDs or URLs.
+
+The non-streaming coach response is validated before it reaches React. It may
+contain teaching, progressive hints, contest/attempt debriefs, evidence
+references, and confirmation-gated roadmap/progress/bookmark proposals. A
+transient code/problem field is never persisted. If FastAPI/Gemini is down, the
+roadmap and practice set remain usable and the UI labels the deterministic
+summary as a fallback instead of presenting generic advice as personalized.
+
+Check-ins are in-app only. Learners choose a local weekly review day/time and
+can separately enable event nudges for new contest/rating evidence, repeated
+failures, focus transitions/progress, and seven full days without meaningful
+practice. Event nudges are capped at two per rolling seven days and deduplicated
+by event key for 72 hours. The memory worker periodically enumerates enabled
+schedules and queues one daily `coach_check_in_refresh` row (plus a weekly-due
+phase when the learner's local review time arrives) in the existing PostgreSQL
+outbox. It retries those rows with the same bounded lease and retry policy; the
+core endpoint remains owner-scoped by the learner ID carried in the job.
 
 ### FastAPI ranking contract
 
@@ -1003,6 +1184,7 @@ LEETCODE_CATALOG_PAGE_SIZE=100
 LEETCODE_CATALOG_MAX_PAGES=10
 PROVIDER_ACTIVITY_MIN_REFRESH_INTERVAL_MS=900000
 AI_API_URL=http://localhost:8000
+CORE_API_URL=http://localhost:3001
 AI_RANKING_TIMEOUT_MS=8000
 INTERNAL_SERVICE_TOKEN=
 PROGRESS_ENABLED=true
@@ -1024,12 +1206,14 @@ SUPABASE_URL=
 SUPABASE_JWT_ISSUER=
 LLM_API_KEY=
 LLM_MODEL=gemini-3.5-flash
-LLM_TIMEOUT_SECONDS=7
+LLM_TIMEOUT_SECONDS=15
 LLM_MAX_OUTPUT_TOKENS=2048
 LLM_INPUT_PRICE_PER_MILLION_USD=1.50
 LLM_OUTPUT_PRICE_PER_MILLION_USD=9.00
 LLM_PRICING_VERSION=gemini-3.5-flash-standard-2026-09
 AI_RANKING_VERSION=ai-gemini-rag-v1
+COACH_VERSION=coach-gemini-v1
+CONSENT_POLICY_VERSION=personalized-coaching-rag-v2
 INTERNAL_SERVICE_TOKEN=
 EMBEDDING_MODEL=gemini-embedding-001
 EMBEDDING_DIMENSIONS=768
@@ -1042,6 +1226,9 @@ MEMORY_RETRIEVAL_LIMIT=5
 MEMORY_AUDIT_TIMEOUT_SECONDS=0.5
 MEMORY_GENERATION_ENABLED=true
 MEMORY_RAG_ENABLED=true
+COACH_KNOWLEDGE_RAG_ENABLED=true
+COACH_WEB_GROUNDING_ENABLED=true
+COACH_WEB_GROUNDING_TIMEOUT_SECONDS=8
 ```
 
 `INTERNAL_SERVICE_TOKEN` must match between core and AI when HTTP ranking is
@@ -1082,11 +1269,17 @@ npm run db:seed
 ```
 
 `db:migrate` applies Prisma core migrations and then Alembic AI migrations.
-`db:seed` idempotently seeds normalized topics. Stop PostgreSQL with:
+`db:seed` idempotently seeds normalized topics.
 
 ```bash
 npm run db:down
 ```
+
+The compose database uses the `pgvector/pgvector` image. A local PostgreSQL
+installation must have the pgvector extension installed and enabled before
+the Alembic migrations run. For Homebrew PostgreSQL, install `pgvector`, start
+the service, and run `CREATE EXTENSION IF NOT EXISTS vector` once as a database
+administrator.
 
 ### Run all services
 
@@ -1107,13 +1300,13 @@ npm run dev:worker
 npm run dev:provider-worker
 ```
 
-| Service | Local address |
-| --- | --- |
-| React/Vite | `http://localhost:5173` |
-| Express | `http://localhost:3001` |
-| FastAPI | `http://localhost:8000` |
-| Memory worker | PostgreSQL outbox consumer; no HTTP endpoint |
-| Provider worker | PostgreSQL provider-job consumer; no HTTP endpoint |
+| Service         | Local address                                                                                       |
+| --------------- | --------------------------------------------------------------------------------------------------- |
+| React/Vite      | `http://localhost:5173`                                                                             |
+| Express         | `http://localhost:3001`                                                                             |
+| FastAPI         | `http://localhost:8000`                                                                             |
+| Memory worker   | PostgreSQL outbox consumer; calls the protected core coach-refresh endpoint for scheduled check-ins |
+| Provider worker | PostgreSQL provider-job consumer; no HTTP endpoint                                                  |
 
 ### Supabase setup
 
@@ -1318,16 +1511,17 @@ and tests are updated together.
 
 ### 23.1 Shared contract files
 
-| File | Owns |
-| --- | --- |
-| `packages/shared-contracts/src/problem-catalog.ts` | Provider keys, problem summaries, queries, pagination, freshness, warnings |
-| `packages/shared-contracts/src/platform-data.ts` | Profiles, submissions, solved observations, ratings, contests, analytics |
-| `packages/shared-contracts/src/provider-account.ts` | Linkable providers, account consent, handle/profile URL validation |
-| `packages/shared-contracts/src/learner-profile.ts` | Onboarding answers and structured learner preferences |
-| `packages/shared-contracts/src/recommendations.ts` | Candidate ranking, recommendation batches, feedback, dismissal |
-| `packages/shared-contracts/src/progress.ts` | Manual statuses, actions, reflections, timers, progress analytics |
-| `packages/shared-contracts/src/learner-memory.ts` | Memory records, evidence, lifecycle actions, AI consent |
-| `packages/shared-contracts/src/index.ts` | Public package exports consumed by web and core API |
+| File                                                | Owns                                                                       |
+| --------------------------------------------------- | -------------------------------------------------------------------------- |
+| `packages/shared-contracts/src/problem-catalog.ts`  | Provider keys, problem summaries, queries, pagination, freshness, warnings |
+| `packages/shared-contracts/src/platform-data.ts`    | Profiles, submissions, solved observations, ratings, contests, analytics   |
+| `packages/shared-contracts/src/provider-account.ts` | Linkable providers, account consent, handle/profile URL validation         |
+| `packages/shared-contracts/src/learner-profile.ts`  | Onboarding answers and structured learner preferences                      |
+| `packages/shared-contracts/src/recommendations.ts`  | Candidate ranking, recommendation batches, feedback, dismissal             |
+| `packages/shared-contracts/src/progress.ts`         | Manual statuses, actions, reflections, timers, progress analytics          |
+| `packages/shared-contracts/src/learner-memory.ts`   | Memory records, evidence, lifecycle actions, AI consent                    |
+| `packages/shared-contracts/src/coach.ts`            | Coach conversations, roadmap, action proposals, citations, and rich blocks |
+| `packages/shared-contracts/src/index.ts`            | Public package exports consumed by web and core API                        |
 
 The normal change order is: update the shared schema, update the adapter or API
 producer, update repository serialization, update React consumers and mocks,
@@ -1340,38 +1534,41 @@ implementations from `apps/core-api/src/server.ts`, applies authentication and
 validation middleware, calls services, and serializes shared-contract responses.
 It should not contain provider-specific parsing or raw external HTTP calls.
 
-| Module | Responsibility |
-| --- | --- |
-| `src/auth/require-auth.ts` | Express middleware that requires a verified Supabase subject |
-| `src/auth/supabase-jwt.ts` | JWKS-backed JWT verification and claim checks |
-| `src/config/provider-config.ts` | Provider URLs, capability switches, gates, limits, and environment parsing |
-| `src/config/ai-config.ts` | AI URL, timeout, token, model, and feature configuration |
-| `src/integrations/providers/provider-http-client.ts` | HTTPS allowlists, timeout, bounded bodies, retries, safe errors |
-| `src/integrations/providers/provider-adapter.ts` | Capability names/statuses and common adapter shape |
-| `src/integrations/providers/problem-provider.ts` | Catalog/detail/content provider interface |
-| `src/integrations/providers/contest-provider.ts` | Contest provider interface and freshness contract |
-| `src/integrations/providers/cached-catalog-provider.ts` | In-memory/durable catalog refresh, cache, filtering, stale fallback |
-| `src/integrations/providers/cached-contest-provider.ts` | Contest cache, refresh, and stale handling |
-| `src/integrations/providers/problem-filters.ts` | Search, topic, difficulty, rating, and pagination filtering |
-| `src/integrations/providers/provider-html-sanitizer.ts` | Allowed HTML, URL attributes, text, sections, and examples |
-| `src/services/problem-catalog-service.ts` | Selects provider(s), merges catalogs, topics, and detail/content results |
-| `src/services/contest-catalog-service.ts` | Selects providers and merges contest results |
-| `src/services/provider-account-service.ts` | Link/disconnect account validation and serialization |
-| `src/services/provider-account-stats-service.ts` | User-triggered aggregate public-stat refresh and stale preservation |
-| `src/services/provider-profile-service.ts` | Profile snapshot refresh and latest-profile selection |
-| `src/services/provider-activity-service.ts` | Consent-gated Codeforces verified activity |
-| `src/services/provider-sync-service.ts` | Manual sync job creation, cooldown, status, history deletion |
-| `src/services/provider-sync-worker.ts` | Lease-based profile/activity/statistics worker and scheduling |
-| `src/services/recommendation-ranking.ts` | Deterministic candidate scoring, diversity, reasons, and history |
-| `src/services/recommendation-service.ts` | AI request, response validation, persistence, fallback, feedback |
-| `src/services/progress-service.ts` | Manual actions, status reduction, history, analytics, reflections, timers |
-| `src/repositories/provider-data-repository.ts` | Submissions, solved observations, ratings, contest participation |
-| `src/repositories/provider-profile-repository.ts` | Profile snapshot persistence and latest selection |
-| `src/repositories/provider-sync-repository.ts` | Sync states/jobs, leases, retries, cursors, and deletion |
-| `src/repositories/external-problem-cache-repository.ts` | Durable normalized problem catalog |
-| `src/repositories/problem-content-cache-repository.ts` | Durable permitted sanitized content |
-| `src/repositories/external-contest-cache-repository.ts` | Durable contest catalog |
-| `src/database/prisma.ts` | Prisma client construction and database lifecycle |
+| Module                                                  | Responsibility                                                             |
+| ------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `src/auth/require-auth.ts`                              | Express middleware that requires a verified Supabase subject               |
+| `src/auth/supabase-jwt.ts`                              | JWKS-backed JWT verification and claim checks                              |
+| `src/config/provider-config.ts`                         | Provider URLs, capability switches, gates, limits, and environment parsing |
+| `src/config/ai-config.ts`                               | AI URL, timeout, token, model, and feature configuration                   |
+| `src/integrations/providers/provider-http-client.ts`    | HTTPS allowlists, timeout, bounded bodies, retries, safe errors            |
+| `src/integrations/providers/provider-adapter.ts`        | Capability names/statuses and common adapter shape                         |
+| `src/integrations/providers/problem-provider.ts`        | Catalog/detail/content provider interface                                  |
+| `src/integrations/providers/contest-provider.ts`        | Contest provider interface and freshness contract                          |
+| `src/integrations/providers/cached-catalog-provider.ts` | In-memory/durable catalog refresh, cache, filtering, stale fallback        |
+| `src/integrations/providers/cached-contest-provider.ts` | Contest cache, refresh, and stale handling                                 |
+| `src/integrations/providers/problem-filters.ts`         | Search, topic, difficulty, rating, and pagination filtering                |
+| `src/integrations/providers/provider-html-sanitizer.ts` | Allowed HTML, URL attributes, text, sections, and examples                 |
+| `src/services/problem-catalog-service.ts`               | Selects provider(s), merges catalogs, topics, and detail/content results   |
+| `src/services/contest-catalog-service.ts`               | Selects providers and merges contest results                               |
+| `src/services/provider-account-service.ts`              | Link/disconnect account validation and serialization                       |
+| `src/services/provider-account-stats-service.ts`        | User-triggered aggregate public-stat refresh and stale preservation        |
+| `src/services/provider-profile-service.ts`              | Profile snapshot refresh and latest-profile selection                      |
+| `src/services/provider-activity-service.ts`             | Consent-gated Codeforces verified activity                                 |
+| `src/services/provider-sync-service.ts`                 | Manual sync job creation, cooldown, status, history deletion               |
+| `src/services/provider-sync-worker.ts`                  | Lease-based profile/activity/statistics worker and scheduling              |
+| `src/services/recommendation-ranking.ts`                | Deterministic candidate scoring, diversity, reasons, and history           |
+| `src/services/recommendation-service.ts`                | AI request, response validation, persistence, fallback, feedback           |
+| `src/services/progress-service.ts`                      | Manual actions, status reduction, history, analytics, reflections, timers  |
+| `src/services/coach-service.ts`                         | Deterministic roadmap, bounded RAG snapshot, rich composer, fallback, actions |
+| `src/integrations/ai/ai-coach-client.ts`                | Internal coach JSON contract and validated AI transport                   |
+| `src/repositories/coach-repository.ts`                 | Owner-scoped coach persistence and rich message serialization             |
+| `src/repositories/provider-data-repository.ts`          | Submissions, solved observations, ratings, contest participation           |
+| `src/repositories/provider-profile-repository.ts`       | Profile snapshot persistence and latest selection                          |
+| `src/repositories/provider-sync-repository.ts`          | Sync states/jobs, leases, retries, cursors, and deletion                   |
+| `src/repositories/external-problem-cache-repository.ts` | Durable normalized problem catalog                                         |
+| `src/repositories/problem-content-cache-repository.ts`  | Durable permitted sanitized content                                        |
+| `src/repositories/external-contest-cache-repository.ts` | Durable contest catalog                                                    |
+| `src/database/prisma.ts`                                | Prisma client construction and database lifecycle                          |
 
 ### 23.3 Provider adapter files
 
@@ -1409,26 +1606,41 @@ integrations/provider-accounts/
   provider-public-stats.ts           common account adapter interfaces
 ```
 
-### 23.4 Frontend implementation map
+### 23.4 FastAPI implementation map
 
-| Path | Responsibility |
-| --- | --- |
-| `apps/web/src/routes/AppRouter.tsx` | Route table and public/protected screen selection |
-| `apps/web/src/routes/ProtectedRoute.tsx` | Onboarding/auth gate for learner screens |
-| `apps/web/src/features/auth/*` | Supabase session, token refresh, authenticated fetch |
-| `apps/web/src/features/platform/api.ts` | Central platform API calls and response parsing |
-| `apps/web/src/features/platform/hooks.ts` | TanStack Query hooks for catalog/profile/activity/analytics |
-| `apps/web/src/features/platform/components/provider-labels.ts` | Provider labels and linkable-provider options |
-| `apps/web/src/features/profile/*` | Learner profile and provider-account UI |
-| `apps/web/src/pages/ProblemsPage.tsx` | Catalog filters, pagination, and problem cards |
-| `apps/web/src/pages/ProblemDetailPage.tsx` | Detail metadata, status, tags, and outbound link |
-| `apps/web/src/pages/RecommendationsPage.tsx` | Recommendation feed, refresh, feedback, dismissal |
-| `apps/web/src/pages/ActivityPage.tsx` | Merged provider event timeline and tags |
-| `apps/web/src/pages/ContestsPage.tsx` | Contest catalog and participation view |
-| `apps/web/src/pages/AnalyticsPage.tsx` | Provider totals and topic/language/rating distributions |
-| `apps/web/src/pages/ProgressPage.tsx` | Manual status history and progress analytics |
-| `apps/web/src/pages/MemoryPage.tsx` | Learner memory review and lifecycle controls |
-| `apps/web/src/mocks/handlers.ts` | MSW implementation of the same normalized API shape |
+| Path                                      | Responsibility                                                          |
+| ----------------------------------------- | ----------------------------------------------------------------------- |
+| `apps/ai-api/app/coach_service.py`       | Knowledge/memory retrieval, conditional Search grounding, Gemini flow, audits |
+| `apps/ai-api/app/knowledge_base.py`       | Versioned original CP/DSA reference chunks and lexical fallback         |
+| `apps/ai-api/app/knowledge_repository.py`| Alembic knowledge index seeding and hybrid keyword/vector retrieval     |
+| `apps/ai-api/app/web_grounding.py`        | De-identified public query and Gemini grounding citation extraction     |
+| `apps/ai-api/app/coach_models.py`         | Strict coach output, citation, proposal, and safety contracts          |
+| `apps/ai-api/alembic/versions/202609171300_coach_knowledge.py` | AI knowledge source/chunk/vector tables |
+| `apps/ai-api/alembic/versions/202609181000_coach_audit_retrieval.py` | Retrieval-lane audit flags |
+
+### 23.5 Frontend implementation map
+
+| Path                                                           | Responsibility                                              |
+| -------------------------------------------------------------- | ----------------------------------------------------------- |
+| `apps/web/src/routes/AppRouter.tsx`                            | Route table and public/protected screen selection           |
+| `apps/web/src/routes/ProtectedRoute.tsx`                       | Onboarding/auth gate for learner screens                    |
+| `apps/web/src/features/auth/*`                                 | Supabase session, token refresh, authenticated fetch        |
+| `apps/web/src/features/platform/api.ts`                        | Central platform API calls and response parsing             |
+| `apps/web/src/features/platform/hooks.ts`                      | TanStack Query hooks for catalog/profile/activity/analytics |
+| `apps/web/src/features/platform/components/provider-labels.ts` | Provider labels and linkable-provider options               |
+| `apps/web/src/features/profile/*`                              | Learner profile and provider-account UI                     |
+| `apps/web/src/pages/ProblemsPage.tsx`                          | Catalog filters, pagination, and problem cards              |
+| `apps/web/src/pages/ProblemDetailPage.tsx`                     | Detail metadata, status, tags, and outbound link            |
+| `apps/web/src/pages/RecommendationsPage.tsx`                   | Recommendation feed, refresh, feedback, dismissal           |
+| `apps/web/src/pages/ActivityPage.tsx`                          | Merged provider event timeline and tags                     |
+| `apps/web/src/pages/ContestsPage.tsx`                          | Contest catalog and participation view                      |
+| `apps/web/src/pages/AnalyticsPage.tsx`                         | Provider totals and topic/language/rating distributions     |
+| `apps/web/src/pages/ProgressPage.tsx`                          | Manual status history and progress analytics                |
+| `apps/web/src/pages/MemoryPage.tsx`                            | Learner memory review and lifecycle controls                |
+| `apps/web/src/pages/CoachPage.tsx`                             | Saved coach threads, roadmap, actions, and rich message rendering |
+| `apps/web/src/features/coach/components/CoachRichContent.tsx`  | Accessible charts, tables, timelines, trusted problems, citations, follow-ups |
+| `apps/web/src/features/coach/*`                                | Coach API calls and TanStack Query state                      |
+| `apps/web/src/mocks/handlers.ts`                               | MSW implementation of the same normalized API shape         |
 
 ---
 
@@ -1626,16 +1838,16 @@ The task section is useful for filtering, but it is not a user solve signal.
 
 Provider records are idempotent under these keys:
 
-| Record | Identity |
-| --- | --- |
-| Catalog problem | `(provider, externalId)` |
-| Contest | `(provider, externalId)` |
-| Profile snapshot | append-only snapshot for account/fetch time |
-| Submission | `(providerAccountId, providerEventId)` |
-| Solved observation | `(providerAccountId, externalId)` |
-| Rating change | `(providerAccountId, eventId)` |
-| Contest participation | `(providerAccountId, contestId)` |
-| Sync job | `idempotencyKey` |
+| Record                | Identity                                         |
+| --------------------- | ------------------------------------------------ |
+| Catalog problem       | `(provider, externalId)`                         |
+| Contest               | `(provider, externalId)`                         |
+| Profile snapshot      | append-only snapshot for account/fetch time      |
+| Submission            | `(providerAccountId, providerEventId)`           |
+| Solved observation    | `(providerAccountId, externalId)`                |
+| Rating change         | `(providerAccountId, eventId)`                   |
+| Contest participation | `(providerAccountId, contestId)`                 |
+| Sync job              | `idempotencyKey`                                 |
 | Manual problem action | learner/action identity rules in `ProblemAction` |
 
 An update should enrich missing tags/topics and timestamps without replacing a

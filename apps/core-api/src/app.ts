@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
 
 import {
   ApiErrorResponseSchema,
@@ -50,6 +50,21 @@ import {
   ProgressResponseSchema,
   ProblemReflectionResponseSchema,
   ProblemTimerResponseSchema,
+  CoachConversationsResponseSchema,
+  CoachConversationEnvelopeSchema,
+  CoachConversationResponseSchema,
+  CoachPreferencesResponseSchema,
+  SaveCoachPreferencesRequestSchema,
+  CoachCheckInsResponseSchema,
+  CoachCheckInResponseSchema,
+  CoachActionProposalResponseSchema,
+  CoachCheckInActionRequestSchema,
+  ImprovementRoadmapResponseSchema,
+  SetCoachTopicStatusRequestSchema,
+  CreateCoachConversationRequestSchema,
+  SendCoachMessageRequestSchema,
+  ConfirmCoachActionRequestSchema,
+  CoachResponseSchema,
 } from '@algomemtor/shared-contracts'
 import type { ExternalProblemSummary } from '@algomemtor/shared-contracts'
 import cors from 'cors'
@@ -72,6 +87,10 @@ import {
   type AiRecommendationClient,
   UnavailableAiRecommendationClient,
 } from './integrations/ai/ai-recommendation-client.js'
+import {
+  type AiCoachClient,
+  UnavailableAiCoachClient,
+} from './integrations/ai/ai-coach-client.js'
 import { requireAuth } from './auth/require-auth.js'
 import type {
   SupabaseJwtVerifier,
@@ -144,6 +163,10 @@ import {
   InMemoryProviderDataRepository,
   type ProviderDataRepository,
 } from './repositories/provider-data-repository.js'
+import {
+  InMemoryCoachRepository,
+  type CoachRepository,
+} from './repositories/coach-repository.js'
 import { ProblemCatalogService } from './services/problem-catalog-service.js'
 import { ContestCatalogService } from './services/contest-catalog-service.js'
 import {
@@ -172,6 +195,17 @@ import {
   ProviderSyncService,
 } from './services/provider-sync-service.js'
 import { ProviderProfileService } from './services/provider-profile-service.js'
+import {
+  CoachConsentRequiredError,
+  CoachConversationNotFoundError,
+  CoachCheckInNotFoundError,
+  CoachMemoryUnavailableError,
+  CoachUnknownTopicError,
+  CoachProposalNotFoundError,
+  CoachProposalStateError,
+  CoachService,
+  COACH_POLICY_VERSION,
+} from './services/coach-service.js'
 import { serializeProviderAccount } from './services/provider-account-service.js'
 import {
   structuredLogger,
@@ -201,6 +235,9 @@ export type CreateAppOptions = {
   logger?: StructuredLogger
   aiRecommendationClient?: AiRecommendationClient
   aiMemoryClient?: AiMemoryClient
+  aiCoachClient?: AiCoachClient
+  coachRepository?: CoachRepository
+  internalServiceToken?: string
   webOrigin?: string
 }
 
@@ -274,6 +311,43 @@ const respondWithMemoryError = (error: unknown, response: Response) => {
       ),
     )
   return true
+}
+
+const respondWithCoachError = (error: unknown, response: Response) => {
+  if (error instanceof CoachConsentRequiredError) {
+    response
+      .status(403)
+      .json(
+        createApiError(
+          error.code,
+          'Enable personalized AI coaching in Settings before starting a coach conversation.',
+        ),
+      )
+    return true
+  }
+  if (
+    error instanceof CoachConversationNotFoundError ||
+    error instanceof CoachProposalNotFoundError ||
+    error instanceof CoachCheckInNotFoundError
+  ) {
+    response.status(404).json(createApiError(error.code, error.message))
+    return true
+  }
+  if (error instanceof CoachProposalStateError) {
+    response.status(409).json(createApiError(error.code, error.message))
+    return true
+  }
+  if (error instanceof CoachMemoryUnavailableError) {
+    response
+      .status(503)
+      .json(createApiError(error.code, error.message, { retryable: true }))
+    return true
+  }
+  if (error instanceof CoachUnknownTopicError) {
+    response.status(400).json(createApiError(error.code, error.message))
+    return true
+  }
+  return false
 }
 
 const createApiError = (
@@ -644,6 +718,63 @@ export const createApp = (options: CreateAppOptions = {}) => {
   })
   const aiMemoryClient =
     options.aiMemoryClient ?? new UnavailableAiMemoryClient()
+  const coachRepository =
+    options.coachRepository ?? new InMemoryCoachRepository()
+  const aiCoachClient = options.aiCoachClient ?? new UnavailableAiCoachClient()
+  const coachService = new CoachService({
+    repository: coachRepository,
+    learnerProfileRepository,
+    problemActionRepository,
+    progressRepository,
+    providerDataRepository,
+    providerProfileRepository,
+    bookmarkRepository,
+    recommendationRepository,
+    providers,
+    progressService,
+    aiMemoryClient,
+    aiCoachClient,
+    logger,
+  })
+  const internalServiceToken =
+    options.internalServiceToken ??
+    process.env.INTERNAL_SERVICE_TOKEN?.trim() ??
+    ''
+  const requireInternalService = (
+    request: Request,
+    response: Response,
+    next: NextFunction,
+  ) => {
+    const supplied = request.get('x-internal-service-token')
+    const configured = Buffer.from(internalServiceToken)
+    const candidate = Buffer.from(supplied ?? '')
+    if (configured.length === 0) {
+      response
+        .status(503)
+        .json(
+          createApiError(
+            'INTERNAL_SERVICE_NOT_CONFIGURED',
+            'The internal service is not configured.',
+          ),
+        )
+      return
+    }
+    if (
+      candidate.length !== configured.length ||
+      !timingSafeEqual(candidate, configured)
+    ) {
+      response
+        .status(401)
+        .json(
+          createApiError(
+            'INVALID_INTERNAL_SERVICE_TOKEN',
+            'The internal service token is invalid.',
+          ),
+        )
+      return
+    }
+    next()
+  }
   const progressEnabled = process.env.PROGRESS_ENABLED !== 'false'
   const memoryManagementEnabled =
     process.env.MEMORY_GENERATION_ENABLED !== 'false' ||
@@ -960,6 +1091,46 @@ export const createApp = (options: CreateAppOptions = {}) => {
       providers: providers.map((item) => item.getHealth()),
     })
   })
+
+  app.post(
+    '/internal/coach/check-ins/refresh',
+    requireInternalService,
+    async (request, response) => {
+      const input = z
+        .object({ learnerId: z.uuid() })
+        .strict()
+        .safeParse(request.body ?? {})
+      if (!input.success) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'INVALID_COACH_CHECK_IN_REFRESH',
+              'The coach check-in refresh request is invalid.',
+            ),
+          )
+        return
+      }
+      if (await progressRepository.hasPendingDeletion?.(input.data.learnerId)) {
+        response
+          .status(409)
+          .json(
+            createApiError(
+              'LEARNER_DATA_DELETION_PENDING',
+              'Learner data is temporarily hidden while deletion finishes.',
+              { retryable: true },
+            ),
+          )
+        return
+      }
+      try {
+        const created = await coachService.refreshCheckIns(input.data.learnerId)
+        response.json({ created: created.length })
+      } catch (error) {
+        if (!respondWithCoachError(error, response)) throw error
+      }
+    },
+  )
 
   app.get('/api/providers', requireAuthenticated, (_request, response) => {
     response.json(catalogService.getProviders())
@@ -2209,6 +2380,393 @@ export const createApp = (options: CreateAppOptions = {}) => {
     },
   )
 
+  app.get(
+    '/api/coach/conversations',
+    requireAuthenticated,
+    async (_request, response) => {
+      try {
+        response.json(
+          CoachConversationsResponseSchema.parse({
+            data: await coachService.listConversations(
+              authenticatedSubject(response),
+            ),
+          }),
+        )
+      } catch (error) {
+        if (!respondWithCoachError(error, response)) throw error
+      }
+    },
+  )
+
+  app.post(
+    '/api/coach/conversations',
+    requireAuthenticated,
+    async (request, response) => {
+      const input = CreateCoachConversationRequestSchema.safeParse(
+        request.body ?? {},
+      )
+      if (!input.success) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'INVALID_COACH_CONVERSATION',
+              'The coaching conversation input is invalid.',
+              { details: input.error.issues },
+            ),
+          )
+        return
+      }
+      try {
+        response.status(201).json(
+          CoachConversationEnvelopeSchema.parse({
+            data: await coachService.createConversation(
+              authenticatedSubject(response),
+              input.data,
+            ),
+          }),
+        )
+      } catch (error) {
+        if (!respondWithCoachError(error, response)) throw error
+      }
+    },
+  )
+
+  app.get(
+    '/api/coach/conversations/:conversationId',
+    requireAuthenticated,
+    async (request, response) => {
+      const conversationId = pathParam(request, 'conversationId')
+      if (
+        conversationId === undefined ||
+        !z.uuid().safeParse(conversationId).success
+      ) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'INVALID_COACH_CONVERSATION',
+              'The coaching conversation ID is invalid.',
+            ),
+          )
+        return
+      }
+      try {
+        response.json(
+          await coachService.getConversation(
+            authenticatedSubject(response),
+            conversationId,
+          ),
+        )
+      } catch (error) {
+        if (!respondWithCoachError(error, response)) throw error
+      }
+    },
+  )
+
+  app.patch(
+    '/api/coach/conversations/:conversationId',
+    requireAuthenticated,
+    async (request, response) => {
+      const conversationId = pathParam(request, 'conversationId')
+      const input = z
+        .object({ title: z.string().trim().min(1).max(120) })
+        .strict()
+        .safeParse(request.body ?? {})
+      if (
+        conversationId === undefined ||
+        !z.uuid().safeParse(conversationId).success ||
+        !input.success
+      ) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'INVALID_COACH_CONVERSATION',
+              'The coaching conversation update is invalid.',
+            ),
+          )
+        return
+      }
+      try {
+        response.json(
+          CoachConversationEnvelopeSchema.parse({
+            data: await coachService.renameConversation(
+              authenticatedSubject(response),
+              conversationId,
+              input.data.title,
+            ),
+          }),
+        )
+      } catch (error) {
+        if (!respondWithCoachError(error, response)) throw error
+      }
+    },
+  )
+
+  app.delete(
+    '/api/coach/conversations/:conversationId',
+    requireAuthenticated,
+    async (request, response) => {
+      const conversationId = pathParam(request, 'conversationId')
+      if (
+        conversationId === undefined ||
+        !z.uuid().safeParse(conversationId).success
+      ) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'INVALID_COACH_CONVERSATION',
+              'The coaching conversation ID is invalid.',
+            ),
+          )
+        return
+      }
+      try {
+        await coachService.deleteConversation(
+          authenticatedSubject(response),
+          conversationId,
+        )
+        response.status(204).send()
+      } catch (error) {
+        if (!respondWithCoachError(error, response)) throw error
+      }
+    },
+  )
+
+  app.post(
+    '/api/coach/conversations/:conversationId/messages',
+    requireAuthenticated,
+    async (request, response) => {
+      const conversationId = pathParam(request, 'conversationId')
+      const input = SendCoachMessageRequestSchema.safeParse(request.body ?? {})
+      if (
+        conversationId === undefined ||
+        !z.uuid().safeParse(conversationId).success ||
+        !input.success
+      ) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'INVALID_COACH_MESSAGE',
+              'The coaching message is invalid.',
+              { details: input.success ? undefined : input.error.issues },
+            ),
+          )
+        return
+      }
+      try {
+        response.json(
+          await coachService.sendMessage(
+            authenticatedSubject(response),
+            conversationId,
+            input.data,
+          ),
+        )
+      } catch (error) {
+        if (!respondWithCoachError(error, response)) throw error
+      }
+    },
+  )
+
+  app.get(
+    '/api/coach/roadmap',
+    requireAuthenticated,
+    async (_request, response) => {
+      try {
+        response.json(
+          ImprovementRoadmapResponseSchema.parse({
+            data: await coachService.getRoadmap(authenticatedSubject(response)),
+          }),
+        )
+      } catch (error) {
+        if (!respondWithCoachError(error, response)) throw error
+      }
+    },
+  )
+
+  app.patch(
+    '/api/coach/roadmap/topics/:topic/status',
+    requireAuthenticated,
+    async (request, response) => {
+      const topic = pathParam(request, 'topic')
+      const input = SetCoachTopicStatusRequestSchema.safeParse(
+        request.body ?? {},
+      )
+      if (topic === undefined || !input.success) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'INVALID_COACH_TOPIC_STATUS',
+              'The roadmap topic status is invalid.',
+              { details: input.success ? undefined : input.error.issues },
+            ),
+          )
+        return
+      }
+      try {
+        response.json(
+          ImprovementRoadmapResponseSchema.parse({
+            data: await coachService.setTopicStatus(
+              authenticatedSubject(response),
+              topic,
+              input.data.status,
+            ),
+          }),
+        )
+      } catch (error) {
+        if (!respondWithCoachError(error, response)) throw error
+      }
+    },
+  )
+
+  app.get(
+    '/api/coach/preferences',
+    requireAuthenticated,
+    async (_request, response) => {
+      response.json(
+        CoachPreferencesResponseSchema.parse({
+          data: await coachService.getPreferences(
+            authenticatedSubject(response),
+          ),
+        }),
+      )
+    },
+  )
+
+  app.put(
+    '/api/coach/preferences',
+    requireAuthenticated,
+    async (request, response) => {
+      const input = SaveCoachPreferencesRequestSchema.safeParse(
+        request.body ?? {},
+      )
+      if (!input.success) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'INVALID_COACH_PREFERENCES',
+              'The coaching preferences are invalid.',
+              { details: input.error.issues },
+            ),
+          )
+        return
+      }
+      response.json(
+        CoachPreferencesResponseSchema.parse({
+          data: await coachService.savePreferences(
+            authenticatedSubject(response),
+            input.data,
+          ),
+        }),
+      )
+    },
+  )
+
+  app.get(
+    '/api/coach/check-ins',
+    requireAuthenticated,
+    async (_request, response) => {
+      try {
+        const data = await coachService.listCheckIns(
+          authenticatedSubject(response),
+        )
+        response.json(
+          CoachCheckInsResponseSchema.parse({
+            data,
+            meta: {
+              unread: data.filter((item) => !item.read && !item.dismissed)
+                .length,
+            },
+          }),
+        )
+      } catch (error) {
+        if (!respondWithCoachError(error, response)) throw error
+      }
+    },
+  )
+
+  app.patch(
+    '/api/coach/check-ins/:checkInId',
+    requireAuthenticated,
+    async (request, response) => {
+      const checkInId = pathParam(request, 'checkInId')
+      const input = CoachCheckInActionRequestSchema.safeParse(
+        request.body ?? {},
+      )
+      if (
+        checkInId === undefined ||
+        !z.uuid().safeParse(checkInId).success ||
+        !input.success
+      ) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'INVALID_COACH_CHECK_IN',
+              'The coaching check-in update is invalid.',
+            ),
+          )
+        return
+      }
+      try {
+        response.json(
+          CoachCheckInResponseSchema.parse({
+            data: await coachService.markCheckIn(
+              authenticatedSubject(response),
+              checkInId,
+              input.data,
+            ),
+          }),
+        )
+      } catch (error) {
+        if (!respondWithCoachError(error, response)) throw error
+      }
+    },
+  )
+
+  app.post(
+    '/api/coach/action-proposals/:proposalId/confirm',
+    requireAuthenticated,
+    async (request, response) => {
+      const proposalId = pathParam(request, 'proposalId')
+      const input = ConfirmCoachActionRequestSchema.safeParse(
+        request.body ?? {},
+      )
+      if (
+        proposalId === undefined ||
+        !z.uuid().safeParse(proposalId).success ||
+        !input.success
+      ) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'INVALID_COACH_PROPOSAL',
+              'The coaching action confirmation is invalid.',
+            ),
+          )
+        return
+      }
+      try {
+        response.json(
+          CoachActionProposalResponseSchema.parse({
+            data: await coachService.confirmProposal(
+              authenticatedSubject(response),
+              proposalId,
+            ),
+          }),
+        )
+      } catch (error) {
+        if (!respondWithCoachError(error, response)) throw error
+      }
+    },
+  )
+
   app.patch(
     '/api/learner-memories/:memoryId',
     requireAuthenticated,
@@ -2349,13 +2907,29 @@ export const createApp = (options: CreateAppOptions = {}) => {
         response.status(400).json(
           createApiError(
             'INVALID_AI_CONSENT',
-            'The AI note-sharing choice is invalid.',
+            'The personalized AI coaching choice is invalid.',
             {
               details: input.error.issues,
             },
           ),
         )
         return
+      }
+      if (input.data.policyVersion !== COACH_POLICY_VERSION) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'AI_CONSENT_POLICY_VERSION_REQUIRED',
+              'Review the current personalized coaching consent before enabling AI features.',
+            ),
+          )
+        return
+      }
+      if (!input.data.enabled) {
+        await coachService.clearDerivedConversationSummaries(
+          authenticatedSubject(response),
+        )
       }
       response.json(
         await progressService.saveConsent(

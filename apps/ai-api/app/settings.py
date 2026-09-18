@@ -12,19 +12,20 @@ class AiSettings(BaseSettings):
     internal_service_token: str = ""
     llm_api_key: str = ""
     llm_model: str = "gemini-3.5-flash"
-    llm_timeout_seconds: float = Field(default=7, gt=0, le=30)
+    llm_timeout_seconds: float = Field(default=15, gt=0, le=30)
     ai_audit_timeout_seconds: float = Field(default=0.5, gt=0, le=5)
     llm_max_output_tokens: int = Field(default=2048, gt=0, le=8192)
     llm_input_price_per_million_usd: Decimal = Field(default=Decimal("1.50"), ge=0)
     llm_output_price_per_million_usd: Decimal = Field(default=Decimal("9.00"), ge=0)
     llm_pricing_version: str = "gemini-3.5-flash-standard-2026-09"
     ai_ranking_version: str = "ai-gemini-rag-v1"
+    coach_version: str = "coach-gemini-v1"
     embedding_model: str = "gemini-embedding-001"
     embedding_dimensions: int = Field(default=768, ge=768, le=768)
     embedding_timeout_seconds: float = Field(default=4, gt=0, le=30)
     memory_generation_version: str = "memory-gemini-v1"
     memory_prompt_version: str = "memory-prompt-v1"
-    consent_policy_version: str = "phase9-progress-memory-v1"
+    consent_policy_version: str = "personalized-coaching-rag-v2"
     memory_min_confidence: float = Field(default=0.75, ge=0, le=1)
     memory_proposed_min_confidence: float = Field(default=0.50, ge=0, le=1)
     memory_min_evidence_strength: float = Field(default=0.75, ge=0, le=1)
@@ -33,13 +34,18 @@ class AiSettings(BaseSettings):
     memory_audit_timeout_seconds: float = Field(default=0.5, gt=0, le=5)
     memory_generation_enabled: bool = True
     memory_rag_enabled: bool = True
+    coach_knowledge_rag_enabled: bool = True
+    coach_web_grounding_enabled: bool = True
+    coach_web_grounding_timeout_seconds: float = Field(default=8, gt=0, le=20)
 
     @field_validator(
         "llm_model",
         "llm_pricing_version",
         "ai_ranking_version",
+        "coach_version",
         "embedding_model",
         "memory_generation_version",
+        "consent_policy_version",
         mode="before",
     )
     @classmethod
@@ -52,8 +58,10 @@ class AiSettings(BaseSettings):
             "llm_model": "gemini-3.5-flash",
             "llm_pricing_version": "gemini-3.5-flash-standard-2026-09",
             "ai_ranking_version": "ai-gemini-rag-v1",
+            "coach_version": "coach-gemini-v1",
             "embedding_model": "gemini-embedding-001",
             "memory_generation_version": "memory-gemini-v1",
+            "consent_policy_version": "personalized-coaching-rag-v2",
         }
         return defaults[info.field_name]
 

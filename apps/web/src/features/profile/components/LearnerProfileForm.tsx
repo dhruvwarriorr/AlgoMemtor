@@ -75,6 +75,15 @@ const goalOptions: readonly Option<LearnerGoal>[] = [
 
 const topicOptions: readonly Option<OnboardingTopic>[] = [
   { value: 'implementation', label: 'Implementation' },
+  { value: 'arrays', label: 'Arrays' },
+  { value: 'hashing', label: 'Hashing' },
+  { value: 'sliding-window', label: 'Sliding Window' },
+  { value: 'linked-lists', label: 'Linked Lists' },
+  {
+    value: 'heaps-and-priority-queues',
+    label: 'Heaps and Priority Queues',
+  },
+  { value: 'tries', label: 'Tries' },
   { value: 'math', label: 'Math' },
   { value: 'number-theory', label: 'Number Theory' },
   { value: 'sorting', label: 'Sorting' },
