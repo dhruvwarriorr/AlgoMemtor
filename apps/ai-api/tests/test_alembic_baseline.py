@@ -41,6 +41,7 @@ def test_upgrade_creates_only_the_ai_schema_and_ranking_audits(
     assert "idempotency_key VARCHAR(160) NOT NULL" in sql
     assert "'recommendation_feedback'" in sql
     assert "'profile_preference'" in sql
+    assert "'coach_conversation'" in sql
     assert "problem_provider VARCHAR(32)" in sql
     assert "problem_external_id VARCHAR(128)" in sql
     assert "memory_evidence_problem_identity_check" in sql

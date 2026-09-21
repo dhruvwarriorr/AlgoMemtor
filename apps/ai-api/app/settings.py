@@ -1,5 +1,6 @@
 from decimal import Decimal
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -12,9 +13,10 @@ class AiSettings(BaseSettings):
     internal_service_token: str = ""
     llm_api_key: str = ""
     llm_model: str = "gemini-3.5-flash"
-    llm_timeout_seconds: float = Field(default=15, gt=0, le=30)
+    llm_timeout_seconds: float = Field(default=90, gt=0, le=120)
     ai_audit_timeout_seconds: float = Field(default=0.5, gt=0, le=5)
-    llm_max_output_tokens: int = Field(default=2048, gt=0, le=8192)
+    llm_max_output_tokens: int = Field(default=4096, gt=0, le=8192)
+    coach_thinking_level: Literal["low", "medium", "high"] = "high"
     llm_input_price_per_million_usd: Decimal = Field(default=Decimal("1.50"), ge=0)
     llm_output_price_per_million_usd: Decimal = Field(default=Decimal("9.00"), ge=0)
     llm_pricing_version: str = "gemini-3.5-flash-standard-2026-09"
@@ -36,7 +38,7 @@ class AiSettings(BaseSettings):
     memory_rag_enabled: bool = True
     coach_knowledge_rag_enabled: bool = True
     coach_web_grounding_enabled: bool = True
-    coach_web_grounding_timeout_seconds: float = Field(default=8, gt=0, le=20)
+    coach_web_grounding_timeout_seconds: float = Field(default=20, ge=10, le=60)
     internal_rate_limit_per_minute: int = Field(default=120, ge=10, le=2_000)
 
     @field_validator(

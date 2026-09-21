@@ -39,6 +39,14 @@ CoachEvidenceSource = Literal[
     "recommendations",
     "contest",
 ]
+CoachDatasetId = Literal[
+    "learner-summary",
+    "topic-assessments",
+    "practice-trend-30d",
+    "contest-rating-history",
+    "trusted-problems",
+    "topic-comparison",
+]
 CoachCheckInType = Literal[
     "weekly_review",
     "contest_result",
@@ -83,6 +91,59 @@ class CoachEvidence(CoachStrictModel):
     def reject_links(cls, value: str) -> str:
         if _UNSAFE_COACH_TEXT.search(value):
             raise ValueError("Coach evidence cannot contain links or secrets.")
+        return value
+
+
+class CoachPresentation(CoachStrictModel):
+    datasetIds: list[CoachDatasetId] = Field(default_factory=list, max_length=6)
+    problemIds: list[str] = Field(default_factory=list, max_length=5)
+    webProblemCitationIds: list[str] = Field(default_factory=list, max_length=5)
+    suggestedQuestions: list[str] = Field(default_factory=list, max_length=4)
+
+    @field_validator("problemIds")
+    @classmethod
+    def validate_problem_ids(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for value in values:
+            problem_id = value.strip()
+            if not re.fullmatch(
+                r"(?:codeforces|codechef|leetcode|cses):[^\s:][^\s]{0,127}",
+                problem_id,
+            ):
+                raise ValueError("Problem IDs must use a trusted provider identity.")
+            if problem_id not in normalized:
+                normalized.append(problem_id)
+        return normalized
+
+    @field_validator("webProblemCitationIds")
+    @classmethod
+    def validate_web_problem_citation_ids(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for value in values:
+            citation_id = value.strip()
+            if not re.fullmatch(r"web-[1-9][0-9]{0,2}", citation_id):
+                raise ValueError(
+                    "Web problem IDs must reference grounded web citations."
+                )
+            if citation_id not in normalized:
+                normalized.append(citation_id)
+        return normalized
+
+    @field_validator("suggestedQuestions")
+    @classmethod
+    def validate_suggested_questions(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for value in values:
+            question = value.strip()
+            if (
+                not question
+                or len(question) > 240
+                or _UNSAFE_COACH_TEXT.search(question)
+            ):
+                raise ValueError("Suggested questions must be safe, concise text.")
+            if question not in normalized:
+                normalized.append(question)
+        return normalized
 
 
 class CoachCitation(CoachStrictModel):
@@ -220,6 +281,7 @@ class CoachModelOutput(CoachStrictModel):
     evidence: list[CoachEvidence] = Field(default_factory=list, max_length=12)
     proposals: list[CoachProposal] = Field(default_factory=list, max_length=8)
     citations: list[CoachCitation] = Field(default_factory=list, max_length=8)
+    presentation: CoachPresentation | None = None
 
     @field_validator("answer")
     @classmethod
@@ -242,6 +304,7 @@ class CoachResponse(CoachStrictModel):
     evidence: list[CoachEvidence] = Field(default_factory=list, max_length=12)
     proposals: list[CoachResponseProposal] = Field(default_factory=list, max_length=8)
     citations: list[CoachCitation] = Field(default_factory=list, max_length=8)
+    presentation: CoachPresentation | None = None
     fallback: bool = False
 
 

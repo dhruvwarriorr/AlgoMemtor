@@ -76,10 +76,11 @@ export function AiNoteConsentCard({
             question needs current public CP/DSA information, a de-identified
             search query may be sent for grounded sources; your profile,
             handles, ratings, and private history are not included in that
-            search request. Search sources are shown in the answer. AlgoMemtor
-            does not send provider problem statements, source code, passwords,
-            or credentials. You can change this choice later; disabling it stops
-            new AI coaching and check-ins, removes derived
+            search request. Search sources are shown in the answer, and direct
+            public problem pages may be offered as web-grounded practice links.
+            AlgoMemtor does not send provider problem statements, source code,
+            passwords, or credentials. You can change this choice later;
+            disabling it stops new AI coaching and check-ins, removes derived
             summaries/embeddings/memories, and keeps your safe chats and roadmap
             until you delete them.
           </p>

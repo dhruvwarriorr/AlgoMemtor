@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   ExternalContestSchema,
@@ -12,6 +12,7 @@ import PageHeader from '@/components/layout/PageHeader'
 import { EmptyState } from '@/components/states/EmptyState'
 import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
+import { Button } from '@/components/ui/button'
 import { ProviderFilter } from '@/features/platform/components/ProviderFilter'
 import { providerLabels } from '@/features/platform/components/provider-labels'
 import { useContests } from '@/features/platform/hooks'
@@ -90,11 +91,6 @@ function ContestCard({ contest }: { contest: ExternalContest }) {
           </div>
         ) : null}
       </dl>
-      {contest.provenance.completeness !== 'complete' ? (
-        <p className="mt-4 text-xs text-muted-foreground">
-          This contest record is a partial provider observation.
-        </p>
-      ) : null}
     </li>
   )
 }
@@ -123,6 +119,7 @@ function ContestsPage() {
     ),
   )
   const contests = contestsQuery.data
+  const [visibleCount, setVisibleCount] = useState(12)
 
   function updateFilters(
     nextProvider: typeof provider,
@@ -133,6 +130,7 @@ function ContestsPage() {
     else nextParams.set('provider', nextProvider)
     if (nextStatus === undefined) nextParams.delete('status')
     else nextParams.set('status', nextStatus)
+    setVisibleCount(12)
     setSearchParams(nextParams)
   }
 
@@ -161,23 +159,25 @@ function ContestsPage() {
   } else if (contests) {
     content = (
       <div className="space-y-4">
-        {contests.meta.partial || contests.meta.stale ? (
-          <aside
-            className="rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-50"
-            role="status"
-          >
-            Some contest data is partial or stale. Confirm dates on the source
-            provider before planning participation.
-          </aside>
-        ) : null}
         <ul className="grid min-w-0 gap-3 lg:grid-cols-2" aria-label="Contests">
-          {contests.data.map((contest) => (
+          {contests.data.slice(0, visibleCount).map((contest) => (
             <ContestCard
               contest={contest}
               key={`${contest.provider}:${contest.externalId}`}
             />
           ))}
         </ul>
+        {visibleCount < contests.data.length ? (
+          <div className="flex justify-center">
+            <Button
+              onClick={() => setVisibleCount((count) => count + 12)}
+              type="button"
+              variant="outline"
+            >
+              Show more contests
+            </Button>
+          </div>
+        ) : null}
       </div>
     )
   }

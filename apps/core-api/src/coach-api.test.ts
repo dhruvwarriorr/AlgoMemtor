@@ -8,6 +8,7 @@ import {
   type CoachActionProposal,
   type ExternalProblemSummary,
   type ProviderSolvedProblem,
+  type ProviderRatingChange,
 } from '@algomemtor/shared-contracts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -412,7 +413,9 @@ describe('coach API', () => {
     const coachBody = CoachResponseSchema.parse(await coachResponse.json())
     expect(coachResponse.status).toBe(200)
     expect(coachBody.message.fallback).toBe(true)
-    expect(coachBody.message.content).toContain('leetcode provider data')
+    expect(
+      coachBody.message.evidence.some((item) => item.source === 'activity'),
+    ).toBe(true)
     expect(coachBody.message.richContent?.version).toBe('coach-rich-v2')
   })
 
@@ -623,7 +626,10 @@ describe('coach API', () => {
     const body = await response.json()
     const coachResponse = CoachResponseSchema.parse(body)
     expect(response.status).toBe(200)
-    expect(coachResponse.message.fallback).toBe(true)
+    expect(coachResponse.message.fallback).toBeUndefined()
+    expect(coachResponse.message.content).toContain(
+      '[topic omitted by learner]',
+    )
     expect(JSON.stringify(body).toLowerCase()).not.toContain('linked list')
     expect(
       coachResponse.roadmap.topics.map((topic) => topic.topic),
@@ -636,6 +642,81 @@ describe('coach API', () => {
     expect(
       JSON.stringify(captured?.context.profile).toLowerCase(),
     ).not.toContain('linked list')
+  })
+
+  it('keeps rating visualization scoped to the requested provider', async () => {
+    const progressRepository = new InMemoryProgressRepository()
+    await progressRepository.saveConsent(
+      userA,
+      true,
+      'personalized-coaching-rag-v2',
+    )
+    const providerDataRepository = new InMemoryProviderDataRepository()
+    const provenance = {
+      provider: 'codeforces' as const,
+      providerId: 'learner',
+      canonicalUrl: 'https://codeforces.com/profile/learner',
+      sourceUrl: 'https://codeforces.com/api/user.info',
+      extractionStrategy: 'official_json' as const,
+      schemaVersion: 'test-v1',
+      completeness: 'complete' as const,
+      fetchedAt: timestamp,
+      stale: false,
+    }
+    const ratings: ProviderRatingChange[] = [
+      {
+        provider: 'codechef',
+        eventId: 'cc-1',
+        occurredAt: '2026-09-16T12:00:00.000Z',
+        oldRating: 1700,
+        newRating: 1707,
+        delta: 7,
+        provenance: { ...provenance, provider: 'codechef' },
+      },
+      {
+        provider: 'codeforces',
+        eventId: 'cf-1',
+        occurredAt: '2026-09-15T12:00:00.000Z',
+        oldRating: 1190,
+        newRating: 1210,
+        delta: 20,
+        provenance,
+      },
+    ]
+    await providerDataRepository.saveRatingChanges(
+      userA,
+      'mixed-account',
+      ratings,
+    )
+    const baseUrl = startApp({ progressRepository, providerDataRepository })
+    const headers = {
+      ...authorization('user-a'),
+      'content-type': 'application/json',
+    }
+    const create = await fetch(`${baseUrl}/api/coach/conversations`, {
+      method: 'POST',
+      headers,
+      body: '{}',
+    })
+    const conversationId = (await create.json()).data.id as string
+    const response = await fetch(
+      `${baseUrl}/api/coach/conversations/${conversationId}/messages`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          content: 'How can I increase my rating on Codeforces?',
+        }),
+      },
+    )
+    const coachResponse = CoachResponseSchema.parse(await response.json())
+    expect(response.status).toBe(200)
+    const timeline = coachResponse.message.richContent?.blocks.find(
+      (block) => block.type === 'timeline',
+    )
+    expect(JSON.stringify(timeline).toLowerCase()).toContain('codeforces')
+    expect(JSON.stringify(timeline)).toContain('20')
+    expect(JSON.stringify(timeline).toLowerCase()).not.toContain('codechef')
   })
 
   it('builds rich content from deterministic evidence and filters unsafe citations', async () => {
@@ -722,6 +803,186 @@ describe('coach API', () => {
     expect(richContent?.citations.map((citation) => citation.id)).not.toContain(
       'unsafe-web',
     )
+  })
+
+  it('hydrates only model-selected trusted problem identities', async () => {
+    const progressRepository = new InMemoryProgressRepository()
+    await progressRepository.saveConsent(
+      userA,
+      true,
+      'personalized-coaching-rag-v2',
+    )
+    const coachRepository = new InMemoryCoachRepository()
+    await coachRepository.setTopicStatus(userA, 'arrays', 'working_on')
+    let capturedRequest: AiCoachRequest | undefined
+    const aiCoachClient: AiCoachClient = {
+      respond: vi.fn(async (request): Promise<AiCoachResult> => {
+        capturedRequest = request
+        return {
+          answer: 'Start with the selected foundation problem.',
+          evidence: [],
+          proposals: [],
+          presentation: {
+            datasetIds: ['trusted-problems'],
+            problemIds: ['codeforces:101A', 'codeforces:999A'],
+            suggestedQuestions: ['Show me the invariant.'],
+          },
+        }
+      }),
+    }
+    const baseUrl = startApp({
+      aiCoachClient,
+      progressRepository,
+      coachRepository,
+    })
+    const headers = {
+      ...authorization('user-a'),
+      'content-type': 'application/json',
+    }
+    const create = await fetch(`${baseUrl}/api/coach/conversations`, {
+      method: 'POST',
+      headers,
+      body: '{}',
+    })
+    const conversationId = (await create.json()).data.id as string
+    const response = await fetch(
+      `${baseUrl}/api/coach/conversations/${conversationId}/messages`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ content: 'What should I practice next?' }),
+      },
+    )
+    const coachResponse = CoachResponseSchema.parse(await response.json())
+    const problemBlock = coachResponse.message.richContent?.blocks.find(
+      (block) => block.type === 'problem_list',
+    )
+    const availableProblems = capturedRequest?.context[
+      'availablePresentationProblems'
+    ] as Array<{ id: string }> | undefined
+
+    expect(response.status).toBe(200)
+    expect(
+      availableProblems?.some((problem) => problem.id === 'codeforces:101A'),
+    ).toBe(true)
+    expect(problemBlock?.type).toBe('problem_list')
+    if (problemBlock?.type === 'problem_list') {
+      expect(
+        problemBlock.problems.map((problem) => problem.externalId),
+      ).toEqual(['101A'])
+    }
+  })
+
+  it('hydrates only grounded web citations selected as problems', async () => {
+    const progressRepository = new InMemoryProgressRepository()
+    await progressRepository.saveConsent(
+      userA,
+      true,
+      'personalized-coaching-rag-v2',
+    )
+    const aiCoachClient: AiCoachClient = {
+      respond: vi.fn(async (): Promise<AiCoachResult> => ({
+        answer:
+          'Try the grounded practice problem after reviewing the pattern.',
+        evidence: [],
+        proposals: [],
+        citations: [
+          {
+            id: 'web-1',
+            source: 'web',
+            title: 'Official sliding-window practice problem',
+            url: 'https://example.com/problems/sliding-window',
+            publisher: 'Example judge',
+            retrievedAt: '2026-09-18T12:00:00.000Z',
+            stale: false,
+          },
+        ],
+        presentation: {
+          datasetIds: [],
+          problemIds: [],
+          webProblemCitationIds: ['web-1', 'web-99'],
+          suggestedQuestions: ['Give me the first hint.'],
+        },
+      })),
+    }
+    const baseUrl = startApp({ aiCoachClient, progressRepository })
+    const headers = {
+      ...authorization('user-a'),
+      'content-type': 'application/json',
+    }
+    const create = await fetch(`${baseUrl}/api/coach/conversations`, {
+      method: 'POST',
+      headers,
+      body: '{}',
+    })
+    const conversationId = (await create.json()).data.id as string
+    const response = await fetch(
+      `${baseUrl}/api/coach/conversations/${conversationId}/messages`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          content: 'Find a sliding-window problem for me online.',
+        }),
+      },
+    )
+    const coachResponse = CoachResponseSchema.parse(await response.json())
+    const block = coachResponse.message.richContent?.blocks.find(
+      (candidate) => candidate.type === 'web_problem_list',
+    )
+
+    expect(response.status).toBe(200)
+    expect(block?.type).toBe('web_problem_list')
+    if (block?.type === 'web_problem_list') {
+      expect(block.problems.map((problem) => problem.citationId)).toEqual([
+        'web-1',
+      ])
+      expect(block.problems[0]?.url).toBe(
+        'https://example.com/problems/sliding-window',
+      )
+    }
+  })
+
+  it('preserves generated inline identifiers while omitting generated code blocks', async () => {
+    const progressRepository = new InMemoryProgressRepository()
+    await progressRepository.saveConsent(
+      userA,
+      true,
+      'personalized-coaching-rag-v2',
+    )
+    const aiCoachClient: AiCoachClient = {
+      respond: vi.fn(async (): Promise<AiCoachResult> => ({
+        answer:
+          'Move the `left` pointer after expanding `right`.\n```cpp\nint total = 0;\n```',
+        evidence: [],
+        proposals: [],
+      })),
+    }
+    const baseUrl = startApp({ aiCoachClient, progressRepository })
+    const headers = {
+      ...authorization('user-a'),
+      'content-type': 'application/json',
+    }
+    const create = await fetch(`${baseUrl}/api/coach/conversations`, {
+      method: 'POST',
+      headers,
+      body: '{}',
+    })
+    const conversationId = (await create.json()).data.id as string
+    const response = await fetch(
+      `${baseUrl}/api/coach/conversations/${conversationId}/messages`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ content: 'Explain the pointer movement.' }),
+      },
+    )
+    const coachResponse = CoachResponseSchema.parse(await response.json())
+
+    expect(coachResponse.message.content).toContain('left')
+    expect(coachResponse.message.content).toContain('right')
+    expect(coachResponse.message.content).toContain('[code omitted]')
+    expect(coachResponse.message.content).not.toContain('int total')
   })
 
   it('omits transient code from saved conversation history', async () => {

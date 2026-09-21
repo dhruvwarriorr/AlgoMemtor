@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   LinkableProviderSchema,
@@ -9,6 +10,7 @@ import PageHeader from '@/components/layout/PageHeader'
 import { EmptyState } from '@/components/states/EmptyState'
 import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
+import { Button } from '@/components/ui/button'
 import { useActivity } from '@/features/platform/hooks'
 
 import { ProviderFilter } from '@/features/platform/components/ProviderFilter'
@@ -95,12 +97,6 @@ function ActivityEvent({ event }: { event: ProviderActivityEvent }) {
           {formatDate(event.occurredAt)}
         </time>
       </div>
-      {event.completeness !== 'complete' ? (
-        <p className="mt-3 text-xs text-muted-foreground">
-          This provider event is a partial observation and may not represent the
-          full activity history.
-        </p>
-      ) : null}
     </li>
   )
 }
@@ -110,11 +106,13 @@ function ActivityPage() {
   const provider = providerFromSearch(searchParams.get('provider'))
   const activityQuery = useActivity(provider)
   const activity = activityQuery.data
+  const [visibleCount, setVisibleCount] = useState(12)
 
   function updateProvider(next: typeof provider) {
     const nextParams = new URLSearchParams(searchParams)
     if (next === undefined) nextParams.delete('provider')
     else nextParams.set('provider', next)
+    setVisibleCount(12)
     setSearchParams(nextParams)
   }
 
@@ -143,20 +141,22 @@ function ActivityPage() {
   } else if (activity) {
     content = (
       <div className="space-y-4">
-        {activity.meta.partial || activity.meta.stale ? (
-          <aside
-            className="rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-50"
-            role="status"
-          >
-            Some provider activity is partial or stale. Events shown below are
-            the observations currently available to AlgoMemtor.
-          </aside>
-        ) : null}
         <ul className="grid min-w-0 gap-3" aria-label="Provider activity">
-          {activity.data.map((event) => (
+          {activity.data.slice(0, visibleCount).map((event) => (
             <ActivityEvent event={event} key={event.id} />
           ))}
         </ul>
+        {visibleCount < activity.data.length ? (
+          <div className="flex justify-center">
+            <Button
+              onClick={() => setVisibleCount((count) => count + 12)}
+              type="button"
+              variant="outline"
+            >
+              Show more activity
+            </Button>
+          </div>
+        ) : null}
       </div>
     )
   }

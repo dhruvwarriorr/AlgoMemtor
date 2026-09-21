@@ -1,52 +1,100 @@
+import { lazy, Suspense, type ReactNode } from 'react'
 import { Route, Routes } from 'react-router-dom'
 
+import { PageSkeleton } from '@/components/states/PageSkeleton'
 import AppShell from '@/layouts/AppShell'
-import ActivityPage from '@/pages/ActivityPage'
-import AnalyticsPage from '@/pages/AnalyticsPage'
-import BookmarksPage from '@/pages/BookmarksPage'
-import ContestsPage from '@/pages/ContestsPage'
-import CoachPage from '@/pages/CoachPage'
-import DashboardPage from '@/pages/DashboardPage'
-import LandingPage from '@/pages/LandingPage'
-import LoginPage from '@/pages/LoginPage'
-import MemoryPage from '@/pages/MemoryPage'
-import NotFoundPage from '@/pages/NotFoundPage'
-import OnboardingPage from '@/pages/OnboardingPage'
-import ProblemsPage from '@/pages/ProblemsPage'
-import ProblemDetailPage from '@/pages/ProblemDetailPage'
-import ProfilePage from '@/pages/ProfilePage'
-import ProgressPage from '@/pages/ProgressPage'
-import RecommendationsPage from '@/pages/RecommendationsPage'
-import SettingPage from '@/pages/SettingPage'
 
 import ProtectedRoute from './ProtectedRoute'
+
+const ActivityPage = lazy(() => import('@/pages/ActivityPage'))
+const AnalyticsPage = lazy(() => import('@/pages/AnalyticsPage'))
+const BookmarksPage = lazy(() => import('@/pages/BookmarksPage'))
+const ContestsPage = lazy(() => import('@/pages/ContestsPage'))
+const CoachPage = lazy(() => import('@/pages/CoachPage'))
+const DashboardPage = lazy(() => import('@/pages/DashboardPage'))
+const LandingPage = lazy(() => import('@/pages/LandingPage'))
+const LoginPage = lazy(() => import('@/pages/LoginPage'))
+const MemoryPage = lazy(() => import('@/pages/MemoryPage'))
+const NotFoundPage = lazy(() => import('@/pages/NotFoundPage'))
+const OnboardingPage = lazy(() => import('@/pages/OnboardingPage'))
+const ProblemsPage = lazy(() => import('@/pages/ProblemsPage'))
+const ProblemDetailPage = lazy(() => import('@/pages/ProblemDetailPage'))
+const ProfilePage = lazy(() => import('@/pages/ProfilePage'))
+const ProgressPage = lazy(() => import('@/pages/ProgressPage'))
+const RecommendationsPage = lazy(() => import('@/pages/RecommendationsPage'))
+const SettingPage = lazy(() => import('@/pages/SettingPage'))
+
+const page = (content: ReactNode, label: string) => (
+  <Suspense fallback={<PageSkeleton label={label} rows={3} />}>
+    {content}
+  </Suspense>
+)
 
 function AppRouter() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route index element={<LandingPage />} />
-        <Route path="login" element={<LoginPage />} />
+        <Route index element={page(<LandingPage />, 'Loading home')} />
+        <Route path="login" element={page(<LoginPage />, 'Loading sign in')} />
         <Route element={<ProtectedRoute />}>
-          <Route path="onboarding" element={<OnboardingPage />} />
-          <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="problems" element={<ProblemsPage />} />
+          <Route
+            path="onboarding"
+            element={page(<OnboardingPage />, 'Loading onboarding')}
+          />
+          <Route
+            path="dashboard"
+            element={page(<DashboardPage />, 'Loading dashboard')}
+          />
+          <Route
+            path="problems"
+            element={page(<ProblemsPage />, 'Loading problems')}
+          />
           <Route
             path="problems/:provider/:externalId"
-            element={<ProblemDetailPage />}
+            element={page(<ProblemDetailPage />, 'Loading problem')}
           />
-          <Route path="activity" element={<ActivityPage />} />
-          <Route path="contests" element={<ContestsPage />} />
-          <Route path="coach" element={<CoachPage />} />
-          <Route path="analytics" element={<AnalyticsPage />} />
-          <Route path="recommendations" element={<RecommendationsPage />} />
-          <Route path="bookmarks" element={<BookmarksPage />} />
-          <Route path="progress" element={<ProgressPage />} />
-          <Route path="memory" element={<MemoryPage />} />
-          <Route path="profile" element={<ProfilePage />} />
-          <Route path="settings" element={<SettingPage />} />
+          <Route
+            path="activity"
+            element={page(<ActivityPage />, 'Loading activity')}
+          />
+          <Route
+            path="contests"
+            element={page(<ContestsPage />, 'Loading contests')}
+          />
+          <Route
+            path="coach"
+            element={page(<CoachPage />, 'Loading your coach')}
+          />
+          <Route
+            path="analytics"
+            element={page(<AnalyticsPage />, 'Loading insights')}
+          />
+          <Route
+            path="recommendations"
+            element={page(<RecommendationsPage />, 'Loading recommendations')}
+          />
+          <Route
+            path="bookmarks"
+            element={page(<BookmarksPage />, 'Loading bookmarks')}
+          />
+          <Route
+            path="progress"
+            element={page(<ProgressPage />, 'Loading progress')}
+          />
+          <Route
+            path="memory"
+            element={page(<MemoryPage />, 'Loading memory')}
+          />
+          <Route
+            path="profile"
+            element={page(<ProfilePage />, 'Loading profile')}
+          />
+          <Route
+            path="settings"
+            element={page(<SettingPage />, 'Loading settings')}
+          />
         </Route>
-        <Route path="*" element={<NotFoundPage />} />
+        <Route path="*" element={page(<NotFoundPage />, 'Loading page')} />
       </Route>
     </Routes>
   )

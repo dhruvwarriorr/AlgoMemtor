@@ -41,7 +41,11 @@ from .pedagogy import (
     teaching_prompt,
 )
 from .settings import AiSettings, get_ai_settings
-from .web_grounding import ground_public_question, should_ground_on_web
+from .web_grounding import (
+    ground_public_question,
+    public_topic_hints,
+    should_ground_on_web,
+)
 
 SYSTEM_PROMPT = """You are AlgoMemtor's personal competitive-programming and DSA coach.
 Use the supplied learner context, retrieved CP/DSA knowledge, and public research
@@ -64,7 +68,27 @@ recommend, explain, chart, cite, or repeat an excluded topic. If the learner ask
 about one, acknowledge the preference without naming it and redirect to an allowed
 topic. The `userInstructions` list contains persistent learner rules and must be
 applied before choosing teaching style, topics, examples, or recommendations.
+Answer the learner's actual question directly instead of returning a generic coach
+introduction. Use `availablePresentationDatasets` to select only the charts, history,
+metrics, comparisons, or trusted problems that materially support this answer. Put
+those exact dataset IDs in `presentation.datasetIds`; never invent an ID or any
+numeric value. Add two to four specific follow-up questions in
+`presentation.suggestedQuestions`. When recommending practice, choose at most five
+IDs from `availablePresentationProblems` and return those exact identities in
+`presentation.problemIds`; never invent or rewrite an identity. For a purely
+conceptual or debugging answer, select no learner-data visualization unless it
+genuinely helps.
+When `retrieval.publicResearch.citations` contains direct practice-problem
+sources, you may select up to five exact citation IDs in
+`presentation.webProblemCitationIds`. Select only IDs present in that list and
+only when the cited page is useful as a problem to solve. Never place a URL in
+the answer or construct a URL yourself. Catalog problem IDs remain preferable
+when they already satisfy the request.
 """
+
+
+def utc_timestamp() -> str:
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 class CoachModel(Protocol):
@@ -94,7 +118,7 @@ class GeminiCoachModel:
             model=settings.llm_model,
             api_key=settings.llm_api_key,
             temperature=0.6,
-            thinking_level="low",
+            thinking_level=settings.coach_thinking_level,
             max_tokens=settings.llm_max_output_tokens,
             timeout=settings.llm_timeout_seconds,
             max_retries=2,
@@ -253,7 +277,7 @@ class CoachService:
             "knowledgeCount": len(chunks),
             "webGroundingUsed": False,
         }
-        retrieved_at = datetime.now(UTC).isoformat()
+        retrieved_at = utc_timestamp()
         citations: list[CoachCitation] = []
         for chunk in chunks:
             try:
@@ -276,6 +300,7 @@ class CoachService:
                 research = await ground_public_question(
                     self.settings,
                     request.question,
+                    public_topic_hints(request.context),
                 )
             except asyncio.CancelledError:
                 raise
@@ -301,7 +326,7 @@ class CoachService:
                                     if citation.publisher is not None
                                     else {}
                                 ),
-                                retrievedAt=datetime.now(UTC).isoformat(),
+                                retrievedAt=utc_timestamp(),
                                 stale=False,
                             )
                         )

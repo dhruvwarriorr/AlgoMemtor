@@ -53,8 +53,31 @@ describe('CoachRichContent', () => {
             },
           ],
         },
+        {
+          type: 'web_problem_list',
+          title: 'Problems found for this question',
+          reason: 'Grounded through public search metadata.',
+          problems: [
+            {
+              citationId: 'web-1',
+              title: 'Two Sum practice problem',
+              url: 'https://example.com/problems/two-sum',
+              publisher: 'Example judge',
+            },
+          ],
+        },
       ],
-      citations: [],
+      citations: [
+        {
+          id: 'web-1',
+          source: 'web',
+          title: 'Two Sum practice problem',
+          url: 'https://example.com/problems/two-sum',
+          publisher: 'Example judge',
+          retrievedAt: timestamp,
+          stale: false,
+        },
+      ],
       suggestedQuestions: ['Give me a progressive hint.'],
       generatedAt: timestamp,
       dataAsOf: timestamp,
@@ -69,7 +92,11 @@ describe('CoachRichContent', () => {
     expect(markup).toContain('Tabular data for Topic readiness')
     expect(markup).toContain('Trusted next problems')
     expect(markup).toContain('Codeforces')
+    expect(markup).toContain('Web-grounded')
+    expect(markup).toContain('Two Sum practice problem')
     expect(markup).toContain('Continue the coaching thread')
-    expect(markup).toContain('partial or stale')
+    expect(markup).toContain('About this personalized answer')
+    expect(markup).not.toContain('partial or stale')
+    expect(markup).not.toContain('may be stale')
   })
 })

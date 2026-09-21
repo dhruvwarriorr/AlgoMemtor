@@ -102,16 +102,6 @@ function ProblemDetailPage() {
         </p>
       ) : null}
 
-      {detailQuery.data?.meta?.warnings.length ? (
-        <aside
-          className="rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-50"
-          role="status"
-        >
-          This detail may be stale or partial. The source provider link above is
-          the current authority.
-        </aside>
-      ) : null}
-
       <section
         aria-labelledby="problem-metadata-heading"
         className="space-y-4 rounded-xl border border-border bg-card p-4 sm:p-5"

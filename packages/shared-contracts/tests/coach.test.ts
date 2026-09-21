@@ -178,6 +178,25 @@ describe('coach contracts', () => {
         ...richContent,
         blocks: [
           {
+            type: 'web_problem_list',
+            title: 'Problems found online',
+            reason: 'Grounded public sources.',
+            problems: [
+              {
+                citationId: 'missing-web-source',
+                title: 'Practice problem',
+                url: 'https://example.com/problem',
+              },
+            ],
+          },
+        ],
+      }).success,
+    ).toBe(false)
+    expect(
+      CoachRichContentSchema.safeParse({
+        ...richContent,
+        blocks: [
+          {
             ...richContent.blocks[0],
             points: [{ label: 'Arrays', values: { unknown: 1 } }],
           },
@@ -233,7 +252,9 @@ describe('coach contracts', () => {
       'https://2130706433/reference',
       'https://user:secret@example.com/reference',
     ]) {
-      expect(CoachCitationSchema.safeParse({ ...base, url }).success).toBe(false)
+      expect(CoachCitationSchema.safeParse({ ...base, url }).success).toBe(
+        false,
+      )
     }
     expect(CoachCitationSchema.safeParse(base).success).toBe(false)
   })

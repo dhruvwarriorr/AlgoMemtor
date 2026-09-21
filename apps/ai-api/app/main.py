@@ -146,6 +146,7 @@ async def respond_as_coach(
             for proposal in output.proposals
         ],
         citations=output.citations,
+        presentation=output.presentation,
     )
 
 
@@ -181,6 +182,7 @@ async def stream_coach_response(request: CoachRequest) -> StreamingResponse:
             for proposal in output.proposals
         ],
         citations=output.citations,
+        presentation=output.presentation,
     ).model_dump(mode="json", exclude_none=True)
 
     async def events():

@@ -37,7 +37,7 @@ function renderCatalog(warnings: ProviderWarning[]) {
 }
 
 describe('ProblemCatalog', () => {
-  it('keeps stale notices while hiding non-stale partial warnings', () => {
+  it('keeps provider diagnostics out of the browsing experience', () => {
     const markup = renderCatalog([
       {
         provider: 'codeforces',
@@ -51,7 +51,7 @@ describe('ProblemCatalog', () => {
       },
     ])
 
-    expect(markup).toContain('Catalog data may be stale.')
+    expect(markup).not.toContain('Catalog data may be stale.')
     expect(markup).not.toContain('Some provider results are unavailable.')
     expect(markup).not.toContain('A provider record was skipped.')
     expect(markup).toContain('A valid problem')

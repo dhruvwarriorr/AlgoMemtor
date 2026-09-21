@@ -194,26 +194,6 @@ function AnalyticsPage() {
         </p>
       </section>
 
-      {analytics.dataCompleteness !== 'complete' ||
-      analytics.staleProviders.length > 0 ? (
-        <aside
-          className="rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-50"
-          role="status"
-        >
-          Analytics are based on partial or stale provider data. Connect and
-          synchronize profiles to improve coverage.
-          {analytics.staleProviders.length > 0 ? (
-            <span className="block mt-1">
-              Stale:{' '}
-              {analytics.staleProviders
-                .map((item) => providerLabels[item])
-                .join(', ')}
-              .
-            </span>
-          ) : null}
-        </aside>
-      ) : null}
-
       <dl className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard
           detail={

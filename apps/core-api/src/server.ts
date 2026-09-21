@@ -171,7 +171,7 @@ const app = createApp({
     ? new HttpAiCoachClient({
         baseUrl: aiConfig.baseUrl,
         internalServiceToken: aiConfig.internalServiceToken,
-        timeoutMs: 20_000,
+        timeoutMs: 125_000,
       })
     : new UnavailableAiCoachClient(),
   jwtVerifier,

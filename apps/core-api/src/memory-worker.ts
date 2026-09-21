@@ -295,11 +295,10 @@ export class MemoryWorker {
     }
     let evidence: MemoryEvidencePayload | null | undefined
     if (job.evidenceType === 'coach_conversation') {
-      const conversation =
-        await this.options.coachRepository?.getConversation(
-          job.authUserId,
-          job.evidenceId,
-        )
+      const conversation = await this.options.coachRepository?.getConversation(
+        job.authUserId,
+        job.evidenceId,
+      )
       if (conversation === undefined || conversation === null) return
       const turns = conversation.messages
         .slice(-8)
@@ -404,7 +403,7 @@ export async function runMemoryWorker() {
     ? new HttpAiCoachClient({
         baseUrl: aiConfig.baseUrl,
         internalServiceToken: aiConfig.internalServiceToken,
-        timeoutMs: 20_000,
+        timeoutMs: 125_000,
       })
     : new UnavailableAiCoachClient()
   const coreApiUrl = process.env.CORE_API_URL?.trim() ?? ''

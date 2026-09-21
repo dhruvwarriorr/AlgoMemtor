@@ -35,17 +35,18 @@ import type {
   ProblemTimerSession,
 } from '@algomemtor/shared-contracts'
 
+import {
+  AiCoachClientError,
+  type AiCoachCheckInRequest,
+  type AiCoachClient,
+  type AiCoachCheckInResult,
+  type AiCoachRequest,
+  type AiCoachResult,
+} from '../integrations/ai/ai-coach-client.js'
 import type {
   AiMemoryClient,
   AiMemoryRecord,
 } from '../integrations/ai/ai-memory-client.js'
-import type {
-  AiCoachCheckInRequest,
-  AiCoachClient,
-  AiCoachCheckInResult,
-  AiCoachRequest,
-  AiCoachResult,
-} from '../integrations/ai/ai-coach-client.js'
 import type { ProblemProvider } from '../integrations/providers/problem-provider.js'
 import type { LearnerProfileRepository } from '../repositories/learner-profile-repository.js'
 import type {
@@ -692,6 +693,20 @@ const omitCodeAndProblemText = (content: string) => {
   return withoutInlineCode
 }
 
+const omitGeneratedCodeAndProblemText = (content: string) => {
+  const withoutCodeBlocks = content
+    .replace(/```[\s\S]*?```/g, '[code omitted]')
+    .replace(/<code>([\s\S]*?)<\/code>/gi, '$1')
+    .replace(/`([^`\n]*)`/g, '$1')
+    .trim()
+  const containsCodeLikeSyntax =
+    /(?:#include\s*[<"]|using\s+namespace\b|(?:const|let|var|int|long\s+long|bool|string|vector)\s+\w+\s*=|(?:void|int|long\s+long|bool|string|vector)\s+\w+\s*\([^)]*\)\s*[{;]|=>|[{};]\s*$)/im.test(
+      withoutCodeBlocks,
+    )
+  if (containsCodeLikeSyntax) return '[code omitted]'
+  return withoutCodeBlocks
+}
+
 const redactCoachContextText = (content: string, maxLength: number) =>
   omitCodeAndProblemText(content)
     .replace(/(?:https?:\/\/|www\.)\S+/gi, '[link omitted]')
@@ -709,6 +724,71 @@ const redactCoachContextText = (content: string, maxLength: number) =>
 
 const coachContextForAi = (context: CoachContextSnapshot) => ({
   ...context,
+  availablePresentationDatasets: [
+    {
+      id: 'learner-summary',
+      description: 'A compact summary of current focus and observed activity.',
+    },
+    ...(context.roadmap.topics.length >= 2
+      ? [
+          {
+            id: 'topic-assessments',
+            description:
+              'A chart comparing topic assessment, attempts, accuracy, and recency.',
+          },
+          {
+            id: 'topic-comparison',
+            description: 'A concise table explaining topic priority signals.',
+          },
+        ]
+      : []),
+    ...(context.activityTrends.length > 0
+      ? [
+          {
+            id: 'practice-trend-30d',
+            description: 'A chart of recent attempted and solved activity.',
+          },
+        ]
+      : []),
+    ...(context.recentRatings.length > 0 || context.recentContests.length > 0
+      ? [
+          {
+            id: 'contest-rating-history',
+            description: 'Recent contest and rating history.',
+          },
+        ]
+      : []),
+    ...(context.roadmap.topics.some((topic) => topic.suggestions.length > 0)
+      ? [
+          {
+            id: 'trusted-problems',
+            description: 'Up to five trusted problems from the current plan.',
+          },
+        ]
+      : []),
+  ],
+  availablePresentationProblems: context.roadmap.topics
+    .filter(
+      (topic) => !context.excludedTopics.includes(canonicalTopic(topic.topic)),
+    )
+    .flatMap((topic) =>
+      topic.suggestions.map((suggestion) => ({
+        id: identity(
+          suggestion.problem.provider,
+          suggestion.problem.externalId,
+        ),
+        topic: topic.topic,
+        title: suggestion.problem.title,
+        provider: suggestion.problem.provider,
+        difficulty: suggestion.problem.normalizedDifficulty,
+      })),
+    )
+    .filter(
+      (problem, index, problems) =>
+        problems.findIndex((candidate) => candidate.id === problem.id) ===
+        index,
+    )
+    .slice(0, 20),
   userInstructions: [
     ...(() => {
       const profile = asRecord(context.profile)
@@ -971,6 +1051,26 @@ const asRecord = (value: unknown): Record<string, unknown> | null =>
 const finiteNumber = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null
 
+const providerFromCoachQuestion = (
+  question: string,
+): ProviderKey | undefined => {
+  const lower = question.toLowerCase()
+  if (/\b(codeforces|codeforces\s+rating|\bcf\b)/i.test(lower)) {
+    return 'codeforces'
+  }
+  if (/\b(codechef|codechef\s+rating)/i.test(lower)) return 'codechef'
+  if (/\b(leetcode|leetcode\s+rating|\blc\b)/i.test(lower)) {
+    return 'leetcode'
+  }
+  if (/\b(cses)\b/i.test(lower)) return 'cses'
+  return undefined
+}
+
+const isRatingOrContestQuestion = (question: string) =>
+  /\b(contest|rating|candidate\s+master|pupil|specialist|expert|master)\b/i.test(
+    question,
+  )
+
 const richCitation = (
   id: string,
   source: CoachCitation['source'],
@@ -991,15 +1091,26 @@ const coachRichContentForContext = (
   question: string,
   context: CoachContextSnapshot,
   now = new Date(),
+  presentation?: AiCoachResult['presentation'],
 ): CoachRichContent => {
   const generatedAt = now.toISOString()
   const stale = context.dataCompleteness !== 'complete'
   const lower = question.toLowerCase()
+  const selectedDatasets = new Set(presentation?.datasetIds ?? [])
+  const wantsDataset = (
+    id: NonNullable<AiCoachResult['presentation']>['datasetIds'][number],
+    legacyDecision: boolean,
+  ) => (presentation === undefined ? legacyDecision : selectedDatasets.has(id))
+  const requestedProvider = providerFromCoachQuestion(question)
   const focus = context.roadmap.topics.filter(
-    (topic) => topic.lane === 'current_focus',
+    (topic) =>
+      topic.lane === 'current_focus' &&
+      !context.excludedTopics.includes(canonicalTopic(topic.topic)),
   )
   const needs = context.roadmap.topics.filter(
-    (topic) => topic.lane === 'needs_more_practice',
+    (topic) =>
+      topic.lane === 'needs_more_practice' &&
+      !context.excludedTopics.includes(canonicalTopic(topic.topic)),
   )
   const topicCandidates = [...focus, ...needs].slice(0, 6)
   const planningQuestion =
@@ -1078,11 +1189,14 @@ const coachRichContentForContext = (
     0,
   )
   if (
-    lower.includes('next') ||
-    lower.includes('practice') ||
-    lower.includes('weak') ||
-    lower.includes('improve') ||
-    planningQuestion
+    wantsDataset(
+      'learner-summary',
+      lower.includes('next') ||
+        lower.includes('practice') ||
+        lower.includes('weak') ||
+        lower.includes('improve') ||
+        planningQuestion,
+    )
   ) {
     blocks.push({
       type: 'metric_grid',
@@ -1119,14 +1233,6 @@ const coachRichContentForContext = (
             ? ['practice-analytics']
             : ['roadmap-assessment'],
         },
-        {
-          label: 'Coverage',
-          value: context.dataCompleteness,
-          detail: stale
-            ? 'Some provider or analytics data may be stale.'
-            : 'Current observations are available.',
-          citationIds: ['roadmap-assessment'],
-        },
         ...(context.providerProfiles.length === 0
           ? []
           : [
@@ -1151,14 +1257,17 @@ const coachRichContentForContext = (
       ],
     })
   }
-  if (planningQuestion && topicCandidates.length > 0) {
+  if (
+    wantsDataset('topic-assessments', planningQuestion) &&
+    topicCandidates.length > 0
+  ) {
     blocks.push({
       type: 'chart',
       datasetId: 'topic-assessments',
       chartType: 'bar',
       title: 'Topic readiness comparison',
       summary:
-        'Assessment, attempts, submission accuracy, and practice recency come from the deterministic topic assessment; they are not a claim of complete provider history.',
+        'Compare your current readiness, attempts, accuracy, and recent practice across focus topics.',
       series: [
         { key: 'score', label: 'Assessment score' },
         { key: 'attempts', label: 'Observed attempts' },
@@ -1197,19 +1306,21 @@ const coachRichContentForContext = (
   const activityTrendPoints = activityTrend30?.points ?? trend
   if (
     activityTrendPoints.length > 0 &&
-    (lower.includes('history') ||
-      lower.includes('progress') ||
-      lower.includes('practice') ||
-      lower.includes('next') ||
-      lower.includes('contest'))
+    wantsDataset(
+      'practice-trend-30d',
+      lower.includes('history') ||
+        lower.includes('progress') ||
+        lower.includes('practice') ||
+        lower.includes('next') ||
+        lower.includes('contest'),
+    )
   ) {
     blocks.push({
       type: 'chart',
       datasetId: 'practice-trend-30d',
       chartType: 'stacked_bar',
       title: 'Recent practice activity',
-      summary:
-        'Daily attempted and solved records in the available analytics window.',
+      summary: 'Your recent attempted and solved practice activity.',
       series: [
         { key: 'attempted', label: 'Attempted' },
         { key: 'solved', label: 'Solved' },
@@ -1227,22 +1338,35 @@ const coachRichContentForContext = (
     })
   }
   if (
-    (lower.includes('contest') || lower.includes('rating')) &&
+    wantsDataset(
+      'contest-rating-history',
+      isRatingOrContestQuestion(question),
+    ) &&
     (context.recentRatings.length > 0 || context.recentContests.length > 0)
   ) {
+    const ratings = requestedProvider
+      ? context.recentRatings.filter(
+          (rating) => rating.provider === requestedProvider,
+        )
+      : context.recentRatings
+    const contests = requestedProvider
+      ? context.recentContests.filter(
+          (contest) => contest.provider === requestedProvider,
+        )
+      : context.recentContests
     const entries = [
-      ...context.recentRatings.slice(0, 12).map((rating) => ({
+      ...ratings.slice(0, 12).map((rating) => ({
         date: rating.occurredAt,
-        label: `${rating.provider} rating change`,
-        value: rating.delta,
-        detail: `${rating.oldRating} → ${rating.newRating}`,
+        label: `${rating.provider.charAt(0).toUpperCase()}${rating.provider.slice(1)} rating change`,
+        value: Math.round(rating.delta * 10) / 10,
+        detail: `${Math.round(rating.oldRating)} → ${Math.round(rating.newRating)}`,
         citationIds: hasProviderActivityCitation
           ? ['provider-activity']
           : ['roadmap-assessment'],
       })),
-      ...context.recentContests.slice(0, 12).map((contest) => ({
+      ...contests.slice(0, 12).map((contest) => ({
         date: contest.attendedAt,
-        label: `${contest.provider} contest`,
+        label: `${contest.provider.charAt(0).toUpperCase()}${contest.provider.slice(1)} contest`,
         ...(contest.ratingChange === undefined
           ? {}
           : { value: contest.ratingChange }),
@@ -1265,7 +1389,7 @@ const coachRichContentForContext = (
       })
     }
   }
-  const suggestions = topicCandidates
+  const allSuggestions = topicCandidates
     .flatMap((topic) => topic.suggestions)
     .filter((suggestion, index, values) => {
       const key = `${suggestion.problem.provider}:${suggestion.problem.externalId}`
@@ -1277,10 +1401,25 @@ const coachRichContentForContext = (
         ) === index
       )
     })
-    .slice(0, 5)
+  const selectedProblemIds = new Set(presentation?.problemIds ?? [])
+  const suggestions = (
+    presentation === undefined
+      ? allSuggestions
+      : allSuggestions.filter((suggestion) =>
+          selectedProblemIds.has(
+            identity(
+              suggestion.problem.provider,
+              suggestion.problem.externalId,
+            ),
+          ),
+        )
+  ).slice(0, 5)
   if (
     suggestions.length > 0 &&
-    (lower.includes('practice') || lower.includes('next'))
+    wantsDataset(
+      'trusted-problems',
+      lower.includes('practice') || lower.includes('next'),
+    )
   ) {
     blocks.push({
       type: 'problem_list',
@@ -1292,7 +1431,10 @@ const coachRichContentForContext = (
   }
   if (
     topicCandidates.length >= 2 &&
-    (lower.includes('weak') || lower.includes('next'))
+    wantsDataset(
+      'topic-comparison',
+      lower.includes('weak') || lower.includes('next'),
+    )
   ) {
     blocks.push({
       type: 'comparison_table',
@@ -1322,14 +1464,16 @@ const coachRichContentForContext = (
       citationIds: ['roadmap-assessment'],
     })
   }
-  const suggestedQuestions = [
-    focus[0] === undefined
-      ? 'Help me choose a first topic from my roadmap.'
-      : `Give me a progressive hint for ${focus[0].name}.`,
-    'Turn this into a focused 30-minute practice plan.',
-    'What evidence would make you move this topic to comfortable?',
-    'Review my latest failed attempts and identify the pattern.',
-  ]
+  const suggestedQuestions = presentation?.suggestedQuestions.length
+    ? presentation.suggestedQuestions
+    : [
+        focus[0] === undefined
+          ? 'Help me choose a first topic from my roadmap.'
+          : `Give me a progressive hint for ${focus[0].name}.`,
+        'Turn this into a focused 30-minute practice plan.',
+        'What evidence would make you move this topic to comfortable?',
+        'Review my latest failed attempts and identify the pattern.',
+      ]
   return CoachRichContentSchema.parse({
     version: 'coach-rich-v2',
     blocks: blocks.slice(0, 8),
@@ -1657,7 +1801,11 @@ export class CoachService {
       if (!hasRecentEvent(eventKey)) {
         const roadmap = await ensureRoadmap()
         const focus = roadmap.topics
-          .filter((topic) => topic.lane === 'current_focus')
+          .filter(
+            (topic) =>
+              topic.lane === 'current_focus' &&
+              !excludedTopics.includes(canonicalTopic(topic.topic)),
+          )
           .slice(0, 3)
         const focusText =
           focus.length === 0
@@ -2246,15 +2394,22 @@ export class CoachService {
       })
     } catch (error) {
       this.options.logger.warn('coach_ai_fallback', {
-        errorCode: 'AI_UNAVAILABLE',
+        errorCode:
+          error instanceof AiCoachClientError
+            ? error.code
+            : error instanceof Error &&
+                error.message === 'The AI coach returned unsafe text.'
+              ? 'AI_COACH_UNSAFE_OUTPUT'
+              : 'AI_COACH_RESPONSE_REJECTED',
       })
       result = this.fallbackResponse(input.content, context)
     }
-    const savedAnswer = omitCodeAndProblemText(result.answer)
+    const savedAnswer = omitGeneratedCodeAndProblemText(result.answer)
     const baseRichContent = coachRichContentForContext(
       input.content,
       context,
       this.now(),
+      result.presentation,
     )
     const seenCitationIds = new Set(
       baseRichContent.citations.map((citation) => citation.id),
@@ -2266,12 +2421,54 @@ export class CoachService {
       seenCitationIds.add(citation.id)
       return true
     })
+    const selectedWebProblemIds = new Set(
+      result.presentation?.webProblemCitationIds ?? [],
+    )
+    const selectedWebProblems = safeModelCitations.filter(
+      (citation) =>
+        citation.source === 'web' &&
+        citation.url !== undefined &&
+        selectedWebProblemIds.has(citation.id),
+    )
+    const orderedModelCitations = [
+      ...selectedWebProblems,
+      ...safeModelCitations.filter(
+        (citation) => !selectedWebProblemIds.has(citation.id),
+      ),
+    ]
+    const finalCitations = [
+      ...baseRichContent.citations,
+      ...orderedModelCitations,
+    ].slice(0, 8)
+    const includedCitationIds = new Set(
+      finalCitations.map((citation) => citation.id),
+    )
+    const includedWebProblems = selectedWebProblems.filter((citation) =>
+      includedCitationIds.has(citation.id),
+    )
+    const webProblemBlock: CoachRichContent['blocks'] =
+      includedWebProblems.length === 0
+        ? []
+        : [
+            {
+              type: 'web_problem_list',
+              title: 'Problems found for this question',
+              reason:
+                'Discovered with public web grounding and linked through verified search-source metadata.',
+              problems: includedWebProblems.map((citation) => ({
+                citationId: citation.id,
+                title: citation.title,
+                url: citation.url as string,
+                ...(citation.publisher === undefined
+                  ? {}
+                  : { publisher: citation.publisher }),
+              })),
+            },
+          ]
     const richContent = CoachRichContentSchema.parse({
       ...baseRichContent,
-      citations: [...baseRichContent.citations, ...safeModelCitations].slice(
-        0,
-        8,
-      ),
+      blocks: [...webProblemBlock, ...baseRichContent.blocks].slice(0, 8),
+      citations: finalCitations,
     })
     const message = CoachMessageSchema.parse({
       id: randomUUID(),
@@ -2474,44 +2671,87 @@ export class CoachService {
     context: CoachContextSnapshot,
     options: { allowMemoryProposals: boolean } = { allowMemoryProposals: true },
   ): AiCoachResult {
+    const redactedEvidence = result.evidence.map((item) => ({
+      ...item,
+      label: redactExcludedCoachTopics(item.label, context.excludedTopics),
+      detail: redactExcludedCoachTopics(item.detail, context.excludedTopics),
+    }))
+    const proposalsWithRedactedText = result.proposals.map((proposal) => ({
+      ...proposal,
+      label: redactExcludedCoachTopics(proposal.label, context.excludedTopics),
+      reason: redactExcludedCoachTopics(
+        proposal.reason,
+        context.excludedTopics,
+      ),
+      ...(proposal.memoryText === undefined
+        ? {}
+        : {
+            memoryText: redactExcludedCoachTopics(
+              proposal.memoryText,
+              context.excludedTopics,
+            ),
+          }),
+    }))
+    const citations = (result.citations ?? []).map((citation) => ({
+      ...citation,
+      title: redactExcludedCoachTopics(citation.title, context.excludedTopics),
+      ...(citation.detail === undefined
+        ? {}
+        : {
+            detail: redactExcludedCoachTopics(
+              citation.detail,
+              context.excludedTopics,
+            ),
+          }),
+      ...(citation.publisher === undefined
+        ? {}
+        : {
+            publisher: redactExcludedCoachTopics(
+              citation.publisher,
+              context.excludedTopics,
+            ),
+          }),
+    }))
+    const presentation =
+      result.presentation === undefined
+        ? undefined
+        : {
+            ...result.presentation,
+            suggestedQuestions: result.presentation.suggestedQuestions.map(
+              (question) =>
+                redactExcludedCoachTopics(question, context.excludedTopics),
+            ),
+          }
+    const redactedResult: AiCoachResult = {
+      ...result,
+      answer: redactExcludedCoachTopics(result.answer, context.excludedTopics),
+      evidence: redactedEvidence,
+      proposals: proposalsWithRedactedText,
+      citations,
+      ...(presentation === undefined ? {} : { presentation }),
+    }
     if (
-      !isSafeCoachText(result.answer) ||
-      containsExcludedCoachTopic(result.answer, context.excludedTopics) ||
-      result.evidence.some(
-        (item) =>
-          !isSafeCoachText(item.label) ||
-          !isSafeCoachText(item.detail) ||
-          containsExcludedCoachTopic(item.label, context.excludedTopics) ||
-          containsExcludedCoachTopic(item.detail, context.excludedTopics),
+      !isSafeCoachText(redactedResult.answer) ||
+      redactedEvidence.some(
+        (item) => !isSafeCoachText(item.label) || !isSafeCoachText(item.detail),
       ) ||
-      result.proposals.some(
+      proposalsWithRedactedText.some(
         (item) =>
           !isSafeCoachText(item.label) ||
           !isSafeCoachText(item.reason) ||
-          (item.memoryText !== undefined &&
-            !isSafeCoachText(item.memoryText)) ||
-          containsExcludedCoachTopic(item.label, context.excludedTopics) ||
-          containsExcludedCoachTopic(item.reason, context.excludedTopics) ||
-          (item.memoryText !== undefined &&
-            containsExcludedCoachTopic(
-              item.memoryText,
-              context.excludedTopics,
-            )),
+          (item.memoryText !== undefined && !isSafeCoachText(item.memoryText)),
       ) ||
-      (result.citations ?? []).some(
+      citations.some(
         (citation) =>
-          containsExcludedCoachTopic(citation.title, context.excludedTopics) ||
+          !isSafeCoachText(citation.title) ||
           (citation.detail !== undefined &&
-            containsExcludedCoachTopic(
-              citation.detail,
-              context.excludedTopics,
-            )) ||
+            !isSafeCoachText(citation.detail)) ||
           (citation.publisher !== undefined &&
-            containsExcludedCoachTopic(
-              citation.publisher,
-              context.excludedTopics,
-            )),
-      )
+            !isSafeCoachText(citation.publisher)),
+      ) ||
+      presentation?.suggestedQuestions.some(
+        (question) => !isSafeCoachText(question),
+      ) === true
     ) {
       this.options.logger.warn('coach_unsafe_output_rejected', {
         errorCode: 'AI_COACH_UNSAFE_OUTPUT',
@@ -2525,7 +2765,7 @@ export class CoachService {
         ),
       ),
     )
-    const proposals = result.proposals.flatMap((proposal) => {
+    const proposals = proposalsWithRedactedText.flatMap((proposal) => {
       if (proposal.actionType === 'set_topic_status') {
         const topic =
           proposal.topic === undefined
@@ -2533,6 +2773,7 @@ export class CoachService {
             : canonicalTopic(proposal.topic)
         return topic !== undefined &&
           definitionBySlug.has(topic) &&
+          !context.excludedTopics.includes(topic) &&
           proposal.topicStatus !== undefined
           ? [{ ...proposal, topic }]
           : []
@@ -2570,9 +2811,9 @@ export class CoachService {
         dropped: result.proposals.length - proposals.length,
       })
     }
-    const evidence =
-      result.evidence.length > 0
-        ? result.evidence
+    const safeEvidence =
+      redactedResult.evidence.length > 0
+        ? redactedResult.evidence
         : [
             fallbackEvidence(
               'roadmap',
@@ -2582,12 +2823,12 @@ export class CoachService {
             ),
           ]
     return {
-      ...result,
-      answer: omitCodeAndProblemText(result.answer),
-      evidence: evidence.map((item) => ({
+      ...redactedResult,
+      answer: omitGeneratedCodeAndProblemText(redactedResult.answer),
+      evidence: safeEvidence.map((item) => ({
         ...item,
-        label: omitCodeAndProblemText(item.label),
-        detail: omitCodeAndProblemText(item.detail),
+        label: omitGeneratedCodeAndProblemText(item.label),
+        detail: omitGeneratedCodeAndProblemText(item.detail),
       })),
       proposals: proposals.map((proposal) => ({
         ...proposal,
@@ -2595,8 +2836,8 @@ export class CoachService {
         // response that claims an action was already confirmed or rejected;
         // confirmation is an owner-authenticated core-service transition.
         status: 'proposed' as const,
-        label: omitCodeAndProblemText(proposal.label),
-        reason: omitCodeAndProblemText(proposal.reason),
+        label: omitGeneratedCodeAndProblemText(proposal.label),
+        reason: omitGeneratedCodeAndProblemText(proposal.reason),
       })),
     }
   }
@@ -2668,7 +2909,7 @@ export class CoachService {
         : this.options.aiMemoryClient.retrieveMemories(
             userId,
             redactCoachContextText(query, 500),
-            15,
+            5,
           )
       ).catch(() => {
         contextDataFailed = true
@@ -2758,7 +2999,7 @@ export class CoachService {
       })),
       memories: memories
         .filter((memory) => memory.status === 'active')
-        .slice(0, 15)
+        .slice(0, 5)
         .map(({ category, statement, confidence }) => ({
           category,
           statement: redactExcludedCoachTopics(
@@ -2930,16 +3171,19 @@ export class CoachService {
     question: string,
     context: CoachContextSnapshot,
   ): AiCoachResult {
-    const lower = question.toLowerCase()
     const frustrationMatches = [
       /\b(stuck|frustrated|confused|lost|give up|can't do|cant do|impossible)\b/i,
       /\b(don't understand|still don't|not getting it|wasted|hours|quit)\b/i,
     ].filter((pattern) => pattern.test(question)).length
     const focus = context.roadmap.topics.filter(
-      (topic) => topic.lane === 'current_focus',
+      (topic) =>
+        topic.lane === 'current_focus' &&
+        !context.excludedTopics.includes(canonicalTopic(topic.topic)),
     )
     const needs = context.roadmap.topics.filter(
-      (topic) => topic.lane === 'needs_more_practice',
+      (topic) =>
+        topic.lane === 'needs_more_practice' &&
+        !context.excludedTopics.includes(canonicalTopic(topic.topic)),
     )
     const evidence = [
       fallbackEvidence(
@@ -3002,146 +3246,16 @@ export class CoachService {
         ),
       )
     }
-    if (
-      /(codeforces|leetcode|codechef|provider).*(data|profile|activity|solve)|\bdata\b.*(codeforces|leetcode|codechef)/i.test(
-        lower,
-      )
-    ) {
-      const profileProviders = context.providerProfiles.map(
-        (profile) => profile.provider,
-      )
-      const activityProviders = [
-        ...context.recentSolved.map((problem) => problem.provider),
-        ...context.recentSubmissions.map((submission) => submission.provider),
-      ]
-      const connected = [
-        ...new Set([...profileProviders, ...activityProviders]),
-      ]
-      const connectedLabel =
-        connected.length > 0 ? connected.join(', ') : 'your provider'
-      const hasProviderData =
-        connected.length > 0 ||
-        context.recentSolved.length > 0 ||
-        context.recentSubmissions.length > 0
-      const providerDataLabel =
-        connected.length > 0
-          ? `${connectedLabel} provider data`
-          : 'provider activity data'
-      const evidenceSentence =
-        context.providerProfiles.length > 0
-          ? 'Profile totals show exposure, while concrete catalog-mapped problem records are what I use to assess a specific topic.'
-          : 'Concrete catalog-mapped problem records are what I use to assess a specific topic.'
-      const activityLabel =
-        context.recentSolved.length > 0 || context.recentSubmissions.length > 0
-          ? ` I also have ${context.recentSolved.length} solved observation${context.recentSolved.length === 1 ? '' : 's'} and ${context.recentSubmissions.length} recent submission${context.recentSubmissions.length === 1 ? '' : 's'} available for topic mapping.`
-          : ''
-      return {
-        answer: hasProviderData
-          ? `Yes — I can see ${providerDataLabel}.${activityLabel} ${evidenceSentence} ${context.dataCompleteness === 'partial' ? 'Some provider history is partial or stale, so I will label conclusions as cautious rather than treating the totals as complete history.' : 'I will use the mapped activity together with your roadmap and progress to personalise the next step.'}`
-          : 'I do not currently have a usable Codeforces or LeetCode activity snapshot for this account. Connect or refresh the provider profile, then I can use its profile totals and topic-mapped activity in your roadmap.',
-        evidence,
-        proposals: [],
-        citations: [],
-        fallback: true,
-      }
-    }
-    const conceptAnswer = (() => {
-      if (lower.includes('sliding window'))
-        return 'Sliding window is useful when a validity condition stays monotone as the right boundary expands. Define what the window represents, name the condition that makes it invalid, and shrink from the left until it is valid again. Before coding, test an empty input, a single element, duplicates, and a window that reaches both boundaries. Progressive hint: what state can be updated when one element enters or leaves?'
-      if (lower.includes('binary search'))
-        return 'For binary search, first prove a monotone predicate: once feasible becomes true, does it stay true (or the reverse)? Then choose one boundary convention, test the first feasible and last infeasible values, and state the answer invariant after every iteration. Progressive hint: write feasible(x) in one sentence before writing the loop.'
-      if (lower.includes('dynamic programming') || /\bdp\b/.test(lower))
-        return 'Start a dynamic-programming solution by naming the smallest subproblem, its state variables, transition, and base cases. The state should contain exactly the information future choices need. Estimate state count × transition cost before optimizing memory. Progressive hint: what would a parent problem need to know from one smaller subproblem?'
-      if (
-        lower.includes('bfs') ||
-        lower.includes('dfs') ||
-        lower.includes('graph')
-      )
-        return 'Use BFS when the graph is unweighted and distance layers matter; use DFS for reachability, components, cycle checks, and recursive state traversal. Mark visited nodes at the correct time and remember disconnected components. Progressive hint: is every edge the same cost, and do you need the shortest number of edges?'
-      if (lower.includes('complexity') || lower.includes('time complexity'))
-        return 'Read constraints before choosing a technique. Count the dominant worst-case operations, include sorting and nested loops, and state both time and auxiliary space. Progressive hint: which input-sized term still grows fastest after constants are removed?'
-      if (
-        lower.includes('debug') ||
-        lower.includes('wrong answer') ||
-        lower.includes('runtime error')
-      )
-        return 'Debug by reducing the failure to the smallest counterexample. Check bounds and initialization, integer width, the claimed invariant, and whether the failure is a wrong answer, runtime error, timeout, or compile error. Progressive hint: which assumption becomes false on the first failing iteration?'
-      return null
-    })()
-    if (conceptAnswer !== null) {
-      return {
-        answer: conceptAnswer,
-        evidence,
-        proposals: [],
-        citations: [],
-        fallback: true,
-      }
-    }
-    if (lower.includes('contest') || lower.includes('rating')) {
-      const latestRating = context.recentRatings[0]
-      const ratingDetail =
-        latestRating === undefined
-          ? 'No recent rating change is available in the synchronized window.'
-          : `The latest observed ${latestRating.provider} change was ${latestRating.delta >= 0 ? '+' : ''}${latestRating.delta}.`
-      return {
-        answer: `${ratingDetail} Review each miss as a knowledge gap, implementation bug, misread, or time-management issue; rating alone cannot identify the cause. Re-solve one missed problem without the editor, then ask me to turn the mistake pattern into a focused practice block.`,
-        evidence,
-        proposals: [],
-        citations: [],
-        fallback: true,
-      }
-    }
-    if (lower.includes('history') || lower.includes('progress')) {
-      return {
-        answer:
-          context.recentProgress.length > 0
-            ? `I can see ${context.recentProgress.length} recent progress events. Use the activity chart below to compare attempts with solves, then focus on the topic with the clearest gap rather than chasing the largest aggregate total.`
-            : 'There is not enough recorded progress history yet. Mark attempts or solves and return after a few practice sessions so I can compare your trend.',
-        evidence,
-        proposals: [],
-        citations: [],
-        fallback: true,
-      }
-    }
-    if (lower.includes('weak') || lower.includes('improve')) {
-      return {
-        answer:
-          needs.length > 0
-            ? `Based on your recorded evidence, spend your next practice block on ${needs
-                .slice(0, 3)
-                .map((topic) => topic.name)
-                .join(
-                  ', ',
-                )}. Start with the optional problems attached to each topic, then reassess after a few fresh attempts. ${context.dataCompleteness === 'partial' ? 'Some provider history is partial, so this is a cautious assessment.' : ''}`
-            : context.providerProfiles.length > 0
-              ? 'I can see your connected provider profile data, but I do not yet have enough recent topic-linked problem records to identify a reliable weakness. Refresh provider activity or record a few attempts manually, then ask me again.'
-              : 'I do not have enough concrete topic evidence to identify a reliable weakness yet. Connect a provider profile or mark a few attempts manually, then ask me again.',
-        evidence,
-        proposals: [],
-        citations: [],
-        fallback: true,
-      }
-    }
-    if (lower.includes('next') || lower.includes('practice')) {
-      return {
-        answer:
-          focus.length > 0
-            ? `Your current focus is ${focus
-                .slice(0, 3)
-                .map((topic) => topic.name)
-                .join(
-                  ', ',
-                )}. Choose one optional problem from the foundation set first; after you solve or attempt it, I can adjust the roadmap.`
-            : 'Your roadmap is still gathering evidence. Start with an introductory problem from Arrays or Implementation and record the outcome so I can personalize the next step.',
-        evidence,
-        proposals: [],
-        citations: [],
-        fallback: true,
-      }
-    }
+    const priorities = focus.length > 0 ? focus : needs
+    const priorityText =
+      priorities.length > 0
+        ? ` Your saved plan currently prioritizes ${priorities
+            .slice(0, 3)
+            .map((topic) => topic.name)
+            .join(', ')}.`
+        : ''
     return {
-      answer:
-        'I can help with CP and DSA concepts, hints, debugging, contest review, and your personalized improvement roadmap. Ask what to practice next, which topics need work, or paste temporary code/problem context for a focused explanation.',
+      answer: `I could not generate the complete coaching explanation just now.${priorityText} Your profile, activity, roadmap, and trusted practice data are still available, so please retry this question in a moment.`,
       evidence,
       proposals: [],
       citations: [],

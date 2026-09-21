@@ -8,12 +8,46 @@ import {
   CoachRichContentSchema,
 } from '@algomemtor/shared-contracts'
 
+const coachDatasetIdSchema = z.enum([
+  'learner-summary',
+  'topic-assessments',
+  'practice-trend-30d',
+  'contest-rating-history',
+  'trusted-problems',
+  'topic-comparison',
+])
+
+const coachPresentationSchema = z
+  .object({
+    datasetIds: z.array(coachDatasetIdSchema).max(6),
+    problemIds: z
+      .array(
+        z
+          .string()
+          .trim()
+          .regex(/^(?:codeforces|codechef|leetcode|cses):[^\s:][^\s]{0,127}$/),
+      )
+      .max(5),
+    webProblemCitationIds: z
+      .array(
+        z
+          .string()
+          .trim()
+          .regex(/^web-[1-9][0-9]{0,2}$/),
+      )
+      .max(5)
+      .optional(),
+    suggestedQuestions: z.array(z.string().trim().min(1).max(240)).max(4),
+  })
+  .strict()
+
 const aiCoachResponseSchema = z
   .object({
     answer: z.string().trim().min(1).max(8_000),
     evidence: z.array(CoachEvidenceReferenceSchema).max(12),
     proposals: z.array(CoachActionProposalSchema).max(8),
     citations: z.array(CoachCitationSchema).max(8).optional(),
+    presentation: coachPresentationSchema.optional(),
     richContent: CoachRichContentSchema.optional(),
     fallback: z.boolean().optional(),
   })
@@ -99,7 +133,7 @@ export class HttpAiCoachClient implements AiCoachClient {
     const controller = new AbortController()
     const timeout = setTimeout(
       () => controller.abort(new Error('AI coach timed out.')),
-      this.options.timeoutMs ?? 20_000,
+      this.options.timeoutMs ?? 125_000,
     )
     try {
       const response = await (this.options.fetchImplementation ?? fetch)(
@@ -144,7 +178,7 @@ export class HttpAiCoachClient implements AiCoachClient {
     const controller = new AbortController()
     const timeout = setTimeout(
       () => controller.abort(new Error('AI coach timed out.')),
-      this.options.timeoutMs ?? 20_000,
+      this.options.timeoutMs ?? 125_000,
     )
     try {
       const response = await (this.options.fetchImplementation ?? fetch)(

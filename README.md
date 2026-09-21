@@ -216,7 +216,11 @@ with up to eight versioned CP/DSA knowledge chunks using hybrid keyword/vector
 retrieval. A relevance router may make one de-identified Gemini Google Search
 grounding call for current/public questions; names, handles, ratings,
 conversations, and private history never enter that search query. The model
-cannot query the core database, invent problem IDs or URLs, or perform writes.
+cannot query the core database, invent URLs, or perform writes. For practice
+requests, the de-identified search may include up to three roadmap topic names.
+Gemini can surface direct problem pages only by selecting exact citation IDs
+returned in Google Search grounding metadata; Express revalidates those public
+HTTPS sources before rendering them as attributed web-grounded problem cards.
 Roadmap placement comes from the versioned deterministic `topic-assessment-v1`
 engine (30% smoothed success, 25% breadth, 20% target difficulty, 15% recent
 submission accuracy, and 10% recency); Gemini explains the result but does not
@@ -233,16 +237,20 @@ The coach also provides in-app check-ins. Learners can choose a local weekly
 review day/time and separately enable event nudges. The memory worker
 periodically queues due owner-scoped refreshes through the durable PostgreSQL
 outbox. Event check-ins are capped at two per rolling seven days and
-deduplicated for 72 hours. Gemini outages leave the deterministic roadmap,
-practice selection, and clearly labelled fallback summaries available.
+deduplicated for 72 hours. Gemini outages leave the deterministic roadmap and
+trusted practice selection available while the chat presents a concise retry
+message without exposing internal fallback state.
 
 Assistant messages persist a validated `coach-rich-v2` snapshot when useful:
 metrics, accessible line/bar/stacked-bar charts with tabular fallbacks,
-timelines, comparison tables, trusted problem cards, citations/freshness, and
-clickable follow-up questions. Express hydrates chart values and canonical
-problem links from trusted datasets, so a model cannot fabricate learner
-metrics or external problem identities. Existing messages without rich content
-remain readable. Consent is versioned as
+timelines, comparison tables, trusted catalog problem cards, web-grounded
+problem sources, citations, and clickable
+follow-up questions. Gemini selects only from the dataset IDs supplied for the
+turn; Express hydrates chart values and canonical
+problem links from trusted datasets. Internet-discovered problems use only
+grounding metadata URLs and cannot create progress, bookmark, or roadmap
+actions until they also exist in the trusted catalog. Existing messages without
+rich content remain readable. Consent is versioned as
 `personalized-coaching-rag-v2`; older coaching/memory consent must be renewed.
 
 ## Data boundary
@@ -347,13 +355,14 @@ AI API:
 ```text
 LLM_API_KEY=
 LLM_MODEL=gemini-3.5-flash
-LLM_TIMEOUT_SECONDS=15
-LLM_MAX_OUTPUT_TOKENS=2048
+LLM_TIMEOUT_SECONDS=90
+LLM_MAX_OUTPUT_TOKENS=4096
+COACH_THINKING_LEVEL=high
 LLM_INPUT_PRICE_PER_MILLION_USD=1.50
 LLM_OUTPUT_PRICE_PER_MILLION_USD=9.00
 LLM_PRICING_VERSION=gemini-3.5-flash-standard-2026-09
 AI_RANKING_VERSION=ai-gemini-rag-v1
-COACH_VERSION=coach-gemini-v1
+COACH_VERSION=coach-gemini-rag-v2
 CONSENT_POLICY_VERSION=personalized-coaching-rag-v2
 DATABASE_URL=postgresql+psycopg://algomemtor:algomemtor_local@localhost:5432/algomemtor
 AI_AUDIT_TIMEOUT_SECONDS=0.5
@@ -371,7 +380,7 @@ MEMORY_GENERATION_ENABLED=true
 MEMORY_RAG_ENABLED=true
 COACH_KNOWLEDGE_RAG_ENABLED=true
 COACH_WEB_GROUNDING_ENABLED=true
-COACH_WEB_GROUNDING_TIMEOUT_SECONDS=8
+COACH_WEB_GROUNDING_TIMEOUT_SECONDS=20
 ```
 
 The core URL must be HTTPS or an HTTP loopback URL and cannot contain

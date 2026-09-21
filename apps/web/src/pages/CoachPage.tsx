@@ -47,6 +47,7 @@ import {
 import { AI_POLICY_VERSION } from '@/features/profile/components/AiNoteConsentCard'
 import { cn } from '@/lib/utils'
 import { CoachRichContent as CoachRichContentView } from '@/features/coach/components/CoachRichContent'
+import { CoachMessageContent } from '@/features/coach/components/CoachMessageContent'
 
 const laneLabels: Record<CoachRoadmapLane, string> = {
   current_focus: 'Current focus',
@@ -115,12 +116,6 @@ function formatDate(value: string) {
 
 function percent(value: number) {
   return `${Math.round(value * 100)}%`
-}
-
-function evidenceTone(completeness: 'complete' | 'partial' | 'unknown') {
-  return completeness === 'complete'
-    ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30'
-    : 'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30'
 }
 
 function TopicCard({
@@ -241,11 +236,6 @@ function TopicCard({
           </ul>
         </div>
       ) : null}
-      <p className="mt-3 text-xs text-muted-foreground">
-        {topic.evidence.completeness === 'complete' && !topic.evidence.stale
-          ? 'Based on complete, current observations.'
-          : 'Based on partial or potentially stale observations; aggregate totals are not proof of specific solves.'}
-      </p>
     </article>
   )
 }
@@ -262,28 +252,24 @@ function EvidenceList({
 }) {
   if (evidence.length === 0) return null
   return (
-    <div className="mt-3 space-y-2" aria-label="Evidence used by the coach">
-      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Evidence used
-      </p>
-      <ul className="grid gap-2 sm:grid-cols-2">
+    <details
+      className="mt-3 rounded-lg border border-border/70 bg-muted/30 p-3"
+      aria-label="Information used by the coach"
+    >
+      <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
+        Why this answer
+      </summary>
+      <ul className="mt-3 space-y-3">
         {evidence.map((item, index) => (
-          <li
-            className={cn(
-              'rounded-md border p-2 text-xs text-foreground',
-              evidenceTone(item.completeness),
-            )}
-            key={`${item.label}-${index}`}
-          >
-            <p className="font-medium">
-              {item.label}
-              {item.stale ? ' · may be stale' : ''}
+          <li className="text-xs" key={`${item.label}-${index}`}>
+            <p className="font-medium text-foreground">{item.label}</p>
+            <p className="mt-1 leading-5 text-muted-foreground">
+              {item.detail}
             </p>
-            <p className="mt-1 text-muted-foreground">{item.detail}</p>
           </li>
         ))}
       </ul>
-    </div>
+    </details>
   )
 }
 
@@ -318,9 +304,15 @@ function CoachPage() {
     title: string
   } | null>(null)
   const sendAbortController = useRef<AbortController | null>(null)
+  const messagesScrollRef = useRef<HTMLDivElement | null>(null)
   const messageEndRef = useRef<HTMLDivElement | null>(null)
   const nearPageBottomRef = useRef(true)
   const [showJumpToLatest, setShowJumpToLatest] = useState(false)
+  const selectConversation = (conversationId: string | null) => {
+    nearPageBottomRef.current = true
+    setShowJumpToLatest(false)
+    setSelectedConversationId(conversationId)
+  }
 
   const conversations = useMemo(
     () => conversationsQuery.data?.data ?? [],
@@ -333,30 +325,11 @@ function CoachPage() {
     : (conversations[0]?.id ?? null)
   const conversationQuery = useCoachConversation(activeConversationId)
   useEffect(() => {
-    nearPageBottomRef.current = true
-  }, [activeConversationId])
-  useEffect(() => {
-    const updateScrollPosition = () => {
-      const nearBottom =
-        window.innerHeight + window.scrollY >=
-        document.documentElement.scrollHeight - 420
-      nearPageBottomRef.current = nearBottom
-      setShowJumpToLatest(!nearBottom)
-    }
-    updateScrollPosition()
-    window.addEventListener('scroll', updateScrollPosition, { passive: true })
-    window.addEventListener('resize', updateScrollPosition)
-    return () => {
-      window.removeEventListener('scroll', updateScrollPosition)
-      window.removeEventListener('resize', updateScrollPosition)
-    }
-  }, [])
-  useEffect(() => {
     if (conversationQuery.isPending || !nearPageBottomRef.current) return
     const frame = window.requestAnimationFrame(() => {
-      messageEndRef.current?.scrollIntoView({
+      messagesScrollRef.current?.scrollTo({
         behavior: 'smooth',
-        block: 'nearest',
+        top: messagesScrollRef.current.scrollHeight,
       })
     })
     return () => window.cancelAnimationFrame(frame)
@@ -383,7 +356,7 @@ function CoachPage() {
   async function ensureConversation() {
     if (activeConversationId !== null) return activeConversationId
     const created = await createConversation.mutateAsync({})
-    setSelectedConversationId(created.data.id)
+    selectConversation(created.data.id)
     return created.data.id
   }
 
@@ -493,7 +466,7 @@ function CoachPage() {
   }
 
   return (
-    <PageContainer className="max-w-7xl">
+    <PageContainer className="max-w-[1600px] gap-4">
       <PageHeader
         action={
           <Link
@@ -503,8 +476,8 @@ function CoachPage() {
             Privacy and consent
           </Link>
         }
-        description="A persistent CP/DSA tutor grounded in your profile, progress, provider activity, and roadmap."
-        title="Coach"
+        description="Ask anything about competitive programming, algorithms, interviews, debugging, or your learning progress."
+        title="Your AI coach"
       />
 
       {!consentEnabled ? (
@@ -517,9 +490,8 @@ function CoachPage() {
             conversation.
           </p>
           <p className="mt-1">
-            Your deterministic roadmap remains available. Existing consent from
-            an older policy version does not authorize this broader coaching
-            context.
+            Review the updated privacy choices to let the coach use your
+            profile, progress, and connected learning activity.
           </p>
           <Link
             className="mt-3 inline-flex font-medium underline underline-offset-4"
@@ -530,9 +502,9 @@ function CoachPage() {
         </aside>
       ) : null}
 
-      <div className="grid min-w-0 gap-6 lg:grid-cols-[17rem_minmax(0,1fr)]">
+      <div className="grid min-w-0 gap-4 lg:h-[calc(100svh-13rem)] lg:min-h-[42rem] lg:grid-cols-[17rem_minmax(0,1fr)]">
         <aside
-          className="min-w-0 space-y-4 rounded-xl border border-border bg-card p-4"
+          className="min-w-0 space-y-4 rounded-2xl border border-border bg-card p-4 shadow-sm lg:min-h-0 lg:overflow-y-auto"
           aria-label="Saved coaching conversations"
         >
           <div className="flex items-center justify-between gap-2">
@@ -542,7 +514,7 @@ function CoachPage() {
               onClick={() => {
                 void createConversation
                   .mutateAsync({})
-                  .then((result) => setSelectedConversationId(result.data.id))
+                  .then((result) => selectConversation(result.data.id))
               }}
               size="icon-sm"
               type="button"
@@ -570,7 +542,7 @@ function CoachPage() {
                   >
                     <button
                       className="min-w-0 flex-1 rounded px-2 py-2 text-left text-sm text-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-                      onClick={() => setSelectedConversationId(conversation.id)}
+                      onClick={() => selectConversation(conversation.id)}
                       type="button"
                     >
                       <span className="block truncate font-medium">
@@ -630,10 +602,10 @@ function CoachPage() {
         </aside>
 
         <section
-          className="min-w-0 rounded-xl border border-border bg-card"
+          className="flex h-[70svh] min-h-[36rem] min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm lg:h-auto lg:min-h-0"
           aria-labelledby="conversation-heading"
         >
-          <div className="border-b border-border p-4 sm:p-5">
+          <div className="shrink-0 border-b border-border p-4 sm:p-5">
             <div className="flex min-w-0 items-start justify-between gap-3">
               <div className="min-w-0">
                 <h2
@@ -673,7 +645,20 @@ function CoachPage() {
               ))}
             </div>
           </div>
-          <div className="min-h-72 space-y-4 p-4 sm:min-h-96 sm:p-5">
+          <div
+            className="min-h-72 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4 sm:min-h-96 sm:p-5 lg:min-h-0"
+            onScroll={(event) => {
+              const element = event.currentTarget
+              const nearBottom =
+                element.scrollHeight -
+                  element.scrollTop -
+                  element.clientHeight <
+                160
+              nearPageBottomRef.current = nearBottom
+              setShowJumpToLatest(!nearBottom)
+            }}
+            ref={messagesScrollRef}
+          >
             {conversationQuery.isPending ? (
               <p className="text-sm text-muted-foreground" role="status">
                 Loading conversation…
@@ -690,17 +675,15 @@ function CoachPage() {
                   key={message.id}
                 >
                   <div className="flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    <span>
-                      {message.role === 'user' ? 'You' : 'Coach'}
-                      {message.fallback ? ' · deterministic fallback' : ''}
-                    </span>
+                    <span>{message.role === 'user' ? 'You' : 'Coach'}</span>
                     <time dateTime={message.createdAt}>
                       {formatDate(message.createdAt)}
                     </time>
                   </div>
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground">
-                    {message.content}
-                  </p>
+                  <CoachMessageContent
+                    content={message.content}
+                    role={message.role}
+                  />
                   {message.transientContextOmitted ? (
                     <p className="mt-2 text-xs text-muted-foreground">
                       Temporary code/problem or sensitive context was omitted
@@ -781,9 +764,9 @@ function CoachPage() {
                 onClick={() => {
                   nearPageBottomRef.current = true
                   setShowJumpToLatest(false)
-                  messageEndRef.current?.scrollIntoView({
+                  messagesScrollRef.current?.scrollTo({
                     behavior: 'smooth',
-                    block: 'nearest',
+                    top: messagesScrollRef.current.scrollHeight,
                   })
                 }}
                 size="sm"
@@ -802,7 +785,7 @@ function CoachPage() {
                   aria-hidden="true"
                   className="size-4 animate-spin"
                 />
-                Thinking from your bounded learner context…
+                Reading your profile and learning context…
                 <Button
                   className="ml-auto"
                   onClick={() => sendAbortController.current?.abort()}
@@ -816,7 +799,7 @@ function CoachPage() {
             ) : null}
           </div>
           <form
-            className="border-t border-border p-4 sm:p-5"
+            className="shrink-0 border-t border-border bg-card p-4 sm:p-5"
             onSubmit={(event) => {
               event.preventDefault()
               void submitMessage()
@@ -826,7 +809,7 @@ function CoachPage() {
               Ask your coach
             </label>
             <textarea
-              className="min-h-24 w-full resize-y rounded-lg border border-border bg-background p-3 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              className="min-h-20 max-h-36 w-full resize-y rounded-xl border border-border bg-background p-3 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
               disabled={!consentEnabled || sendMessage.isPending}
               id="coach-message"
               onChange={(event) => setContent(event.target.value)}
@@ -869,7 +852,7 @@ function CoachPage() {
 
       {showInbox ? (
         <section
-          className="space-y-3 rounded-xl border border-border bg-card p-4 sm:p-5"
+          className="max-h-[70svh] space-y-3 overflow-y-auto rounded-2xl border border-border bg-card p-4 shadow-sm sm:p-5"
           aria-labelledby="check-ins-heading"
         >
           <div className="flex items-center justify-between gap-3">
@@ -881,7 +864,7 @@ function CoachPage() {
                 Check-in inbox
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                In-app nudges only. Event check-ins are capped and deduplicated.
+                Reviews and reminders based on your learning activity.
               </p>
             </div>
             <Button
@@ -919,7 +902,6 @@ function CoachPage() {
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         {checkIn.type.replaceAll('_', ' ')}
-                        {checkIn.fallback ? ' · deterministic fallback' : ''}
                         {checkIn.dismissed ? ' · dismissed' : ''}
                       </p>
                       <h3 className="mt-1 font-semibold text-foreground">
@@ -1004,43 +986,25 @@ function CoachPage() {
         </section>
       ) : null}
 
-      <section className="space-y-4" aria-labelledby="roadmap-heading">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
+      <details className="group rounded-2xl border border-border bg-card shadow-sm">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-4 sm:p-5 [&::-webkit-details-marker]:hidden">
+          <div className="min-w-0">
             <h2
               className="text-xl font-semibold tracking-tight text-foreground"
               id="roadmap-heading"
             >
-              Adaptive improvement roadmap
+              Your learning plan
             </h2>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              A persistent, evidence-aware path that revises incrementally.
-              Manual statuses always win; the coach can still explain
-              conflicting evidence.
+              Review focus areas, next topics, and optional practice.
             </p>
           </div>
-          {roadmap ? (
-            <span className="text-xs text-muted-foreground">
-              {roadmap.assessmentVersion} · version {roadmap.version}
-              {roadmap.dataCompleteness !== 'complete'
-                ? ' · partial coverage'
-                : ''}
-            </span>
-          ) : null}
-        </div>
-        {roadmap?.dataCompleteness !== 'complete' ||
-        (roadmap?.staleProviders.length ?? 0) > 0 ? (
-          <aside
-            className="rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-50"
-            role="status"
-          >
-            Some provider evidence is partial or stale. The roadmap will use
-            careful language such as “at least” and will not treat aggregate
-            totals as proof of topic-specific solves.
-          </aside>
-        ) : null}
+          <span className="shrink-0 rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
+            {roadmap?.topics.length ?? 0} topics
+          </span>
+        </summary>
         {roadmap ? (
-          <div className="grid min-w-0 gap-5 lg:grid-cols-2">
+          <div className="grid max-h-[72svh] min-w-0 gap-5 overflow-y-auto border-t border-border p-4 sm:p-5 lg:grid-cols-2">
             {(Object.keys(laneLabels) as CoachRoadmapLane[]).map((lane) => {
               const topics = groupedTopics.get(lane) ?? []
               return (
@@ -1084,13 +1048,10 @@ function CoachPage() {
             })}
           </div>
         ) : null}
-      </section>
+      </details>
 
-      <section
-        className="space-y-4 rounded-xl border border-border bg-card p-4 sm:p-5"
-        aria-labelledby="check-in-settings-heading"
-      >
-        <div>
+      <details className="rounded-2xl border border-border bg-card shadow-sm">
+        <summary className="cursor-pointer list-none p-4 sm:p-5 [&::-webkit-details-marker]:hidden">
           <h2
             className="text-lg font-semibold text-foreground"
             id="check-in-settings-heading"
@@ -1098,12 +1059,11 @@ function CoachPage() {
             Check-in preferences
           </h2>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            Choose a weekly local review time. Event-based nudges are separate
-            and stay inside the app.
+            Choose when you want weekly reviews and activity-based reminders.
           </p>
-        </div>
+        </summary>
         {preferencesQuery.data?.data ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 border-t border-border p-4 sm:grid-cols-2 sm:p-5 lg:grid-cols-4">
             <label className="flex items-center gap-2 text-sm text-foreground">
               <input
                 checked={preferencesQuery.data.data.weeklyEnabled}
@@ -1157,7 +1117,7 @@ function CoachPage() {
             </label>
           </div>
         ) : null}
-      </section>
+      </details>
 
       <Dialog
         onClose={() => setRenameTarget(null)}
@@ -1233,7 +1193,7 @@ function CoachPage() {
                   .mutateAsync(deleteTarget.id)
                   .then(() => {
                     if (activeConversationId === deleteTarget.id) {
-                      setSelectedConversationId(null)
+                      selectConversation(null)
                     }
                     setDeleteTarget(null)
                   })

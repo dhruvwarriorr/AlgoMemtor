@@ -103,35 +103,35 @@ compiler, hidden tests, submissions, verdicts, and account ownership.
 
 The following capabilities are implemented in the current working tree:
 
-| Area                                                        | Status                           | Notes                                                                                                      |
-| ----------------------------------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| React/Vite application shell                                | Implemented                      | Responsive authenticated application with protected routes                                                 |
-| Supabase email authentication                               | Implemented                      | JWT verification is owned by Express and FastAPI                                                           |
-| Learner onboarding/profile                                  | Implemented                      | Goals, experience, topics, difficulty, platforms, preferences                                              |
-| Codeforces catalog                                          | Implemented                      | Official problemset API, normalized metadata, caching, filters                                             |
-| CodeChef catalog                                            | Implemented                      | Provider adapter with catalog and contest support                                                          |
-| LeetCode catalog                                            | Implemented                      | Public GraphQL/catalog strategy with validation and cache                                                  |
-| CSES catalog                                                | Implemented                      | Public `/problemset/` HTML catalog; catalog-only provider                                                  |
-| Provider account linking                                    | Implemented                      | Codeforces, CodeChef, and LeetCode public handles                                                          |
-| Public solved totals                                        | Implemented                      | Consent-gated provider profile statistics                                                                  |
-| Codeforces activity                                         | Implemented                      | Public accepted observations with bounded completeness                                                     |
-| CodeChef activity                                           | Implemented                      | Recent public submissions and accepted observations                                                        |
-| LeetCode activity                                           | Implemented                      | Bounded recent submissions and accepted observations                                                       |
-| Provider problem tags                                       | Implemented                      | CodeChef/LeetCode recent observations; profile aggregate tags for LeetCode                                 |
-| Unified activity                                            | Implemented                      | Submissions, solves, ratings, and contest participation                                                    |
-| Unified analytics                                           | Implemented                      | Provider totals, difficulty, topics, language, rating, contests                                            |
-| Unified contests                                            | Implemented                      | Codeforces, CodeChef, and LeetCode contest adapters                                                        |
-| Manual progress                                             | Implemented                      | `unsolved`, `attempted`, `solved`, reflections, timers                                                     |
-| Bookmarks and dismissals                                    | Implemented                      | Owner-scoped persistence and recommendation actions                                                        |
-| Deterministic recommendations                               | Implemented                      | Validated candidate set and stable fallback                                                                |
-| Gemini ranking                                              | Implemented behind configuration | LangChain client, structured output, validation, fallback                                                  |
-| Learner memory/RAG                                          | Implemented behind configuration | FastAPI memory generation, retrieval, audit, deletion                                                      |
-| Personalized CP/DSA coach                                   | Implemented locally              | Protected `/coach`, saved conversations, hybrid learner/knowledge/web retrieval, progressive teaching, validated action proposals |
+| Area                                                        | Status                           | Notes                                                                                                                              |
+| ----------------------------------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| React/Vite application shell                                | Implemented                      | Responsive authenticated application with protected routes                                                                         |
+| Supabase email authentication                               | Implemented                      | JWT verification is owned by Express and FastAPI                                                                                   |
+| Learner onboarding/profile                                  | Implemented                      | Goals, experience, topics, difficulty, platforms, preferences                                                                      |
+| Codeforces catalog                                          | Implemented                      | Official problemset API, normalized metadata, caching, filters                                                                     |
+| CodeChef catalog                                            | Implemented                      | Provider adapter with catalog and contest support                                                                                  |
+| LeetCode catalog                                            | Implemented                      | Public GraphQL/catalog strategy with validation and cache                                                                          |
+| CSES catalog                                                | Implemented                      | Public `/problemset/` HTML catalog; catalog-only provider                                                                          |
+| Provider account linking                                    | Implemented                      | Codeforces, CodeChef, and LeetCode public handles                                                                                  |
+| Public solved totals                                        | Implemented                      | Consent-gated provider profile statistics                                                                                          |
+| Codeforces activity                                         | Implemented                      | Public accepted observations with bounded completeness                                                                             |
+| CodeChef activity                                           | Implemented                      | Recent public submissions and accepted observations                                                                                |
+| LeetCode activity                                           | Implemented                      | Bounded recent submissions and accepted observations                                                                               |
+| Provider problem tags                                       | Implemented                      | CodeChef/LeetCode recent observations; profile aggregate tags for LeetCode                                                         |
+| Unified activity                                            | Implemented                      | Submissions, solves, ratings, and contest participation                                                                            |
+| Unified analytics                                           | Implemented                      | Provider totals, difficulty, topics, language, rating, contests                                                                    |
+| Unified contests                                            | Implemented                      | Codeforces, CodeChef, and LeetCode contest adapters                                                                                |
+| Manual progress                                             | Implemented                      | `unsolved`, `attempted`, `solved`, reflections, timers                                                                             |
+| Bookmarks and dismissals                                    | Implemented                      | Owner-scoped persistence and recommendation actions                                                                                |
+| Deterministic recommendations                               | Implemented                      | Validated candidate set and stable fallback                                                                                        |
+| Gemini ranking                                              | Implemented behind configuration | LangChain client, structured output, validation, fallback                                                                          |
+| Learner memory/RAG                                          | Implemented behind configuration | FastAPI memory generation, retrieval, audit, deletion                                                                              |
+| Personalized CP/DSA coach                                   | Implemented locally              | Protected `/coach`, saved conversations, hybrid learner/knowledge/web retrieval, progressive teaching, validated action proposals  |
 | Coach RAG v2 rich responses                                 | Implemented locally              | Versioned knowledge index, conditional public grounding, deterministic charts/metrics/timelines/problems, persisted rich snapshots |
-| Adaptive improvement roadmap                                | Implemented locally              | `topic-assessment-v1`, manual status precedence, prerequisite graph, capped optional problem sets          |
-| In-app coach check-ins                                      | Implemented locally              | Weekly local review and event thresholds with frequency caps and deduplication                             |
-| Background provider sync                                    | Implemented                      | PostgreSQL jobs, leases, cooldowns, six-hour schedule                                                      |
-| Authenticated full historical LeetCode/CodeChef/CSES import | Not implemented                  | Requires an approved API, local connector, or user import                                                  |
+| Adaptive improvement roadmap                                | Implemented locally              | `topic-assessment-v1`, manual status precedence, prerequisite graph, capped optional problem sets                                  |
+| In-app coach check-ins                                      | Implemented locally              | Weekly local review and event thresholds with frequency caps and deduplication                                                     |
+| Background provider sync                                    | Implemented                      | PostgreSQL jobs, leases, cooldowns, six-hour schedule                                                                              |
+| Authenticated full historical LeetCode/CodeChef/CSES import | Not implemented                  | Requires an approved API, local connector, or user import                                                                          |
 
 Local unit, type-check, build, and mocked integration checks pass when run with
 the documented commands. Live provider behavior and authenticated browser
@@ -358,10 +358,12 @@ and delete/archive/restore controls. The learner can inspect and manage memory.
 - `/problems` — unified provider catalog.
 - `/problems/:provider/:externalId` — problem detail.
 - `/recommendations` — ranked practice feed.
-- `/coach` — saved conversations, progressive CP/DSA coaching, roadmap, and
-  in-app check-ins.
-- `/activity` — merged activity timeline.
-- `/contests` — contest catalog and participation.
+- `/coach` — bounded coaching workspace with saved conversations, an
+  independently scrolling message pane, rich evidence, a collapsible learning
+  plan, and in-app check-ins.
+- `/activity` — merged activity timeline with bounded “show more” pagination.
+- `/contests` — contest catalog and participation with bounded “show more”
+  pagination.
 - `/analytics` — unified analytics.
 - `/progress` — manual progress history and analytics.
 - `/bookmarks` — saved problems.
@@ -959,7 +961,7 @@ silently upgraded; the learner must choose again before new coach responses,
 AI-generated summaries, or proactive check-ins can run. While enabled, Express
 sends FastAPI only a bounded snapshot: profile/goals, deterministic roadmap and
 assessments, provider completeness, recent activity/contests/ratings,
-recommendation feedback, bookmarks/dismissals, reflections, up to fifteen
+recommendation feedback, bookmarks/dismissals, reflections, up to five
 active query-relevant memories (with persistent instructions prioritized), and
 a rolling sanitized conversation summary. A
 conditional public-search lane receives only a de-identified CP/DSA query; it
@@ -987,8 +989,8 @@ Coach turns use three bounded retrieval lanes. Express deterministically builds
 the learner snapshot (profile and goals, 30/90-day activity trends where
 observed, provider profiles/submissions/solves/contests/ratings, roadmap
 transitions, feedback, bookmarks, reflections, and trusted catalog candidates).
-FastAPI retrieves up to fifteen semantically relevant active learner memories
-(including always-on instructions and preferences) and
+Express retrieves up to five semantically relevant active learner memories
+(while preserving the learner's explicit profile instructions and preferences) and FastAPI retrieves
 up to eight chunks from the versioned `coach_knowledge_sources`/
 `coach_knowledge_chunks` index. The knowledge lane combines keyword overlap
 with pgvector similarity when embeddings are available and caps repeated topics
@@ -999,8 +1001,13 @@ The relevance router invokes at most one Gemini Google Search grounding call
 when the question requests current/public/external information or internal
 coverage is insufficient. The query is de-identified before the call, and
 grounding metadata is converted into at most five validated public HTTPS
-citations. Public search can explain concepts or cite external context; it
-cannot invent problem IDs, canonical URLs, learner metrics, or roadmap changes.
+citations. Practice-problem requests also activate this lane. The query may add
+up to three generic current-focus topic names, but never a name, handle, rating,
+conversation, or private history. Gemini may select exact grounded citation IDs
+as web problem sources. Express accepts only selected IDs that are present in
+Google's grounding metadata and still pass public-HTTPS validation;
+model-authored URLs are never accepted. Web results cannot fabricate learner
+metrics or make roadmap changes.
 
 The public `/api/coach/.../messages` endpoint remains non-streaming. An internal
 `/internal/coach/respond/stream` SSE transport is available for clients that need
@@ -1009,16 +1016,20 @@ validation, so partial model output never reaches the browser. Express validates
 and persists a `coach-rich-v2` snapshot alongside each assistant
 message. It contains only useful blocks: metric grids, line/bar/stacked-bar
 charts with an accessible table fallback, timelines, comparison tables, and up
-to five trusted catalog problems, plus source freshness and two to four
-follow-up questions. Chart numbers and problem links are hydrated from
-deterministic Express datasets; Gemini cannot fabricate them. Existing v1
+to five trusted catalog problems or grounded web problem sources, plus
+citations and two to four follow-up questions. Gemini chooses from the
+allowlisted dataset IDs, catalog problem IDs, and grounded citation IDs
+available for that turn; chart numbers and catalog problem links are hydrated
+from deterministic Express datasets. Web problem cards link through verified
+grounding metadata and are visibly attributed as web-grounded. Existing v1
 messages without `richContent` remain readable.
 
 If Gemini, embeddings, the knowledge database, or Search grounding is
-unavailable, the deterministic composer still returns evidence-backed metrics,
-history, charts, and trusted problems where available. The UI labels the
-explanation as a deterministic fallback and omits unavailable public claims;
-it never silently presents generic advice as personalized reasoning. Raw web
+unavailable, the deterministic composer still returns trusted learner metrics,
+history, charts, and problems where available, while chat uses a concise retry
+message instead of topic-specific hard-coded advice. Internal fallback and data
+quality fields remain available to audits and contracts but are not exposed as
+technical labels in the learner UI. Raw web
 pages, search text/queries, prompts, transient code, and private context are
 not stored in messages or audits. Only model/version, retrieval-lane flags,
 latency, token/cost metadata, and keyed context fingerprints are audited.
@@ -1056,7 +1067,12 @@ The prerequisite graph and provider-tag aliases are deterministic and limited
 to the canonical taxonomy. Optional practice sets are selected by Express from
 trusted catalog records, exclude solved/actively dismissed identities, and are
 capped at two foundation, two target, and one stretch problem per topic.
-Gemini may order or explain those candidates but cannot invent IDs or URLs.
+Gemini may order or explain those candidates but cannot invent IDs or URLs. In
+coach chat only, Gemini may additionally select up to five exact web citation
+IDs produced by the separate de-identified Google Search grounding call. These
+appear as attributed external practice sources, not trusted catalog records;
+they cannot be bookmarked, marked solved, or used as roadmap evidence until a
+provider adapter validates and imports the corresponding identity.
 
 After each saved coaching turn, the outbox queues a bounded conversation-memory
 job. The worker sends only recent sanitized turns (with code, links, and copied
@@ -1076,8 +1092,9 @@ The non-streaming coach response is validated before it reaches React. It may
 contain teaching, progressive hints, contest/attempt debriefs, evidence
 references, and confirmation-gated roadmap/progress/bookmark proposals. A
 transient code/problem field is never persisted. If FastAPI/Gemini is down, the
-roadmap and practice set remain usable and the UI labels the deterministic
-summary as a fallback instead of presenting generic advice as personalized.
+roadmap and practice set remain usable and chat presents a concise retry message
+instead of generating topic-specific hard-coded advice. The fallback flag remains
+internal for observability and is not shown as a learner-facing product label.
 
 Check-ins are in-app only. Learners choose a local weekly review day/time and
 can separately enable event nudges for new contest/rating evidence, repeated
@@ -1244,8 +1261,9 @@ SUPABASE_URL=
 SUPABASE_JWT_ISSUER=
 LLM_API_KEY=
 LLM_MODEL=gemini-3.5-flash
-LLM_TIMEOUT_SECONDS=15
-LLM_MAX_OUTPUT_TOKENS=2048
+LLM_TIMEOUT_SECONDS=90
+LLM_MAX_OUTPUT_TOKENS=4096
+COACH_THINKING_LEVEL=high
 LLM_INPUT_PRICE_PER_MILLION_USD=1.50
 LLM_OUTPUT_PRICE_PER_MILLION_USD=9.00
 LLM_PRICING_VERSION=gemini-3.5-flash-standard-2026-09
@@ -1266,7 +1284,7 @@ MEMORY_GENERATION_ENABLED=true
 MEMORY_RAG_ENABLED=true
 COACH_KNOWLEDGE_RAG_ENABLED=true
 COACH_WEB_GROUNDING_ENABLED=true
-COACH_WEB_GROUNDING_TIMEOUT_SECONDS=8
+COACH_WEB_GROUNDING_TIMEOUT_SECONDS=20
 INTERNAL_RATE_LIMIT_PER_MINUTE=120
 ```
 
@@ -1573,41 +1591,41 @@ implementations from `apps/core-api/src/server.ts`, applies authentication and
 validation middleware, calls services, and serializes shared-contract responses.
 It should not contain provider-specific parsing or raw external HTTP calls.
 
-| Module                                                  | Responsibility                                                             |
-| ------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `src/auth/require-auth.ts`                              | Express middleware that requires a verified Supabase subject               |
-| `src/auth/supabase-jwt.ts`                              | JWKS-backed JWT verification and claim checks                              |
-| `src/config/provider-config.ts`                         | Provider URLs, capability switches, gates, limits, and environment parsing |
-| `src/config/ai-config.ts`                               | AI URL, timeout, token, model, and feature configuration                   |
-| `src/integrations/providers/provider-http-client.ts`    | HTTPS allowlists, timeout, bounded bodies, retries, safe errors            |
-| `src/integrations/providers/provider-adapter.ts`        | Capability names/statuses and common adapter shape                         |
-| `src/integrations/providers/problem-provider.ts`        | Catalog/detail/content provider interface                                  |
-| `src/integrations/providers/contest-provider.ts`        | Contest provider interface and freshness contract                          |
-| `src/integrations/providers/cached-catalog-provider.ts` | In-memory/durable catalog refresh, cache, filtering, stale fallback        |
-| `src/integrations/providers/cached-contest-provider.ts` | Contest cache, refresh, and stale handling                                 |
-| `src/integrations/providers/problem-filters.ts`         | Search, topic, difficulty, rating, and pagination filtering                |
-| `src/integrations/providers/provider-html-sanitizer.ts` | Allowed HTML, URL attributes, text, sections, and examples                 |
-| `src/services/problem-catalog-service.ts`               | Selects provider(s), merges catalogs, topics, and detail/content results   |
-| `src/services/contest-catalog-service.ts`               | Selects providers and merges contest results                               |
-| `src/services/provider-account-service.ts`              | Link/disconnect account validation and serialization                       |
-| `src/services/provider-account-stats-service.ts`        | User-triggered aggregate public-stat refresh and stale preservation        |
-| `src/services/provider-profile-service.ts`              | Profile snapshot refresh and latest-profile selection                      |
-| `src/services/provider-activity-service.ts`             | Consent-gated Codeforces verified activity                                 |
-| `src/services/provider-sync-service.ts`                 | Manual sync job creation, cooldown, status, history deletion               |
-| `src/services/provider-sync-worker.ts`                  | Lease-based profile/activity/statistics worker and scheduling              |
-| `src/services/recommendation-ranking.ts`                | Deterministic candidate scoring, diversity, reasons, and history           |
-| `src/services/recommendation-service.ts`                | AI request, response validation, persistence, fallback, feedback           |
-| `src/services/progress-service.ts`                      | Manual actions, status reduction, history, analytics, reflections, timers  |
+| Module                                                  | Responsibility                                                                |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `src/auth/require-auth.ts`                              | Express middleware that requires a verified Supabase subject                  |
+| `src/auth/supabase-jwt.ts`                              | JWKS-backed JWT verification and claim checks                                 |
+| `src/config/provider-config.ts`                         | Provider URLs, capability switches, gates, limits, and environment parsing    |
+| `src/config/ai-config.ts`                               | AI URL, timeout, token, model, and feature configuration                      |
+| `src/integrations/providers/provider-http-client.ts`    | HTTPS allowlists, timeout, bounded bodies, retries, safe errors               |
+| `src/integrations/providers/provider-adapter.ts`        | Capability names/statuses and common adapter shape                            |
+| `src/integrations/providers/problem-provider.ts`        | Catalog/detail/content provider interface                                     |
+| `src/integrations/providers/contest-provider.ts`        | Contest provider interface and freshness contract                             |
+| `src/integrations/providers/cached-catalog-provider.ts` | In-memory/durable catalog refresh, cache, filtering, stale fallback           |
+| `src/integrations/providers/cached-contest-provider.ts` | Contest cache, refresh, and stale handling                                    |
+| `src/integrations/providers/problem-filters.ts`         | Search, topic, difficulty, rating, and pagination filtering                   |
+| `src/integrations/providers/provider-html-sanitizer.ts` | Allowed HTML, URL attributes, text, sections, and examples                    |
+| `src/services/problem-catalog-service.ts`               | Selects provider(s), merges catalogs, topics, and detail/content results      |
+| `src/services/contest-catalog-service.ts`               | Selects providers and merges contest results                                  |
+| `src/services/provider-account-service.ts`              | Link/disconnect account validation and serialization                          |
+| `src/services/provider-account-stats-service.ts`        | User-triggered aggregate public-stat refresh and stale preservation           |
+| `src/services/provider-profile-service.ts`              | Profile snapshot refresh and latest-profile selection                         |
+| `src/services/provider-activity-service.ts`             | Consent-gated Codeforces verified activity                                    |
+| `src/services/provider-sync-service.ts`                 | Manual sync job creation, cooldown, status, history deletion                  |
+| `src/services/provider-sync-worker.ts`                  | Lease-based profile/activity/statistics worker and scheduling                 |
+| `src/services/recommendation-ranking.ts`                | Deterministic candidate scoring, diversity, reasons, and history              |
+| `src/services/recommendation-service.ts`                | AI request, response validation, persistence, fallback, feedback              |
+| `src/services/progress-service.ts`                      | Manual actions, status reduction, history, analytics, reflections, timers     |
 | `src/services/coach-service.ts`                         | Deterministic roadmap, bounded RAG snapshot, rich composer, fallback, actions |
-| `src/integrations/ai/ai-coach-client.ts`                | Internal coach JSON contract and validated AI transport                   |
-| `src/repositories/coach-repository.ts`                 | Owner-scoped coach persistence and rich message serialization             |
-| `src/repositories/provider-data-repository.ts`          | Submissions, solved observations, ratings, contest participation           |
-| `src/repositories/provider-profile-repository.ts`       | Profile snapshot persistence and latest selection                          |
-| `src/repositories/provider-sync-repository.ts`          | Sync states/jobs, leases, retries, cursors, and deletion                   |
-| `src/repositories/external-problem-cache-repository.ts` | Durable normalized problem catalog                                         |
-| `src/repositories/problem-content-cache-repository.ts`  | Durable permitted sanitized content                                        |
-| `src/repositories/external-contest-cache-repository.ts` | Durable contest catalog                                                    |
-| `src/database/prisma.ts`                                | Prisma client construction and database lifecycle                          |
+| `src/integrations/ai/ai-coach-client.ts`                | Internal coach JSON contract and validated AI transport                       |
+| `src/repositories/coach-repository.ts`                  | Owner-scoped coach persistence and rich message serialization                 |
+| `src/repositories/provider-data-repository.ts`          | Submissions, solved observations, ratings, contest participation              |
+| `src/repositories/provider-profile-repository.ts`       | Profile snapshot persistence and latest selection                             |
+| `src/repositories/provider-sync-repository.ts`          | Sync states/jobs, leases, retries, cursors, and deletion                      |
+| `src/repositories/external-problem-cache-repository.ts` | Durable normalized problem catalog                                            |
+| `src/repositories/problem-content-cache-repository.ts`  | Durable permitted sanitized content                                           |
+| `src/repositories/external-contest-cache-repository.ts` | Durable contest catalog                                                       |
+| `src/database/prisma.ts`                                | Prisma client construction and database lifecycle                             |
 
 ### 23.3 Provider adapter files
 
@@ -1647,43 +1665,43 @@ integrations/provider-accounts/
 
 ### 23.4 FastAPI implementation map
 
-| Path                                      | Responsibility                                                          |
-| ----------------------------------------- | ----------------------------------------------------------------------- |
-| `apps/ai-api/app/coach_service.py`       | Knowledge/memory retrieval, conditional Search grounding, Gemini flow, audits |
-| `apps/ai-api/app/knowledge_base.py`       | Versioned original CP/DSA reference chunks and lexical fallback         |
-| `apps/ai-api/app/knowledge_repository.py`| Alembic knowledge index seeding and hybrid keyword/vector retrieval     |
-| `apps/ai-api/app/web_grounding.py`        | De-identified public query and Gemini grounding citation extraction     |
-| `apps/ai-api/app/coach_models.py`         | Strict coach output, citation, proposal, and safety contracts          |
-| `apps/ai-api/app/pedagogy.py`             | Frustration/momentum signals, teaching modes, SM-2, mastery, prerequisites |
-| `apps/ai-api/app/rate_limit.py`           | Bounded process-local protection for internal AI routes                |
-| `apps/ai-api/app/memory_consolidation.py` | Confidence decay and safe memory-consolidation grouping helpers        |
-| `apps/ai-api/alembic/versions/202609171300_coach_knowledge.py` | AI knowledge source/chunk/vector tables |
-| `apps/ai-api/alembic/versions/202609181000_coach_audit_retrieval.py` | Retrieval-lane audit flags |
-| `apps/ai-api/alembic/versions/202609181300_curriculum.py` | Hint ladders, prerequisite graph, topic mastery, contest performance |
+| Path                                                                 | Responsibility                                                                |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `apps/ai-api/app/coach_service.py`                                   | Knowledge/memory retrieval, conditional Search grounding, Gemini flow, audits |
+| `apps/ai-api/app/knowledge_base.py`                                  | Versioned original CP/DSA reference chunks and lexical fallback               |
+| `apps/ai-api/app/knowledge_repository.py`                            | Alembic knowledge index seeding and hybrid keyword/vector retrieval           |
+| `apps/ai-api/app/web_grounding.py`                                   | De-identified public query and Gemini grounding citation extraction           |
+| `apps/ai-api/app/coach_models.py`                                    | Strict coach output, citation, proposal, and safety contracts                 |
+| `apps/ai-api/app/pedagogy.py`                                        | Frustration/momentum signals, teaching modes, SM-2, mastery, prerequisites    |
+| `apps/ai-api/app/rate_limit.py`                                      | Bounded process-local protection for internal AI routes                       |
+| `apps/ai-api/app/memory_consolidation.py`                            | Confidence decay and safe memory-consolidation grouping helpers               |
+| `apps/ai-api/alembic/versions/202609171300_coach_knowledge.py`       | AI knowledge source/chunk/vector tables                                       |
+| `apps/ai-api/alembic/versions/202609181000_coach_audit_retrieval.py` | Retrieval-lane audit flags                                                    |
+| `apps/ai-api/alembic/versions/202609181300_curriculum.py`            | Hint ladders, prerequisite graph, topic mastery, contest performance          |
 
 ### 23.5 Frontend implementation map
 
-| Path                                                           | Responsibility                                              |
-| -------------------------------------------------------------- | ----------------------------------------------------------- |
-| `apps/web/src/routes/AppRouter.tsx`                            | Route table and public/protected screen selection           |
-| `apps/web/src/routes/ProtectedRoute.tsx`                       | Onboarding/auth gate for learner screens                    |
-| `apps/web/src/features/auth/*`                                 | Supabase session, token refresh, authenticated fetch        |
-| `apps/web/src/features/platform/api.ts`                        | Central platform API calls and response parsing             |
-| `apps/web/src/features/platform/hooks.ts`                      | TanStack Query hooks for catalog/profile/activity/analytics |
-| `apps/web/src/features/platform/components/provider-labels.ts` | Provider labels and linkable-provider options               |
-| `apps/web/src/features/profile/*`                              | Learner profile and provider-account UI                     |
-| `apps/web/src/pages/ProblemsPage.tsx`                          | Catalog filters, pagination, and problem cards              |
-| `apps/web/src/pages/ProblemDetailPage.tsx`                     | Detail metadata, status, tags, and outbound link            |
-| `apps/web/src/pages/RecommendationsPage.tsx`                   | Recommendation feed, refresh, feedback, dismissal           |
-| `apps/web/src/pages/ActivityPage.tsx`                          | Merged provider event timeline and tags                     |
-| `apps/web/src/pages/ContestsPage.tsx`                          | Contest catalog and participation view                      |
-| `apps/web/src/pages/AnalyticsPage.tsx`                         | Provider totals and topic/language/rating distributions     |
-| `apps/web/src/pages/ProgressPage.tsx`                          | Manual status history and progress analytics                |
-| `apps/web/src/pages/MemoryPage.tsx`                            | Learner memory review and lifecycle controls                |
-| `apps/web/src/pages/CoachPage.tsx`                             | Saved coach threads, roadmap, actions, and rich message rendering |
+| Path                                                           | Responsibility                                                                |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `apps/web/src/routes/AppRouter.tsx`                            | Route table and public/protected screen selection                             |
+| `apps/web/src/routes/ProtectedRoute.tsx`                       | Onboarding/auth gate for learner screens                                      |
+| `apps/web/src/features/auth/*`                                 | Supabase session, token refresh, authenticated fetch                          |
+| `apps/web/src/features/platform/api.ts`                        | Central platform API calls and response parsing                               |
+| `apps/web/src/features/platform/hooks.ts`                      | TanStack Query hooks for catalog/profile/activity/analytics                   |
+| `apps/web/src/features/platform/components/provider-labels.ts` | Provider labels and linkable-provider options                                 |
+| `apps/web/src/features/profile/*`                              | Learner profile and provider-account UI                                       |
+| `apps/web/src/pages/ProblemsPage.tsx`                          | Catalog filters, pagination, and problem cards                                |
+| `apps/web/src/pages/ProblemDetailPage.tsx`                     | Detail metadata, status, tags, and outbound link                              |
+| `apps/web/src/pages/RecommendationsPage.tsx`                   | Recommendation feed, refresh, feedback, dismissal                             |
+| `apps/web/src/pages/ActivityPage.tsx`                          | Merged provider event timeline and tags                                       |
+| `apps/web/src/pages/ContestsPage.tsx`                          | Contest catalog and participation view                                        |
+| `apps/web/src/pages/AnalyticsPage.tsx`                         | Provider totals and topic/language/rating distributions                       |
+| `apps/web/src/pages/ProgressPage.tsx`                          | Manual status history and progress analytics                                  |
+| `apps/web/src/pages/MemoryPage.tsx`                            | Learner memory review and lifecycle controls                                  |
+| `apps/web/src/pages/CoachPage.tsx`                             | Saved coach threads, roadmap, actions, and rich message rendering             |
 | `apps/web/src/features/coach/components/CoachRichContent.tsx`  | Accessible charts, tables, timelines, trusted problems, citations, follow-ups |
-| `apps/web/src/features/coach/*`                                | Coach API calls and TanStack Query state                      |
-| `apps/web/src/mocks/handlers.ts`                               | MSW implementation of the same normalized API shape         |
+| `apps/web/src/features/coach/*`                                | Coach API calls and TanStack Query state                                      |
+| `apps/web/src/mocks/handlers.ts`                               | MSW implementation of the same normalized API shape                           |
 
 ---
 

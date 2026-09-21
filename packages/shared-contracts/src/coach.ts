@@ -177,7 +177,10 @@ export type CoachEvidenceReference = z.infer<
 >
 
 const isPrivateCoachHostname = (value: string) => {
-  const hostname = value.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
+  const hostname = value
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '')
+    .replace(/\.$/, '')
   if (
     hostname === 'localhost' ||
     hostname === '::1' ||
@@ -232,12 +235,9 @@ export const isSafeCoachPublicUrl = (value: string) => {
   }
 }
 
-const coachHttpsUrlSchema = z
-  .string()
-  .url()
-  .refine(isSafeCoachPublicUrl, {
-    message: 'Only public HTTPS URLs are allowed.',
-  })
+const coachHttpsUrlSchema = z.string().url().refine(isSafeCoachPublicUrl, {
+  message: 'Only public HTTPS URLs are allowed.',
+})
 
 export const CoachCitationSchema = z
   .object({
@@ -372,10 +372,7 @@ export const CoachComparisonTableBlockSchema = z
     type: z.literal('comparison_table'),
     title: nonEmptyStringSchema.max(160),
     columns: z.array(nonEmptyStringSchema.max(80)).min(2).max(6),
-    rows: z
-      .array(z.array(richValueSchema).min(2).max(6))
-      .min(1)
-      .max(20),
+    rows: z.array(z.array(richValueSchema).min(2).max(6)).min(1).max(20),
     citationIds: z.array(z.string().trim().min(1).max(80)).max(8),
   })
   .strict()
@@ -393,12 +390,40 @@ export const CoachProblemListBlockSchema = z
   .strict()
 export type CoachProblemListBlock = z.infer<typeof CoachProblemListBlockSchema>
 
+export const CoachWebProblemListBlockSchema = z
+  .object({
+    type: z.literal('web_problem_list'),
+    title: nonEmptyStringSchema.max(160),
+    reason: nonEmptyStringSchema.max(360),
+    problems: z
+      .array(
+        z
+          .object({
+            citationId: z
+              .string()
+              .trim()
+              .regex(/^web-[1-9][0-9]{0,2}$/),
+            title: nonEmptyStringSchema.max(160),
+            url: coachHttpsUrlSchema,
+            publisher: nonEmptyStringSchema.max(100).optional(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(5),
+  })
+  .strict()
+export type CoachWebProblemListBlock = z.infer<
+  typeof CoachWebProblemListBlockSchema
+>
+
 export const CoachRichBlockSchema = z.discriminatedUnion('type', [
   CoachMetricBlockSchema,
   CoachChartBlockSchema,
   CoachTimelineBlockSchema,
   CoachComparisonTableBlockSchema,
   CoachProblemListBlockSchema,
+  CoachWebProblemListBlockSchema,
 ])
 export type CoachRichBlock = z.infer<typeof CoachRichBlockSchema>
 
@@ -407,9 +432,7 @@ export const CoachRichContentSchema = z
     version: z.literal('coach-rich-v2'),
     blocks: z.array(CoachRichBlockSchema).max(8),
     citations: z.array(CoachCitationSchema).max(8),
-    suggestedQuestions: z
-      .array(nonEmptyStringSchema.max(240))
-      .max(4),
+    suggestedQuestions: z.array(nonEmptyStringSchema.max(240)).max(4),
     generatedAt: dateSchema,
     dataAsOf: dateSchema,
     completeness: z.enum(['complete', 'partial', 'unknown']),
@@ -445,6 +468,23 @@ export const CoachRichContentSchema = z
               code: 'custom',
               message: 'Comparison rows must match the column count.',
               path: ['blocks', blockIndex, 'rows', rowIndex],
+            })
+          }
+        })
+      }
+      if (block.type === 'web_problem_list') {
+        block.problems.forEach((problem, problemIndex) => {
+          if (!knownCitations.has(problem.citationId)) {
+            context.addIssue({
+              code: 'custom',
+              message: 'Web problems must reference a known web citation.',
+              path: [
+                'blocks',
+                blockIndex,
+                'problems',
+                problemIndex,
+                'citationId',
+              ],
             })
           }
         })

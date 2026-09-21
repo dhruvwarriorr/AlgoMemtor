@@ -9,18 +9,21 @@ from app.coach_models import (
     CoachCitation,
     CoachEvidence,
     CoachModelOutput,
+    CoachPresentation,
     CoachRequest,
     CoachResponseProposal,
 )
 from app.coach_service import (
     CoachNotConfiguredError,
     CoachService,
+    utc_timestamp,
 )
 from app.knowledge_base import retrieve_knowledge
 from app.settings import AiSettings
 from app.web_grounding import (
     PublicCitation,
     PublicResearch,
+    public_topic_hints,
     sanitized_public_query,
     should_ground_on_web,
 )
@@ -96,6 +99,47 @@ def test_rejects_urls_in_evidence() -> None:
         )
 
 
+def test_valid_evidence_preserves_contract_values() -> None:
+    evidence = CoachEvidence(
+        source="analytics",
+        label="Recent practice",
+        detail="You completed three observed problems this week.",
+        completeness="partial",
+        stale=False,
+    )
+
+    assert evidence.model_dump(mode="json") == {
+        "source": "analytics",
+        "label": "Recent practice",
+        "detail": "You completed three observed problems this week.",
+        "completeness": "partial",
+        "stale": False,
+    }
+
+
+def test_utc_timestamp_matches_shared_contract_format() -> None:
+    timestamp = utc_timestamp()
+
+    assert timestamp.endswith("Z")
+    assert "+00:00" not in timestamp
+
+
+def test_presentation_accepts_only_trusted_problem_identities() -> None:
+    presentation = CoachPresentation(
+        datasetIds=["trusted-problems"],
+        problemIds=["leetcode:contains-duplicate-ii", "leetcode:contains-duplicate-ii"],
+        webProblemCitationIds=["web-1", "web-1"],
+        suggestedQuestions=["Show me the invariant."],
+    )
+
+    assert presentation.problemIds == ["leetcode:contains-duplicate-ii"]
+    assert presentation.webProblemCitationIds == ["web-1"]
+    with pytest.raises(ValidationError):
+        CoachPresentation(problemIds=["https://leetcode.com/problems/example"])
+    with pytest.raises(ValidationError):
+        CoachPresentation(webProblemCitationIds=["made-up-source"])
+
+
 def test_rejects_links_in_coach_text() -> None:
     with pytest.raises(ValidationError):
         CoachModelOutput(answer="Read https://example.com for the solution.")
@@ -147,6 +191,7 @@ def test_knowledge_retrieval_and_web_router_are_bounded() -> None:
     )
     assert should_ground_on_web("What is the latest public contest format?", 0)
     assert should_ground_on_web("Explain the Codeforces rating system", 8)
+    assert should_ground_on_web("Recommend problems I should solve next", 8)
     assert not should_ground_on_web("Analyze my recent contests and progress", 8)
     assert not should_ground_on_web("Explain binary search", len(chunks))
     public_query = sanitized_public_query(
@@ -167,6 +212,32 @@ def test_knowledge_retrieval_and_web_router_are_bounded() -> None:
     )
     assert "alice" not in identity_sanitized.lower()
     assert "tourist" not in identity_sanitized.lower()
+    hints = public_topic_hints(
+        {
+            "profile": {"handle": "private-handle"},
+            "roadmap": {
+                "topics": [
+                    {"name": "Sliding Window", "lane": "current_focus"},
+                    {
+                        "topic": "graphs",
+                        "name": "Graphs",
+                        "lane": "needs_more_practice",
+                    },
+                    {"name": "Trees", "lane": "skipped"},
+                    {
+                        "topic": "linked-lists",
+                        "name": "Linked Lists",
+                        "lane": "current_focus",
+                    },
+                ]
+            },
+            "excludedTopics": ["linked-lists"],
+        }
+    )
+    assert hints == ("Sliding Window", "Graphs")
+    hinted_query = sanitized_public_query("Recommend practice problems", hints)
+    assert "Sliding Window" in hinted_query
+    assert "private-handle" not in hinted_query
 
 
 class StaticModel:
@@ -213,9 +284,12 @@ async def test_web_grounding_is_separated_from_model_text_and_bounded(
 ) -> None:
     captured: dict[str, object] = {}
 
-    async def fake_ground(settings: AiSettings, question: str) -> PublicResearch:
+    async def fake_ground(
+        settings: AiSettings, question: str, topic_hints: tuple[str, ...]
+    ) -> PublicResearch:
         del settings
         captured["question"] = sanitized_public_query(question)
+        captured["topic_hints"] = topic_hints
         return PublicResearch(
             summary="Public search summary.",
             citations=[
@@ -262,8 +336,10 @@ async def test_web_grounding_is_separated_from_model_text_and_bounded(
 async def test_untrusted_grounding_metadata_is_skipped_safely(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_ground(settings: AiSettings, question: str) -> PublicResearch:
-        del settings, question
+    async def fake_ground(
+        settings: AiSettings, question: str, topic_hints: tuple[str, ...]
+    ) -> PublicResearch:
+        del settings, question, topic_hints
         return PublicResearch(
             summary="Public search summary.",
             citations=[

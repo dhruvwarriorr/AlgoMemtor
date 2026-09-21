@@ -161,27 +161,19 @@ function RecommendationsPage() {
     )
   } else if (feed !== undefined) {
     const warnings = recommendationsQuery.data?.meta.warnings ?? []
-    const stale = recommendationsQuery.data?.meta.stale ?? false
     const partial = recommendationsQuery.data?.meta.partial ?? false
 
     content = (
       <div className="min-w-0 space-y-4">
-        {stale ? (
-          <aside
-            className="rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-50"
-            role="status"
-          >
-            Recommendation metadata may be stale. These links remain the
-            provider-validated canonical links.
-          </aside>
-        ) : null}
         {partial ||
         warnings.some((warning) => warning.code !== 'STALE_DATA') ? (
           <aside
             className="rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-50"
             role="status"
           >
-            <p className="font-medium">Some provider data is unavailable.</p>
+            <p className="font-medium">
+              A connected provider could not be refreshed right now.
+            </p>
             {warnings
               .filter((warning) => warning.code !== 'STALE_DATA')
               .map((warning) => (
