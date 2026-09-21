@@ -4,6 +4,7 @@ import {
   ApiErrorResponseSchema,
   ProviderAccountResponseSchema,
   ProviderAccountsResponseSchema,
+  ProviderSyncStatusResponseSchema,
 } from '@algomemtor/shared-contracts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -100,6 +101,32 @@ function refreshStats(
 }
 
 describe('provider account API', () => {
+  it('queues the first provider sync as soon as an account is linked', async () => {
+    const baseUrl = startApp()
+
+    const linked = await saveAccount(baseUrl, 'codeforces', {
+      handle: 'tourist',
+      consent: true,
+    })
+    const statusResponse = await fetch(
+      `${baseUrl}/api/provider-accounts/codeforces/sync-status`,
+      { headers: firstAuthorization },
+    )
+    const status = ProviderSyncStatusResponseSchema.parse(
+      await statusResponse.json(),
+    )
+
+    expect(linked.status).toBe(200)
+    expect(statusResponse.status).toBe(200)
+    expect(status.data.job).toMatchObject({
+      provider: 'codeforces',
+      status: 'queued',
+    })
+    expect(Date.parse(status.data.job?.runAfter ?? '')).toBeLessThanOrEqual(
+      Date.now(),
+    )
+  })
+
   it('restores consent on manual sync without inventing fetched statistics', async () => {
     const repository = new InMemoryProviderAccountRepository()
     const baseUrl = startApp([], [], repository)

@@ -64,6 +64,26 @@ export class ProviderSyncService {
     return this.options.now?.() ?? new Date()
   }
 
+  async requestInitialSync(authUserId: string, provider: ProviderKey) {
+    const validatedProvider = LinkableProviderSchema.parse(provider)
+    const account =
+      await this.options.providerAccountRepository.findByAuthUserIdAndProvider(
+        authUserId,
+        validatedProvider,
+      )
+    if (account === null)
+      throw new ProviderSyncNotLinkedError(validatedProvider)
+
+    return this.options.repository.enqueue({
+      userId: authUserId,
+      providerAccountId: account.id,
+      provider: validatedProvider,
+      capability: 'linked_user_sync',
+      jobType: 'initial_sync',
+      idempotencyKey: `provider-sync:initial:${account.id}:${randomUUID()}`,
+    })
+  }
+
   async requestManualSync(
     authUserId: string,
     provider: ProviderKey,

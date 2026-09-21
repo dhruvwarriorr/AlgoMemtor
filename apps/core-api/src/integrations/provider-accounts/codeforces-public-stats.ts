@@ -8,7 +8,11 @@ import {
 } from '@algomemtor/shared-contracts'
 
 import { RequestGate } from '../../utils/request-gate.js'
-import { createCodeforcesExternalId } from '../codeforces/codeforces-normalizer.js'
+import {
+  createCodeforcesExternalId,
+  normalizeCodeforcesTags,
+  normalizeCodeforcesTopics,
+} from '../codeforces/codeforces-normalizer.js'
 import {
   fetchWithTimeout,
   invalidProviderResponse,
@@ -34,6 +38,7 @@ const CodeforcesSubmissionSchema = z.object({
     contestId: z.number().int().positive().optional(),
     problemsetName: z.string().trim().min(1).max(128).optional(),
     index: z.string().trim().min(1).max(32),
+    tags: z.array(z.string().trim().max(128)).max(64).optional(),
   }),
 })
 
@@ -342,7 +347,12 @@ export class CodeforcesPublicStatsFetcher
     const submissions: ProviderSubmission[] = []
     const solvedByProblem = new Map<
       string,
-      { occurredAt: Date | null; eventId?: string }
+      {
+        occurredAt: Date | null
+        eventId?: string
+        providerTags: string[]
+        topics: string[]
+      }
     >()
     let invalid = 0
     for (const raw of result) {
@@ -410,6 +420,10 @@ export class CodeforcesPublicStatsFetcher
       submissions.push(submission)
       if (submission.isAccepted) {
         const existing = solvedByProblem.get(externalId)
+        const providerTags = normalizeCodeforcesTags(
+          parsed.data.problem.tags ?? [],
+        )
+        const topics = normalizeCodeforcesTopics(parsed.data.problem.tags ?? [])
         if (
           existing === undefined ||
           (validOccurredAt !== null &&
@@ -421,7 +435,18 @@ export class CodeforcesPublicStatsFetcher
             ...(parsed.data.id === undefined
               ? {}
               : { eventId: String(parsed.data.id) }),
+            providerTags:
+              providerTags.length > 0
+                ? providerTags
+                : (existing?.providerTags ?? []),
+            topics: topics.length > 0 ? topics : (existing?.topics ?? []),
           })
+        } else if (
+          existing.providerTags.length === 0 &&
+          providerTags.length > 0
+        ) {
+          existing.providerTags = providerTags
+          existing.topics = topics
         }
       }
     }
@@ -440,6 +465,10 @@ export class CodeforcesPublicStatsFetcher
           ...(value.eventId === undefined
             ? {}
             : { sourceSubmissionId: value.eventId }),
+          ...(value.providerTags.length === 0
+            ? {}
+            : { providerTags: value.providerTags }),
+          ...(value.topics.length === 0 ? {} : { topics: value.topics }),
           completeness:
             result.length < this.maxSubmissions && invalid === 0
               ? 'complete'

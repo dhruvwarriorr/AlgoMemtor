@@ -21,6 +21,7 @@ import {
   useProviderSync,
   useProviderSyncStatus,
 } from '@/features/platform/hooks'
+import { activeProviderSyncStatus } from '@/features/platform/provider-sync-status'
 
 import { providerAccountErrorMessage } from '../api/provider-accounts'
 import {
@@ -83,6 +84,8 @@ function LinkedProviderCard({
     deleteHistory.isPending
 
   const syncState = providerSyncStatus.data?.data.state
+  const activeSync = activeProviderSyncStatus(providerSyncStatus.data)
+  const initialSyncPending = activeSync !== null
   const lastSynced = syncState?.lastSucceededAt
     ? formatRelativeTime(syncState.lastSucceededAt)
     : null
@@ -214,23 +217,31 @@ function LinkedProviderCard({
               {solved}
             </p>
           ) : (
-            <p className="text-sm text-muted-foreground">Not synced yet</p>
+            <p aria-live="polite" className="text-sm text-muted-foreground">
+              {activeSync === 'queued'
+                ? 'First sync queued…'
+                : activeSync === 'running'
+                  ? 'Fetching profile data…'
+                  : 'Not synced yet'}
+            </p>
           )}
           {lastSynced !== null ? (
             <p className="text-xs text-muted-foreground">Synced {lastSynced}</p>
           ) : null}
         </div>
         <Button
-          disabled={isBusy || account.syncEnabled === false}
+          disabled={
+            isBusy || initialSyncPending || account.syncEnabled === false
+          }
           onClick={() => void handleSync()}
           size="sm"
           type="button"
           variant="outline"
         >
           <RefreshCw
-            className={`mr-1.5 size-3.5 ${providerSync.isPending ? 'animate-spin' : ''}`}
+            className={`mr-1.5 size-3.5 ${providerSync.isPending || initialSyncPending ? 'animate-spin' : ''}`}
           />
-          {providerSync.isPending ? 'Syncing…' : 'Sync'}
+          {providerSync.isPending || initialSyncPending ? 'Syncing…' : 'Sync'}
         </Button>
       </div>
 
@@ -288,7 +299,7 @@ function UnlinkedProviderCard({
       setConsent(false)
       notify({
         title: `${label} linked`,
-        description: 'Public handle saved. Sync will start shortly.',
+        description: 'Public handle saved. The first sync is queued now.',
         tone: 'success',
       })
     } catch {

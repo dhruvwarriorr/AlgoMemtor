@@ -16,6 +16,52 @@ const noWaitGate = () => new RequestGate({ minIntervalMs: 0 })
 const fetchedAt = new Date('2026-08-27T12:00:00.000Z')
 
 describe('public provider solved-count fetchers', () => {
+  it('retains trusted Codeforces tags on newly observed solves', async () => {
+    const fetcher = new CodeforcesPublicStatsFetcher({
+      baseUrl: 'https://codeforces.test/api',
+      fetchImpl: vi.fn(async (input) =>
+        Response.json(
+          String(input).includes('user.rating')
+            ? { status: 'OK', result: [] }
+            : {
+                status: 'OK',
+                result: [
+                  {
+                    id: 31,
+                    creationTimeSeconds: 1_700_000_000,
+                    verdict: 'OK',
+                    problem: {
+                      contestId: 10,
+                      index: 'A',
+                      tags: ['graphs', 'dfs and similar'],
+                    },
+                  },
+                  {
+                    id: 30,
+                    creationTimeSeconds: 1_699_999_999,
+                    verdict: 'OK',
+                    problem: { contestId: 10, index: 'A' },
+                  },
+                ],
+              },
+        ),
+      ),
+      requestGate: noWaitGate(),
+      now: () => fetchedAt,
+    })
+
+    const activity = await fetcher.fetchActivityData('tourist')
+
+    expect(activity.solvedProblems).toMatchObject([
+      {
+        externalId: '10A',
+        sourceSubmissionId: '30',
+        providerTags: ['graphs', 'dfs and similar'],
+        topics: ['graphs', 'bfs-and-dfs'],
+      },
+    ])
+  })
+
   it('normalizes accepted Codeforces activity and keeps the earliest accepted event', async () => {
     const fetcher = new CodeforcesPublicStatsFetcher({
       baseUrl: 'https://codeforces.test/api',

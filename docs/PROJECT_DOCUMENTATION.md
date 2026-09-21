@@ -315,7 +315,7 @@ Analytics includes:
 - total solved and provider breakdown;
 - solved-over-time observations;
 - normalized difficulty distribution;
-- native provider topic/tag counts;
+- curated topic distribution from recognized provider tags;
 - language usage;
 - recent-window acceptance rate;
 - rating progression; and
@@ -325,7 +325,16 @@ LeetCode profile-side `tagProblemCounts` is used for the complete aggregate
 skill distribution returned by its public profile. Concrete recent solved rows
 are not added again for that provider, preventing double-counting. For
 providers without aggregate topic counts, concrete observed problem metadata is
-used.
+used. The analytics API maps Codeforces and LeetCode tags into a fixed set of
+broader learning areas on every read. Unknown, untagged, and provider-specific
+contest labels (including CodeChef START codes) do not create chart topics.
+Multiple native tags for one observed problem that map to the same area count
+once. The Insights page shows the largest areas in a compact pie chart, groups
+the remaining recognized areas as `Other topics`, and offers the full recognized
+breakdown in an expandable table. Codeforces accepted submissions carry their
+public problem tags into persisted solved observations during sync, so newly
+observed solves can contribute without a catalog lookup; LeetCode's refreshed
+profile aggregate supplies its topic distribution.
 
 ### 4.11 Bookmarks, dismissals, reflections, and timers
 
@@ -658,6 +667,8 @@ claiming that aggregate totals identify particular solved problems.
   groups are captured with aggregate solved counts.
 - For a fetched LeetCode recent accepted problem, all `topicTags` returned by
   its public question record are captured.
+- For a fetched Codeforces accepted submission, public `problem.tags` are
+  captured when returned by `user.status`.
 - For a fetched CodeChef accepted problem, both public tag arrays are captured
   when the problem endpoint returns them.
 - No provider currently exposes a complete public lifetime mapping from every
@@ -679,6 +690,9 @@ resume after a restart.
 
 Default policy:
 
+- linking a public provider account enqueues an `initial_sync` job due now;
+  this does not consume the manual-refresh cooldown, and the worker polls for
+  due jobs every second;
 - linked-user synchronization every hour with up to five minutes of jitter;
 - manual refresh queued asynchronously with a 15-minute cooldown based only
   on earlier manual requests, not scheduled jobs;
@@ -1203,7 +1217,7 @@ VITE_USE_MOCKS=false
 NODE_ENV=development
 PORT=3001
 WEB_ORIGIN=http://localhost:5173
-DATABASE_URL=postgresql://algomemtor:algomemtor_local@localhost:5432/algomemtor
+DATABASE_URL=postgresql://algomemtor:algomemtor_local@127.0.0.1:5433/algomemtor
 DATABASE_POOL_MAX=10
 DATABASE_CONNECTION_TIMEOUT_MS=5000
 SUPABASE_URL=
@@ -1260,7 +1274,7 @@ or CSES environment secret.
 APP_ENV=development
 PORT=8000
 WEB_ORIGIN=http://localhost:5173
-DATABASE_URL=postgresql+psycopg://algomemtor:algomemtor_local@localhost:5432/algomemtor
+DATABASE_URL=postgresql+psycopg://algomemtor:algomemtor_local@127.0.0.1:5433/algomemtor
 SUPABASE_URL=
 SUPABASE_JWT_ISSUER=
 LLM_API_KEY=
@@ -1341,6 +1355,10 @@ installation must have the pgvector extension installed and enabled before
 the Alembic migrations run. For Homebrew PostgreSQL, install `pgvector`, start
 the service, and run `CREATE EXTENSION IF NOT EXISTS vector` once as a database
 administrator.
+Compose publishes PostgreSQL on `127.0.0.1:5433`, separate from a local
+Homebrew server on `5432`. Both API services and workers must use the same
+database URL target; otherwise linked accounts and their sync jobs can appear
+in one database while a worker processes another.
 
 ### Run all services
 

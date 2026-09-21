@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: algomemtor_local
       POSTGRES_DB: algomemtor
     ports:
-      - '5432:5432'
+      - '127.0.0.1:5433:5432'
     volumes:
       - algomemtor_postgres:/var/lib/postgresql/data
     healthcheck:

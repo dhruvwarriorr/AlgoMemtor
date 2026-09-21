@@ -18,6 +18,7 @@ import {
   fetchUnifiedProfile,
   requestProviderSync,
 } from './api'
+import { providerSyncRefetchInterval } from './provider-sync-status'
 
 const learnerKey = (authUserId: string) => ['platform', authUserId] as const
 
@@ -116,13 +117,11 @@ export function useProviderSyncStatus(
     queryKey: [...learnerKey(user?.id ?? 'signed-out'), 'sync', provider],
     queryFn: ({ signal }) => fetchProviderSyncStatus(provider, { signal }),
     enabled: user !== null && enabled,
-    refetchInterval: (query) => {
-      const status = query.state.data?.data.state.status
-      return status === 'queued' || status === 'running' ? 5000 : false
-    },
+    refetchInterval: (query) => providerSyncRefetchInterval(query.state.data),
   })
 
   const syncStatus = query.data?.data.state.status
+  const lastSucceededAt = query.data?.data.state.lastSucceededAt
   useEffect(() => {
     if (
       user === null ||
@@ -144,7 +143,7 @@ export function useProviderSyncStatus(
     void queryClient.invalidateQueries({
       queryKey: [...learnerKey(user.id), 'analytics'],
     })
-  }, [queryClient, syncStatus, user])
+  }, [lastSucceededAt, queryClient, syncStatus, user])
 
   return query
 }

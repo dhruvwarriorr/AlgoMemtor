@@ -364,7 +364,7 @@ LLM_PRICING_VERSION=gemini-3.5-flash-standard-2026-09
 AI_RANKING_VERSION=ai-gemini-rag-v1
 COACH_VERSION=coach-gemini-rag-v2
 CONSENT_POLICY_VERSION=personalized-coaching-rag-v2
-DATABASE_URL=postgresql+psycopg://algomemtor:algomemtor_local@localhost:5432/algomemtor
+DATABASE_URL=postgresql+psycopg://algomemtor:algomemtor_local@127.0.0.1:5433/algomemtor
 AI_AUDIT_TIMEOUT_SECONDS=0.5
 INTERNAL_SERVICE_TOKEN=
 EMBEDDING_MODEL=gemini-embedding-001
@@ -435,6 +435,13 @@ unavailable, use a local PostgreSQL installation with the pgvector extension
 instead. Install `postgresql@18` and `pgvector` with Homebrew, start the
 PostgreSQL service, and run `CREATE EXTENSION IF NOT EXISTS vector` once as a
 database administrator before running `npm run db:migrate`.
+Docker publishes PostgreSQL on loopback port `5433` so a separate Homebrew
+instance on `5432` cannot silently receive API traffic. Keep the core and AI
+`DATABASE_URL` values pointed at the same database; override them deliberately
+if using Homebrew instead.
+Linking a provider queues its first sync immediately. The separate provider
+worker must be running for profile and activity data to appear; `npm run dev`
+starts it with the other services.
 
 Stop it with:
 

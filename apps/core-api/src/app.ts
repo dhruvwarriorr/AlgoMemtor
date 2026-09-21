@@ -213,7 +213,10 @@ import {
   type StructuredLogger,
 } from './utils/structured-logger.js'
 import { RequestGate } from './utils/request-gate.js'
-import { normalizeTopic } from './utils/topic-normalization.js'
+import {
+  normalizeTopic,
+  normalizeTopicCounts,
+} from './utils/topic-normalization.js'
 
 export type CreateAppOptions = {
   jwtVerifier?: SupabaseJwtVerifier
@@ -1323,7 +1326,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
       }
 
       try {
-        await providerSyncService.requestManualSync(
+        await providerSyncService.requestInitialSync(
           authUserId,
           providerResult.data,
         )
@@ -3468,7 +3471,10 @@ export const createApp = (options: CreateAppOptions = {}) => {
     const languageCounts: Record<string, number> = {}
     const profileTopicProviders = new Set(
       profileSnapshots
-        .filter((snapshot) => Object.keys(snapshot.topicCounts).length > 0)
+        .filter(
+          (snapshot) =>
+            Object.keys(normalizeTopicCounts(snapshot.topicCounts)).length > 0,
+        )
         .map((snapshot) => snapshot.provider),
     )
     const solvedReferences = [
@@ -3535,9 +3541,11 @@ export const createApp = (options: CreateAppOptions = {}) => {
         ...(problem?.topics ?? []),
         ...(observation?.topics ?? []),
       ])
-      for (const topic of topics) {
-        const normalized = normalizeTopic(topic)
-        topicCounts[normalized] = (topicCounts[normalized] ?? 0) + 1
+      const normalizedTopics = new Set(
+        [...topics].map(normalizeTopic).filter((topic) => topic !== undefined),
+      )
+      for (const topic of normalizedTopics) {
+        topicCounts[topic] = (topicCounts[topic] ?? 0) + 1
       }
     }
     const solvedDates = new Map<string, string>()
@@ -3567,12 +3575,10 @@ export const createApp = (options: CreateAppOptions = {}) => {
       solvedOverTime[date] = (solvedOverTime[date] ?? 0) + 1
     }
     for (const providerProfile of profileSnapshots) {
-      if (Object.keys(providerProfile.topicCounts).length === 0) continue
       for (const [topic, count] of Object.entries(
-        providerProfile.topicCounts,
+        normalizeTopicCounts(providerProfile.topicCounts),
       )) {
-        const normalized = normalizeTopic(topic)
-        topicCounts[normalized] = (topicCounts[normalized] ?? 0) + count
+        topicCounts[topic] = (topicCounts[topic] ?? 0) + count
       }
     }
     for (const providerProfile of profileSnapshots) {

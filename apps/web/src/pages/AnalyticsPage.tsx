@@ -1,5 +1,6 @@
 import { useSearchParams } from 'react-router-dom'
 import { LinkableProviderSchema } from '@algomemtor/shared-contracts'
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 
 import PageContainer from '@/components/layout/PageContainer'
 import PageHeader from '@/components/layout/PageHeader'
@@ -45,19 +46,22 @@ function MetricCard({
 function Distribution({
   entries,
   label,
+  limit,
 }: {
   entries: readonly [string, number][]
   label: string
+  limit?: number
 }) {
-  const visible = entries
+  const sorted = entries
     .filter(([, value]) => value > 0)
     .sort((left, right) => right[1] - left[1])
+  const visible = limit === undefined ? sorted : sorted.slice(0, limit)
   const max = Math.max(1, ...visible.map(([, value]) => value))
 
   return (
     <section
       aria-labelledby={`${label.toLowerCase()}-distribution-heading`}
-      className="space-y-3"
+      className="min-w-0 space-y-3"
     >
       <div>
         <h3
@@ -66,13 +70,13 @@ function Distribution({
         >
           {label} distribution
         </h3>
-        {visible.length === 0 ? (
+        {sorted.length === 0 ? (
           <p className="mt-1 text-sm text-muted-foreground">
             No provider observations are available yet.
           </p>
         ) : null}
       </div>
-      <ul className="space-y-3">
+      <ul className="space-y-2.5">
         {visible.map(([name, value]) => (
           <li className="min-w-0" key={name}>
             <div className="flex items-center justify-between gap-3 text-sm">
@@ -95,6 +99,164 @@ function Distribution({
           </li>
         ))}
       </ul>
+      {sorted.length > visible.length ? (
+        <p className="text-xs text-muted-foreground">
+          Showing the {visible.length} most used of {sorted.length} languages.
+        </p>
+      ) : null}
+    </section>
+  )
+}
+
+const topicColors = [
+  '#21745d',
+  '#428f78',
+  '#69a88f',
+  '#8bbc9e',
+  '#b7cba4',
+  '#d4c49b',
+  '#bda476',
+  '#b48e72',
+  '#a78382',
+  '#897e92',
+  '#6b88a2',
+  '#637697',
+  '#87908a',
+] as const
+
+const shortTopicLabels: Record<string, string> = {
+  'Dynamic Programming': 'Dynamic prog.',
+  'Bit Manipulation': 'Bitwise',
+  'Number Theory': 'Number theory',
+  Implementation: 'Implement.',
+  Constructive: 'Construct.',
+}
+
+function TopicDistribution({ entries }: { entries: [string, number][] }) {
+  const sorted = entries
+    .filter(([, count]) => count > 0)
+    .sort((left, right) => right[1] - left[1])
+  const primary = sorted.slice(0, 12)
+  const otherCount = sorted.slice(12).reduce((sum, [, count]) => sum + count, 0)
+  const chartData = [
+    ...primary.map(([name, count]) => ({ name, count })),
+    ...(otherCount > 0 ? [{ name: 'Other topics', count: otherCount }] : []),
+  ]
+
+  return (
+    <section
+      aria-labelledby="topic-distribution-heading"
+      className="min-w-0 rounded-xl border border-border bg-card p-4 sm:p-5"
+    >
+      <div>
+        <h2
+          className="text-lg font-semibold text-foreground"
+          id="topic-distribution-heading"
+        >
+          Topic distribution
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Recognized problem tags from connected providers. A problem may appear
+          in more than one topic.
+        </p>
+      </div>
+      {chartData.length === 0 ? (
+        <p className="mt-4 text-sm text-muted-foreground">
+          No tagged solves are available yet.
+        </p>
+      ) : (
+        <div className="mt-4 grid min-w-0 items-center gap-5 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <div
+            aria-label="Pie chart of the most observed problem topics. Topic counts are listed beside the chart."
+            className="mx-auto h-64 w-full max-w-80"
+            role="img"
+          >
+            <ResponsiveContainer height="100%" width="100%">
+              <PieChart>
+                <Pie
+                  data={chartData}
+                  dataKey="count"
+                  isAnimationActive={false}
+                  nameKey="name"
+                  outerRadius={108}
+                  stroke="var(--card)"
+                  strokeWidth={2}
+                >
+                  {chartData.map((item, index) => (
+                    <Cell
+                      fill={topicColors[index % topicColors.length]}
+                      key={item.name}
+                    />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(value, name) => [
+                    Number(value).toLocaleString(),
+                    name,
+                  ]}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <ul
+            aria-label="Topic chart legend"
+            className="grid min-w-0 grid-cols-2 gap-x-3 gap-y-2 text-xs sm:gap-x-5 sm:text-sm"
+          >
+            {chartData.map((item, index) => (
+              <li
+                className="flex min-w-0 items-center gap-1.5 sm:gap-2"
+                key={item.name}
+              >
+                <span
+                  aria-hidden="true"
+                  className="size-2.5 shrink-0 rounded-sm"
+                  style={{ backgroundColor: topicColors[index] }}
+                />
+                <span
+                  className="min-w-0 flex-1 truncate text-foreground"
+                  title={item.name}
+                >
+                  {shortTopicLabels[item.name] ?? item.name}
+                </span>
+                <span className="shrink-0 font-medium text-muted-foreground tabular-nums">
+                  {item.count.toLocaleString()}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {sorted.length > 12 ? (
+        <details className="mt-4 border-t border-border pt-3 text-sm">
+          <summary className="cursor-pointer font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            View all {sorted.length} topics
+          </summary>
+          <table className="mt-3 w-full max-w-lg text-left">
+            <thead>
+              <tr className="text-muted-foreground">
+                <th className="py-1 font-medium" scope="col">
+                  Topic
+                </th>
+                <th className="py-1 text-right font-medium" scope="col">
+                  Tag count
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map(([name, count]) => (
+                <tr className="border-t border-border/70" key={name}>
+                  <th className="py-1.5 font-normal" scope="row">
+                    {name}
+                  </th>
+                  <td className="py-1.5 text-right tabular-nums">
+                    {count.toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      ) : null}
     </section>
   )
 }
@@ -177,8 +339,9 @@ function AnalyticsPage() {
           value={provider}
         />
         <p className="max-w-xl text-sm text-muted-foreground">
-          Filter the derived view by provider. Native ratings, tags, and
-          language names remain unchanged.
+          Filter the derived view by provider. Topic tags are grouped into
+          consistent learning areas; ratings and languages retain provider
+          values.
         </p>
       </section>
 
@@ -213,16 +376,19 @@ function AnalyticsPage() {
         />
       </dl>
 
-      <div className="grid min-w-0 gap-6 lg:grid-cols-2">
-        <div className="space-y-6 rounded-xl border border-border bg-card p-4 sm:p-5">
+      <div className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="rounded-xl border border-border bg-card p-4 sm:p-5">
           <Distribution entries={providerSolved} label="Provider" />
+        </div>
+        <div className="rounded-xl border border-border bg-card p-4 sm:p-5">
           <Distribution entries={difficulty} label="Difficulty" />
         </div>
-        <div className="space-y-6 rounded-xl border border-border bg-card p-4 sm:p-5">
-          <Distribution entries={topics} label="Topic" />
-          <Distribution entries={languages} label="Language" />
+        <div className="rounded-xl border border-border bg-card p-4 sm:p-5 md:col-span-2 xl:col-span-1">
+          <Distribution entries={languages} label="Language" limit={4} />
         </div>
       </div>
+
+      <TopicDistribution entries={topics} />
 
       <section aria-labelledby="rating-history-heading" className="space-y-3">
         <div>
