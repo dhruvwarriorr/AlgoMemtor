@@ -14,6 +14,7 @@ import { Prisma, type PrismaClient } from '../generated/prisma/client.js'
 export type ProviderSyncJobRecord = ProviderSyncJob & {
   userId: string
   providerAccountId?: string
+  jobType: string
   idempotencyKey: string
   leaseOwner?: string
   leaseExpiresAt?: Date
@@ -39,6 +40,7 @@ export interface ProviderSyncRepository {
     userId: string,
     provider: ProviderKey,
     providerAccountId?: string,
+    jobType?: string,
   ): Promise<ProviderSyncJobRecord | null>
   getState(
     userId: string,
@@ -78,6 +80,7 @@ const toProviderJob = (
     providerAccountId: string | null
     provider: string
     capability: string
+    jobType: string
     status: string
     runAfter: Date
     cursor: string | null
@@ -102,6 +105,7 @@ const toProviderJob = (
       : { providerAccountId: record.providerAccountId }),
     provider,
     capability: record.capability,
+    jobType: record.jobType,
     status: ProviderSyncJobSchema.shape.status.parse(record.status),
     queuedAt: record.createdAt.toISOString(),
     runAfter: record.runAfter.toISOString(),
@@ -155,6 +159,7 @@ export class InMemoryProviderSyncRepository implements ProviderSyncRepository {
       providerAccountId: input.providerAccountId,
       provider: ProviderKeySchema.parse(input.provider),
       capability: input.capability,
+      jobType: input.jobType,
       status: 'queued',
       queuedAt: now.toISOString(),
       runAfter: (input.runAfter ?? now).toISOString(),
@@ -178,6 +183,7 @@ export class InMemoryProviderSyncRepository implements ProviderSyncRepository {
     userId: string,
     provider: ProviderKey,
     providerAccountId?: string,
+    jobType?: string,
   ) {
     return (
       [...this.jobs.values()]
@@ -186,7 +192,8 @@ export class InMemoryProviderSyncRepository implements ProviderSyncRepository {
             job.userId === userId &&
             job.provider === provider &&
             (providerAccountId === undefined ||
-              job.providerAccountId === providerAccountId),
+              job.providerAccountId === providerAccountId) &&
+            (jobType === undefined || job.jobType === jobType),
         )
         .sort((left, right) =>
           right.queuedAt.localeCompare(left.queuedAt),
@@ -347,6 +354,7 @@ export class PrismaProviderSyncRepository implements ProviderSyncRepository {
     userId: string,
     provider: ProviderKey,
     providerAccountId?: string,
+    jobType?: string,
   ) {
     const internalUserId = await this.internalUserId(userId)
     if (internalUserId === null) return null
@@ -355,6 +363,7 @@ export class PrismaProviderSyncRepository implements ProviderSyncRepository {
         userId: internalUserId,
         provider: ProviderKeySchema.parse(provider),
         ...(providerAccountId === undefined ? {} : { providerAccountId }),
+        ...(jobType === undefined ? {} : { jobType }),
       },
       orderBy: { createdAt: 'desc' },
     })

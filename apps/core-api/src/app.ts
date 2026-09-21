@@ -213,6 +213,7 @@ import {
   type StructuredLogger,
 } from './utils/structured-logger.js'
 import { RequestGate } from './utils/request-gate.js'
+import { normalizeTopic } from './utils/topic-normalization.js'
 
 export type CreateAppOptions = {
   jwtVerifier?: SupabaseJwtVerifier
@@ -1404,6 +1405,19 @@ export const createApp = (options: CreateAppOptions = {}) => {
         return
       }
       try {
+        const account =
+          await providerAccountRepository.findByAuthUserIdAndProvider(
+            authenticatedSubject(response),
+            providerResult.data,
+          )
+        if (account !== null && account.publicStatsConsentAt === null) {
+          await providerAccountRepository.grantPublicStatsConsent(
+            authenticatedSubject(response),
+            providerResult.data,
+            account.externalHandle,
+            new Date(),
+          )
+        }
         const result = await providerSyncService.requestManualSync(
           authenticatedSubject(response),
           providerResult.data,
@@ -3522,7 +3536,8 @@ export const createApp = (options: CreateAppOptions = {}) => {
         ...(observation?.topics ?? []),
       ])
       for (const topic of topics) {
-        topicCounts[topic] = (topicCounts[topic] ?? 0) + 1
+        const normalized = normalizeTopic(topic)
+        topicCounts[normalized] = (topicCounts[normalized] ?? 0) + 1
       }
     }
     const solvedDates = new Map<string, string>()
@@ -3556,7 +3571,8 @@ export const createApp = (options: CreateAppOptions = {}) => {
       for (const [topic, count] of Object.entries(
         providerProfile.topicCounts,
       )) {
-        topicCounts[topic] = (topicCounts[topic] ?? 0) + count
+        const normalized = normalizeTopic(topic)
+        topicCounts[normalized] = (topicCounts[normalized] ?? 0) + count
       }
     }
     for (const providerProfile of profileSnapshots) {

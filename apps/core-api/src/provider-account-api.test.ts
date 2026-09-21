@@ -45,19 +45,19 @@ afterEach(async () => {
 function startApp(
   providerPublicStatsFetchers?: readonly ProviderPublicStatsFetcher[],
   providerVerifiedActivityFetchers?: readonly ProviderVerifiedActivityFetcher[],
+  providerAccountRepository = new InMemoryProviderAccountRepository(
+    () => new Date('2026-08-27T12:00:00.000Z'),
+  ),
 ) {
   const provider = new CodeforcesProvider({
     baseUrl: 'https://mock.codeforces.test/api',
     fetchImpl: vi.fn(),
     minRequestIntervalMs: 0,
   })
-  const now = new Date('2026-08-27T12:00:00.000Z')
   const server = createApp({
     jwtVerifier,
     problemProvider: provider,
-    providerAccountRepository: new InMemoryProviderAccountRepository(
-      () => new Date(now),
-    ),
+    providerAccountRepository,
     ...(providerPublicStatsFetchers === undefined
       ? {}
       : { providerPublicStatsFetchers }),
@@ -100,6 +100,40 @@ function refreshStats(
 }
 
 describe('provider account API', () => {
+  it('restores consent on manual sync without inventing fetched statistics', async () => {
+    const repository = new InMemoryProviderAccountRepository()
+    const baseUrl = startApp([], [], repository)
+    await saveAccount(baseUrl, 'codeforces', {
+      handle: 'tourist',
+      consent: true,
+    })
+    const account = await repository.findByAuthUserIdAndProvider(
+      firstSubject,
+      'codeforces',
+    )
+    expect(account).not.toBeNull()
+    if (account === null) return
+    account.publicStatsConsentAt = null
+
+    const response = await fetch(
+      `${baseUrl}/api/provider-accounts/codeforces/sync`,
+      { method: 'POST', headers: firstAuthorization },
+    )
+    const repaired = await repository.findByAuthUserIdAndProvider(
+      firstSubject,
+      'codeforces',
+    )
+
+    expect(response.status).toBe(202)
+    expect(repaired?.publicStatsConsentAt).toBeInstanceOf(Date)
+    expect(repaired).toMatchObject({
+      solvedCount: null,
+      statsSource: null,
+      statsFetchedAt: null,
+      statsAttemptedAt: null,
+    })
+  })
+
   it('requires activity consent and exposes idempotent Codeforces activity sync', async () => {
     const fetchVerifiedActivity = vi.fn(async () => ({
       events: [

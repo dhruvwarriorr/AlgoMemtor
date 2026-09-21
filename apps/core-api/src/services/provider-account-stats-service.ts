@@ -6,6 +6,7 @@ import type {
 import {
   ProviderPublicStatsError,
   type ProviderPublicStatsFetcher,
+  type ProviderPublicStatsFetchResult,
 } from '../integrations/provider-accounts/provider-public-stats.js'
 import type {
   ProviderAccountRecord,
@@ -123,8 +124,9 @@ export class ProviderAccountStatsService {
       throw new Error(`No public-statistics fetcher for ${provider}.`)
     }
 
+    let stats: ProviderPublicStatsFetchResult
     try {
-      const stats = await fetcher.fetchSolvedCount(account.externalHandle)
+      stats = await fetcher.fetchSolvedCount(account.externalHandle)
 
       if (stats.source !== expectedSourceByProvider[provider]) {
         throw new ProviderPublicStatsError(
@@ -137,28 +139,7 @@ export class ProviderAccountStatsService {
         )
       }
 
-      const saved = await this.repository.savePublicStatsSuccess(
-        authUserId,
-        provider,
-        account.externalHandle,
-        { ...stats, attemptedAt },
-      )
-
-      if (saved === null) {
-        throw new ProviderAccountChangedError()
-      }
-
-      this.logger.info('provider_public_stats_refresh_succeeded', {
-        service: 'core-api',
-        provider,
-        complete: stats.complete,
-      })
-      return saved
     } catch (error) {
-      if (error instanceof ProviderAccountChangedError) {
-        throw error
-      }
-
       const providerError =
         error instanceof ProviderPublicStatsError
           ? error
@@ -195,5 +176,20 @@ export class ProviderAccountStatsService {
       })
       throw providerError
     }
+
+    const saved = await this.repository.savePublicStatsSuccess(
+      authUserId,
+      provider,
+      account.externalHandle,
+      { ...stats, attemptedAt },
+    )
+    if (saved === null) throw new ProviderAccountChangedError()
+
+    this.logger.info('provider_public_stats_refresh_succeeded', {
+      service: 'core-api',
+      provider,
+      complete: stats.complete,
+    })
+    return saved
   }
 }

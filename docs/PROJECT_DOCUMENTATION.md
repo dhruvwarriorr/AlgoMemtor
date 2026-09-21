@@ -130,7 +130,7 @@ The following capabilities are implemented in the current working tree:
 | Coach RAG v2 rich responses                                 | Implemented locally              | Versioned knowledge index, conditional public grounding, deterministic charts/metrics/timelines/problems, persisted rich snapshots |
 | Adaptive improvement roadmap                                | Implemented locally              | `topic-assessment-v1`, manual status precedence, prerequisite graph, capped optional problem sets                                  |
 | In-app coach check-ins                                      | Implemented locally              | Weekly local review and event thresholds with frequency caps and deduplication                                                     |
-| Background provider sync                                    | Implemented                      | PostgreSQL jobs, leases, cooldowns, six-hour schedule                                                                              |
+| Background provider sync                                    | Implemented                      | PostgreSQL jobs, leases, cooldowns, hourly linked-user schedule                                                                      |
 | Authenticated full historical LeetCode/CodeChef/CSES import | Not implemented                  | Requires an approved API, local connector, or user import                                                                          |
 
 Local unit, type-check, build, and mocked integration checks pass when run with
@@ -679,8 +679,9 @@ resume after a restart.
 
 Default policy:
 
-- linked-user synchronization every six hours with jitter;
-- manual refresh queued asynchronously with a 15-minute cooldown;
+- linked-user synchronization every hour with up to five minutes of jitter;
+- manual refresh queued asynchronously with a 15-minute cooldown based only
+  on earlier manual requests, not scheduled jobs;
 - global catalogs refreshed every six hours;
 - upcoming contests refreshed every 15 minutes;
 - detailed problem content refreshed lazily with a 30-day TTL;
@@ -706,7 +707,10 @@ capability level so a CodeChef activity failure does not disable its catalog.
 ### Manual sync flow
 
 1. Frontend posts a provider sync request.
-2. Express validates that the provider is linkable and the account has consent.
+2. Express validates that the provider is linkable and the account is linked.
+   An explicit manual request can restore a missing public-stats consent
+   timestamp without recording fabricated provider statistics or a refresh
+   attempt. The background worker never grants consent on its own.
 3. Express returns `202 Accepted` with a job/status reference.
 4. The worker runs the job asynchronously.
 5. The frontend polls sync status and refreshes profile/activity queries after
@@ -1775,7 +1779,7 @@ manual sync or scheduler
   -> submissions and solved observations upsert by provider keys
   -> Codeforces evidence may append provider-verified status action
   -> sync state and account status update
-  -> worker schedules next six-hour run
+  -> worker schedules next hourly run
   -> frontend polls sync-status and refreshes activity/analytics
 ```
 

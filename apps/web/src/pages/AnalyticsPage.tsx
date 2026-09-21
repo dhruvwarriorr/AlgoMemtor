@@ -1,14 +1,5 @@
 import { useSearchParams } from 'react-router-dom'
 import { LinkableProviderSchema } from '@algomemtor/shared-contracts'
-import {
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
 
 import PageContainer from '@/components/layout/PageContainer'
 import PageHeader from '@/components/layout/PageHeader'
@@ -166,9 +157,6 @@ function AnalyticsPage() {
       ],
   )
   const difficulty = Object.entries(analytics.solvedByDifficulty)
-  const solvedOverTime = Object.entries(analytics.solvedOverTime).sort(
-    ([left], [right]) => Date.parse(right) - Date.parse(left),
-  )
   const topics = Object.entries(analytics.topicCounts)
   const languages = Object.entries(analytics.languageCounts)
 
@@ -229,56 +217,6 @@ function AnalyticsPage() {
         <div className="space-y-6 rounded-xl border border-border bg-card p-4 sm:p-5">
           <Distribution entries={providerSolved} label="Provider" />
           <Distribution entries={difficulty} label="Difficulty" />
-          <Distribution entries={solvedOverTime} label="Daily solves" />
-          {solvedOverTime.length > 0 ? (
-            <section
-              aria-labelledby="daily-solves-chart-heading"
-              className="space-y-3"
-            >
-              <div>
-                <h3
-                  className="text-lg font-semibold text-foreground"
-                  id="daily-solves-chart-heading"
-                >
-                  Daily solves trend
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  A visual summary of the dates represented above. The table
-                  remains the accessible fallback.
-                </p>
-              </div>
-              <div
-                className="h-56 w-full"
-                role="img"
-                aria-label="Daily solves trend chart"
-              >
-                <ResponsiveContainer height="100%" width="100%">
-                  <LineChart
-                    data={[...solvedOverTime]
-                      .reverse()
-                      .map(([date, solved]) => ({ date, solved }))}
-                    margin={{ top: 8, right: 8, left: -16, bottom: 8 }}
-                  >
-                    <CartesianGrid
-                      stroke="hsl(var(--border))"
-                      strokeDasharray="3 3"
-                    />
-                    <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                    <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-                    <Tooltip />
-                    <Line
-                      dataKey="solved"
-                      dot={false}
-                      name="Solved"
-                      stroke="hsl(var(--primary))"
-                      strokeWidth={2}
-                      type="monotone"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </section>
-          ) : null}
         </div>
         <div className="space-y-6 rounded-xl border border-border bg-card p-4 sm:p-5">
           <Distribution entries={topics} label="Topic" />

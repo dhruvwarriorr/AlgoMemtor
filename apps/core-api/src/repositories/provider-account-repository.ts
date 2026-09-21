@@ -124,6 +124,12 @@ export interface ProviderAccountRepository {
     provider: LinkableProvider,
     handle: PublicProviderHandle,
   ): Promise<ProviderAccountRecord>
+  grantPublicStatsConsent(
+    authUserId: string,
+    provider: LinkableProvider,
+    expectedHandle: PublicProviderHandle,
+    consentedAt: Date,
+  ): Promise<ProviderAccountRecord | null>
   savePublicStatsSuccess(
     authUserId: string,
     provider: LinkableProvider,
@@ -356,6 +362,31 @@ export class InMemoryProviderAccountRepository implements ProviderAccountReposit
     this.activeHandleOwners.set(handleKey, authUserId)
     this.recordsByAuthUserId.set(authUserId, records)
 
+    return record
+  }
+
+  async grantPublicStatsConsent(
+    authUserId: string,
+    provider: LinkableProvider,
+    expectedHandle: PublicProviderHandle,
+    consentedAt: Date,
+  ) {
+    const records = this.recordsByAuthUserId.get(authUserId)
+    const existing = records?.get(provider)
+    if (
+      records === undefined ||
+      existing === undefined ||
+      !existing.syncEnabled ||
+      existing.externalHandle !== expectedHandle
+    ) {
+      return null
+    }
+    const record = {
+      ...existing,
+      publicStatsConsentAt: existing.publicStatsConsentAt ?? consentedAt,
+      updatedAt: consentedAt,
+    }
+    records.set(provider, record)
     return record
   }
 
@@ -916,6 +947,36 @@ export class PrismaProviderAccountRepository implements ProviderAccountRepositor
       }
       throw error
     }
+  }
+
+  async grantPublicStatsConsent(
+    authUserId: string,
+    provider: LinkableProvider,
+    expectedHandle: PublicProviderHandle,
+    consentedAt: Date,
+  ) {
+    const user = await this.prisma.coreUser.findUnique({
+      where: { authUserId },
+      select: { id: true },
+    })
+    if (user === null) return null
+    const account = await this.prisma.providerAccount.findFirst({
+      where: {
+        userId: user.id,
+        provider,
+        externalHandle: expectedHandle,
+        syncEnabled: true,
+      },
+      orderBy: { updatedAt: 'desc' },
+    })
+    if (account === null) return null
+    const updated = await this.prisma.providerAccount.update({
+      where: { id: account.id },
+      data: {
+        publicStatsConsentAt: account.publicStatsConsentAt ?? consentedAt,
+      },
+    })
+    return recordFromDatabase(updated)
   }
 
   async savePublicStatsSuccess(

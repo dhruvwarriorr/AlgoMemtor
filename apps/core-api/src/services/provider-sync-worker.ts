@@ -25,8 +25,8 @@ import {
   type StructuredLogger,
 } from '../utils/structured-logger.js'
 
-const DEFAULT_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000
-const DEFAULT_JITTER_MS = 30 * 60 * 1000
+const DEFAULT_SYNC_INTERVAL_MS = 1 * 60 * 60 * 1000
+const DEFAULT_JITTER_MS = 5 * 60 * 1000
 const DEFAULT_LEASE_MS = 60 * 1000
 const RETRY_DELAYS_MS = [60_000, 300_000] as const
 
@@ -131,16 +131,12 @@ export class ProviderSyncWorker {
       const result = await this.processJob(job)
       await this.options.repository.complete(job.id, leaseOwner)
       const completedAt = this.now()
-      const nextRunAt = new Date(
-        completedAt.getTime() +
-          this.syncIntervalMs +
-          Math.floor(this.random() * Math.max(1, this.jitterMs)),
-      )
       const account =
         await this.options.providerAccountRepository.findByAuthUserIdAndProvider(
           job.userId,
           LinkableProviderSchema.parse(job.provider),
         )
+      const nextRunAt = await this.scheduleNextRun(job)
       await this.options.repository.saveState(
         job.userId,
         job.provider,
@@ -154,7 +150,9 @@ export class ProviderSyncWorker {
           ...(job.cursor === undefined ? {} : { cursor: job.cursor }),
           lastStartedAt: startedAt.toISOString(),
           lastSucceededAt: completedAt.toISOString(),
-          nextRunAt: nextRunAt.toISOString(),
+          ...(nextRunAt === undefined
+            ? {}
+            : { nextRunAt: nextRunAt.toISOString() }),
           completeness:
             account?.statsComplete === true && !result.partial
               ? 'complete'
@@ -165,25 +163,6 @@ export class ProviderSyncWorker {
         },
         job.providerAccountId,
       )
-      if (account !== null && account.syncEnabled) {
-        try {
-          await this.options.repository.enqueue({
-            userId: job.userId,
-            providerAccountId: account.id,
-            provider: job.provider,
-            capability: job.capability,
-            jobType: 'linked_user_sync',
-            idempotencyKey: `provider-sync:scheduled:${job.userId}:${job.provider}:${nextRunAt.toISOString()}`,
-            runAfter: nextRunAt,
-          })
-        } catch (error) {
-          this.logger.warn('provider_sync_schedule_failed', {
-            provider: job.provider,
-            capability: job.capability,
-            errorCode: this.safeErrorCode(error),
-          })
-        }
-      }
       this.logger.info('provider_sync_job_completed', {
         provider: job.provider,
         capability: job.capability,
@@ -268,6 +247,18 @@ export class ProviderSyncWorker {
         LinkableProviderSchema.parse(job.provider),
       )
     if (account === null || !account.syncEnabled) return undefined
+    const latestScheduled = await this.options.repository.findLatest(
+      job.userId,
+      job.provider,
+      account.id,
+      'linked_user_sync',
+    )
+    if (
+      latestScheduled?.status === 'queued' &&
+      new Date(latestScheduled.runAfter) > this.now()
+    ) {
+      return new Date(latestScheduled.runAfter)
+    }
     const nextRunAt = new Date(
       this.now().getTime() +
         this.syncIntervalMs +
@@ -324,7 +315,8 @@ export class ProviderSyncWorker {
     } catch (error) {
       if (
         error instanceof ProviderAccountChangedError ||
-        error instanceof ProviderAccountNotLinkedError
+        error instanceof ProviderAccountNotLinkedError ||
+        !(error instanceof ProviderPublicStatsError)
       ) {
         throw error
       }

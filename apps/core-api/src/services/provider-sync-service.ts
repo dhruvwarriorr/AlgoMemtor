@@ -82,6 +82,7 @@ export class ProviderSyncService {
       authUserId,
       validatedProvider,
       account.id,
+      'manual_sync',
     )
     const cooldownMs = this.options.cooldownMs ?? MANUAL_SYNC_COOLDOWN_MS
     const latestAt = latest === null ? undefined : new Date(latest.queuedAt)
@@ -91,14 +92,14 @@ export class ProviderSyncService {
     const runAfter = inCooldown ? nextAllowedAt : now
     const idempotencyKey = inCooldown
       ? (latest?.idempotencyKey ??
-        `provider-sync:${authUserId}:${validatedProvider}:${Math.floor(now.getTime() / cooldownMs)}`)
-      : `provider-sync:${authUserId}:${validatedProvider}:${randomUUID()}`
+        `provider-sync:manual:${authUserId}:${validatedProvider}:${Math.floor(now.getTime() / cooldownMs)}`)
+      : `provider-sync:manual:${authUserId}:${validatedProvider}:${randomUUID()}`
     const queued = await this.options.repository.enqueue({
       userId: authUserId,
       providerAccountId: account.id,
       provider: validatedProvider,
       capability: 'linked_user_sync',
-      jobType: 'linked_user_sync',
+      jobType: 'manual_sync',
       idempotencyKey,
       ...(inCooldown ? { runAfter } : {}),
     })

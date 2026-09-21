@@ -4,7 +4,13 @@ import {
   type LinkableProvider,
   type ProviderAccount,
 } from '@algomemtor/shared-contracts'
-import { ExternalLink } from 'lucide-react'
+import {
+  ExternalLink,
+  MoreHorizontal,
+  RefreshCw,
+  Trash2,
+  Unplug,
+} from 'lucide-react'
 
 import { useNotification } from '@/app/useNotification'
 import { ErrorState } from '@/components/states/ErrorState'
@@ -34,83 +40,221 @@ const providers: readonly {
 ]
 
 const inputClassName =
-  'h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 text-base text-foreground outline-none transition-shadow focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 disabled:cursor-not-allowed disabled:opacity-60'
+  'h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none transition-shadow focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 disabled:cursor-not-allowed disabled:opacity-60'
 
-const statsSourceLabels = {
-  codeforces_api: 'Codeforces public API',
-  codechef_public_profile_html: 'CodeChef public profile page',
-  leetcode_website_graphql: 'LeetCode public website data',
-} as const
+function formatRelativeTime(dateString: string) {
+  const seconds = Math.floor(
+    (Date.now() - new Date(dateString).getTime()) / 1000,
+  )
+  if (seconds < 60) return 'just now'
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
+}
 
-const statsErrorMessages = {
-  PROVIDER_ACCOUNT_NOT_FOUND: 'No public profile was found for this handle.',
-  PROVIDER_TIMEOUT: 'The provider took too long to respond.',
-  PROVIDER_RATE_LIMITED: 'The provider is temporarily rate limiting requests.',
-  PROVIDER_BLOCKED:
-    'The provider blocked this public request; try again later.',
-  PROVIDER_UNAVAILABLE: 'The provider is temporarily unavailable.',
-  PROVIDER_INVALID_RESPONSE:
-    'The provider changed or returned an unexpected profile response.',
-} as const
-
-function PublicStatsSummary({ account }: { account: ProviderAccount }) {
+function solvedLabel(account: ProviderAccount) {
   const stats = account.publicStats
+  if (stats.status === 'not_synced') return null
+  if (stats.status === 'unavailable') return null
+  return `${stats.complete ? '' : '≥'}${stats.solvedCount.toLocaleString()} solved`
+}
 
-  if (stats.status === 'not_synced') {
-    return (
-      <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
-        Public solved count has not been fetched.
-      </p>
-    )
+function LinkedProviderCard({
+  account,
+  label,
+  provider,
+}: {
+  account: ProviderAccount
+  label: string
+  provider: LinkableProvider
+}) {
+  const { notify } = useNotification()
+  const disconnectAccount = useDisconnectProviderAccount()
+  const deleteHistory = useDeleteProviderHistory()
+  const providerSync = useProviderSync(provider)
+  const providerSyncStatus = useProviderSyncStatus(provider, true)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const isBusy =
+    disconnectAccount.isPending ||
+    providerSync.isPending ||
+    deleteHistory.isPending
+
+  const syncState = providerSyncStatus.data?.data.state
+  const lastSynced = syncState?.lastSucceededAt
+    ? formatRelativeTime(syncState.lastSucceededAt)
+    : null
+  const solved = solvedLabel(account)
+  const hasError =
+    syncState?.lastErrorCode !== undefined && syncState?.lastErrorCode !== null
+
+  async function handleSync() {
+    try {
+      const result = await providerSync.mutateAsync()
+      notify({
+        title: result.data.accepted
+          ? `${label} sync queued`
+          : `${label} sync recently requested`,
+        description: result.data.accepted
+          ? 'Data will refresh in the background.'
+          : 'A new manual sync will be available after the cooldown.',
+        tone: result.data.accepted ? 'success' : 'info',
+      })
+    } catch {
+      // Error rendered via mutation state.
+    }
   }
 
-  if (stats.status === 'unavailable') {
-    return (
-      <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
-        <p className="font-medium text-foreground">Solved count unavailable</p>
-        <p className="mt-1 text-muted-foreground">
-          {statsErrorMessages[stats.errorCode]}
-        </p>
-      </div>
-    )
+  async function handleDisconnect() {
+    try {
+      await disconnectAccount.mutateAsync(provider)
+      notify({
+        title: `${label} disconnected`,
+        description: 'Handle removed.',
+        tone: 'success',
+      })
+    } catch {
+      // Error rendered via mutation state.
+    }
+    setMenuOpen(false)
   }
+
+  async function handleDeleteHistory() {
+    if (
+      !window.confirm(`Delete all stored ${label} history for this account?`)
+    ) {
+      return
+    }
+    try {
+      await deleteHistory.mutateAsync(provider)
+      notify({
+        title: `${label} history deleted`,
+        description: 'All stored observations removed.',
+        tone: 'success',
+      })
+    } catch {
+      // Error rendered via mutation state.
+    }
+    setMenuOpen(false)
+  }
+
+  const mutationError =
+    disconnectAccount.error ?? providerSync.error ?? deleteHistory.error
 
   return (
-    <div className="rounded-md bg-muted px-3 py-2 text-sm">
-      <p className="font-medium text-foreground">
-        {stats.complete ? '' : 'At least '}
-        {stats.solvedCount.toLocaleString()} problems solved
-      </p>
-      <p className="mt-1 text-muted-foreground">
-        From {statsSourceLabels[stats.source]}. Refreshed{' '}
-        <time dateTime={stats.fetchedAt}>
-          {new Date(stats.fetchedAt).toLocaleString()}
-        </time>
-        .
-      </p>
-      {!stats.complete ? (
-        <p className="mt-1 text-muted-foreground">
-          The provider returned a bounded observation, so the true total may be
-          higher.
+    <article className="relative flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-background p-4">
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <h3 className="font-semibold text-foreground">{label}</h3>
+          <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-400">
+            Connected
+          </span>
+        </div>
+        <div className="relative">
+          <button
+            aria-label={`${label} options`}
+            className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => setMenuOpen(!menuOpen)}
+            type="button"
+          >
+            <MoreHorizontal className="size-4" />
+          </button>
+          {menuOpen ? (
+            <>
+              <button
+                aria-label={`Close ${label} options`}
+                className="fixed inset-0 z-10"
+                onClick={() => setMenuOpen(false)}
+                type="button"
+              />
+              <div className="absolute right-0 z-20 mt-1 w-44 rounded-lg border border-border bg-card py-1 shadow-lg">
+                <a
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
+                  href={account.profileUrl}
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  <ExternalLink className="size-3.5" />
+                  View profile
+                </a>
+                <button
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground hover:bg-muted disabled:opacity-50"
+                  disabled={isBusy}
+                  onClick={() => void handleDisconnect()}
+                  type="button"
+                >
+                  <Unplug className="size-3.5" />
+                  {disconnectAccount.isPending
+                    ? 'Disconnecting…'
+                    : 'Disconnect'}
+                </button>
+                <button
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-destructive hover:bg-muted disabled:opacity-50"
+                  disabled={isBusy}
+                  onClick={() => void handleDeleteHistory()}
+                  type="button"
+                >
+                  <Trash2 className="size-3.5" />
+                  {deleteHistory.isPending ? 'Deleting…' : 'Delete history'}
+                </button>
+              </div>
+            </>
+          ) : null}
+        </div>
+      </div>
+
+      <p className="text-sm text-muted-foreground">{account.handle}</p>
+
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <div className="min-w-0">
+          {solved !== null ? (
+            <p className="text-lg font-semibold tracking-tight text-foreground">
+              {solved}
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">Not synced yet</p>
+          )}
+          {lastSynced !== null ? (
+            <p className="text-xs text-muted-foreground">Synced {lastSynced}</p>
+          ) : null}
+        </div>
+        <Button
+          disabled={isBusy || account.syncEnabled === false}
+          onClick={() => void handleSync()}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          <RefreshCw
+            className={`mr-1.5 size-3.5 ${providerSync.isPending ? 'animate-spin' : ''}`}
+          />
+          {providerSync.isPending ? 'Syncing…' : 'Sync'}
+        </Button>
+      </div>
+
+      {hasError ? (
+        <p className="text-xs text-destructive">
+          Sync issue — will retry automatically.
         </p>
       ) : null}
-      {stats.stale ? (
-        <p className="mt-1 text-destructive">
-          The latest refresh failed. This is the last successful count.
+
+      {mutationError ? (
+        <p className="text-xs text-destructive" role="alert">
+          {providerAccountErrorMessage(mutationError)}
         </p>
       ) : null}
-    </div>
+    </article>
   )
 }
 
-function ProviderAccountCard({
-  account,
+function UnlinkedProviderCard({
   idPrefix,
   label,
   example,
   provider,
 }: {
-  account?: ProviderAccount
   idPrefix: string
   label: string
   example: string
@@ -118,21 +262,9 @@ function ProviderAccountCard({
 }) {
   const { notify } = useNotification()
   const linkAccount = useLinkProviderAccount()
-  const disconnectAccount = useDisconnectProviderAccount()
-  const deleteHistory = useDeleteProviderHistory()
-  const providerSync = useProviderSync(provider)
-  const providerSyncStatus = useProviderSyncStatus(
-    provider,
-    account !== undefined,
-  )
-  const [handle, setHandle] = useState(account?.handle ?? '')
+  const [handle, setHandle] = useState('')
   const [consent, setConsent] = useState(false)
   const [validationError, setValidationError] = useState<string | null>(null)
-  const isBusy =
-    linkAccount.isPending ||
-    disconnectAccount.isPending ||
-    providerSync.isPending ||
-    deleteHistory.isPending
   const fieldId = `${idPrefix}-${provider}-handle`
   const consentId = `${idPrefix}-${provider}-consent`
 
@@ -142,219 +274,66 @@ function ProviderAccountCard({
       handle,
       consent,
     })
-
     if (!result.success) {
       setValidationError(
         consent
           ? (result.error.issues[0]?.message ?? 'Enter a valid public handle.')
-          : 'Confirm consent before saving this public handle.',
+          : 'Check consent to continue.',
       )
       return
     }
-
     setValidationError(null)
-
     try {
       await linkAccount.mutateAsync({ provider, account: result.data })
       setConsent(false)
       notify({
-        title: `${label} profile saved`,
-        description: 'This is a public-handle link, not verified solve access.',
+        title: `${label} linked`,
+        description: 'Public handle saved. Sync will start shortly.',
         tone: 'success',
       })
     } catch {
-      // The mutation error is rendered below with a safe API message.
+      // Error rendered below.
     }
   }
-
-  async function handleDisconnect() {
-    try {
-      await disconnectAccount.mutateAsync(provider)
-      setHandle('')
-      setConsent(false)
-      notify({
-        title: `${label} profile disconnected`,
-        description: 'The saved public handle was removed.',
-        tone: 'success',
-      })
-    } catch {
-      // The mutation error is rendered below with a safe API message.
-    }
-  }
-
-  async function handleStatsRefresh() {
-    try {
-      await providerSync.mutateAsync()
-      notify({
-        title: `${label} solved-count sync queued`,
-        description:
-          'The provider-reported total will refresh with the profile and activity data in the background.',
-        tone: 'success',
-      })
-    } catch {
-      // The mutation error and persisted provider state are rendered below.
-    }
-  }
-
-  async function handleProviderSync() {
-    try {
-      await providerSync.mutateAsync()
-      notify({
-        title: `${label} sync queued`,
-        description:
-          'Profile, activity, rating, and contest data will refresh in the background.',
-        tone: 'success',
-      })
-    } catch {
-      // The mutation error is rendered below with a safe API message.
-    }
-  }
-
-  async function handleDeleteHistory() {
-    if (
-      !window.confirm(`Delete all stored ${label} history for this account?`)
-    ) {
-      return
-    }
-
-    try {
-      await deleteHistory.mutateAsync(provider)
-      notify({
-        title: `${label} history deleted`,
-        description:
-          'Stored profile snapshots, activity, ratings, and contest observations were removed.',
-        tone: 'success',
-      })
-    } catch {
-      // The mutation error is rendered below with a safe API message.
-    }
-  }
-
-  const mutationError =
-    linkAccount.error ??
-    disconnectAccount.error ??
-    providerSync.error ??
-    deleteHistory.error
 
   return (
-    <article className="flex min-w-0 flex-col gap-4 rounded-lg border border-border bg-background p-4">
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="font-medium text-foreground">{label}</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {account ? `Saved handle: ${account.handle}` : 'No handle saved'}
-          </p>
-        </div>
-        {account ? (
-          <a
-            className="inline-flex min-h-10 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium text-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-            href={account.profileUrl}
-            rel="noopener noreferrer"
-            target="_blank"
-          >
-            Open profile
-            <ExternalLink aria-hidden="true" className="size-4" />
-          </a>
-        ) : null}
-      </div>
-
-      {account ? <PublicStatsSummary account={account} /> : null}
-
-      {account ? (
-        <div className="space-y-3 rounded-md border border-border bg-muted/30 p-3">
-          <div>
-            <p className="font-medium text-foreground">
-              Automatic provider sync
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              AlgoMemtor refreshes this public profile every six hours after
-              linking, with a short jitter. Manual refreshes are queued and
-              limited to one request every fifteen minutes.
-            </p>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Sync status:{' '}
-            {providerSyncStatus.data?.data.state.status ?? 'Not scheduled'}
-            {providerSyncStatus.data?.data.state.lastSucceededAt
-              ? ` · last completed ${new Date(providerSyncStatus.data.data.state.lastSucceededAt).toLocaleString()}`
-              : ''}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              disabled={isBusy || account.syncEnabled === false}
-              onClick={() => void handleProviderSync()}
-              type="button"
-              variant="outline"
-            >
-              {providerSync.isPending ? 'Queueing sync…' : 'Sync provider data'}
-            </Button>
-            <Button
-              disabled={isBusy}
-              onClick={() => void handleDeleteHistory()}
-              type="button"
-              variant="destructive"
-            >
-              {deleteHistory.isPending
-                ? 'Deleting history…'
-                : 'Delete provider history'}
-            </Button>
-          </div>
-          {providerSyncStatus.data?.data.state.lastErrorCode ? (
-            <p className="text-sm text-destructive">
-              Last sync issue:{' '}
-              {providerSyncStatus.data.data.state.lastErrorCode}. Cached
-              observations remain available when possible.
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-
+    <article className="flex min-w-0 flex-col gap-3 rounded-lg border border-dashed border-border bg-background p-4">
+      <h3 className="font-semibold text-foreground">{label}</h3>
       <form
-        className="space-y-3"
+        className="flex min-w-0 flex-col gap-2"
         onSubmit={(event) => void handleSubmit(event)}
       >
-        <div className="flex min-w-0 flex-col gap-2">
-          <label
-            className="text-sm font-medium text-foreground"
-            htmlFor={fieldId}
-          >
-            Public {label} handle
-          </label>
+        <div className="flex min-w-0 gap-2">
           <input
-            aria-describedby={`${fieldId}-help${
-              validationError ? ` ${fieldId}-error` : ''
-            }`}
             aria-invalid={Boolean(validationError)}
             autoCapitalize="none"
             autoComplete="off"
             className={inputClassName}
-            disabled={isBusy}
+            disabled={linkAccount.isPending}
             id={fieldId}
             maxLength={64}
             onChange={(event) => {
               setHandle(event.currentTarget.value)
               setValidationError(null)
               linkAccount.reset()
-              providerSync.reset()
             }}
             placeholder={example}
             spellCheck={false}
             type="text"
             value={handle}
           />
-          <p className="text-sm text-muted-foreground" id={`${fieldId}-help`}>
-            Enter only the username, not a URL or password.
-          </p>
+          <Button disabled={linkAccount.isPending} size="sm" type="submit">
+            {linkAccount.isPending ? 'Linking…' : 'Link'}
+          </Button>
         </div>
-
         <label
-          className="flex min-w-0 items-start gap-3 text-sm text-foreground"
+          className="flex min-w-0 items-start gap-2 text-xs text-muted-foreground"
           htmlFor={consentId}
         >
           <input
             checked={consent}
-            className="mt-0.5 size-4 shrink-0 rounded accent-primary"
-            disabled={isBusy}
+            className="mt-0.5 size-3.5 shrink-0 rounded accent-primary"
+            disabled={linkAccount.isPending}
             id={consentId}
             onChange={(event) => {
               setConsent(event.currentTarget.checked)
@@ -363,68 +342,19 @@ function ProviderAccountCard({
             type="checkbox"
           />
           <span>
-            I consent to AlgoMemtor storing this public profile reference and
-            synchronizing the provider&apos;s public profile data. No password,
-            API key, private activity, or submission source code will be
-            collected.
+            I consent to syncing public profile data. No passwords or private
+            data collected.
           </span>
         </label>
-
         {validationError ? (
-          <p
-            className="text-sm text-destructive"
-            id={`${fieldId}-error`}
-            role="alert"
-          >
+          <p className="text-xs text-destructive" role="alert">
             {validationError}
           </p>
         ) : null}
-
-        {mutationError ? (
-          <p className="text-sm text-destructive" role="alert">
-            {providerAccountErrorMessage(mutationError)}
+        {linkAccount.error ? (
+          <p className="text-xs text-destructive" role="alert">
+            {providerAccountErrorMessage(linkAccount.error)}
           </p>
-        ) : null}
-
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Button disabled={isBusy} type="submit">
-            {linkAccount.isPending
-              ? 'Saving link…'
-              : account
-                ? 'Update handle'
-                : 'Save account link'}
-          </Button>
-          {account ? (
-            <Button
-              disabled={isBusy}
-              onClick={() => void handleDisconnect()}
-              type="button"
-              variant="outline"
-            >
-              {disconnectAccount.isPending ? 'Disconnecting…' : 'Disconnect'}
-            </Button>
-          ) : null}
-        </div>
-
-        {account ? (
-          <div className="space-y-3 border-t border-border pt-3">
-            <p className="text-sm text-muted-foreground">
-              Public-sync consent was recorded when this handle was linked. No
-              password, cookie, source code, or private data is requested.
-            </p>
-            <Button
-              disabled={isBusy}
-              onClick={() => void handleStatsRefresh()}
-              type="button"
-              variant="outline"
-            >
-              {providerSync.isPending
-                ? 'Queueing solved-count sync…'
-                : account.publicStats.status === 'not_synced'
-                  ? 'Queue solved-count sync'
-                  : 'Refresh solved count'}
-            </Button>
-          </div>
         ) : null}
       </form>
     </article>
@@ -437,52 +367,54 @@ export function ProviderAccountLinks({ idPrefix }: { idPrefix: string }) {
   return (
     <section
       aria-labelledby={`${idPrefix}-provider-links-heading`}
-      className="flex w-full max-w-4xl min-w-0 flex-col gap-5 rounded-xl border border-border bg-card p-4 sm:p-6"
+      className="flex w-full max-w-4xl min-w-0 flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:p-6"
     >
-      <div>
-        <h2
-          className="text-xl font-semibold tracking-tight text-foreground"
-          id={`${idPrefix}-provider-links-heading`}
-        >
-          Optional provider profile links
-        </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Save a public Codeforces, CodeChef, or LeetCode handle for convenient
-          profile access. Linking records long-lived consent for public profile
-          synchronization every six hours plus manual refresh. This does not
-          verify account ownership or individual solves. You can skip or
-          disconnect at any time; disconnecting keeps history until you delete
-          it explicitly.
-        </p>
-      </div>
+      <h2
+        className="text-xl font-semibold tracking-tight text-foreground"
+        id={`${idPrefix}-provider-links-heading`}
+      >
+        Connected platforms
+      </h2>
 
       {accountsQuery.isPending ? (
-        <PageSkeleton label="Loading provider profile links" rows={3} />
+        <PageSkeleton label="Loading provider links" rows={3} />
       ) : accountsQuery.isError ? (
         <ErrorState
           message={providerAccountErrorMessage(accountsQuery.error)}
           onRetry={() => void accountsQuery.refetch()}
-          title="Provider profile links unavailable"
+          title="Provider links unavailable"
         />
       ) : (
-        <div className="grid min-w-0 gap-4 lg:grid-cols-3">
-          {providers.map(({ example, label, provider }) => {
-            const account = accountsQuery.data.data.find(
-              (candidate) => candidate.provider === provider,
-            )
+        <>
+          <div className="grid min-w-0 gap-3 lg:grid-cols-3">
+            {providers.map(({ example, label, provider }) => {
+              const account = accountsQuery.data.data.find(
+                (candidate) => candidate.provider === provider,
+              )
 
-            return (
-              <ProviderAccountCard
-                account={account}
-                example={example}
-                idPrefix={idPrefix}
-                key={`${provider}-${account?.updatedAt ?? 'new'}`}
-                label={label}
-                provider={provider}
-              />
-            )
-          })}
-        </div>
+              return account ? (
+                <LinkedProviderCard
+                  account={account}
+                  key={`${provider}-${account.updatedAt}`}
+                  label={label}
+                  provider={provider}
+                />
+              ) : (
+                <UnlinkedProviderCard
+                  example={example}
+                  idPrefix={idPrefix}
+                  key={provider}
+                  label={label}
+                  provider={provider}
+                />
+              )
+            })}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Auto-syncs hourly. Manual sync limited to once per 15 min.
+            Disconnect or delete history via the ⋯ menu.
+          </p>
+        </>
       )}
     </section>
   )
