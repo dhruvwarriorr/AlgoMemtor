@@ -318,8 +318,10 @@ Analytics includes:
 - curated topic distribution from recognized provider tags;
 - language usage;
 - recent-window acceptance rate;
-- rating progression; and
-- contest participation.
+- combined contest participation and rating history. The Insights view shows
+  the six most recent entries first (three rows in the two-column layout) and
+  expands to the remaining history on demand; rated contests show the
+  provider-reported signed rating delta.
 
 LeetCode profile-side `tagProblemCounts` is used for the complete aggregate
 skill distribution returned by its public profile. Concrete recent solved rows

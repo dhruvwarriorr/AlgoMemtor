@@ -9,6 +9,10 @@ import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { ProviderFilter } from '@/features/platform/components/ProviderFilter'
 import { providerLabels } from '@/features/platform/components/provider-labels'
 import { useAnalytics } from '@/features/platform/hooks'
+import {
+  mergeContestHistory,
+  type ContestHistoryEntry,
+} from '@/features/platform/contest-history'
 
 function formatDate(value: string) {
   try {
@@ -40,6 +44,68 @@ function MetricCard({
         <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
       ) : null}
     </div>
+  )
+}
+
+function ContestHistoryCard({ entry }: { entry: ContestHistoryEntry }) {
+  const participation = entry.participation
+  const ratingChange = entry.ratingChange
+  const provider = participation?.provider ?? ratingChange?.provider
+  const contestName =
+    participation?.contestName ??
+    ratingChange?.contestName ??
+    participation?.contestId ??
+    ratingChange?.contestId ??
+    'Contest activity'
+  const date = participation?.attendedAt ?? ratingChange?.occurredAt
+  const ratingDelta = ratingChange?.delta ?? participation?.ratingChange
+  const oldRating = ratingChange?.oldRating ?? participation?.oldRating
+  const newRating = ratingChange?.newRating ?? participation?.newRating
+
+  return (
+    <li className="rounded-lg border border-border bg-card p-4" key={entry.key}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            {provider === undefined ? 'Provider' : providerLabels[provider]}
+          </p>
+          <p className="mt-1 break-words font-medium text-foreground">
+            {contestName}
+          </p>
+        </div>
+        {ratingDelta !== undefined ? (
+          <span
+            className={
+              ratingDelta >= 0
+                ? 'font-semibold text-emerald-700 dark:text-emerald-300'
+                : 'font-semibold text-destructive'
+            }
+          >
+            {ratingDelta >= 0 ? '+' : ''}
+            {ratingDelta}
+          </span>
+        ) : null}
+      </div>
+      <p className="mt-2 text-sm text-muted-foreground">
+        {participation?.rank === undefined ? '' : `Rank ${participation.rank}`}
+        {participation?.score === undefined
+          ? ''
+          : `${participation?.rank === undefined ? '' : ' · '}Score ${participation.score}`}
+        {oldRating !== undefined && newRating !== undefined
+          ? `${participation?.rank === undefined && participation?.score === undefined ? '' : ' · '}${oldRating} → ${newRating}`
+          : ''}
+        {date
+          ? `${participation?.rank === undefined && participation?.score === undefined && oldRating === undefined ? '' : ' · '}${formatDate(date)}`
+          : ''}
+        {participation?.rank === undefined &&
+        participation?.score === undefined &&
+        oldRating === undefined &&
+        ratingDelta === undefined &&
+        date === undefined
+          ? 'Participation details not reported'
+          : null}
+      </p>
+    </li>
   )
 }
 
@@ -321,6 +387,12 @@ function AnalyticsPage() {
   const difficulty = Object.entries(analytics.solvedByDifficulty)
   const topics = Object.entries(analytics.topicCounts)
   const languages = Object.entries(analytics.languageCounts)
+  const contestHistory = mergeContestHistory(
+    analytics.contestParticipation,
+    analytics.ratingHistory,
+  )
+  const visibleContestHistory = contestHistory.slice(0, 6)
+  const additionalContestHistory = contestHistory.slice(6)
 
   return (
     <PageContainer>
@@ -370,9 +442,9 @@ function AnalyticsPage() {
           value={analytics.ratingHistory.length.toLocaleString()}
         />
         <MetricCard
-          detail="Provider contest observations"
+          detail="Participation and rating events"
           label="Contests"
-          value={analytics.contestParticipation.length.toLocaleString()}
+          value={contestHistory.length.toLocaleString()}
         />
       </dl>
 
@@ -390,60 +462,6 @@ function AnalyticsPage() {
 
       <TopicDistribution entries={topics} />
 
-      <section aria-labelledby="rating-history-heading" className="space-y-3">
-        <div>
-          <h2
-            className="text-xl font-semibold tracking-tight text-foreground"
-            id="rating-history-heading"
-          >
-            Rating progression
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Native rating changes are shown exactly as reported by each
-            provider.
-          </p>
-        </div>
-        {analytics.ratingHistory.length === 0 ? (
-          <p className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-            No rating history has been synchronized yet.
-          </p>
-        ) : (
-          <ul className="grid min-w-0 gap-3 md:grid-cols-2">
-            {analytics.ratingHistory.map((change) => (
-              <li
-                className="rounded-lg border border-border bg-card p-4"
-                key={`${change.provider}:${change.eventId}`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                      {providerLabels[change.provider]}
-                    </p>
-                    <p className="mt-1 break-words font-medium text-foreground">
-                      {change.contestName ?? change.contestId ?? 'Rating event'}
-                    </p>
-                  </div>
-                  <span
-                    className={
-                      change.delta >= 0
-                        ? 'font-semibold text-emerald-700 dark:text-emerald-300'
-                        : 'font-semibold text-destructive'
-                    }
-                  >
-                    {change.delta >= 0 ? '+' : ''}
-                    {change.delta}
-                  </span>
-                </div>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  {change.oldRating} → {change.newRating} ·{' '}
-                  {formatDate(change.occurredAt)}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
       <section aria-labelledby="contest-activity-heading" className="space-y-3">
         <div>
           <h2
@@ -453,41 +471,45 @@ function AnalyticsPage() {
             Contest participation
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Participation records are provider observations and may be
-            incomplete when a provider exposes only a bounded history.
+            Participation and rating events are combined here. Rated contests
+            show the provider-reported signed rating change.
           </p>
         </div>
-        {analytics.contestParticipation.length === 0 ? (
+        {contestHistory.length === 0 ? (
           <p className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-            No contest participation has been synchronized yet.
+            No contest activity has been synchronized yet.
           </p>
         ) : (
-          <ul className="grid min-w-0 gap-3 md:grid-cols-2">
-            {analytics.contestParticipation.map((participation) => (
-              <li
-                className="rounded-lg border border-border bg-card p-4"
-                key={`${participation.provider}:${participation.contestId}`}
-              >
-                <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                  {providerLabels[participation.provider]}
-                </p>
-                <p className="mt-1 break-words font-medium text-foreground">
-                  {participation.contestName ?? participation.contestId}
-                </p>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  {participation.rank === undefined
-                    ? 'Rank not reported'
-                    : `Rank ${participation.rank}`}
-                  {participation.score === undefined
-                    ? ''
-                    : ` · Score ${participation.score}`}
-                  {participation.attendedAt === undefined
-                    ? ''
-                    : ` · ${formatDate(participation.attendedAt)}`}
-                </p>
-              </li>
-            ))}
-          </ul>
+          <div className="space-y-3">
+            <ul className="grid min-w-0 gap-3 md:grid-cols-2">
+              {visibleContestHistory.map((entry) => (
+                <ContestHistoryCard entry={entry} key={entry.key} />
+              ))}
+            </ul>
+            {additionalContestHistory.length > 0 ? (
+              <details className="group rounded-lg border border-border bg-card">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 text-sm font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                  <span className="group-open:hidden">Show more contests</span>
+                  <span className="hidden group-open:inline">
+                    Show less contests
+                  </span>
+                  <span className="text-xs font-normal text-muted-foreground group-open:hidden">
+                    {additionalContestHistory.length} more
+                  </span>
+                  <span className="hidden text-xs font-normal text-muted-foreground group-open:inline">
+                    Collapse
+                  </span>
+                </summary>
+                <div className="border-t border-border p-4">
+                  <ul className="grid min-w-0 gap-3 md:grid-cols-2">
+                    {additionalContestHistory.map((entry) => (
+                      <ContestHistoryCard entry={entry} key={entry.key} />
+                    ))}
+                  </ul>
+                </div>
+              </details>
+            ) : null}
+          </div>
         )}
       </section>
     </PageContainer>
