@@ -875,6 +875,32 @@ async def test_retrieval_falls_back_to_bounded_sql_when_embedding_or_vector_fail
     assert "learner@example.com" not in (response.query or "")
 
 
+def test_memory_list_omits_null_optional_fields() -> None:
+    class MemoryListService:
+        async def list_memories(self, learner_id: UUID) -> list[StoredMemory]:
+            assert learner_id == LEARNER_ID
+            return [stored_memory()]
+
+    app.dependency_overrides[get_ai_settings] = lambda: settings()
+    app.dependency_overrides[get_memory_service] = lambda: MemoryListService()
+
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                f"/internal/learners/{LEARNER_ID}/memory-list",
+                headers={"X-Internal-Service-Token": "internal-test-token"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    records = response.json()
+    assert len(records) == 1
+    assert records[0]["learnerId"] == str(LEARNER_ID)
+    assert "supersedesMemoryId" not in records[0]
+    assert "similarity" not in records[0]
+
+
 def test_memory_process_and_delete_routes_use_internal_token_and_core_shape() -> None:
     repository = FakeMemoryRepository()
     service = service_for(repository, llm_api_key="")

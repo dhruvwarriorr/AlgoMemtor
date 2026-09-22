@@ -57,9 +57,18 @@ const aiMemorySchema = z
     status: z.enum(['proposed', 'active', 'archived']),
     evidenceIds: z.array(z.uuid()).min(1).max(64),
     version: z.number().int().positive().default(1),
-    supersedesMemoryId: z.uuid().optional(),
+    supersedesMemoryId: z
+      .uuid()
+      .nullish()
+      .transform((value) => value ?? undefined),
     learnerCorrected: z.boolean().default(false),
-    similarity: z.number().finite().min(0).max(1).optional(),
+    similarity: z
+      .number()
+      .finite()
+      .min(0)
+      .max(1)
+      .nullish()
+      .transform((value) => value ?? undefined),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
   })
@@ -77,8 +86,11 @@ const aiMemoryActionResponseSchema = z
       'delete',
     ]),
     idempotent: z.boolean().default(false),
-    memory: aiMemorySchema.optional(),
-    auditId: z.uuid().optional(),
+    memory: aiMemorySchema.nullish().transform((value) => value ?? undefined),
+    auditId: z
+      .uuid()
+      .nullish()
+      .transform((value) => value ?? undefined),
   })
   .strict()
 

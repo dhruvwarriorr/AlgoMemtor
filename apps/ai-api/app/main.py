@@ -36,6 +36,7 @@ from .memory_models import (
     MemoryProcessResponse,
     MemoryProposalRequest,
     MemoryRetrievalResponse,
+    StoredMemory,
 )
 from .memory_repository import (
     MemoryConflictError,
@@ -321,13 +322,14 @@ async def retrieve_learner_memories(
 
 @app.get(
     "/internal/learners/{learner_id}/memory-list",
-    response_model=list,
+    response_model=list[StoredMemory],
+    response_model_exclude_none=True,
     dependencies=[Depends(require_internal_service)],
 )
 async def list_learner_memories(
     learner_id: UUID,
     service: Annotated[MemoryService, Depends(get_memory_service)],
-) -> list:
+) -> list[StoredMemory]:
     try:
         return await service.list_memories(learner_id)
     except (MemoryNotFoundError, MemoryRepositoryError) as error:
