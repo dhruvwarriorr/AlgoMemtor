@@ -705,7 +705,7 @@ describe('coach API', () => {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          content: 'How can I increase my rating on Codeforces?',
+          content: 'Show a timeline of my Codeforces rating history.',
         }),
       },
     )
@@ -783,7 +783,7 @@ describe('coach API', () => {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          content: 'What should I practice next? Show my progress.',
+          content: 'What should I practice next? Show a chart of my progress.',
         }),
       },
     )
@@ -797,12 +797,67 @@ describe('coach API', () => {
           block.type === 'chart' && block.datasetId === 'topic-assessments',
       ),
     ).toBe(true)
+    expect(
+      richContent?.blocks.some(
+        (block) =>
+          block.type === 'metric_grid' ||
+          block.type === 'timeline' ||
+          block.type === 'comparison_table',
+      ),
+    ).toBe(false)
     expect(richContent?.citations.map((citation) => citation.id)).toContain(
       'safe-web',
     )
     expect(richContent?.citations.map((citation) => citation.id)).not.toContain(
       'unsafe-web',
     )
+  })
+
+  it('does not render model-selected charts for an ordinary coaching question', async () => {
+    const progressRepository = new InMemoryProgressRepository()
+    await progressRepository.saveConsent(
+      userA,
+      true,
+      'personalized-coaching-rag-v2',
+    )
+    const aiCoachClient: AiCoachClient = {
+      respond: vi.fn(async (): Promise<AiCoachResult> => ({
+        answer: 'Start with the topic that needs the most practice.',
+        evidence: [],
+        proposals: [],
+        presentation: {
+          datasetIds: ['topic-assessments', 'practice-trend-30d'],
+          problemIds: [],
+          suggestedQuestions: [],
+        },
+      })),
+    }
+    const baseUrl = startApp({ aiCoachClient, progressRepository })
+    const headers = {
+      ...authorization('user-a'),
+      'content-type': 'application/json',
+    }
+    const created = await fetch(`${baseUrl}/api/coach/conversations`, {
+      method: 'POST',
+      headers,
+      body: '{}',
+    })
+    const conversationId = (await created.json()).data.id as string
+    const response = await fetch(
+      `${baseUrl}/api/coach/conversations/${conversationId}/messages`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ content: 'What should I practice next?' }),
+      },
+    )
+    const coachResponse = CoachResponseSchema.parse(await response.json())
+    expect(response.status).toBe(200)
+    expect(
+      coachResponse.message.richContent?.blocks.some(
+        (block) => block.type !== 'problem_list',
+      ),
+    ).toBe(false)
   })
 
   it('hydrates only model-selected trusted problem identities', async () => {
@@ -850,7 +905,9 @@ describe('coach API', () => {
       {
         method: 'POST',
         headers,
-        body: JSON.stringify({ content: 'What should I practice next?' }),
+        body: JSON.stringify({
+          content: 'Recommend a problem I should practice next.',
+        }),
       },
     )
     const coachResponse = CoachResponseSchema.parse(await response.json())
@@ -1035,6 +1092,61 @@ describe('coach API', () => {
     ).toBe(true)
     expect(saved.at(-1)?.content).toContain('[code omitted]')
     expect(saved[0]?.transientContextOmitted).toBe(true)
+  })
+
+  it('passes media to AI for one turn without saving it in history', async () => {
+    const progressRepository = new InMemoryProgressRepository()
+    await progressRepository.saveConsent(
+      userA,
+      true,
+      'personalized-coaching-rag-v2',
+    )
+    let capturedRequest: AiCoachRequest | undefined
+    const aiCoachClient: AiCoachClient = {
+      respond: vi.fn(async (request): Promise<AiCoachResult> => {
+        capturedRequest = request
+        return {
+          answer: 'The recording describes a binary search problem.',
+          evidence: [],
+          proposals: [],
+        }
+      }),
+    }
+    const baseUrl = startApp({ aiCoachClient, progressRepository })
+    const headers = {
+      ...authorization('user-a'),
+      'content-type': 'application/json',
+    }
+    const created = await fetch(`${baseUrl}/api/coach/conversations`, {
+      method: 'POST',
+      headers,
+      body: '{}',
+    })
+    const conversationId = (await created.json()).data.id as string
+    const media = {
+      mimeType: 'audio/wav',
+      data: Buffer.alloc(1_100_000, 0x61).toString('base64'),
+    }
+    const response = await fetch(
+      `${baseUrl}/api/coach/conversations/${conversationId}/messages`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          content: 'Explain this audio.',
+          transientMedia: media,
+        }),
+      },
+    )
+    expect(response.status).toBe(200)
+    expect(capturedRequest?.transientMedia).toEqual(media)
+    const history = await fetch(
+      `${baseUrl}/api/coach/conversations/${conversationId}`,
+      { headers: authorization('user-a') },
+    )
+    const body = await history.text()
+    expect(body).not.toContain(media.data)
+    expect(body).toContain('transientContextOmitted')
   })
 
   it('omits code-like text even when it is not fenced', async () => {

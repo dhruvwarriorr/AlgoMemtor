@@ -6,6 +6,7 @@ import {
   CoachEvidenceReferenceSchema,
   CoachCitationSchema,
   CoachRichContentSchema,
+  type SendCoachMessageRequest,
 } from '@algomemtor/shared-contracts'
 
 const coachDatasetIdSchema = z.enum([
@@ -66,6 +67,7 @@ export type AiCoachRequest = {
   conversationId: string
   question: string
   transientContext?: string
+  transientMedia?: SendCoachMessageRequest['transientMedia']
   context: Record<string, unknown>
 }
 

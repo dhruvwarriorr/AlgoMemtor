@@ -8,6 +8,7 @@ import {
   CoachCheckInSchema,
   CoachCitationSchema,
   ImprovementRoadmapSchema,
+  SendCoachMessageRequestSchema,
 } from '../src/coach.js'
 
 const timestamp = '2026-09-16T00:00:00.000Z'
@@ -40,6 +41,56 @@ const topic = {
 }
 
 describe('coach contracts', () => {
+  it('accepts bounded attachments and rejects malformed files', () => {
+    const request = {
+      content: 'Explain this recording.',
+      transientMedia: {
+        mimeType: 'audio/wav',
+        data: 'UklGRg==',
+      },
+    }
+    for (const mimeType of [
+      'audio/wav',
+      'video/mp4',
+      'image/png',
+      'application/pdf',
+      'text/plain',
+      'text/markdown',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ]) {
+      expect(
+        SendCoachMessageRequestSchema.safeParse({
+          ...request,
+          transientMedia: { ...request.transientMedia, mimeType },
+        }).success,
+      ).toBe(true)
+    }
+    expect(
+      SendCoachMessageRequestSchema.safeParse({
+        ...request,
+        transientMedia: {
+          ...request.transientMedia,
+          mimeType: 'application/x-msdownload',
+        },
+      }).success,
+    ).toBe(false)
+    expect(
+      SendCoachMessageRequestSchema.safeParse({
+        ...request,
+        transientMedia: { ...request.transientMedia, data: 'not-base64' },
+      }).success,
+    ).toBe(false)
+    expect(
+      SendCoachMessageRequestSchema.safeParse({
+        ...request,
+        transientMedia: {
+          ...request.transientMedia,
+          data: 'A'.repeat(11_184_816),
+        },
+      }).success,
+    ).toBe(false)
+  })
+
   it('rejects action proposals without the payload required by their type', () => {
     expect(
       CoachActionProposalSchema.safeParse({

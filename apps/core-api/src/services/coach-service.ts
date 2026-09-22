@@ -1097,10 +1097,36 @@ const coachRichContentForContext = (
   const stale = context.dataCompleteness !== 'complete'
   const lower = question.toLowerCase()
   const selectedDatasets = new Set(presentation?.datasetIds ?? [])
+  const requestsChart =
+    /\b(chart|charts|graph|graphs|plot|plots|visuali[sz]e|visuali[sz]ation|trend|trends)\b/i.test(
+      question,
+    )
+  const requestsTimeline = /\b(timeline|timelines)\b/i.test(question)
+  const requestsTable = /\b(table|tables)\b/i.test(question)
+  const requestsMetrics = /\b(metric|metrics|dashboard)\b/i.test(question)
+  const requestsProblems =
+    /\b(problem|problems|question|questions|practice|next|recommend|suggest)\b/i.test(
+      question,
+    )
   const wantsDataset = (
     id: NonNullable<AiCoachResult['presentation']>['datasetIds'][number],
     legacyDecision: boolean,
-  ) => (presentation === undefined ? legacyDecision : selectedDatasets.has(id))
+  ) => {
+    const requested =
+      id === 'trusted-problems'
+        ? requestsProblems
+        : id === 'learner-summary'
+          ? requestsMetrics
+          : id === 'contest-rating-history'
+            ? requestsTimeline
+            : id === 'topic-comparison'
+              ? requestsTable
+              : requestsChart
+    return (
+      requested &&
+      (presentation === undefined ? legacyDecision : selectedDatasets.has(id))
+    )
+  }
   const requestedProvider = providerFromCoachQuestion(question)
   const focus = context.roadmap.topics.filter(
     (topic) =>
@@ -1258,7 +1284,10 @@ const coachRichContentForContext = (
     })
   }
   if (
-    wantsDataset('topic-assessments', planningQuestion) &&
+    wantsDataset(
+      'topic-assessments',
+      planningQuestion || /\b(topic|topics|readiness)\b/.test(lower),
+    ) &&
     topicCandidates.length > 0
   ) {
     blocks.push({
@@ -1416,10 +1445,7 @@ const coachRichContentForContext = (
   ).slice(0, 5)
   if (
     suggestions.length > 0 &&
-    wantsDataset(
-      'trusted-problems',
-      lower.includes('practice') || lower.includes('next'),
-    )
+    wantsDataset('trusted-problems', requestsProblems)
   ) {
     blocks.push({
       type: 'problem_list',
@@ -1469,7 +1495,7 @@ const coachRichContentForContext = (
     : [
         focus[0] === undefined
           ? 'Help me choose a first topic from my roadmap.'
-          : `Give me a progressive hint for ${focus[0].name}.`,
+          : `Explain the next skill I should build in ${focus[0].name}.`,
         'Turn this into a focused 30-minute practice plan.',
         'What evidence would make you move this topic to comfortable?',
         'Review my latest failed attempts and identify the pattern.',
@@ -2353,6 +2379,7 @@ export class CoachService {
     const safeContent = redactCoachContextText(input.content, 12_000)
     const transientValue = input.transientContext?.trim()
     const transient = transientValue || undefined
+    const transientMedia = input.transientMedia
     const omittedUserContext = safeContent !== input.content.trim()
     const userMessage = await this.options.repository.appendMessage(
       userId,
@@ -2361,7 +2388,9 @@ export class CoachService {
         role: 'user',
         content:
           safeContent || 'The learner sent transient code or problem context.',
-        ...(transient === undefined && !omittedUserContext
+        ...(transient === undefined &&
+        transientMedia === undefined &&
+        !omittedUserContext
           ? {}
           : { transientContextOmitted: true }),
         evidence: [],
@@ -2380,6 +2409,7 @@ export class CoachService {
       conversationId,
       question: input.content,
       ...(transient === undefined ? {} : { transientContext: transient }),
+      ...(transientMedia === undefined ? {} : { transientMedia }),
       context: coachContextForAi(context),
     }
     let result: AiCoachResult
@@ -2390,7 +2420,10 @@ export class CoachService {
         // one-request data into durable learner memory. Keep memory
         // proposals disabled whenever either input field contained content
         // that was omitted from saved history.
-        allowMemoryProposals: transient === undefined && !omittedUserContext,
+        allowMemoryProposals:
+          transient === undefined &&
+          transientMedia === undefined &&
+          !omittedUserContext,
       })
     } catch (error) {
       this.options.logger.warn('coach_ai_fallback', {
@@ -2403,6 +2436,13 @@ export class CoachService {
               : 'AI_COACH_RESPONSE_REJECTED',
       })
       result = this.fallbackResponse(input.content, context)
+      if (transientMedia !== undefined) {
+        result = {
+          ...result,
+          answer:
+            'I could not analyze the attachment right now. The file was not saved in chat history. Please try again, or describe its CP/DSA content in text.',
+        }
+      }
     }
     const savedAnswer = omitGeneratedCodeAndProblemText(result.answer)
     const baseRichContent = coachRichContentForContext(
@@ -2422,7 +2462,11 @@ export class CoachService {
       return true
     })
     const selectedWebProblemIds = new Set(
-      result.presentation?.webProblemCitationIds ?? [],
+      /\b(problem|problems|question|questions|practice|next|recommend|suggest)\b/i.test(
+        input.content,
+      )
+        ? (result.presentation?.webProblemCitationIds ?? [])
+        : [],
     )
     const selectedWebProblems = safeModelCitations.filter(
       (citation) =>
@@ -3205,7 +3249,7 @@ export class CoachService {
     if (frustrationMatches >= 2) {
       return {
         answer:
-          'It sounds like this practice block has become frustrating. Let us shrink the next step to one tiny trace or one easier trusted problem. Tell me whether you want a simpler example, a progressive hint, or a short break before we continue.',
+          'It sounds like this practice block has become frustrating. Let us shrink the next step to one tiny trace or one easier trusted problem. Tell me whether you want a simpler example or a short break before we continue.',
         evidence,
         proposals: [],
         citations: [],

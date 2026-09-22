@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { SendCoachMessageRequest } from '@algomemtor/shared-contracts'
 
 import { useAuth } from '@/features/auth/useAuth'
 
@@ -137,11 +138,13 @@ export function useSendCoachMessage() {
       conversationId,
       content,
       transientContext,
+      transientMedia,
       signal,
     }: {
       conversationId: string
       content: string
       transientContext?: string
+      transientMedia?: SendCoachMessageRequest['transientMedia']
       signal?: AbortSignal
     }) =>
       sendCoachMessage(
@@ -149,6 +152,7 @@ export function useSendCoachMessage() {
         {
           content,
           ...(transientContext ? { transientContext } : {}),
+          ...(transientMedia ? { transientMedia } : {}),
         },
         { signal },
       ),

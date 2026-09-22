@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import base64
+from io import BytesIO
 from typing import Any
 from uuid import UUID
+from zipfile import ZipFile
 
 import pytest
 from app.coach_models import (
@@ -12,13 +15,18 @@ from app.coach_models import (
     CoachPresentation,
     CoachRequest,
     CoachResponseProposal,
+    CoachTransientMedia,
 )
 from app.coach_service import (
+    CoachGenerationError,
     CoachNotConfiguredError,
     CoachService,
+    GeminiCoachModel,
+    extract_text_attachment,
     utc_timestamp,
 )
 from app.knowledge_base import retrieve_knowledge
+from app.pedagogy import is_specific_problem_solution_request
 from app.settings import AiSettings
 from app.web_grounding import (
     PublicCitation,
@@ -122,6 +130,92 @@ def test_utc_timestamp_matches_shared_contract_format() -> None:
 
     assert timestamp.endswith("Z")
     assert "+00:00" not in timestamp
+
+
+def test_media_validation_and_specific_problem_routing() -> None:
+    assert CoachTransientMedia(mimeType="audio/wav", data="UklGRg==").data
+    assert CoachTransientMedia(mimeType="image/png", data="UklGRg==").data
+    assert CoachTransientMedia(mimeType="application/pdf", data="UklGRg==").data
+    with pytest.raises(ValidationError):
+        CoachTransientMedia(mimeType="application/x-msdownload", data="UklGRg==")
+    with pytest.raises(ValidationError):
+        CoachTransientMedia(mimeType="video/mp4", data="not-base64")
+    assert is_specific_problem_solution_request("Give me a hint for this problem", None)
+    assert is_specific_problem_solution_request("Give me a hint for Two Sum", None)
+    assert is_specific_problem_solution_request("Solve this", "problem text")
+    assert not is_specific_problem_solution_request(
+        "What should I practice next?", None
+    )
+    assert not is_specific_problem_solution_request(
+        "How can I solve more problems?", None
+    )
+
+
+def test_text_and_docx_attachments_are_extracted_in_memory() -> None:
+    text = base64.b64encode(b"Review the binary search invariant.").decode()
+    assert "binary search" in extract_text_attachment("text/plain", text)
+    document = BytesIO()
+    with ZipFile(document, "w") as archive:
+        archive.writestr(
+            "word/document.xml",
+            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Check the invariant</w:t></w:r></w:p></w:body></w:document>',
+        )
+    encoded = base64.b64encode(document.getvalue()).decode()
+    mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    assert extract_text_attachment(mime, encoded) == "Check the invariant"
+    with pytest.raises(CoachGenerationError, match="Invalid document attachment"):
+        extract_text_attachment(mime, text)
+
+
+@pytest.mark.parametrize("mime_type", ["audio/wav", "image/png", "application/pdf"])
+@pytest.mark.asyncio
+async def test_gemini_model_receives_media_as_transient_multimodal_message(
+    mime_type: str,
+) -> None:
+    captured: list[Any] = []
+
+    class StructuredModel:
+        async def ainvoke(self, messages: list[Any]) -> dict[str, Any]:
+            captured.extend(messages)
+            return {
+                "parsed": CoachModelOutput(answer="The clip explains binary search.")
+            }
+
+    model = object.__new__(GeminiCoachModel)
+    model.structured_model = StructuredModel()
+    request = request_payload().model_copy(
+        update={
+            "transientMedia": CoachTransientMedia(mimeType=mime_type, data="UklGRg==")
+        }
+    )
+    result = await model.respond(request)
+    assert result.output.answer == "The clip explains binary search."
+    assert captured[1].content[1]["type"] == "media"
+    assert captured[1].content[1]["mime_type"] == mime_type
+
+
+@pytest.mark.asyncio
+async def test_text_attachment_reaches_gemini_without_raw_base64() -> None:
+    captured: list[Any] = []
+
+    class StructuredModel:
+        async def ainvoke(self, messages: list[Any]) -> dict[str, Any]:
+            captured.extend(messages)
+            return {"parsed": CoachModelOutput(answer="Here is a useful approach.")}
+
+    model = object.__new__(GeminiCoachModel)
+    model.structured_model = StructuredModel()
+    encoded = base64.b64encode(b"Review the binary search invariant.").decode()
+    request = request_payload().model_copy(
+        update={
+            "transientMedia": CoachTransientMedia(mimeType="text/plain", data=encoded)
+        }
+    )
+    await model.respond(request)
+    content = captured[1].content
+    assert isinstance(content, str)
+    assert "Review the binary search invariant." in content
+    assert encoded not in content
 
 
 def test_presentation_accepts_only_trusted_problem_identities() -> None:
@@ -258,6 +352,35 @@ class AuditRepository:
     async def save(self, audit: Any) -> UUID:
         self.saved.append(audit)
         return CONVERSATION_ID
+
+
+@pytest.mark.asyncio
+async def test_hint_guidance_is_used_only_for_specific_problem_help() -> None:
+    prompts: list[str] = []
+
+    class GuidanceModel:
+        async def respond(self, request: CoachRequest) -> CoachModelOutput:
+            guidance = request.context["coachingGuidance"]
+            assert isinstance(guidance, dict)
+            prompts.append(str(guidance["prompt"]))
+            return CoachModelOutput(answer="A focused explanation.")
+
+    service = CoachService(
+        settings(), model=GuidanceModel(), audit_repository=AuditRepository()
+    )
+    await service.respond(
+        request_payload().model_copy(update={"transientContext": None})
+    )
+    await service.respond(
+        request_payload().model_copy(
+            update={
+                "question": "Give me a hint for this problem.",
+                "transientContext": None,
+            }
+        )
+    )
+    assert "Do not switch into a hint ladder" in prompts[0]
+    assert "Offer one numbered hint at a time" in prompts[1]
 
 
 @pytest.mark.asyncio

@@ -991,7 +991,14 @@ private learner history.
 Safe conversation text is retained until the learner deletes the thread. Code
 blocks and copied problem context supplied as transient context are sent only
 for the current request and saved as an omission marker; they are not logged,
-embedded, or included in AI audits. Audits retain model/version, latency,
+embedded, or included in AI audits. Learners may also attach one supported image,
+document, audio, or video file of up to 8 MiB to a coach turn through a single
+attachment control. JPEG, PNG, WebP, PDF, TXT, Markdown, DOCX, MP3, WAV, M4A,
+MP4, and WebM are accepted. TXT, Markdown, and DOCX text is extracted in memory;
+other formats are sent as transient Gemini media. The attachment is used for that
+turn only and is never saved in conversation history, embeddings, or audits.
+Attachment analysis requires the existing AI consent and is not used for
+public-web search grounding. Audits retain model/version, latency,
 token/cost metadata, conversation/learner ownership, and a keyed context
 fingerprint, never raw prompts or context snapshots. Action proposals are
 revalidated and applied only after an authenticated, idempotent `CONFIRM`.
@@ -1034,9 +1041,12 @@ The public `/api/coach/.../messages` endpoint remains non-streaming. An internal
 a cancelable pending state; it emits only after the same complete response
 validation, so partial model output never reaches the browser. Express validates
 and persists a `coach-rich-v2` snapshot alongside each assistant
-message. It contains only useful blocks: metric grids, line/bar/stacked-bar
-charts with an accessible table fallback, timelines, comparison tables, and up
-to five trusted catalog problems or grounded web problem sources, plus
+message. Visual blocks (metric grids, line/bar/stacked-bar charts with an
+accessible table fallback, timelines, and comparison tables) are generated only
+when the learner explicitly asks for a visual display. Problem cards can still
+appear when the learner requests practice or problem recommendations. A
+response can also contain up to five trusted catalog problems or grounded web
+problem sources, plus
 citations and two to four follow-up questions. Gemini chooses from the
 allowlisted dataset IDs, catalog problem IDs, and grounded citation IDs
 available for that turn; chart numbers and catalog problem links are hydrated
@@ -1045,9 +1055,9 @@ grounding metadata and are visibly attributed as web-grounded. Existing v1
 messages without `richContent` remain readable.
 
 If Gemini, embeddings, the knowledge database, or Search grounding is
-unavailable, the deterministic composer still returns trusted learner metrics,
-history, charts, and problems where available, while chat uses a concise retry
-message instead of topic-specific hard-coded advice. Internal fallback and data
+unavailable, the deterministic composer still returns requested trusted learner
+metrics, history, charts, and problems where available, while chat uses a
+concise retry message instead of topic-specific hard-coded advice. Internal fallback and data
 quality fields remain available to audits and contracts but are not exposed as
 technical labels in the learner UI. Raw web
 pages, search text/queries, prompts, transient code, and private context are
@@ -1109,11 +1119,13 @@ bounded weekly targets, carry due-review topics into the plan, and reuse the
 mastery and SM-2 helpers used by proactive check-ins.
 
 The non-streaming coach response is validated before it reaches React. It may
-contain teaching, progressive hints, contest/attempt debriefs, evidence
+contain teaching, contest/attempt debriefs, evidence
 references, and confirmation-gated roadmap/progress/bookmark proposals. A
-transient code/problem field is never persisted. If FastAPI/Gemini is down, the
-roadmap and practice set remain usable and chat presents a concise retry message
-instead of generating topic-specific hard-coded advice. The fallback flag remains
+progressive hint ladder is reserved for requests to solve a specific CP/DSA
+problem; concept, planning, interview, debugging, and profile questions are
+answered directly. Transient code/problem/media input is never persisted. If
+FastAPI/Gemini is down, the roadmap and practice set remain usable and chat
+presents a concise retry message instead of generating topic-specific hard-coded advice. The fallback flag remains
 internal for observability and is not shown as a learner-facing product label.
 
 Check-ins are in-app only. Learners choose a local weekly review day/time and

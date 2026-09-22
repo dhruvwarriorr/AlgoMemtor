@@ -271,6 +271,40 @@ def teaching_prompt(style: TeachingStyle, frustration: float) -> str:
     return blocks[style]
 
 
+def is_specific_problem_solution_request(
+    question: str, transient_context: str | None
+) -> bool:
+    text = question.lower()
+    if not any(term in text for term in ("hint", "solution", "solve", "approach")):
+        return False
+    if any(
+        term in text for term in ("solve more", "improve my solving", "practice next")
+    ):
+        return False
+    named_problem = re.search(
+        r"\b(?:hint|solution)\s+(?:for|to)\s+(?!my\b|the\b|a\b|more\b|next\b)(?:[\w-]+\s*){1,6}",
+        text,
+    )
+    return (
+        bool(transient_context)
+        or any(
+            term in text
+            for term in (
+                "this problem",
+                "the problem",
+                "this question",
+                "the question",
+                "this task",
+                "leetcode",
+                "codeforces",
+                "codechef",
+                "cses",
+            )
+        )
+        or named_problem is not None
+    )
+
+
 def compute_momentum(
     recent_solved: list[float],
     prior_solved: list[float],

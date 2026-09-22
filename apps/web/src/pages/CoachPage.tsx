@@ -18,6 +18,8 @@ import {
   Send,
   Sparkles,
   Trash2,
+  Paperclip,
+  X,
 } from 'lucide-react'
 
 import PageContainer from '@/components/layout/PageContainer'
@@ -99,9 +101,73 @@ const guidedPrompts = [
   {
     label: 'Explain this concept',
     prompt:
-      'Explain a CP/DSA concept I am working on with intuition, then give me a progressive hint.',
+      'Explain a CP/DSA concept I am working on with intuition and an example.',
   },
 ] as const
+
+const coachAttachmentTypes = {
+  'audio/webm': 'audio/webm',
+  'audio/mp4': 'audio/mp4',
+  'audio/mpeg': 'audio/mpeg',
+  'audio/wav': 'audio/wav',
+  'video/mp4': 'video/mp4',
+  'video/webm': 'video/webm',
+  'image/jpeg': 'image/jpeg',
+  'image/png': 'image/png',
+  'image/webp': 'image/webp',
+  'application/pdf': 'application/pdf',
+  'text/plain': 'text/plain',
+  'text/markdown': 'text/markdown',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+} as const
+
+type CoachAttachmentType = keyof typeof coachAttachmentTypes
+
+const attachmentExtensions: Record<string, CoachAttachmentType> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  pdf: 'application/pdf',
+  txt: 'text/plain',
+  md: 'text/markdown',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+  m4a: 'audio/mp4',
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+}
+
+function attachmentMimeType(file: File): CoachAttachmentType | null {
+  if (Object.hasOwn(coachAttachmentTypes, file.type)) {
+    return file.type as CoachAttachmentType
+  }
+  if (file.type === 'audio/x-wav') return 'audio/wav'
+  if (file.type === 'audio/mp3') return 'audio/mpeg'
+  if (file.type === 'text/x-markdown') return 'text/markdown'
+  if (file.type !== '' && file.type !== 'application/octet-stream') return null
+  const extension = file.name.split('.').pop()?.toLowerCase()
+  return extension ? (attachmentExtensions[extension] ?? null) : null
+}
+
+function readAttachmentBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result
+      if (typeof result !== 'string' || !result.includes(',')) {
+        reject(new Error('The attachment could not be read.'))
+        return
+      }
+      resolve(result.slice(result.indexOf(',') + 1))
+    }
+    reader.onerror = () =>
+      reject(new Error('The attachment could not be read.'))
+    reader.readAsDataURL(file)
+  })
+}
 
 function formatDate(value: string) {
   try {
@@ -293,6 +359,8 @@ function CoachPage() {
   >(null)
   const [content, setContent] = useState('')
   const [transientContext, setTransientContext] = useState('')
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null)
   const [showInbox, setShowInbox] = useState(false)
   const [renameTarget, setRenameTarget] = useState<{
     id: string
@@ -361,7 +429,11 @@ function CoachPage() {
   }
 
   async function submitMessage(message = content) {
-    const trimmed = message.trim()
+    const trimmed =
+      message.trim() ||
+      (attachmentFile === null
+        ? ''
+        : 'Please help me with the CP/DSA content in this attachment.')
     if (!trimmed || sendMessage.isPending) return
     if (!consentEnabled) {
       notify({
@@ -373,6 +445,15 @@ function CoachPage() {
       return
     }
     try {
+      const attachmentType =
+        attachmentFile === null ? null : attachmentMimeType(attachmentFile)
+      const transientMedia =
+        attachmentFile === null || attachmentType === null
+          ? undefined
+          : {
+              mimeType: attachmentType,
+              data: await readAttachmentBase64(attachmentFile),
+            }
       const conversationId = await ensureConversation()
       const controller = new AbortController()
       sendAbortController.current = controller
@@ -380,10 +461,12 @@ function CoachPage() {
         conversationId,
         content: trimmed,
         transientContext: transientContext.trim() || undefined,
+        transientMedia,
         signal: controller.signal,
       })
       setContent('')
       setTransientContext('')
+      setAttachmentFile(null)
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return
       if (error instanceof Error && error.name === 'AbortError') return
@@ -396,6 +479,20 @@ function CoachPage() {
     } finally {
       sendAbortController.current = null
     }
+  }
+
+  function selectAttachment(file: File | undefined) {
+    if (file === undefined) return
+    if (attachmentMimeType(file) === null || file.size > 8 * 1024 * 1024) {
+      notify({
+        title: 'Unsupported attachment',
+        description:
+          'Choose an image, PDF, TXT, Markdown, DOCX, MP3, WAV, MP4, or WebM file of 8 MB or less.',
+        tone: 'error',
+      })
+      return
+    }
+    setAttachmentFile(file)
   }
 
   function updatePreferences(
@@ -686,8 +783,8 @@ function CoachPage() {
                   />
                   {message.transientContextOmitted ? (
                     <p className="mt-2 text-xs text-muted-foreground">
-                      Temporary code/problem or sensitive context was omitted
-                      from saved history.
+                      Temporary code, problem context, or an attachment was
+                      omitted from saved history.
                     </p>
                   ) : null}
                   {message.role === 'assistant' ? (
@@ -753,7 +850,8 @@ function CoachPage() {
                 </p>
                 <p className="mt-1 max-w-md text-sm leading-6 text-muted-foreground">
                   Start with one of the guided questions or ask anything about
-                  CP/DSA. The coach begins with teaching and progressive hints.
+                  CP/DSA. Ask for a hint when working through a specific
+                  problem.
                 </p>
               </div>
             )}
@@ -828,13 +926,55 @@ function CoachPage() {
                 value={transientContext}
               />
             </details>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <input
+                accept=".mp3,.wav,.m4a,.mp4,.webm,.jpg,.jpeg,.png,.webp,.pdf,.txt,.md,.docx"
+                className="sr-only"
+                onChange={(event) => {
+                  selectAttachment(event.target.files?.[0])
+                  event.target.value = ''
+                }}
+                ref={attachmentInputRef}
+                tabIndex={-1}
+                type="file"
+              />
+              <Button
+                aria-label="Add attachment"
+                disabled={!consentEnabled || sendMessage.isPending}
+                onClick={() => attachmentInputRef.current?.click()}
+                size="icon"
+                type="button"
+                variant="outline"
+                title="Add attachment"
+              >
+                <Paperclip aria-hidden="true" />
+              </Button>
+              {attachmentFile ? (
+                <span className="inline-flex max-w-full items-center gap-1 rounded-md bg-muted px-2 py-1 text-xs text-foreground">
+                  <span className="max-w-52 truncate">
+                    {attachmentFile.name}
+                  </span>
+                  <button
+                    aria-label="Remove attachment"
+                    className="rounded-sm p-0.5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => setAttachmentFile(null)}
+                    type="button"
+                  >
+                    <X aria-hidden="true" className="size-3" />
+                  </button>
+                </span>
+              ) : null}
+            </div>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-muted-foreground">
-                No code execution or submissions happen here.
+                Attach one image, document, audio, or video file (up to 8 MB).
+                It is sent to Gemini for this answer, not saved in chat history.
               </p>
               <Button
                 disabled={
-                  !consentEnabled || !content.trim() || sendMessage.isPending
+                  !consentEnabled ||
+                  (!content.trim() && attachmentFile === null) ||
+                  sendMessage.isPending
                 }
                 type="submit"
               >

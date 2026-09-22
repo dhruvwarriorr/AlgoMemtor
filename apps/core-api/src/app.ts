@@ -1082,6 +1082,10 @@ export const createApp = (options: CreateAppOptions = {}) => {
       updatedAt: memory.updatedAt,
     })
   }
+  app.use(
+    '/api/coach/conversations/:conversationId/messages',
+    express.json({ limit: '12mb' }),
+  )
   app.use(express.json({ limit: '1mb' }))
   app.use((request, response, next) => {
     const suppliedRequestId = request.header('x-request-id')
