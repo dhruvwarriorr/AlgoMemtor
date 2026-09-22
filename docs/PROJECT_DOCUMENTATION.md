@@ -1,7 +1,7 @@
 # AlgoMemtor — Complete Project Documentation
 
 **Document status:** current implementation reference
-**Last reconciled:** 2026-09-17
+**Last reconciled:** 2026-09-22
 **Repository:** `AlgoMemtor`
 **Document scope:** product behavior, architecture, provider integrations,
 data contracts, operations, testing, privacy, and known limitations.
@@ -133,10 +133,51 @@ The following capabilities are implemented in the current working tree:
 | Background provider sync                                    | Implemented                      | PostgreSQL jobs, leases, cooldowns, hourly linked-user schedule                                                                    |
 | Authenticated full historical LeetCode/CodeChef/CSES import | Not implemented                  | Requires an approved API, local connector, or user import                                                                          |
 
-Local unit, type-check, build, and mocked integration checks pass when run with
-the documented commands. Live provider behavior and authenticated browser
-acceptance still depend on the operator's network, environment, database, and
-Supabase project.
+Most local type-check, build, lint/format, and mocked integration checks pass
+with the documented commands. The current verification exception is recorded
+in the continuation handoff below. Live provider behavior and authenticated
+browser acceptance still depend on the operator's network, environment,
+database, and Supabase project.
+
+### Continuation handoff — 2026-09-22
+
+The current checkout was reconciled at `main` commit `f38aa81` and was clean
+before this documentation-only update. The latest implementation work that a
+future contributor should preserve is:
+
+- Progress analytics use dated manual/provider evidence for the local 30-day
+  window, count unique newly solved provider identities, and keep all-time
+  status inventory separate. The Progress page no longer renders the activity
+  history feed or redundant charts.
+- Outbound-open tracking is retired. The old `opened` action rows remain only
+  for database compatibility; no new open endpoint or UI event should be
+  reintroduced as solve evidence without a new product decision.
+- Coach AI fallback is intentionally learner-facing unavailable status. When
+  FastAPI/Gemini returns a fallback, the system does not save fabricated advice,
+  rich content, action proposals, or a learner-memory job for that turn.
+- Coach turns accept one transient attachment up to 8 MiB (supported image,
+  document, audio, or video types). Raw attachment data is sent only for that
+  request and is represented by an omission marker in saved history.
+- Linking a provider queues an initial sync immediately. Scheduled linked-user
+  sync runs hourly with jitter, while manual refresh has its own cooldown. The
+  provider worker must be running for queued profile/activity data to appear.
+
+The current static verification snapshot is: JavaScript/TypeScript type-check,
+web lint, web formatting, and the full production build pass; the web suite
+passes with 63 tests, the core suite passes with 253 tests and 10 skips, and
+the AI suite passes with 98 tests and 1 skip. The full JavaScript test command
+is not green because one shared-contract fixture in
+`packages/shared-contracts/tests/progress.test.ts` omits the required
+`data.topicActivity` array; the failure is a test-fixture/schema synchronization
+gap, not a runtime failure observed by this documentation pass. Fix that
+fixture, rerun `npm run test`, and then repeat `git diff --check` before making
+claims about a fully green suite.
+
+Live Gemini quality/cost/latency, provider behavior, authenticated Supabase
+browser flows, worker restart behavior, production migrations, accessibility/
+performance, and deployment remain release gates. Local tests and builds do not
+prove those conditions. Never copy real API keys or other environment secrets
+into this document or a handoff note.
 
 ---
 

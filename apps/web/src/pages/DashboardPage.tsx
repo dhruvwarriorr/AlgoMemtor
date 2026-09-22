@@ -1,3 +1,4 @@
+import type { ProviderKey } from '@algomemtor/shared-contracts'
 import { Link } from 'react-router-dom'
 
 import PageContainer from '@/components/layout/PageContainer'
@@ -6,8 +7,9 @@ import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { Button } from '@/components/ui/button'
 import { useCoachRoadmap } from '@/features/coach/hooks'
-import { useActivity } from '@/features/platform/hooks'
+import { useActivity, useAnalytics } from '@/features/platform/hooks'
 import { providerLabels } from '@/features/platform/components/provider-labels'
+import { SolvedHeatmap } from '@/features/progress/components/SolvedHeatmap'
 import { useProgressAnalytics } from '@/features/progress/hooks/useProgress'
 import { useRecommendations } from '@/features/recommendations/hooks/useRecommendations'
 
@@ -16,6 +18,7 @@ import { dashboardActivity, isAcceptedSubmission } from './dashboard-activity'
 function DashboardPage() {
   const analyticsQuery = useProgressAnalytics(30)
   const activityQuery = useActivity()
+  const platformAnalyticsQuery = useAnalytics()
   const recommendationsQuery = useRecommendations()
   const roadmapQuery = useCoachRoadmap()
 
@@ -56,6 +59,33 @@ function DashboardPage() {
   const recommendations =
     recommendationsQuery.data?.data?.items.slice(0, 3) ?? []
 
+  const solvedByProvider = (
+    Object.entries(platformAnalyticsQuery.data?.solvedByProvider ?? {}) as [
+      ProviderKey,
+      number,
+    ][]
+  ).sort(([, a], [, b]) => b - a)
+  const topPlatform = solvedByProvider[0]
+
+  const topTopic = [...analytics.topicActivity]
+    .filter((topic) => topic.solved > 0)
+    .sort((a, b) => b.solved - a.solved)[0]
+
+  const windowStart =
+    new Date(analytics.generatedAt).getTime() -
+    analytics.window.days * 86_400_000
+  const recentContests = (
+    platformAnalyticsQuery.data?.contestParticipation ?? []
+  ).filter(
+    (contest) =>
+      contest.attendedAt !== undefined &&
+      new Date(contest.attendedAt).getTime() >= windowStart,
+  )
+
+  const topLanguage = Object.entries(
+    platformAnalyticsQuery.data?.languageCounts ?? {},
+  ).sort(([, a], [, b]) => b - a)[0]
+
   return (
     <PageContainer>
       <PageHeader
@@ -83,30 +113,86 @@ function DashboardPage() {
             View analytics
           </Link>
         </div>
-        <dl className="grid min-w-0 gap-3 sm:grid-cols-3">
-          <div className="rounded-lg border border-border bg-card p-4">
-            <dt className="text-sm text-muted-foreground">
-              Problems attempted
-            </dt>
-            <dd className="mt-1 text-2xl font-semibold text-foreground">
-              {analytics.window.attempted}
-            </dd>
+        <div className="grid min-w-0 gap-3 lg:grid-cols-4">
+          <dl className="flex min-w-0 flex-col gap-3">
+            <div className="rounded-lg border border-border bg-card p-4">
+              <dt className="text-sm text-muted-foreground">
+                New problems solved
+              </dt>
+              <dd className="mt-1 text-2xl font-semibold text-foreground">
+                {analytics.window.solved}
+              </dd>
+            </div>
+            <div className="rounded-lg border border-border bg-card p-4">
+              <dt className="text-sm text-muted-foreground">Solve streak</dt>
+              <dd className="mt-1 text-2xl font-semibold text-foreground">
+                {analytics.currentStreak}{' '}
+                {analytics.currentStreak === 1 ? 'day' : 'days'}
+              </dd>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Longest: {analytics.longestStreak}{' '}
+                {analytics.longestStreak === 1 ? 'day' : 'days'}
+              </p>
+            </div>
+          </dl>
+          <dl className="flex min-w-0 flex-col gap-3">
+            <div className="rounded-lg border border-border bg-card p-4">
+              <dt className="text-sm text-muted-foreground">
+                Most solved platform
+              </dt>
+              <dd className="mt-1 text-2xl font-semibold text-foreground">
+                {topPlatform ? providerLabels[topPlatform[0]] : '—'}
+              </dd>
+              {topPlatform ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {topPlatform[1]} solved all-time
+                </p>
+              ) : null}
+            </div>
+            <div className="rounded-lg border border-border bg-card p-4">
+              <dt className="text-sm text-muted-foreground">
+                Most solved topic
+              </dt>
+              <dd className="mt-1 text-2xl font-semibold text-foreground">
+                {topTopic ? topTopic.topic : '—'}
+              </dd>
+              {topTopic ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {topTopic.solved} solved in last 30 days
+                </p>
+              ) : null}
+            </div>
+          </dl>
+          <dl className="flex min-w-0 flex-col gap-3">
+            <div className="rounded-lg border border-border bg-card p-4">
+              <dt className="text-sm text-muted-foreground">
+                Contests participated
+              </dt>
+              <dd className="mt-1 text-2xl font-semibold text-foreground">
+                {recentContests.length}
+              </dd>
+              <p className="mt-1 text-xs text-muted-foreground">
+                In the last 30 days
+              </p>
+            </div>
+            <div className="rounded-lg border border-border bg-card p-4">
+              <dt className="text-sm text-muted-foreground">
+                Most used language
+              </dt>
+              <dd className="mt-1 text-2xl font-semibold text-foreground">
+                {topLanguage ? topLanguage[0] : '—'}
+              </dd>
+              {topLanguage ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {topLanguage[1]} solves all-time
+                </p>
+              ) : null}
+            </div>
+          </dl>
+          <div className="min-w-0">
+            <SolvedHeatmap trend={analytics.trend} />
           </div>
-          <div className="rounded-lg border border-border bg-card p-4">
-            <dt className="text-sm text-muted-foreground">
-              New problems solved
-            </dt>
-            <dd className="mt-1 text-2xl font-semibold text-foreground">
-              {analytics.window.solved}
-            </dd>
-          </div>
-          <div className="rounded-lg border border-border bg-card p-4">
-            <dt className="text-sm text-muted-foreground">Completion rate</dt>
-            <dd className="mt-1 text-2xl font-semibold text-foreground">
-              {Math.round(analytics.completionRate * 100)}%
-            </dd>
-          </div>
-        </dl>
+        </div>
       </section>
 
       {roadmapQuery.isError ? (
