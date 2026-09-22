@@ -2415,18 +2415,20 @@ export class CoachService {
     let result: AiCoachResult
     try {
       result = await this.options.aiCoachClient.respond(request)
-      result = this.sanitizeAiResult(result, context, {
-        // A proposal derived from transient code/problem context would turn
-        // one-request data into durable learner memory. Keep memory
-        // proposals disabled whenever either input field contained content
-        // that was omitted from saved history.
-        allowMemoryProposals:
-          transient === undefined &&
-          transientMedia === undefined &&
-          !omittedUserContext,
-      })
+      result = result.fallback
+        ? this.unavailableResponse()
+        : this.sanitizeAiResult(result, context, {
+            // A proposal derived from transient code/problem context would turn
+            // one-request data into durable learner memory. Keep memory
+            // proposals disabled whenever either input field contained content
+            // that was omitted from saved history.
+            allowMemoryProposals:
+              transient === undefined &&
+              transientMedia === undefined &&
+              !omittedUserContext,
+          })
     } catch (error) {
-      this.options.logger.warn('coach_ai_fallback', {
+      this.options.logger.warn('coach_ai_unavailable', {
         errorCode:
           error instanceof AiCoachClientError
             ? error.code
@@ -2435,14 +2437,36 @@ export class CoachService {
               ? 'AI_COACH_UNSAFE_OUTPUT'
               : 'AI_COACH_RESPONSE_REJECTED',
       })
-      result = this.fallbackResponse(input.content, context)
-      if (transientMedia !== undefined) {
-        result = {
-          ...result,
-          answer:
-            'I could not analyze the attachment right now. The file was not saved in chat history. Please try again, or describe its CP/DSA content in text.',
-        }
-      }
+      result = this.unavailableResponse()
+    }
+    if (result.fallback) {
+      const message = CoachMessageSchema.parse({
+        id: randomUUID(),
+        role: 'assistant',
+        content: result.answer,
+        evidence: [],
+        proposals: [],
+        fallback: true,
+        createdAt: this.now().toISOString(),
+      })
+      const savedAssistant = await this.options.repository.appendMessage(
+        userId,
+        conversationId,
+        message,
+      )
+      if (savedAssistant === null) throw new CoachConversationNotFoundError()
+      await this.options.repository.updateSummary(
+        userId,
+        conversationId,
+        this.summaryForConversation(
+          [...conversation.messages, userMessage],
+          message,
+        ),
+      )
+      return CoachResponseSchema.parse({
+        message: savedAssistant,
+        roadmap: context.roadmap,
+      })
     }
     const savedAnswer = omitGeneratedCodeAndProblemText(result.answer)
     const baseRichContent = coachRichContentForContext(
@@ -3211,98 +3235,11 @@ export class CoachService {
     }
   }
 
-  private fallbackResponse(
-    question: string,
-    context: CoachContextSnapshot,
-  ): AiCoachResult {
-    const frustrationMatches = [
-      /\b(stuck|frustrated|confused|lost|give up|can't do|cant do|impossible)\b/i,
-      /\b(don't understand|still don't|not getting it|wasted|hours|quit)\b/i,
-    ].filter((pattern) => pattern.test(question)).length
-    const focus = context.roadmap.topics.filter(
-      (topic) =>
-        topic.lane === 'current_focus' &&
-        !context.excludedTopics.includes(canonicalTopic(topic.topic)),
-    )
-    const needs = context.roadmap.topics.filter(
-      (topic) =>
-        topic.lane === 'needs_more_practice' &&
-        !context.excludedTopics.includes(canonicalTopic(topic.topic)),
-    )
-    const evidence = [
-      fallbackEvidence(
-        'roadmap',
-        `Roadmap version ${context.roadmap.version} uses ${TOPIC_ASSESSMENT_VERSION}.`,
-        context.dataCompleteness,
-      ),
-    ]
-    if (containsExcludedCoachTopic(question, context.excludedTopics)) {
-      return {
-        answer:
-          'I will respect that preference and keep the excluded area out of this coaching answer. Ask me about another allowed topic, your recent progress, or your next practice step.',
-        evidence,
-        proposals: [],
-        citations: [],
-        fallback: true,
-      }
-    }
-    if (frustrationMatches >= 2) {
-      return {
-        answer:
-          'It sounds like this practice block has become frustrating. Let us shrink the next step to one tiny trace or one easier trusted problem. Tell me whether you want a simpler example or a short break before we continue.',
-        evidence,
-        proposals: [],
-        citations: [],
-        fallback: true,
-      }
-    }
-    if (context.analytics !== null)
-      evidence.push(
-        fallbackEvidence(
-          'analytics',
-          'The last 30 days of progress analytics are available.',
-          'partial',
-        ),
-      )
-    if (context.providerProfiles.length > 0) {
-      const providers = context.providerProfiles
-        .map((profile) => profile.provider)
-        .join(', ')
-      evidence.push(
-        fallbackEvidence(
-          'profile',
-          `Connected ${providers} profile snapshots are available. Aggregate totals show exposure but do not prove topic-level solves.`,
-          context.dataCompleteness,
-          context.providerProfiles.some((profile) => profile.provenance.stale),
-        ),
-      )
-    }
-    if (
-      context.recentSolved.length > 0 ||
-      context.recentSubmissions.length > 0
-    ) {
-      evidence.push(
-        fallbackEvidence(
-          'activity',
-          `The coach can see ${context.recentSolved.length} solved observations and ${context.recentSubmissions.length} recent submissions for topic mapping.`,
-          context.dataCompleteness,
-          context.dataCompleteness !== 'complete',
-        ),
-      )
-    }
-    const priorities = focus.length > 0 ? focus : needs
-    const priorityText =
-      priorities.length > 0
-        ? ` Your saved plan currently prioritizes ${priorities
-            .slice(0, 3)
-            .map((topic) => topic.name)
-            .join(', ')}.`
-        : ''
+  private unavailableResponse(): AiCoachResult {
     return {
-      answer: `I could not generate the complete coaching explanation just now.${priorityText} Your profile, activity, roadmap, and trusted practice data are still available, so please retry this question in a moment.`,
-      evidence,
+      answer: 'Coach is unavailable right now. Please try again later.',
+      evidence: [],
       proposals: [],
-      citations: [],
       fallback: true,
     }
   }

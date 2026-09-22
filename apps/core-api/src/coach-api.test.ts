@@ -413,11 +413,64 @@ describe('coach API', () => {
     const coachBody = CoachResponseSchema.parse(await coachResponse.json())
     expect(coachResponse.status).toBe(200)
     expect(coachBody.message.fallback).toBe(true)
-    expect(
-      coachBody.message.evidence.some((item) => item.source === 'activity'),
-    ).toBe(true)
-    expect(coachBody.message.richContent?.version).toBe('coach-rich-v2')
+    expect(coachBody.message.content).toBe(
+      'Coach is unavailable right now. Please try again later.',
+    )
+    expect(coachBody.message.evidence).toEqual([])
+    expect(coachBody.message.proposals).toEqual([])
+    expect(coachBody.message.richContent).toBeUndefined()
   })
+
+  it.each(['provider error', 'AI fallback response'])(
+    'shows only an unavailable message after %s',
+    async (failure) => {
+      const progressRepository = new InMemoryProgressRepository()
+      await progressRepository.saveConsent(
+        userA,
+        true,
+        'personalized-coaching-rag-v2',
+      )
+      const aiCoachClient: AiCoachClient = {
+        respond: vi.fn(async (): Promise<AiCoachResult> => {
+          if (failure === 'provider error') throw new Error('AI unavailable')
+          return {
+            answer: 'Practice this hard-coded topic.',
+            evidence: [],
+            proposals: [],
+            fallback: true,
+          }
+        }),
+      }
+      const baseUrl = startApp({ aiCoachClient, progressRepository })
+      const headers = {
+        ...authorization('user-a'),
+        'content-type': 'application/json',
+      }
+      const create = await fetch(`${baseUrl}/api/coach/conversations`, {
+        method: 'POST',
+        headers,
+        body: '{}',
+      })
+      const conversationId = (await create.json()).data.id as string
+      const response = await fetch(
+        `${baseUrl}/api/coach/conversations/${conversationId}/messages`,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ content: 'How do I get better at greedy?' }),
+        },
+      )
+      const coachResponse = CoachResponseSchema.parse(await response.json())
+      expect(response.status).toBe(200)
+      expect(coachResponse.message).toMatchObject({
+        content: 'Coach is unavailable right now. Please try again later.',
+        fallback: true,
+        evidence: [],
+        proposals: [],
+      })
+      expect(coachResponse.message.richContent).toBeUndefined()
+    },
+  )
 
   it('stores proposals, requires consent, revalidates ownership, and confirms idempotently', async () => {
     const progressRepository = new InMemoryProgressRepository()
@@ -688,7 +741,18 @@ describe('coach API', () => {
       'mixed-account',
       ratings,
     )
-    const baseUrl = startApp({ progressRepository, providerDataRepository })
+    const aiCoachClient: AiCoachClient = {
+      respond: vi.fn(async (): Promise<AiCoachResult> => ({
+        answer: 'Here is your Codeforces rating history.',
+        evidence: [],
+        proposals: [],
+      })),
+    }
+    const baseUrl = startApp({
+      aiCoachClient,
+      progressRepository,
+      providerDataRepository,
+    })
     const headers = {
       ...authorization('user-a'),
       'content-type': 'application/json',

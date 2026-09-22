@@ -1141,9 +1141,12 @@ references, and confirmation-gated roadmap/progress/bookmark proposals. A
 progressive hint ladder is reserved for requests to solve a specific CP/DSA
 problem; concept, planning, interview, debugging, and profile questions are
 answered directly. Transient code/problem/media input is never persisted. If
-FastAPI/Gemini is down, the roadmap and practice set remain usable and chat
-presents a concise retry message instead of generating topic-specific hard-coded advice. The fallback flag remains
-internal for observability and is not shown as a learner-facing product label.
+FastAPI/Gemini is down or returns a fallback response, the roadmap and practice
+set remain usable, but chat saves and displays only “Coach is unavailable right
+now. Please try again later.” No coaching advice, evidence, rich blocks, action
+proposals, or learner-memory job is generated for that failed turn. The fallback
+flag remains internal for observability and is not shown as a learner-facing
+product label.
 
 Check-ins are in-app only. Learners choose a local weekly review day/time and
 can separately enable event nudges for new contest/rating evidence, repeated
