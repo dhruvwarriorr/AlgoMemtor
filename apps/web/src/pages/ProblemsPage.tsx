@@ -108,34 +108,38 @@ function ProblemsPage() {
         title="Problems"
       />
 
-      <ProblemFilters
-        filters={filters}
-        hasActiveFilters={hasActiveFilters}
-        key={`${filters.search ?? ''}:${filters.minRating ?? ''}:${filters.maxRating ?? ''}`}
-        onClear={clearFilters}
-        onUpdate={updateFilters}
-      />
-
-      <section
-        aria-labelledby="problem-list-heading"
-        className="min-w-0 space-y-4"
-      >
-        <div className="flex min-w-0 flex-wrap items-end justify-between gap-2">
-          <h2
-            className="text-xl font-semibold tracking-tight text-foreground"
-            id="problem-list-heading"
-          >
-            Problem catalog
-          </h2>
-          {catalog ? (
-            <p className="text-sm text-muted-foreground">
-              {catalog.meta.total} problem
-              {catalog.meta.total === 1 ? '' : 's'} found
-            </p>
-          ) : null}
+      <div className="grid min-w-0 gap-8 xl:grid-cols-[21rem_minmax(0,1fr)]">
+        <div className="min-w-0 xl:sticky xl:top-6 xl:self-start">
+          <ProblemFilters
+            filters={filters}
+            hasActiveFilters={hasActiveFilters}
+            key={`${filters.search ?? ''}:${filters.minRating ?? ''}:${filters.maxRating ?? ''}`}
+            onClear={clearFilters}
+            onUpdate={updateFilters}
+          />
         </div>
-        {catalogContent}
-      </section>
+
+        <section
+          aria-labelledby="problem-list-heading"
+          className="min-w-0 space-y-4"
+        >
+          <div className="flex min-w-0 flex-wrap items-end justify-between gap-2">
+            <h2
+              className="text-2xl font-semibold tracking-tight text-foreground"
+              id="problem-list-heading"
+            >
+              Problem catalog
+            </h2>
+            {catalog ? (
+              <p className="text-sm text-muted-foreground">
+                {catalog.meta.total} problem
+                {catalog.meta.total === 1 ? '' : 's'} found
+              </p>
+            ) : null}
+          </div>
+          {catalogContent}
+        </section>
+      </div>
     </PageContainer>
   )
 }

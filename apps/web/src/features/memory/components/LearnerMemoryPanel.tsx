@@ -66,7 +66,7 @@ function MemoryEditor({
       <label className="block space-y-1.5 text-sm font-medium text-foreground">
         Memory text
         <textarea
-          className="min-h-24 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-base font-normal text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
+          className="min-h-24 w-full resize-y rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 py-2 text-base font-normal text-foreground outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
           disabled={isSaving}
           maxLength={500}
           onChange={(event) => setText(event.currentTarget.value)}
@@ -77,7 +77,7 @@ function MemoryEditor({
       <label className="block space-y-1.5 text-sm font-medium text-foreground">
         Category
         <select
-          className="h-10 w-full rounded-md border border-input bg-background px-3 text-base font-normal text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
+          className="h-10 w-full rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 text-base font-normal text-foreground outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
           disabled={isSaving}
           onChange={(event) =>
             setCategory(event.currentTarget.value as LearnerMemoryCategory)

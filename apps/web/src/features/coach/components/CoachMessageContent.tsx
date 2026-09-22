@@ -14,9 +14,7 @@ export function CoachMessageContent({
 }: CoachMessageContentProps) {
   if (role === 'user') {
     return (
-      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground">
-        {content}
-      </p>
+      <p className="mt-2 whitespace-pre-wrap text-sm leading-6">{content}</p>
     )
   }
 

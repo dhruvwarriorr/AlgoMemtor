@@ -6,8 +6,10 @@ import type {
 } from '@algomemtor/shared-contracts'
 
 import { useNotification } from '@/app/useNotification'
-import { Button } from '@/components/ui/button'
+import { ProviderLogo } from '@/components/brand/ProviderLogo'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { ProblemLearningControls } from '@/features/progress/components/ProblemLearningControls'
+import { cn } from '@/lib/utils'
 
 import { SolveOnProviderLink } from './SolveOnProviderLink'
 
@@ -28,6 +30,18 @@ const statusLabels: Record<LearnerProblemStatus, string> = {
   unsolved: 'Unsolved',
   attempted: 'Attempted',
   solved: 'Solved',
+}
+
+const statusTone: Record<LearnerProblemStatus, string> = {
+  unsolved: 'bg-muted text-muted-foreground',
+  attempted: 'bg-sun-soft text-sun-foreground',
+  solved: 'bg-go-soft text-go-foreground',
+}
+
+const difficultyTone: Record<NormalizedDifficulty, string> = {
+  easy: 'bg-go-soft text-go-foreground',
+  medium: 'bg-sun-soft text-sun-foreground',
+  hard: 'bg-danger-soft text-danger-foreground',
 }
 
 type ProblemCardProps = {
@@ -52,46 +66,58 @@ export function ProblemCard({ problem }: ProblemCardProps) {
   }
 
   return (
-    <article className="flex min-w-0 flex-col gap-4 rounded-xl border border-border bg-card p-4 shadow-sm sm:p-5">
-      <header className="min-w-0 space-y-2">
-        <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">
+    <article className="group/card flex min-w-0 flex-col gap-5 rounded-xl border border-border bg-card p-5 transition-[border-color,transform] duration-300 hover:border-[color-mix(in_oklab,var(--primary)_30%,var(--border))] sm:p-6">
+      <header className="min-w-0 space-y-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary py-1 pr-2.5 pl-1.5 font-medium text-secondary-foreground">
+            <ProviderLogo className="size-4" provider={problem.provider} />
             {providerLabels[problem.provider]}
           </span>
-          <span aria-hidden="true">•</span>
-          <span className="break-all">{problem.externalId}</span>
+          <span className="break-all font-mono text-muted-foreground">
+            {problem.externalId}
+          </span>
           {problem.learnerStatus ? (
-            <span className="rounded-full bg-muted px-2 py-0.5 font-medium text-foreground">
+            <span
+              className={cn(
+                'ml-auto rounded-full px-2.5 py-1 font-medium',
+                statusTone[problem.learnerStatus],
+              )}
+            >
               {statusLabels[problem.learnerStatus]}
             </span>
           ) : null}
         </div>
-        <h2 className="break-words text-lg font-semibold leading-snug text-card-foreground">
+        <h2 className="break-words text-xl leading-snug font-semibold text-card-foreground">
           {problem.title}
         </h2>
       </header>
 
-      <dl className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
-        {problem.providerDifficulty !== undefined ? (
-          <div className="flex gap-1.5">
-            <dt className="text-muted-foreground">Provider rating:</dt>
-            <dd className="font-medium text-foreground">
-              {problem.providerDifficulty}
-            </dd>
-          </div>
-        ) : null}
+      <dl className="flex flex-wrap gap-2 text-xs">
         {problem.normalizedDifficulty ? (
-          <div className="flex gap-1.5">
-            <dt className="text-muted-foreground">Difficulty:</dt>
-            <dd className="font-medium text-foreground">
+          <div
+            className={cn(
+              'flex items-center gap-1 rounded-full px-2.5 py-1',
+              difficultyTone[problem.normalizedDifficulty],
+            )}
+          >
+            <dt className="sr-only">Difficulty:</dt>
+            <dd className="font-medium">
               {difficultyLabels[problem.normalizedDifficulty]}
             </dd>
           </div>
         ) : null}
+        {problem.providerDifficulty !== undefined ? (
+          <div className="flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1">
+            <dt className="text-muted-foreground">Provider rating:</dt>
+            <dd className="font-mono font-medium text-foreground">
+              {problem.providerDifficulty}
+            </dd>
+          </div>
+        ) : null}
         {problem.solvedCount !== undefined ? (
-          <div className="flex gap-1.5">
+          <div className="flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1">
             <dt className="text-muted-foreground">Solved by:</dt>
-            <dd className="font-medium text-foreground">
+            <dd className="font-mono font-medium text-foreground">
               {problem.solvedCount.toLocaleString()}
             </dd>
           </div>
@@ -100,13 +126,11 @@ export function ProblemCard({ problem }: ProblemCardProps) {
 
       <div className="min-w-0 space-y-3">
         <div>
-          <p className="mb-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            Topics
-          </p>
+          <p className="mb-2 text-xs text-muted-foreground">Topics</p>
           <ul className="flex min-w-0 flex-wrap gap-1.5" aria-label="Topics">
             {problem.topics.map((topic) => (
               <li
-                className="max-w-full break-words rounded-md bg-primary px-2 py-1 text-xs text-primary-foreground"
+                className="max-w-full break-words rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary dark:bg-primary/15"
                 key={topic}
               >
                 {topic}
@@ -116,23 +140,21 @@ export function ProblemCard({ problem }: ProblemCardProps) {
         </div>
 
         <div>
-          <p className="mb-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            Provider tags
-          </p>
+          <p className="mb-2 text-xs text-muted-foreground">Provider tags</p>
           <ul
             className="flex min-w-0 flex-wrap gap-1.5"
             aria-label="Provider tags"
           >
             {visibleProviderTags.map((tag) => (
               <li
-                className="max-w-full break-words rounded-md border border-border px-2 py-1 text-xs text-muted-foreground"
+                className="max-w-full break-words rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground"
                 key={tag}
               >
                 {tag}
               </li>
             ))}
             {hiddenProviderTagCount > 0 ? (
-              <li className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground">
+              <li className="rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-muted-foreground">
                 +{hiddenProviderTagCount} more
               </li>
             ) : null}
@@ -140,18 +162,9 @@ export function ProblemCard({ problem }: ProblemCardProps) {
         </div>
       </div>
 
-      <footer className="mt-auto flex min-w-0 flex-wrap items-center gap-2 border-t border-border pt-4">
-        <a
-          className="inline-flex min-h-7 items-center justify-center rounded-md border border-border px-2.5 text-sm font-medium text-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-          href={`/problems/${problem.provider}/${encodeURIComponent(problem.externalId)}`}
-        >
-          View details
-        </a>
-        <SolveOnProviderLink
-          canonicalUrl={problem.canonicalUrl}
-          provider={problem.provider}
-        />
+      <footer className="mt-auto flex min-w-0 flex-col gap-4 border-t border-border pt-5">
         <ProblemLearningControls
+          compact
           initialBookmarked={
             (problem as typeof problem & { bookmarked?: boolean }).bookmarked ??
             false
@@ -162,15 +175,28 @@ export function ProblemCard({ problem }: ProblemCardProps) {
             externalId: problem.externalId,
           }}
         />
-        <Button
-          aria-label={`Dismiss ${problem.title}`}
-          onClick={dismissPlaceholder}
-          size="sm"
-          type="button"
-          variant="ghost"
-        >
-          Dismiss
-        </Button>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <SolveOnProviderLink
+            canonicalUrl={problem.canonicalUrl}
+            provider={problem.provider}
+          />
+          <a
+            className={buttonVariants({ size: 'sm', variant: 'outline' })}
+            href={`/problems/${problem.provider}/${encodeURIComponent(problem.externalId)}`}
+          >
+            View details
+          </a>
+          <Button
+            aria-label={`Dismiss ${problem.title}`}
+            className="ml-auto"
+            onClick={dismissPlaceholder}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            Dismiss
+          </Button>
+        </div>
       </footer>
     </article>
   )

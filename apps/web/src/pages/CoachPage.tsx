@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import type {
   CoachManualTopicStatus,
   CoachRoadmapLane,
@@ -7,26 +7,40 @@ import type {
   ProviderKey,
 } from '@algomemtor/shared-contracts'
 import {
+  ArrowDown,
+  ArrowUp,
   ArrowUpRight,
   Bell,
+  BookOpen,
   Check,
+  Code2,
+  Compass,
+  Crosshair,
   LoaderCircle,
+  Map as MapIcon,
   MessageCircle,
+  Paperclip,
   Pencil,
   Plus,
   RefreshCw,
-  Send,
+  Route,
+  Search,
+  ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Trash2,
-  Paperclip,
+  Trophy,
   X,
+  type LucideIcon,
 } from 'lucide-react'
 
 import PageContainer from '@/components/layout/PageContainer'
 import PageHeader from '@/components/layout/PageHeader'
 import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
-import { Button } from '@/components/ui/button'
+import { displayNameFromEmail } from '@/lib/display-name'
+import { Button, buttonVariants } from '@/components/ui/button'
+import { useAuth } from '@/features/auth/useAuth'
 import { Dialog } from '@/components/ui/dialog'
 import { useNotification } from '@/app/useNotification'
 import { useAiConsent } from '@/features/profile/hooks/useLearnerSettings'
@@ -103,6 +117,32 @@ const guidedPrompts = [
       'Explain a CP/DSA concept I am working on with intuition and an example.',
   },
 ] as const
+
+const promptIcons: Record<string, LucideIcon> = {
+  'What should I practice next?': Compass,
+  'Review my weak topics': Crosshair,
+  'Analyze my recent contests': Trophy,
+  'Update my roadmap': Route,
+  'Explain this concept': BookOpen,
+}
+
+function groupConversations<T extends { updatedAt: string }>(items: T[]) {
+  const startOfToday = new Date()
+  startOfToday.setHours(0, 0, 0, 0)
+  const day = 86_400_000
+  const buckets = [
+    { label: 'Today', from: startOfToday.getTime() },
+    { label: 'Yesterday', from: startOfToday.getTime() - day },
+    { label: 'Previous 7 days', from: startOfToday.getTime() - 7 * day },
+    { label: 'Older', from: Number.NEGATIVE_INFINITY },
+  ]
+  const groups = buckets.map((bucket) => ({ ...bucket, items: [] as T[] }))
+  for (const item of items) {
+    const time = new Date(item.updatedAt).getTime()
+    groups.find((group) => time >= group.from)?.items.push(item)
+  }
+  return groups.filter((group) => group.items.length > 0)
+}
 
 const coachAttachmentTypes = {
   'audio/webm': 'audio/webm',
@@ -343,14 +383,23 @@ function CoachPage() {
   const savePreferences = useSaveCoachPreferences()
   const markCheckIn = useMarkCoachCheckIn()
   const { notify } = useNotification()
+  const { user } = useAuth()
+  const location = useLocation()
   const [selectedConversationId, setSelectedConversationId] = useState<
     string | null
   >(null)
-  const [content, setContent] = useState('')
+  const [content, setContent] = useState(
+    () => (location.state as { ask?: string } | null)?.ask ?? '',
+  )
   const [transientContext, setTransientContext] = useState('')
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
   const attachmentInputRef = useRef<HTMLInputElement | null>(null)
-  const [showInbox, setShowInbox] = useState(false)
+  const [view, setView] = useState<
+    'chat' | 'plan' | 'checkins' | 'preferences'
+  >('chat')
+  const [search, setSearch] = useState('')
+  const [showContext, setShowContext] = useState(false)
+  const [isDraft, setIsDraft] = useState(false)
   const [renameTarget, setRenameTarget] = useState<{
     id: string
     title: string
@@ -368,18 +417,27 @@ function CoachPage() {
   const selectConversation = (conversationId: string | null) => {
     nearPageBottomRef.current = true
     setShowJumpToLatest(false)
+    setIsDraft(false)
     setSelectedConversationId(conversationId)
+  }
+
+  function startNewChat() {
+    nearPageBottomRef.current = true
+    setShowJumpToLatest(false)
+    setIsDraft(true)
+    setView('chat')
+    setContent('')
   }
 
   const conversations = useMemo(
     () => conversationsQuery.data?.data ?? [],
     [conversationsQuery.data?.data],
   )
-  const activeConversationId = conversations.some(
-    (item) => item.id === selectedConversationId,
-  )
-    ? selectedConversationId
-    : (conversations[0]?.id ?? null)
+  const activeConversationId = isDraft
+    ? null
+    : conversations.some((item) => item.id === selectedConversationId)
+      ? selectedConversationId
+      : (conversations[0]?.id ?? null)
   const conversationQuery = useCoachConversation(activeConversationId)
   useEffect(() => {
     if (conversationQuery.isPending || !nearPageBottomRef.current) return
@@ -551,702 +609,909 @@ function CoachPage() {
     )
   }
 
-  return (
-    <PageContainer className="max-w-[1600px] gap-4">
-      <PageHeader
-        action={
-          <Link
-            className="rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-muted"
-            to="/settings"
-          >
-            Privacy and consent
-          </Link>
-        }
-        description="Ask anything about competitive programming, algorithms, interviews, debugging, or your learning progress."
-        title="Your AI coach"
+  const hasConversation = activeConversationId !== null
+  const messages = hasConversation
+    ? (conversationQuery.data?.messages ?? [])
+    : []
+  const showGreeting =
+    !hasConversation || (!conversationQuery.isPending && messages.length === 0)
+  const query = search.trim().toLowerCase()
+  const historyGroups = groupConversations(
+    query
+      ? conversations.filter((item) => item.title.toLowerCase().includes(query))
+      : conversations,
+  )
+  const unreadCheckIns = checkInsQuery.data?.meta.unread ?? 0
+  const activeTitle = hasConversation
+    ? (conversationQuery.data?.data.title ?? 'Conversation')
+    : 'New conversation'
+
+  const views = [
+    { id: 'chat', label: 'Chat', icon: MessageCircle },
+    { id: 'plan', label: 'Learning plan', icon: MapIcon },
+    { id: 'checkins', label: 'Check-ins', icon: Bell },
+    { id: 'preferences', label: 'Preferences', icon: SlidersHorizontal },
+  ] as const
+
+  const composer = (
+    <form
+      className={cn(
+        'w-full rounded-[1.6rem] border border-border bg-card p-2 shadow-soft transition-[border-color,box-shadow] duration-300 focus-within:border-[color-mix(in_oklab,var(--primary)_45%,var(--border))] focus-within:ring-4 focus-within:ring-ring/10',
+        !consentEnabled && 'opacity-70',
+      )}
+      onSubmit={(event) => {
+        event.preventDefault()
+        void submitMessage()
+      }}
+    >
+      <label className="sr-only" htmlFor="coach-message">
+        Ask your coach
+      </label>
+      <textarea
+        className="block max-h-48 min-h-20 w-full resize-none bg-transparent px-3 pt-2.5 text-[0.95rem] leading-6 text-foreground outline-none placeholder:text-muted-foreground"
+        disabled={!consentEnabled || sendMessage.isPending}
+        id="coach-message"
+        onChange={(event) => setContent(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault()
+            void submitMessage()
+          }
+        }}
+        placeholder="Ask about your next step, a concept, a failed attempt, or a contest…"
+        value={content}
       />
-
-      {!consentEnabled ? (
-        <aside
-          className="rounded-lg border border-amber-400 bg-amber-50 p-4 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-50"
-          role="status"
-        >
-          <p className="font-semibold">
-            Enable personalized AI coaching and learner memory to start a
-            conversation.
-          </p>
-          <p className="mt-1">
-            Review the updated privacy choices to let the coach use your
-            profile, progress, and connected learning activity.
-          </p>
-          <Link
-            className="mt-3 inline-flex font-medium underline underline-offset-4"
-            to="/settings"
-          >
-            Review consent in Settings
-          </Link>
-        </aside>
+      {showContext ? (
+        <textarea
+          aria-label="Temporary code or problem context"
+          className="mx-1 mt-2 block min-h-24 w-[calc(100%-0.5rem)] resize-y rounded-xl border border-input bg-background p-3 font-mono text-xs leading-5 text-foreground outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
+          disabled={!consentEnabled || sendMessage.isPending}
+          onChange={(event) => setTransientContext(event.target.value)}
+          placeholder="Paste only what is needed for this answer. It is omitted from saved history and audits."
+          value={transientContext}
+        />
       ) : null}
-
-      <div className="grid min-w-0 gap-4 lg:h-[calc(100svh-13rem)] lg:min-h-[42rem] lg:grid-cols-[17rem_minmax(0,1fr)]">
-        <aside
-          className="min-w-0 space-y-4 rounded-2xl border border-border bg-card p-4 shadow-sm lg:min-h-0 lg:overflow-y-auto"
-          aria-label="Saved coaching conversations"
+      <div className="mt-2 flex flex-wrap items-center gap-1.5 px-1 pb-0.5">
+        <input
+          accept=".mp3,.wav,.m4a,.mp4,.webm,.jpg,.jpeg,.png,.webp,.pdf,.txt,.md,.docx"
+          className="sr-only"
+          onChange={(event) => {
+            selectAttachment(event.target.files?.[0])
+            event.target.value = ''
+          }}
+          ref={attachmentInputRef}
+          tabIndex={-1}
+          type="file"
+        />
+        <button
+          aria-pressed={showContext}
+          className={cn(
+            'inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-sm font-medium transition-colors',
+            showContext || transientContext
+              ? 'border-primary/40 bg-primary/10 text-primary'
+              : 'border-border text-foreground/70 hover:bg-secondary',
+          )}
+          disabled={!consentEnabled || sendMessage.isPending}
+          onClick={() => setShowContext((value) => !value)}
+          type="button"
         >
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="font-semibold text-foreground">Conversations</h2>
-            <Button
-              aria-label="New coaching conversation"
-              onClick={() => {
-                void createConversation
-                  .mutateAsync({})
-                  .then((result) => selectConversation(result.data.id))
-              }}
-              size="icon-sm"
+          <Code2 aria-hidden="true" className="size-4" strokeWidth={1.7} />
+          Code context
+        </button>
+        <button
+          aria-label="Add attachment"
+          className="grid size-9 place-items-center rounded-full text-foreground/65 transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-50"
+          disabled={!consentEnabled || sendMessage.isPending}
+          onClick={() => attachmentInputRef.current?.click()}
+          title="Add attachment (image, document, audio or video, up to 8 MB)"
+          type="button"
+        >
+          <Paperclip aria-hidden="true" className="size-4" strokeWidth={1.7} />
+        </button>
+        {attachmentFile ? (
+          <span className="inline-flex max-w-full items-center gap-1 rounded-full bg-secondary py-1 pr-1 pl-3 text-xs text-secondary-foreground">
+            <span className="max-w-44 truncate">{attachmentFile.name}</span>
+            <button
+              aria-label="Remove attachment"
+              className="grid size-5 place-items-center rounded-full hover:bg-black/5"
+              onClick={() => setAttachmentFile(null)}
               type="button"
-              variant="outline"
             >
-              <Plus aria-hidden="true" />
-            </Button>
+              <X aria-hidden="true" className="size-3" />
+            </button>
+          </span>
+        ) : null}
+        <button
+          aria-label="Ask coach"
+          className="coach-orb ml-auto grid size-10 place-items-center text-white transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100"
+          disabled={
+            !consentEnabled ||
+            (!content.trim() && attachmentFile === null) ||
+            sendMessage.isPending
+          }
+          type="submit"
+        >
+          {sendMessage.isPending ? (
+            <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
+          ) : (
+            <ArrowUp aria-hidden="true" className="size-4" strokeWidth={2.4} />
+          )}
+        </button>
+      </div>
+    </form>
+  )
+
+  return (
+    <main
+      className="flex min-w-0 flex-1 flex-col lg:h-[calc(100dvh-2rem)] lg:flex-none lg:flex-row lg:overflow-hidden"
+      id="main-content"
+    >
+      {/* History column */}
+      <aside
+        aria-label="Saved coaching conversations"
+        className="flex min-h-0 flex-col gap-4 border-b border-border p-4 lg:w-[18.5rem] lg:shrink-0 lg:border-r lg:border-b-0 lg:p-5"
+      >
+        <div className="flex items-center gap-2.5">
+          <span aria-hidden="true" className="coach-orb size-9 shrink-0" />
+          <div className="min-w-0">
+            <h1 className="text-lg leading-tight">Your AI coach</h1>
+            <p className="truncate text-xs text-muted-foreground">
+              Knows your profile and CP journey
+            </p>
           </div>
+        </div>
+
+        <button
+          className="flex h-11 w-full items-center justify-center gap-2 rounded-full bg-ink text-sm font-medium text-ink-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.14)] transition-transform duration-300 active:scale-[0.98]"
+          onClick={startNewChat}
+          type="button"
+        >
+          <Plus aria-hidden="true" className="size-4" />
+          New chat
+        </button>
+
+        <label className="relative hidden lg:block">
+          <span className="sr-only">Search conversations</span>
+          <Search
+            aria-hidden="true"
+            className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground"
+            strokeWidth={1.7}
+          />
+          <input
+            className="h-10 w-full rounded-full border border-input bg-card pr-3 pl-10 text-sm text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search"
+            type="search"
+            value={search}
+          />
+        </label>
+
+        <nav
+          aria-label="Coach views"
+          className="flex gap-1 overflow-x-auto lg:flex-col"
+        >
+          {views.map((item) => (
+            <button
+              aria-current={view === item.id ? 'page' : undefined}
+              className={cn(
+                'flex h-10 shrink-0 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors',
+                view === item.id
+                  ? 'bg-card text-foreground shadow-soft'
+                  : 'text-foreground/70 hover:bg-card/70 hover:text-foreground',
+              )}
+              key={item.id}
+              onClick={() => setView(item.id)}
+              type="button"
+            >
+              <item.icon
+                aria-hidden="true"
+                className={cn('size-4', view === item.id && 'text-primary')}
+                strokeWidth={1.7}
+              />
+              {item.label}
+              {item.id === 'checkins' && unreadCheckIns > 0 ? (
+                <span className="ml-auto rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground">
+                  {unreadCheckIns}
+                </span>
+              ) : null}
+            </button>
+          ))}
+        </nav>
+
+        <div className="hidden min-h-0 flex-1 flex-col gap-4 overflow-y-auto border-t border-border pt-4 lg:flex">
           {conversations.length === 0 ? (
             <p className="text-sm leading-6 text-muted-foreground">
               Start with a guided question. Safe chat text is saved until you
               delete it.
             </p>
+          ) : historyGroups.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No conversations match “{search}”.
+            </p>
           ) : (
-            <ul className="space-y-2">
-              {conversations.map((conversation) => (
-                <li key={conversation.id}>
-                  <div
-                    className={cn(
-                      'group flex min-w-0 items-center gap-1 rounded-md border p-1',
-                      activeConversationId === conversation.id
-                        ? 'border-primary bg-primary/5'
-                        : 'border-transparent',
-                    )}
-                  >
-                    <button
-                      className="min-w-0 flex-1 rounded px-2 py-2 text-left text-sm text-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-                      onClick={() => selectConversation(conversation.id)}
-                      type="button"
-                    >
-                      <span className="block truncate font-medium">
+            historyGroups.map((group) => (
+              <div key={group.label}>
+                <p className="mb-1.5 px-2 text-xs font-medium text-muted-foreground">
+                  {group.label}
+                </p>
+                <ul className="flex flex-col gap-0.5">
+                  {group.items.map((conversation) => (
+                    <li key={conversation.id}>
+                      <button
+                        className={cn(
+                          'w-full truncate rounded-lg px-2 py-1.5 text-left text-sm transition-colors',
+                          activeConversationId === conversation.id &&
+                            view === 'chat'
+                            ? 'bg-card font-medium text-foreground shadow-soft'
+                            : 'text-foreground/75 hover:bg-card/70 hover:text-foreground',
+                        )}
+                        onClick={() => {
+                          selectConversation(conversation.id)
+                          setView('chat')
+                        }}
+                        title={`${conversation.title} · ${conversation.messageCount} messages`}
+                        type="button"
+                      >
                         {conversation.title}
-                      </span>
-                      <span className="mt-1 block text-xs text-muted-foreground">
-                        {conversation.messageCount} messages
-                      </span>
-                    </button>
-                    <Button
-                      aria-label={`Rename ${conversation.title}`}
-                      onClick={() => {
-                        setRenameTarget({
-                          id: conversation.id,
-                          title: conversation.title,
-                        })
-                        setRenameTitle(conversation.title)
-                      }}
-                      size="icon-xs"
-                      type="button"
-                      variant="ghost"
-                    >
-                      <Pencil aria-hidden="true" />
-                    </Button>
-                    <Button
-                      aria-label={`Delete ${conversation.title}`}
-                      onClick={() =>
-                        setDeleteTarget({
-                          id: conversation.id,
-                          title: conversation.title,
-                        })
-                      }
-                      size="icon-xs"
-                      type="button"
-                      variant="ghost"
-                    >
-                      <Trash2 aria-hidden="true" />
-                    </Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))
           )}
-          <div className="border-t border-border pt-4">
-            <Button
-              className="w-full"
-              onClick={() => setShowInbox((value) => !value)}
-              type="button"
-              variant="outline"
-            >
-              <Bell aria-hidden="true" /> Check-ins{' '}
-              {checkInsQuery.data?.meta.unread
-                ? `(${checkInsQuery.data.meta.unread})`
-                : ''}
-            </Button>
-          </div>
-        </aside>
+        </div>
 
-        <section
-          className="flex h-[70svh] min-h-[36rem] min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm lg:h-auto lg:min-h-0"
-          aria-labelledby="conversation-heading"
+        <Link
+          className={cn(
+            'hidden items-center gap-3 rounded-2xl p-3 text-sm ring-1 transition-colors lg:flex',
+            consentEnabled
+              ? 'bg-go-soft text-go-foreground ring-go/25'
+              : 'bg-sun-soft text-sun-foreground ring-sun/50',
+          )}
+          to="/settings"
         >
-          <div className="shrink-0 border-b border-border p-4 sm:p-5">
-            <div className="flex min-w-0 items-start justify-between gap-3">
-              <div className="min-w-0">
-                <h2
-                  className="truncate text-lg font-semibold text-foreground"
-                  id="conversation-heading"
-                >
-                  {conversationQuery.data?.data.title ??
-                    'New coaching conversation'}
-                </h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Ask for a concept explanation, progressive hint, contest
-                  debrief, or evidence-backed next step.
-                </p>
-              </div>
-              <MessageCircle
-                aria-hidden="true"
-                className="size-5 shrink-0 text-primary"
-              />
-            </div>
-            <div
-              className="mt-4 flex gap-2 overflow-x-auto pb-1"
-              aria-label="Guided coach questions"
+          <ShieldCheck
+            aria-hidden="true"
+            className="size-5 shrink-0"
+            strokeWidth={1.7}
+          />
+          <span className="min-w-0">
+            <span className="block font-medium">
+              {consentEnabled
+                ? 'Personalized coaching on'
+                : 'Personalization off'}
+            </span>
+            <span className="block text-xs opacity-80">
+              Privacy and consent
+            </span>
+          </span>
+        </Link>
+      </aside>
+
+      {/* Workspace */}
+      <section
+        aria-labelledby="conversation-heading"
+        className="flex min-h-[70dvh] min-w-0 flex-1 flex-col lg:min-h-0"
+      >
+        <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-border px-4 sm:px-6">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-card py-1 pr-3 pl-1.5 text-xs font-medium text-foreground">
+              <span aria-hidden="true" className="coach-orb size-4" />
+              Coach
+            </span>
+            <h2
+              className="truncate font-sans text-sm font-medium text-foreground"
+              id="conversation-heading"
             >
-              {guidedPrompts.map((item) => (
-                <Button
-                  className="shrink-0"
-                  key={item.label}
-                  onClick={() => {
-                    setContent(item.prompt)
-                    void submitMessage(item.prompt)
-                  }}
-                  type="button"
-                  variant="outline"
-                >
-                  {item.label}
-                </Button>
-              ))}
-            </div>
+              {view === 'chat'
+                ? activeTitle
+                : views.find((item) => item.id === view)?.label}
+            </h2>
           </div>
-          <div
-            className="min-h-72 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4 sm:min-h-96 sm:p-5 lg:min-h-0"
-            onScroll={(event) => {
-              const element = event.currentTarget
-              const nearBottom =
-                element.scrollHeight -
-                  element.scrollTop -
-                  element.clientHeight <
-                160
-              nearPageBottomRef.current = nearBottom
-              setShowJumpToLatest(!nearBottom)
-            }}
-            ref={messagesScrollRef}
-          >
-            {conversationQuery.isPending ? (
-              <p className="text-sm text-muted-foreground" role="status">
-                Loading conversation…
-              </p>
-            ) : conversationQuery.data?.messages.length ? (
-              conversationQuery.data.messages.map((message) => (
-                <article
-                  className={cn(
-                    'max-w-3xl rounded-xl border p-3 sm:p-4',
-                    message.role === 'user'
-                      ? 'ml-auto border-primary/30 bg-primary/5'
-                      : 'border-border bg-background',
-                  )}
-                  key={message.id}
+          <div className="flex shrink-0 items-center gap-1">
+            {view === 'chat' && hasConversation && conversationQuery.data ? (
+              <>
+                <Button
+                  aria-label={`Rename ${conversationQuery.data.data.title}`}
+                  onClick={() => {
+                    const target = conversationQuery.data.data
+                    setRenameTarget({ id: target.id, title: target.title })
+                    setRenameTitle(target.title)
+                  }}
+                  size="icon"
+                  type="button"
+                  variant="ghost"
                 >
-                  <div className="flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    <span>{message.role === 'user' ? 'You' : 'Coach'}</span>
-                    <time dateTime={message.createdAt}>
-                      {formatDate(message.createdAt)}
-                    </time>
-                  </div>
-                  <CoachMessageContent
-                    content={message.content}
-                    role={message.role}
-                  />
-                  {message.transientContextOmitted ? (
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      Temporary code, problem context, or an attachment was
-                      omitted from saved history.
-                    </p>
-                  ) : null}
-                  {message.role === 'assistant' ? (
-                    <>
-                      <EvidenceList evidence={message.evidence} />
-                      {message.richContent ? (
-                        <CoachRichContentView
-                          content={message.richContent}
-                          onSuggestedQuestion={(question) => {
-                            setContent(question)
-                            void submitMessage(question)
-                          }}
-                        />
-                      ) : null}
-                      {message.proposals.length ? (
-                        <div className="mt-4 space-y-2 border-t border-border pt-3">
-                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                            Suggested actions
-                          </p>
-                          {message.proposals.map((proposal) => (
-                            <div
-                              className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md border border-border p-2"
-                              key={proposal.id}
-                            >
-                              <span className="min-w-0 text-sm text-foreground">
-                                {proposal.label}
-                                <span className="mt-1 block text-xs text-muted-foreground">
-                                  {proposal.reason}
-                                </span>
-                              </span>
-                              <Button
-                                disabled={
-                                  proposal.status !== 'proposed' ||
-                                  confirmAction.isPending
-                                }
-                                onClick={() =>
-                                  void confirmAction.mutateAsync(proposal.id)
-                                }
-                                size="sm"
-                                type="button"
-                              >
-                                {proposal.status === 'confirmed' ? (
-                                  <>
-                                    <Check aria-hidden="true" /> Confirmed
-                                  </>
-                                ) : (
-                                  'Confirm'
-                                )}
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                    </>
-                  ) : null}
-                </article>
-              ))
-            ) : (
-              <div className="flex min-h-64 flex-col items-center justify-center rounded-lg border border-dashed border-border p-6 text-center">
-                <Sparkles aria-hidden="true" className="size-7 text-primary" />
-                <p className="mt-3 font-medium text-foreground">
-                  Your coach is ready
+                  <Pencil aria-hidden="true" strokeWidth={1.7} />
+                </Button>
+                <Button
+                  aria-label={`Delete ${conversationQuery.data.data.title}`}
+                  onClick={() => {
+                    const target = conversationQuery.data.data
+                    setDeleteTarget({ id: target.id, title: target.title })
+                  }}
+                  size="icon"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Trash2 aria-hidden="true" strokeWidth={1.7} />
+                </Button>
+              </>
+            ) : null}
+            <Link
+              className={buttonVariants({ size: 'sm', variant: 'outline' })}
+              to="/settings"
+            >
+              Privacy
+            </Link>
+          </div>
+        </header>
+
+        {!consentEnabled ? (
+          <aside
+            className="mx-4 mt-4 rounded-2xl border border-sun/60 bg-sun-soft p-4 text-sm text-sun-foreground sm:mx-6"
+            role="status"
+          >
+            <p className="font-semibold">
+              Enable personalized AI coaching and learner memory to start a
+              conversation.
+            </p>
+            <p className="mt-1">
+              Review the updated privacy choices to let the coach use your
+              profile, progress, and connected learning activity.
+            </p>
+            <Link
+              className="mt-2 inline-flex font-medium underline underline-offset-4"
+              to="/settings"
+            >
+              Review consent in Settings
+            </Link>
+          </aside>
+        ) : null}
+
+        {view === 'chat' ? (
+          showGreeting ? (
+            <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-4 py-6 sm:px-8">
+              <div className="my-auto flex w-full max-w-3xl flex-col items-center">
+                <span
+                  aria-hidden="true"
+                  className="coach-orb animate-orb size-20 sm:size-24"
+                />
+                <p className="animate-rise mt-5 bg-[linear-gradient(90deg,var(--primary),var(--sky-deep))] bg-clip-text font-heading text-3xl font-semibold tracking-[-0.03em] text-transparent sm:text-4xl">
+                  Hello, {displayNameFromEmail(user?.email)}
                 </p>
-                <p className="mt-1 max-w-md text-sm leading-6 text-muted-foreground">
-                  Start with one of the guided questions or ask anything about
-                  CP/DSA. Ask for a hint when working through a specific
-                  problem.
+                <p
+                  className="animate-rise mt-1 text-center font-heading text-3xl font-bold tracking-[-0.035em] text-foreground sm:text-[2.6rem]"
+                  style={{ '--i': 1 } as CSSProperties}
+                >
+                  How can I help you improve today?
+                </p>
+                <p
+                  className="animate-rise mt-3 max-w-lg text-center text-muted-foreground"
+                  style={{ '--i': 2 } as CSSProperties}
+                >
+                  I already know your profile, linked platforms, roadmap and
+                  recent verdicts. Ask anything about CP or DSA.
+                </p>
+                <div
+                  className="animate-rise mt-6 w-full"
+                  style={{ '--i': 3 } as CSSProperties}
+                >
+                  {composer}
+                </div>
+                <div
+                  className="animate-rise mt-4 grid w-full gap-3 sm:grid-cols-3"
+                  style={{ '--i': 4 } as CSSProperties}
+                >
+                  {guidedPrompts.slice(0, 3).map((item) => {
+                    const Icon = promptIcons[item.label] ?? Sparkles
+                    return (
+                      <button
+                        className="group flex flex-col items-start gap-3 rounded-[1.3rem] border border-border bg-card p-4 text-left transition-[border-color,transform] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:-translate-y-0.5 hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--border))] disabled:pointer-events-none disabled:opacity-60"
+                        disabled={!consentEnabled || sendMessage.isPending}
+                        key={item.label}
+                        onClick={() => {
+                          setContent(item.prompt)
+                          void submitMessage(item.prompt)
+                        }}
+                        type="button"
+                      >
+                        <span className="grid size-9 place-items-center rounded-full bg-secondary text-primary">
+                          <Icon
+                            aria-hidden="true"
+                            className="size-4"
+                            strokeWidth={1.7}
+                          />
+                        </span>
+                        <span>
+                          <span className="block font-medium text-foreground">
+                            {item.label}
+                          </span>
+                          <span className="mt-1 line-clamp-2 block text-sm text-muted-foreground">
+                            {item.prompt}
+                          </span>
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+                <div className="mt-3 flex flex-wrap justify-center gap-2">
+                  {guidedPrompts.slice(3).map((item) => (
+                    <button
+                      className="rounded-full border border-border bg-card px-3.5 py-1.5 text-sm text-foreground/80 transition-colors hover:bg-secondary disabled:opacity-60"
+                      disabled={!consentEnabled || sendMessage.isPending}
+                      key={item.label}
+                      onClick={() => {
+                        setContent(item.prompt)
+                        void submitMessage(item.prompt)
+                      }}
+                      type="button"
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div
+                className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-6 sm:px-8"
+                onScroll={(event) => {
+                  const element = event.currentTarget
+                  const nearBottom =
+                    element.scrollHeight -
+                      element.scrollTop -
+                      element.clientHeight <
+                    160
+                  nearPageBottomRef.current = nearBottom
+                  setShowJumpToLatest(!nearBottom)
+                }}
+                ref={messagesScrollRef}
+              >
+                <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
+                  {conversationQuery.isPending ? (
+                    <p className="text-sm text-muted-foreground" role="status">
+                      Loading conversation…
+                    </p>
+                  ) : (
+                    messages.map((message) => (
+                      <article
+                        className={cn(
+                          'border p-4 sm:p-5',
+                          message.role === 'user'
+                            ? 'ml-auto w-fit max-w-[85%] rounded-3xl rounded-br-md border-transparent bg-ink text-ink-foreground'
+                            : 'w-full rounded-3xl rounded-bl-md border-border bg-card',
+                        )}
+                        key={message.id}
+                      >
+                        <div
+                          className={cn(
+                            'flex items-center justify-between gap-4 text-xs font-medium',
+                            message.role === 'user'
+                              ? 'opacity-65'
+                              : 'text-muted-foreground',
+                          )}
+                        >
+                          <span className="inline-flex items-center gap-2">
+                            {message.role === 'assistant' ? (
+                              <span
+                                aria-hidden="true"
+                                className="coach-orb size-5"
+                              />
+                            ) : null}
+                            {message.role === 'user' ? 'You' : 'Coach'}
+                          </span>
+                          <time dateTime={message.createdAt}>
+                            {formatDate(message.createdAt)}
+                          </time>
+                        </div>
+                        <CoachMessageContent
+                          content={message.content}
+                          role={message.role}
+                        />
+                        {message.transientContextOmitted ? (
+                          <p className="mt-2 text-xs opacity-70">
+                            Temporary code, problem context, or an attachment
+                            was omitted from saved history.
+                          </p>
+                        ) : null}
+                        {message.role === 'assistant' ? (
+                          <>
+                            <EvidenceList evidence={message.evidence} />
+                            {message.richContent ? (
+                              <CoachRichContentView
+                                content={message.richContent}
+                                onSuggestedQuestion={(question) => {
+                                  setContent(question)
+                                  void submitMessage(question)
+                                }}
+                              />
+                            ) : null}
+                            {message.proposals.length ? (
+                              <div className="mt-4 space-y-2 border-t border-border pt-3">
+                                <p className="text-xs font-medium text-muted-foreground">
+                                  Suggested actions
+                                </p>
+                                {message.proposals.map((proposal) => (
+                                  <div
+                                    className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-2xl border border-border p-3"
+                                    key={proposal.id}
+                                  >
+                                    <span className="min-w-0 text-sm text-foreground">
+                                      {proposal.label}
+                                      <span className="mt-1 block text-xs text-muted-foreground">
+                                        {proposal.reason}
+                                      </span>
+                                    </span>
+                                    <Button
+                                      disabled={
+                                        proposal.status !== 'proposed' ||
+                                        confirmAction.isPending
+                                      }
+                                      onClick={() =>
+                                        void confirmAction.mutateAsync(
+                                          proposal.id,
+                                        )
+                                      }
+                                      size="sm"
+                                      type="button"
+                                    >
+                                      {proposal.status === 'confirmed' ? (
+                                        <>
+                                          <Check aria-hidden="true" /> Confirmed
+                                        </>
+                                      ) : (
+                                        'Confirm'
+                                      )}
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
+                          </>
+                        ) : null}
+                      </article>
+                    ))
+                  )}
+                  <div aria-hidden="true" ref={messageEndRef} />
+                  {sendMessage.isPending ? (
+                    <div
+                      className="flex items-center gap-3 text-sm text-muted-foreground"
+                      role="status"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="coach-orb animate-orb size-6"
+                      />
+                      Reading your profile and learning context…
+                      <Button
+                        className="ml-auto"
+                        onClick={() => sendAbortController.current?.abort()}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+              <div className="shrink-0 px-4 pt-2 pb-4 sm:px-8 sm:pb-6">
+                <div className="mx-auto w-full max-w-3xl">
+                  {showJumpToLatest ? (
+                    <div className="mb-2 flex justify-center">
+                      <Button
+                        onClick={() => {
+                          nearPageBottomRef.current = true
+                          setShowJumpToLatest(false)
+                          messagesScrollRef.current?.scrollTo({
+                            behavior: 'smooth',
+                            top: messagesScrollRef.current.scrollHeight,
+                          })
+                        }}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        <ArrowDown aria-hidden="true" /> Jump to latest
+                      </Button>
+                    </div>
+                  ) : null}
+                  {composer}
+                  <p className="mt-2 text-center text-xs text-muted-foreground">
+                    Attachments go to Gemini for this answer only and are not
+                    saved in chat history.
+                  </p>
+                </div>
+              </div>
+            </>
+          )
+        ) : null}
+
+        {view === 'plan' ? (
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-8">
+            <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h3 className="text-2xl" id="roadmap-heading">
+                  Your learning plan
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Focus areas, next topics, and optional practice, assessed from
+                  your evidence.
                 </p>
               </div>
-            )}
-            <div aria-hidden="true" ref={messageEndRef} />
-            {showJumpToLatest ? (
+              <span className="rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
+                {roadmap?.topics.length ?? 0} topics
+              </span>
+            </div>
+            {roadmap ? (
+              <div className="grid min-w-0 gap-6 xl:grid-cols-2">
+                {(Object.keys(laneLabels) as CoachRoadmapLane[]).map((lane) => {
+                  const topics = groupedTopics.get(lane) ?? []
+                  return (
+                    <section
+                      aria-labelledby={`roadmap-${lane}`}
+                      className="min-w-0 space-y-3"
+                      key={lane}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <h4
+                          className="font-heading font-semibold text-foreground"
+                          id={`roadmap-${lane}`}
+                        >
+                          {laneLabels[lane]}
+                        </h4>
+                        <span className="text-xs text-muted-foreground">
+                          {topics.length}
+                        </span>
+                      </div>
+                      {topics.length ? (
+                        topics.map((topic) => (
+                          <TopicCard
+                            key={topic.topic}
+                            onStatus={(status) =>
+                              void setTopicStatus.mutateAsync({
+                                topic: topic.topic,
+                                status,
+                              })
+                            }
+                            statusPending={setTopicStatus.isPending}
+                            topic={topic}
+                          />
+                        ))
+                      ) : (
+                        <p className="rounded-2xl border border-dashed border-border p-4 text-sm text-muted-foreground">
+                          Nothing here yet.
+                        </p>
+                      )}
+                    </section>
+                  )
+                })}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {view === 'checkins' ? (
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-8">
+            <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h3 className="text-2xl" id="check-ins-heading">
+                  Check-in inbox
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Reviews and reminders based on your learning activity.
+                </p>
+              </div>
               <Button
-                className="mx-auto"
-                onClick={() => {
-                  nearPageBottomRef.current = true
-                  setShowJumpToLatest(false)
-                  messagesScrollRef.current?.scrollTo({
-                    behavior: 'smooth',
-                    top: messagesScrollRef.current.scrollHeight,
-                  })
-                }}
+                onClick={() => void checkInsQuery.refetch()}
                 size="sm"
                 type="button"
                 variant="outline"
               >
-                Jump to latest
+                <RefreshCw aria-hidden="true" /> Refresh
               </Button>
-            ) : null}
-            {sendMessage.isPending ? (
-              <div
-                className="flex items-center gap-2 text-sm text-muted-foreground"
-                role="status"
-              >
-                <LoaderCircle
-                  aria-hidden="true"
-                  className="size-4 animate-spin"
-                />
-                Reading your profile and learning context…
-                <Button
-                  className="ml-auto"
-                  onClick={() => sendAbortController.current?.abort()}
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  Cancel
-                </Button>
+            </div>
+            {checkInsQuery.isPending ? (
+              <p className="text-sm text-muted-foreground" role="status">
+                Checking for new nudges…
+              </p>
+            ) : checkInsQuery.isError ? (
+              <p className="text-sm text-destructive" role="alert">
+                Check-ins are temporarily unavailable.
+              </p>
+            ) : checkInsQuery.data?.data.length ? (
+              <ul className="grid gap-3 xl:grid-cols-2">
+                {checkInsQuery.data.data.map((checkIn) => (
+                  <li
+                    className={cn(
+                      'rounded-2xl border p-5',
+                      checkIn.dismissed
+                        ? 'border-border bg-muted/50 opacity-75'
+                        : checkIn.read
+                          ? 'border-border bg-card'
+                          : 'border-primary/40 bg-primary/5',
+                    )}
+                    key={checkIn.id}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground capitalize">
+                          {checkIn.type.replaceAll('_', ' ')}
+                          {checkIn.dismissed ? ' · dismissed' : ''}
+                        </p>
+                        <h4 className="mt-1 font-heading font-semibold text-foreground">
+                          {checkIn.title}
+                        </h4>
+                      </div>
+                      {!checkIn.read && !checkIn.dismissed ? (
+                        <span
+                          aria-label="Unread"
+                          className="size-2 shrink-0 rounded-full bg-primary"
+                        />
+                      ) : null}
+                    </div>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                      {checkIn.content}
+                    </p>
+                    <EvidenceList evidence={checkIn.evidence} />
+                    <div className="mt-3 flex items-center justify-between gap-2">
+                      <time
+                        className="text-xs text-muted-foreground"
+                        dateTime={checkIn.createdAt}
+                      >
+                        {formatDate(checkIn.createdAt)}
+                      </time>
+                      <div className="flex flex-wrap justify-end gap-2">
+                        {!checkIn.read && !checkIn.dismissed ? (
+                          <Button
+                            onClick={() =>
+                              void markCheckIn.mutateAsync({
+                                checkInId: checkIn.id,
+                                read: true,
+                              })
+                            }
+                            size="sm"
+                            type="button"
+                            variant="outline"
+                          >
+                            Mark read
+                          </Button>
+                        ) : null}
+                        {checkIn.dismissed ? (
+                          <Button
+                            onClick={() =>
+                              void markCheckIn.mutateAsync({
+                                checkInId: checkIn.id,
+                                dismissed: false,
+                              })
+                            }
+                            size="sm"
+                            type="button"
+                            variant="outline"
+                          >
+                            Restore
+                          </Button>
+                        ) : (
+                          <Button
+                            onClick={() =>
+                              void markCheckIn.mutateAsync({
+                                checkInId: checkIn.id,
+                                read: true,
+                                dismissed: true,
+                              })
+                            }
+                            size="sm"
+                            type="button"
+                            variant="ghost"
+                          >
+                            Dismiss
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="rounded-2xl border border-dashed border-border p-5 text-sm text-muted-foreground">
+                No check-ins yet. They will appear here after a weekly review or
+                meaningful change.
+              </p>
+            )}
+          </div>
+        ) : null}
+
+        {view === 'preferences' ? (
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-8">
+            <h3 className="text-2xl" id="check-in-settings-heading">
+              Check-in preferences
+            </h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Choose when you want weekly reviews and activity-based reminders.
+            </p>
+            {preferencesQuery.data?.data ? (
+              <div className="mt-6 max-w-3xl divide-y divide-border rounded-[1.4rem] border border-border bg-card">
+                <label className="flex items-center justify-between gap-6 p-5">
+                  <span>
+                    <span className="block font-medium text-foreground">
+                      Weekly review
+                    </span>
+                    <span className="block text-sm text-muted-foreground">
+                      A summary of the week with your next focus.
+                    </span>
+                  </span>
+                  <input
+                    checked={preferencesQuery.data.data.weeklyEnabled}
+                    className="switch"
+                    onChange={(event) =>
+                      updatePreferences({ weeklyEnabled: event.target.checked })
+                    }
+                    role="switch"
+                    type="checkbox"
+                  />
+                </label>
+                <div className="grid gap-4 p-5 sm:grid-cols-2">
+                  <label className="text-sm font-medium text-foreground">
+                    Day
+                    <select
+                      className="mt-1.5 block h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
+                      onChange={(event) =>
+                        updatePreferences({
+                          weeklyDay: Number(event.target.value),
+                        })
+                      }
+                      value={preferencesQuery.data.data.weeklyDay}
+                    >
+                      <option value="0">Sunday</option>
+                      <option value="1">Monday</option>
+                      <option value="2">Tuesday</option>
+                      <option value="3">Wednesday</option>
+                      <option value="4">Thursday</option>
+                      <option value="5">Friday</option>
+                      <option value="6">Saturday</option>
+                    </select>
+                  </label>
+                  <label className="text-sm font-medium text-foreground">
+                    Local time
+                    <input
+                      className="mt-1.5 block h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
+                      onChange={(event) =>
+                        updatePreferences({ weeklyTime: event.target.value })
+                      }
+                      type="time"
+                      value={preferencesQuery.data.data.weeklyTime}
+                    />
+                  </label>
+                </div>
+                <label className="flex items-center justify-between gap-6 p-5">
+                  <span>
+                    <span className="block font-medium text-foreground">
+                      Meaningful event nudges
+                    </span>
+                    <span className="block text-sm text-muted-foreground">
+                      A note when a rating change or streak break needs
+                      attention.
+                    </span>
+                  </span>
+                  <input
+                    checked={preferencesQuery.data.data.eventEnabled}
+                    className="switch"
+                    onChange={(event) =>
+                      updatePreferences({ eventEnabled: event.target.checked })
+                    }
+                    role="switch"
+                    type="checkbox"
+                  />
+                </label>
               </div>
             ) : null}
           </div>
-          <form
-            className="shrink-0 border-t border-border bg-card p-4 sm:p-5"
-            onSubmit={(event) => {
-              event.preventDefault()
-              void submitMessage()
-            }}
-          >
-            <label className="sr-only" htmlFor="coach-message">
-              Ask your coach
-            </label>
-            <textarea
-              className="min-h-20 max-h-36 w-full resize-y rounded-xl border border-border bg-background p-3 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
-              disabled={!consentEnabled || sendMessage.isPending}
-              id="coach-message"
-              onChange={(event) => setContent(event.target.value)}
-              placeholder="Ask about your next step, a concept, a failed attempt, or a contest…"
-              value={content}
-            />
-            <details className="mt-3">
-              <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
-                Add temporary code or problem context (not saved)
-              </summary>
-              <textarea
-                className="mt-2 min-h-24 w-full resize-y rounded-lg border border-border bg-background p-3 font-mono text-xs leading-5 text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                disabled={!consentEnabled || sendMessage.isPending}
-                onChange={(event) => setTransientContext(event.target.value)}
-                placeholder="Paste only what is needed for this answer. It will be omitted from saved history and audits."
-                value={transientContext}
-              />
-            </details>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <input
-                accept=".mp3,.wav,.m4a,.mp4,.webm,.jpg,.jpeg,.png,.webp,.pdf,.txt,.md,.docx"
-                className="sr-only"
-                onChange={(event) => {
-                  selectAttachment(event.target.files?.[0])
-                  event.target.value = ''
-                }}
-                ref={attachmentInputRef}
-                tabIndex={-1}
-                type="file"
-              />
-              <Button
-                aria-label="Add attachment"
-                disabled={!consentEnabled || sendMessage.isPending}
-                onClick={() => attachmentInputRef.current?.click()}
-                size="icon"
-                type="button"
-                variant="outline"
-                title="Add attachment"
-              >
-                <Paperclip aria-hidden="true" />
-              </Button>
-              {attachmentFile ? (
-                <span className="inline-flex max-w-full items-center gap-1 rounded-md bg-muted px-2 py-1 text-xs text-foreground">
-                  <span className="max-w-52 truncate">
-                    {attachmentFile.name}
-                  </span>
-                  <button
-                    aria-label="Remove attachment"
-                    className="rounded-sm p-0.5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    onClick={() => setAttachmentFile(null)}
-                    type="button"
-                  >
-                    <X aria-hidden="true" className="size-3" />
-                  </button>
-                </span>
-              ) : null}
-            </div>
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs text-muted-foreground">
-                Attach one image, document, audio, or video file (up to 8 MB).
-                It is sent to Gemini for this answer, not saved in chat history.
-              </p>
-              <Button
-                disabled={
-                  !consentEnabled ||
-                  (!content.trim() && attachmentFile === null) ||
-                  sendMessage.isPending
-                }
-                type="submit"
-              >
-                {sendMessage.isPending ? (
-                  <LoaderCircle aria-hidden="true" className="animate-spin" />
-                ) : (
-                  <Send aria-hidden="true" />
-                )}{' '}
-                Ask coach
-              </Button>
-            </div>
-          </form>
-        </section>
-      </div>
-
-      {showInbox ? (
-        <section
-          className="max-h-[70svh] space-y-3 overflow-y-auto rounded-2xl border border-border bg-card p-4 shadow-sm sm:p-5"
-          aria-labelledby="check-ins-heading"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h2
-                className="text-xl font-semibold tracking-tight text-foreground"
-                id="check-ins-heading"
-              >
-                Check-in inbox
-              </h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Reviews and reminders based on your learning activity.
-              </p>
-            </div>
-            <Button
-              onClick={() => void checkInsQuery.refetch()}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              <RefreshCw aria-hidden="true" /> Refresh
-            </Button>
-          </div>
-          {checkInsQuery.isPending ? (
-            <p className="text-sm text-muted-foreground" role="status">
-              Checking for new nudges…
-            </p>
-          ) : checkInsQuery.isError ? (
-            <p className="text-sm text-destructive" role="alert">
-              Check-ins are temporarily unavailable.
-            </p>
-          ) : checkInsQuery.data?.data.length ? (
-            <ul className="grid gap-3 md:grid-cols-2">
-              {checkInsQuery.data.data.map((checkIn) => (
-                <li
-                  className={cn(
-                    'rounded-lg border p-4',
-                    checkIn.dismissed
-                      ? 'border-border bg-muted/50 opacity-75'
-                      : checkIn.read
-                        ? 'border-border bg-background'
-                        : 'border-primary/40 bg-primary/5',
-                  )}
-                  key={checkIn.id}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        {checkIn.type.replaceAll('_', ' ')}
-                        {checkIn.dismissed ? ' · dismissed' : ''}
-                      </p>
-                      <h3 className="mt-1 font-semibold text-foreground">
-                        {checkIn.title}
-                      </h3>
-                    </div>
-                    {!checkIn.read && !checkIn.dismissed ? (
-                      <span
-                        className="size-2 shrink-0 rounded-full bg-primary"
-                        aria-label="Unread"
-                      />
-                    ) : null}
-                  </div>
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                    {checkIn.content}
-                  </p>
-                  <EvidenceList evidence={checkIn.evidence} />
-                  <div className="mt-3 flex items-center justify-between gap-2">
-                    <time
-                      className="text-xs text-muted-foreground"
-                      dateTime={checkIn.createdAt}
-                    >
-                      {formatDate(checkIn.createdAt)}
-                    </time>
-                    <div className="flex flex-wrap justify-end gap-2">
-                      {!checkIn.read && !checkIn.dismissed ? (
-                        <Button
-                          onClick={() =>
-                            void markCheckIn.mutateAsync({
-                              checkInId: checkIn.id,
-                              read: true,
-                            })
-                          }
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          Mark read
-                        </Button>
-                      ) : null}
-                      {checkIn.dismissed ? (
-                        <Button
-                          onClick={() =>
-                            void markCheckIn.mutateAsync({
-                              checkInId: checkIn.id,
-                              dismissed: false,
-                            })
-                          }
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          Restore
-                        </Button>
-                      ) : (
-                        <Button
-                          onClick={() =>
-                            void markCheckIn.mutateAsync({
-                              checkInId: checkIn.id,
-                              read: true,
-                              dismissed: true,
-                            })
-                          }
-                          size="sm"
-                          type="button"
-                          variant="ghost"
-                        >
-                          Dismiss
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-              No check-ins yet. They will appear here after a weekly review or
-              meaningful change.
-            </p>
-          )}
-        </section>
-      ) : null}
-
-      <details className="group rounded-2xl border border-border bg-card shadow-sm">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-4 sm:p-5 [&::-webkit-details-marker]:hidden">
-          <div className="min-w-0">
-            <h2
-              className="text-xl font-semibold tracking-tight text-foreground"
-              id="roadmap-heading"
-            >
-              Your learning plan
-            </h2>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              Review focus areas, next topics, and optional practice.
-            </p>
-          </div>
-          <span className="shrink-0 rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
-            {roadmap?.topics.length ?? 0} topics
-          </span>
-        </summary>
-        {roadmap ? (
-          <div className="grid max-h-[72svh] min-w-0 gap-5 overflow-y-auto border-t border-border p-4 sm:p-5 lg:grid-cols-2">
-            {(Object.keys(laneLabels) as CoachRoadmapLane[]).map((lane) => {
-              const topics = groupedTopics.get(lane) ?? []
-              return (
-                <section
-                  className="min-w-0 space-y-3"
-                  key={lane}
-                  aria-labelledby={`roadmap-${lane}`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <h3
-                      className="font-semibold text-foreground"
-                      id={`roadmap-${lane}`}
-                    >
-                      {laneLabels[lane]}
-                    </h3>
-                    <span className="text-xs text-muted-foreground">
-                      {topics.length}
-                    </span>
-                  </div>
-                  {topics.length ? (
-                    topics.map((topic) => (
-                      <TopicCard
-                        key={topic.topic}
-                        onStatus={(status) =>
-                          void setTopicStatus.mutateAsync({
-                            topic: topic.topic,
-                            status,
-                          })
-                        }
-                        statusPending={setTopicStatus.isPending}
-                        topic={topic}
-                      />
-                    ))
-                  ) : (
-                    <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-                      Nothing here yet.
-                    </p>
-                  )}
-                </section>
-              )
-            })}
-          </div>
         ) : null}
-      </details>
-
-      <details className="rounded-2xl border border-border bg-card shadow-sm">
-        <summary className="cursor-pointer list-none p-4 sm:p-5 [&::-webkit-details-marker]:hidden">
-          <h2
-            className="text-lg font-semibold text-foreground"
-            id="check-in-settings-heading"
-          >
-            Check-in preferences
-          </h2>
-          <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            Choose when you want weekly reviews and activity-based reminders.
-          </p>
-        </summary>
-        {preferencesQuery.data?.data ? (
-          <div className="grid gap-4 border-t border-border p-4 sm:grid-cols-2 sm:p-5 lg:grid-cols-4">
-            <label className="flex items-center gap-2 text-sm text-foreground">
-              <input
-                checked={preferencesQuery.data.data.weeklyEnabled}
-                className="size-4 accent-primary"
-                onChange={(event) =>
-                  updatePreferences({ weeklyEnabled: event.target.checked })
-                }
-                type="checkbox"
-              />{' '}
-              Weekly review
-            </label>
-            <label className="text-sm text-foreground">
-              Day
-              <select
-                className="mt-1 block h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
-                onChange={(event) =>
-                  updatePreferences({ weeklyDay: Number(event.target.value) })
-                }
-                value={preferencesQuery.data.data.weeklyDay}
-              >
-                <option value="0">Sunday</option>
-                <option value="1">Monday</option>
-                <option value="2">Tuesday</option>
-                <option value="3">Wednesday</option>
-                <option value="4">Thursday</option>
-                <option value="5">Friday</option>
-                <option value="6">Saturday</option>
-              </select>
-            </label>
-            <label className="text-sm text-foreground">
-              Local time
-              <input
-                className="mt-1 block h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
-                onChange={(event) =>
-                  updatePreferences({ weeklyTime: event.target.value })
-                }
-                type="time"
-                value={preferencesQuery.data.data.weeklyTime}
-              />
-            </label>
-            <label className="flex items-center gap-2 text-sm text-foreground">
-              <input
-                checked={preferencesQuery.data.data.eventEnabled}
-                className="size-4 accent-primary"
-                onChange={(event) =>
-                  updatePreferences({ eventEnabled: event.target.checked })
-                }
-                type="checkbox"
-              />{' '}
-              Meaningful event nudges
-            </label>
-          </div>
-        ) : null}
-      </details>
+      </section>
 
       <Dialog
         onClose={() => setRenameTarget(null)}
@@ -1337,7 +1602,7 @@ function CoachPage() {
           </div>
         </div>
       </Dialog>
-    </PageContainer>
+    </main>
   )
 }
 

@@ -8,7 +8,7 @@ import type {
 } from '../contracts'
 
 const fieldClassName =
-  'h-9 w-full min-w-0 rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50'
+  'h-9 w-full min-w-0 rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 text-sm text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15'
 const eventTypes: Array<{ value: ProgressHistoryEventType; label: string }> = [
   { value: 'status_changed', label: 'Status changes' },
   { value: 'reflection_created', label: 'Reflections' },

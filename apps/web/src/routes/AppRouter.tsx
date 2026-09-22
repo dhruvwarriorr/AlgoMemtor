@@ -2,6 +2,7 @@ import { lazy, Suspense, type ReactNode } from 'react'
 import { Route, Routes } from 'react-router-dom'
 
 import { PageSkeleton } from '@/components/states/PageSkeleton'
+import AppLayout from '@/layouts/AppLayout'
 import AppShell from '@/layouts/AppShell'
 
 import ProtectedRoute from './ProtectedRoute'
@@ -25,7 +26,13 @@ const RecommendationsPage = lazy(() => import('@/pages/RecommendationsPage'))
 const SettingPage = lazy(() => import('@/pages/SettingPage'))
 
 const page = (content: ReactNode, label: string) => (
-  <Suspense fallback={<PageSkeleton label={label} rows={3} />}>
+  <Suspense
+    fallback={
+      <div className="w-full px-5 py-6 sm:px-8 lg:px-10">
+        <PageSkeleton label={label} rows={4} withHeader />
+      </div>
+    }
+  >
     {content}
   </Suspense>
 )
@@ -41,6 +48,11 @@ function AppRouter() {
             path="onboarding"
             element={page(<OnboardingPage />, 'Loading onboarding')}
           />
+        </Route>
+        <Route path="*" element={page(<NotFoundPage />, 'Loading page')} />
+      </Route>
+      <Route element={<ProtectedRoute />}>
+        <Route element={<AppLayout />}>
           <Route
             path="dashboard"
             element={page(<DashboardPage />, 'Loading dashboard')}
@@ -94,7 +106,6 @@ function AppRouter() {
             element={page(<SettingPage />, 'Loading settings')}
           />
         </Route>
-        <Route path="*" element={page(<NotFoundPage />, 'Loading page')} />
       </Route>
     </Routes>
   )

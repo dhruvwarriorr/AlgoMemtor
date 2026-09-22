@@ -168,7 +168,7 @@ function RecommendationsPage() {
         {partial ||
         warnings.some((warning) => warning.code !== 'STALE_DATA') ? (
           <aside
-            className="rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-50"
+            className="rounded-xl border border-sun/60 bg-sun-soft p-4 text-sm text-sun-foreground"
             role="status"
           >
             <p className="font-medium">

@@ -30,16 +30,16 @@ export function Dialog({
     <div
       aria-labelledby="dialog-title"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(8_18_40/0.45)] p-4 backdrop-blur-[3px] animate-in fade-in-0 duration-200 motion-reduce:animate-none"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose()
       }}
       role="dialog"
     >
-      <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-xl">
+      <div className="w-full max-w-md rounded-3xl border border-border bg-popover p-6 text-popover-foreground shadow-lift animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2 duration-300 motion-reduce:animate-none">
         <div className="flex items-start justify-between gap-3">
           <h2
-            className="text-lg font-semibold text-foreground"
+            className="text-xl font-semibold text-foreground"
             id="dialog-title"
           >
             {title}

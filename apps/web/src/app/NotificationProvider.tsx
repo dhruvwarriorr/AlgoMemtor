@@ -7,6 +7,8 @@ import {
   type PropsWithChildren,
 } from 'react'
 
+import { X } from 'lucide-react'
+
 import {
   NotificationContext,
   type NotificationInput,
@@ -19,9 +21,9 @@ import {
 } from './notification-utils'
 
 const toneClasses = {
-  info: 'border-border bg-background text-foreground',
-  success: 'border-green-600 bg-green-50 text-green-950',
-  error: 'border-destructive bg-red-50 text-red-950',
+  info: 'border-border bg-popover text-popover-foreground',
+  success: 'border-go/40 bg-go-soft text-go-foreground',
+  error: 'border-destructive/40 bg-danger-soft text-danger-foreground',
 } as const
 
 export function NotificationProvider({ children }: PropsWithChildren) {
@@ -101,7 +103,7 @@ export function NotificationProvider({ children }: PropsWithChildren) {
       >
         {notifications.map((notification) => (
           <div
-            className={`rounded-lg border p-4 shadow-lg ${
+            className={`rounded-2xl border p-4 shadow-lift animate-in fade-in-0 slide-in-from-bottom-2 duration-300 motion-reduce:animate-none ${
               toneClasses[notification.tone ?? 'info']
             }`}
             key={notification.id}
@@ -118,11 +120,11 @@ export function NotificationProvider({ children }: PropsWithChildren) {
               </div>
               <button
                 aria-label="Dismiss notification"
-                className="rounded p-1"
+                className="grid size-7 shrink-0 place-items-center rounded-full opacity-70 transition hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10"
                 onClick={() => remove(notification.id)}
                 type="button"
               >
-                ×
+                <X aria-hidden="true" className="size-4" />
               </button>
             </div>
           </div>

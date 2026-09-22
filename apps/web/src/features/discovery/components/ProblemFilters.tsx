@@ -12,7 +12,7 @@ import { useProviders } from '../hooks/useProviders'
 import { useTopics } from '../hooks/useTopics'
 
 const fieldClassName =
-  'h-9 w-full min-w-0 rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50'
+  'h-10 w-full min-w-0 rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 text-sm text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15'
 
 const labelClassName = 'space-y-1.5 text-sm font-medium text-foreground'
 
@@ -87,12 +87,12 @@ export function ProblemFilters({
   return (
     <section
       aria-labelledby="problem-filters-heading"
-      className="rounded-xl border border-border bg-card p-4 sm:p-5"
+      className="rounded-xl border border-border bg-card p-5 sm:p-6"
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2
-            className="text-lg font-semibold text-card-foreground"
+            className="text-xl font-semibold text-card-foreground"
             id="problem-filters-heading"
           >
             Filter problems
@@ -112,8 +112,8 @@ export function ProblemFilters({
       </div>
 
       <form className="mt-5 space-y-4" onSubmit={submitTextFilters}>
-        <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <label className={`${labelClassName} sm:col-span-2`}>
+        <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-2">
+          <label className={`${labelClassName} sm:col-span-2 xl:col-span-2`}>
             Search
             <input
               className={fieldClassName}
@@ -270,7 +270,9 @@ export function ProblemFilters({
           </p>
         ) : null}
 
-        <Button type="submit">Apply search and ratings</Button>
+        <Button className="w-full" type="submit" variant="ink">
+          Apply search and ratings
+        </Button>
       </form>
     </section>
   )

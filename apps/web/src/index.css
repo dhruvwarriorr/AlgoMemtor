@@ -2,96 +2,160 @@
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
 @import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
+@import '@fontsource-variable/bricolage-grotesque';
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * AlgoMemtor "Open Sky" design system.
+ *
+ * Palette: cobalt is the one brand accent, sky blue is the surface family,
+ * ink is text. Green ("go") only means success or live state, yellow ("sun")
+ * only marks highlights and notices.
+ *
+ * Shape rule: interactive controls are full pills, form fields use radius-md
+ * (~13px), containers use radius-lg / radius-xl (16px / 22px), hero panels 2rem.
+ */
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: oklch(0.872 0.02 158);
-  --code-bg: #f4f3ec;
-  --accent: oklch(0.925 0.026 155);
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  --background: #f4f7fb;
+  --foreground: #0b1220;
+  --card: #ffffff;
+  --card-foreground: #0b1220;
+  --popover: #ffffff;
+  --popover-foreground: #0b1220;
+  --primary: #1a5ae6;
+  --primary-foreground: #ffffff;
+  --secondary: #e4effb;
+  --secondary-foreground: #0c2a5c;
+  --muted: #edf2f8;
+  --muted-foreground: #556275;
+  --accent: #dcebfb;
+  --accent-foreground: #0c2a5c;
+  --destructive: #d23b2f;
+  --border: #dbe4ef;
+  --input: #c9d5e3;
+  --ring: #1a5ae6;
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  --ink: #0b1220;
+  --ink-foreground: #f6f9fd;
+  --sky: #7fbcec;
+  --sky-deep: #3d8ddc;
+  --sky-soft: #cfe5f8;
+  --go: #138a5c;
+  --go-soft: #e2f6ec;
+  --go-foreground: #0b4d33;
+  --sun: #f5c33b;
+  --sun-soft: #fff5d6;
+  --sun-foreground: #5b4300;
+  --danger-soft: #fdebe9;
+  --danger-foreground: #7c1d15;
 
-  font-family: var(--sans);
-  line-height: 1.5;
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
+  --chart-1: #1a5ae6;
+  --chart-2: #7fbcec;
+  --chart-3: #138a5c;
+  --chart-4: #f5c33b;
+  --chart-5: #0b1220;
+
+  --radius: 1rem;
+
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0b1220;
+  --sidebar-primary: #1a5ae6;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #edf2f8;
+  --sidebar-accent-foreground: #0b1220;
+  --sidebar-border: #dbe4ef;
+  --sidebar-ring: #1a5ae6;
+
+  /* Shadows are tinted toward the sky hue, never pure black. */
+  --shadow-soft:
+    0 1px 2px rgb(22 52 102 / 0.06), 0 10px 28px -14px rgb(22 52 102 / 0.18);
+  --shadow-lift:
+    0 2px 4px rgb(22 52 102 / 0.06), 0 24px 48px -20px rgb(22 52 102 / 0.32);
+
+  /* Full-page app backdrop behind the sidebar and content panel. */
+  --shell-a: #dcebfa;
+  --shell-b: #eef4fb;
+  --shell-c: #d6e7f7;
+
+  --sky-top: #5fa9e6;
+  --sky-mid: #8cc4ef;
+  --sky-bottom: #dcedfb;
+  --cloud: #ffffff;
+  --cloud-opacity: 0.95;
+
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  color-scheme: light;
+}
 
-  --background: oklch(0.982 0.009 155);
+.dark {
+  --background: #0a1019;
+  --foreground: #eaf1fb;
+  --card: #111a29;
+  --card-foreground: #eaf1fb;
+  --popover: #0f1727;
+  --popover-foreground: #eaf1fb;
+  --primary: #5b95ff;
+  --primary-foreground: #04101f;
+  --secondary: #13213a;
+  --secondary-foreground: #d6e5fb;
+  --muted: #111a2b;
+  --muted-foreground: #97a6bc;
+  --accent: #16284a;
+  --accent-foreground: #d6e5fb;
+  --destructive: #ff7b6e;
+  --border: #1d2940;
+  --input: #293852;
+  --ring: #5b95ff;
 
-  --foreground: oklch(0.205 0.026 166);
+  --ink: #eaf1fb;
+  --ink-foreground: #060a12;
+  --sky: #2a5ea8;
+  --sky-deep: #1b3f7a;
+  --sky-soft: #132846;
+  --go: #3ccf8e;
+  --go-soft: #0c2a1f;
+  --go-foreground: #9ff0c8;
+  --sun: #ffd35c;
+  --sun-soft: #2a220a;
+  --sun-foreground: #ffe49a;
+  --danger-soft: #2c1210;
+  --danger-foreground: #ffc2bb;
 
-  --card: oklch(0.998 0.003 155);
+  --chart-1: #5b95ff;
+  --chart-2: #8cc4ef;
+  --chart-3: #3ccf8e;
+  --chart-4: #ffd35c;
+  --chart-5: #eaf1fb;
 
-  --card-foreground: oklch(0.205 0.026 166);
+  --sidebar: #0d1422;
+  --sidebar-foreground: #eaf1fb;
+  --sidebar-primary: #5b95ff;
+  --sidebar-primary-foreground: #04101f;
+  --sidebar-accent: #111a2b;
+  --sidebar-accent-foreground: #eaf1fb;
+  --sidebar-border: #1d2940;
+  --sidebar-ring: #5b95ff;
 
-  --popover: oklch(0.998 0.003 155);
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 30px -16px rgb(0 0 0 / 0.7);
+  --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.4), 0 28px 56px -22px rgb(0 0 0 / 0.8);
 
-  --popover-foreground: oklch(0.205 0.026 166);
+  --shell-a: #081427;
+  --shell-b: #04070d;
+  --shell-c: #0a1a33;
 
-  --primary: oklch(0.465 0.118 161);
+  /* Night sky: same composition, dimmer clouds. */
+  --sky-top: #081a3a;
+  --sky-mid: #0f2c5c;
+  --sky-bottom: #173d74;
+  --cloud: #c7d8f2;
+  --cloud-opacity: 0.22;
 
-  --primary-foreground: oklch(0.99 0.01 155);
-
-  --secondary: oklch(0.944 0.022 155);
-
-  --secondary-foreground: oklch(0.26 0.035 164);
-
-  --muted: oklch(0.947 0.014 155);
-
-  --muted-foreground: oklch(0.49 0.027 165);
-
-  --accent-foreground: oklch(0.24 0.04 164);
-
-  --destructive: oklch(0.577 0.245 27.325);
-
-  --input: oklch(0.872 0.02 158);
-
-  --ring: oklch(0.57 0.12 161);
-
-  --chart-1: oklch(0.87 0 0);
-
-  --chart-2: oklch(0.556 0 0);
-
-  --chart-3: oklch(0.439 0 0);
-
-  --chart-4: oklch(0.371 0 0);
-
-  --chart-5: oklch(0.269 0 0);
-
-  --radius: 0.75rem;
-
-  --sidebar: oklch(0.965 0.014 155);
-
-  --sidebar-foreground: oklch(0.205 0.026 166);
-
-  --sidebar-primary: oklch(0.465 0.118 161);
-
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-
-  --sidebar-accent: oklch(0.925 0.026 155);
-
-  --sidebar-accent-foreground: oklch(0.205 0.026 166);
-
-  --sidebar-border: oklch(0.872 0.02 158);
-
-  --sidebar-ring: oklch(0.708 0 0);
+  color-scheme: dark;
 }
 
 #root {
@@ -109,8 +173,24 @@ body {
 }
 
 @theme inline {
-  --font-heading: var(--font-sans);
-  --font-sans: 'Geist Variable', sans-serif;
+  --font-heading: 'Bricolage Grotesque Variable', 'Geist Variable', sans-serif;
+  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
+  --color-ink: var(--ink);
+  --color-ink-foreground: var(--ink-foreground);
+  --color-sky: var(--sky);
+  --color-sky-deep: var(--sky-deep);
+  --color-sky-soft: var(--sky-soft);
+  --color-go: var(--go);
+  --color-go-soft: var(--go-soft);
+  --color-go-foreground: var(--go-foreground);
+  --color-sun: var(--sun);
+  --color-sun-soft: var(--sun-soft);
+  --color-sun-foreground: var(--sun-foreground);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-foreground: var(--danger-foreground);
+  --shadow-soft: var(--shadow-soft);
+  --shadow-lift: var(--shadow-lift);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -146,43 +226,9 @@ body {
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
-}
-
-.dark {
-  --background: oklch(0.145 0.018 166);
-  --foreground: oklch(0.94 0.012 155);
-  --card: oklch(0.185 0.022 166);
-  --card-foreground: oklch(0.94 0.012 155);
-  --popover: oklch(0.19 0.024 166);
-  --popover-foreground: oklch(0.94 0.012 155);
-  --primary: oklch(0.72 0.13 158);
-  --primary-foreground: oklch(0.135 0.026 166);
-  --secondary: oklch(0.235 0.03 166);
-  --secondary-foreground: oklch(0.94 0.012 155);
-  --muted: oklch(0.225 0.023 166);
-  --muted-foreground: oklch(0.69 0.026 158);
-  --accent: oklch(0.255 0.04 162);
-  --accent-foreground: oklch(0.94 0.012 155);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(0.32 0.028 164);
-  --input: oklch(0.34 0.03 164);
-  --ring: oklch(0.67 0.12 158);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.165 0.02 166);
-  --sidebar-foreground: oklch(0.94 0.012 155);
-  --sidebar-primary: oklch(0.72 0.13 158);
-  --sidebar-primary-foreground: oklch(0.135 0.026 166);
-  --sidebar-accent: oklch(0.235 0.03 166);
-  --sidebar-accent-foreground: oklch(0.94 0.012 155);
-  --sidebar-border: oklch(0.32 0.028 164);
-  --sidebar-ring: oklch(0.67 0.12 158);
+  --radius-2xl: calc(var(--radius) * 1.6);
+  --radius-3xl: calc(var(--radius) * 2);
+  --radius-4xl: calc(var(--radius) * 2.4);
 }
 
 @layer base {
@@ -190,19 +236,279 @@ body {
     @apply border-border outline-ring/50;
     box-sizing: border-box;
   }
-  body {
-    @apply bg-background text-foreground;
-    background-image: radial-gradient(
-      circle at 50% -20%,
-      color-mix(in oklab, var(--primary) 10%, transparent),
-      transparent 38rem
-    );
-    background-attachment: fixed;
-  }
   html {
     @apply font-sans;
-    font-size: 16px;
+    font-size: 17px;
     min-width: 320px;
     min-height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground;
+    line-height: 1.5;
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-heading);
+    letter-spacing: -0.025em;
+    text-wrap: balance;
+  }
+  h2,
+  h3 {
+    font-weight: 600;
+  }
+  h1 {
+    font-weight: 700;
+    letter-spacing: -0.035em;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--sun) 70%, transparent);
+    color: #0b1220;
+  }
+  /*
+   * Card surfaces across the app get the same tinted lift, so every panel
+   * reads as one family without repeating shadow utilities in 60 places.
+   */
+  [class~='bg-card'] {
+    box-shadow: var(--shadow-soft);
+  }
+  input[type='checkbox'],
+  input[type='radio'] {
+    accent-color: var(--primary);
+  }
+}
+
+/* Sky surface: gradient + soft CSS clouds, used by hero and page headers. */
+@utility sky-surface {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  color: #0b1220;
+  background:
+    radial-gradient(
+      120% 90% at 50% 120%,
+      var(--sky-bottom) 0%,
+      transparent 60%
+    ),
+    linear-gradient(
+      180deg,
+      var(--sky-top) 0%,
+      var(--sky-mid) 58%,
+      var(--sky-bottom) 100%
+    );
+
+  .dark & {
+    color: #eaf1fb;
+  }
+}
+
+@utility cloud {
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  aspect-ratio: 5 / 2;
+  opacity: var(--cloud-opacity);
+  filter: blur(6px);
+  background:
+    radial-gradient(closest-side, var(--cloud) 97%, transparent) 4% 80% / 34%
+      56% no-repeat,
+    radial-gradient(closest-side, var(--cloud) 97%, transparent) 28% 46% / 38%
+      88% no-repeat,
+    radial-gradient(closest-side, var(--cloud) 97%, transparent) 56% 30% / 42%
+      100% no-repeat,
+    radial-gradient(closest-side, var(--cloud) 97%, transparent) 80% 58% / 34%
+      74% no-repeat,
+    radial-gradient(closest-side, var(--cloud) 97%, transparent) 50% 92% / 96%
+      40% no-repeat;
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: -20% -10%;
+    background: radial-gradient(closest-side, var(--cloud), transparent);
+    opacity: 0.45;
+    filter: blur(18px);
+  }
+}
+
+@utility glass-pill {
+  border: 1px solid rgb(255 255 255 / 0.7);
+  background: rgb(255 255 255 / 0.86);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.9),
+    0 1px 2px rgb(22 52 102 / 0.08),
+    0 10px 24px -12px rgb(22 52 102 / 0.28);
+
+  .dark & {
+    border-color: rgb(255 255 255 / 0.09);
+    background: rgb(13 20 34 / 0.78);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.06),
+      0 12px 28px -14px rgb(0 0 0 / 0.8);
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    background: var(--card);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* Yellow marker highlight for a single emphasised word. */
+@utility marker {
+  background: linear-gradient(
+      180deg,
+      transparent 58%,
+      color-mix(in oklab, var(--sun) 85%, transparent) 58%,
+      color-mix(in oklab, var(--sun) 85%, transparent) 92%,
+      transparent 92%
+    )
+    no-repeat;
+  padding-inline: 0.06em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cloud-drift {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(var(--drift, 48px));
+  }
+}
+
+@keyframes float-y {
+  0%,
+  100% {
+    transform: translateY(0) rotate(var(--tilt, 0deg));
+  }
+  50% {
+    transform: translateY(-8px) rotate(var(--tilt, 0deg));
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .animate-rise {
+    animation: rise-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(var(--i, 0) * 90ms);
+  }
+  .animate-drift {
+    animation: cloud-drift var(--drift-duration, 38s) ease-in-out infinite
+      alternate;
+  }
+  .animate-float {
+    animation: float-y 6s ease-in-out infinite;
+  }
+
+  /* Scroll reveal where supported; content stays visible everywhere else. */
+  @supports (animation-timeline: view()) {
+    .reveal-on-scroll {
+      animation: rise-in linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 45%;
+    }
+  }
+}
+
+/* Full-page backdrop for the signed-in workspace. */
+@utility app-backdrop {
+  background:
+    radial-gradient(60rem 40rem at 0% 0%, var(--shell-a), transparent 60%),
+    radial-gradient(50rem 36rem at 100% 100%, var(--shell-c), transparent 60%),
+    var(--shell-b);
+}
+
+/* Coach orb: a soft lit sphere in the brand blues. */
+@utility coach-orb {
+  border-radius: 9999px;
+  background:
+    radial-gradient(
+      circle at 32% 28%,
+      rgb(255 255 255 / 0.95) 0 8%,
+      transparent 32%
+    ),
+    radial-gradient(
+      circle at 70% 75%,
+      color-mix(in oklab, var(--sun) 55%, transparent) 0 6%,
+      transparent 40%
+    ),
+    radial-gradient(circle at 50% 50%, #8cc4ef 0%, #3d8ddc 55%, #1a5ae6 100%);
+  box-shadow:
+    inset -10px -14px 30px rgb(10 40 110 / 0.35),
+    inset 8px 10px 24px rgb(255 255 255 / 0.45),
+    0 20px 60px -10px color-mix(in oklab, var(--primary) 55%, transparent);
+}
+
+@keyframes orb-breathe {
+  0%,
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    transform: scale(1.04) rotate(8deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .animate-orb {
+    animation: orb-breathe 7s cubic-bezier(0.32, 0.72, 0, 1) infinite;
+  }
+}
+
+/* iOS-style switch built on a native checkbox (keeps keyboard + form semantics). */
+@utility switch {
+  appearance: none;
+  position: relative;
+  flex-shrink: 0;
+  width: 2.75rem;
+  height: 1.6rem;
+  border-radius: 9999px;
+  background: var(--input);
+  cursor: pointer;
+  transition: background-color 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0.2rem;
+    left: 0.2rem;
+    width: 1.2rem;
+    height: 1.2rem;
+    border-radius: 9999px;
+    background: #fff;
+    box-shadow: 0 1px 3px rgb(11 18 32 / 0.25);
+    transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  &:checked {
+    background: var(--primary);
+  }
+
+  &:checked::after {
+    transform: translateX(1.15rem);
+  }
+
+  &:focus-visible {
+    outline: 3px solid color-mix(in oklab, var(--ring) 40%, transparent);
+    outline-offset: 2px;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 }

@@ -2,7 +2,11 @@ import type {
   Bookmark,
   LearnerProblemStatus,
   NormalizedDifficulty,
+  ProviderKey,
 } from '@algomemtor/shared-contracts'
+
+import { ProviderLogo } from '@/components/brand/ProviderLogo'
+import { cn } from '@/lib/utils'
 
 import { EmptyState } from '@/components/states/EmptyState'
 import { ErrorState } from '@/components/states/ErrorState'
@@ -24,77 +28,106 @@ const statusLabels: Record<LearnerProblemStatus, string> = {
   solved: 'Solved',
 }
 
+const providerTile: Record<ProviderKey, string> = {
+  codeforces: 'bg-[#1f8acb] text-white',
+  leetcode: 'bg-[#ffa116] text-[#1a1203]',
+  codechef: 'bg-[#5b4638] text-white',
+  cses: 'bg-primary text-primary-foreground',
+}
+
+const statusTone: Record<LearnerProblemStatus, string> = {
+  unsolved: 'bg-muted text-muted-foreground',
+  attempted: 'bg-sun-soft text-sun-foreground',
+  solved: 'bg-go-soft text-go-foreground',
+}
+
 function BookmarkCard({ bookmark }: { bookmark: Bookmark }) {
   const { problem } = bookmark
+  const status = problem.learnerStatus ?? 'unsolved'
 
   return (
-    <article className="flex min-w-0 flex-col gap-4 rounded-xl border border-border bg-card p-4 shadow-sm sm:p-5">
-      <header className="min-w-0 space-y-2">
-        <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span className="font-medium capitalize text-foreground">
-            {problem.provider}
-          </span>
-          <span aria-hidden="true">•</span>
-          <span className="break-all">{problem.externalId}</span>
-          <span className="rounded-full bg-muted px-2 py-0.5 font-medium text-foreground">
-            {statusLabels[problem.learnerStatus ?? 'unsolved']}
-          </span>
-        </div>
-        <h2 className="break-words text-lg font-semibold leading-snug text-card-foreground">
-          {problem.title}
-        </h2>
-      </header>
+    <article className="group grid min-w-0 gap-4 px-5 py-5 transition-colors hover:bg-background/60 sm:grid-cols-[auto_minmax(0,1fr)] sm:px-6 xl:grid-cols-[auto_minmax(0,1fr)_auto] xl:items-center">
+      <span
+        aria-hidden="true"
+        className={cn(
+          'grid size-14 shrink-0 place-items-center rounded-2xl shadow-[inset_0_1px_0_rgb(255_255_255/0.25)]',
+          providerTile[problem.provider],
+        )}
+      >
+        <ProviderLogo className="size-7" provider={problem.provider} />
+      </span>
 
-      <dl className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
-        {problem.normalizedDifficulty ? (
-          <div className="flex gap-1.5">
-            <dt className="text-muted-foreground">Difficulty:</dt>
-            <dd className="font-medium text-foreground">
-              {problem.normalizedDifficulty}
-            </dd>
-          </div>
-        ) : null}
-        {problem.providerDifficulty !== undefined ? (
-          <div className="flex gap-1.5">
-            <dt className="text-muted-foreground">Rating:</dt>
-            <dd className="font-medium text-foreground">
-              {problem.providerDifficulty}
-            </dd>
-          </div>
-        ) : null}
-        <div className="flex gap-1.5">
-          <dt className="text-muted-foreground">Saved:</dt>
-          <dd className="font-medium text-foreground">
-            <time dateTime={bookmark.createdAt}>
-              {new Date(bookmark.createdAt).toLocaleDateString()}
-            </time>
-          </dd>
-        </div>
-      </dl>
-
-      <ul aria-label="Topics" className="flex min-w-0 flex-wrap gap-1.5">
-        {problem.topics.map((topic) => (
-          <li
-            className="max-w-full break-words rounded-md bg-primary px-2 py-1 text-xs text-primary-foreground"
-            key={topic}
+      <div className="min-w-0 space-y-2">
+        <header className="flex min-w-0 flex-wrap items-center gap-2">
+          <h2 className="break-words text-lg leading-snug font-semibold text-card-foreground">
+            {problem.title}
+          </h2>
+          <span
+            className={cn(
+              'rounded-full px-2.5 py-0.5 text-xs font-medium',
+              statusTone[status],
+            )}
           >
-            {topic}
-          </li>
-        ))}
-      </ul>
+            {statusLabels[status]}
+          </span>
+        </header>
+        <dl className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+          <div className="flex gap-1.5">
+            <dt className="sr-only">Problem</dt>
+            <dd className="font-mono text-xs">
+              {problem.provider} · {problem.externalId}
+            </dd>
+          </div>
+          {problem.normalizedDifficulty ? (
+            <div className="flex gap-1.5">
+              <dt>Difficulty:</dt>
+              <dd className="font-medium text-foreground capitalize">
+                {problem.normalizedDifficulty}
+              </dd>
+            </div>
+          ) : null}
+          {problem.providerDifficulty !== undefined ? (
+            <div className="flex gap-1.5">
+              <dt>Rating:</dt>
+              <dd className="font-mono font-medium text-foreground">
+                {problem.providerDifficulty}
+              </dd>
+            </div>
+          ) : null}
+          <div className="flex gap-1.5">
+            <dt>Saved:</dt>
+            <dd className="font-medium text-foreground">
+              <time dateTime={bookmark.createdAt}>
+                {new Date(bookmark.createdAt).toLocaleDateString()}
+              </time>
+            </dd>
+          </div>
+        </dl>
+        <ul aria-label="Topics" className="flex min-w-0 flex-wrap gap-1.5">
+          {problem.topics.map((topic) => (
+            <li
+              className="max-w-full break-words rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary dark:bg-primary/15"
+              key={topic}
+            >
+              {topic}
+            </li>
+          ))}
+        </ul>
+      </div>
 
-      <footer className="mt-auto flex min-w-0 flex-wrap items-center gap-2 border-t border-border pt-4">
-        <SolveOnProviderLink
-          canonicalUrl={problem.canonicalUrl}
-          provider={problem.provider}
-        />
+      <footer className="flex min-w-0 flex-wrap items-center gap-2 sm:col-start-2 xl:col-start-3 xl:justify-end">
         <ProblemLearningControls
+          compact
           initialBookmarked
-          initialStatus={problem.learnerStatus ?? 'unsolved'}
+          initialStatus={status}
           problem={{
             provider: problem.provider,
             externalId: problem.externalId,
           }}
+        />
+        <SolveOnProviderLink
+          canonicalUrl={problem.canonicalUrl}
+          provider={problem.provider}
         />
       </footer>
     </article>
@@ -145,7 +178,7 @@ function BookmarksPage() {
   } else {
     content = (
       <div className="space-y-5">
-        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="min-w-0 divide-y divide-border overflow-hidden rounded-[1.4rem] border border-border bg-card shadow-soft">
           {bookmarks.map((bookmark) => (
             <BookmarkCard bookmark={bookmark} key={bookmark.id} />
           ))}
@@ -211,7 +244,7 @@ function BookmarksPage() {
           <label className="min-w-0 space-y-1.5 text-sm font-medium text-foreground">
             Search
             <input
-              className="h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 text-base font-normal text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
+              className="h-10 w-full min-w-0 rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 text-base font-normal text-foreground outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
               onChange={(event) =>
                 update({ search: event.currentTarget.value || null })
               }
@@ -222,7 +255,7 @@ function BookmarksPage() {
           <label className="min-w-0 space-y-1.5 text-sm font-medium text-foreground">
             Topic
             <input
-              className="h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 text-base font-normal text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
+              className="h-10 w-full min-w-0 rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 text-base font-normal text-foreground outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
               onChange={(event) =>
                 update({ topic: event.currentTarget.value || null })
               }
@@ -233,7 +266,7 @@ function BookmarksPage() {
           <label className="min-w-0 space-y-1.5 text-sm font-medium text-foreground">
             Status
             <select
-              className="h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 text-base font-normal text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
+              className="h-10 w-full min-w-0 rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 text-base font-normal text-foreground outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
               onChange={(event) =>
                 update({
                   status: event.currentTarget.value
@@ -252,7 +285,7 @@ function BookmarksPage() {
           <label className="min-w-0 space-y-1.5 text-sm font-medium text-foreground">
             Difficulty
             <select
-              className="h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 text-base font-normal text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
+              className="h-10 w-full min-w-0 rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 text-base font-normal text-foreground outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
               onChange={(event) =>
                 update({
                   difficulty: event.currentTarget.value
@@ -271,7 +304,7 @@ function BookmarksPage() {
           <label className="min-w-0 space-y-1.5 text-sm font-medium text-foreground">
             Sort
             <select
-              className="h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 text-base font-normal text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
+              className="h-10 w-full min-w-0 rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 text-base font-normal text-foreground outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
               onChange={(event) =>
                 update({
                   sort: event.currentTarget.value as typeof query.sort,

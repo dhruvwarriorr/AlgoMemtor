@@ -18,16 +18,16 @@ function PageHeader({
   return (
     <header
       className={cn(
-        'flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between',
+        'animate-rise flex min-w-0 flex-col gap-5 sm:flex-row sm:items-end sm:justify-between',
         className,
       )}
     >
       <div className="min-w-0">
-        <h1 className="break-words text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+        <h1 className="break-words text-[2.1rem] leading-[1.05] text-foreground sm:text-[2.6rem]">
           {title}
         </h1>
         {description ? (
-          <p className="mt-2 max-w-2xl break-words text-sm leading-6 text-muted-foreground sm:text-base">
+          <p className="mt-3 max-w-2xl break-words text-base leading-7 text-muted-foreground">
             {description}
           </p>
         ) : null}

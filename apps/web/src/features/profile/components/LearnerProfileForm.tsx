@@ -209,10 +209,11 @@ type LearnerProfileFormProps = {
 }
 
 const inputClassName =
-  'h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 text-base text-foreground outline-none transition-shadow focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 disabled:cursor-not-allowed disabled:opacity-60'
+  'h-10 w-full min-w-0 rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 text-base text-foreground outline-none transition-shadow focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15 aria-invalid:border-destructive aria-invalid:ring-destructive/20 disabled:cursor-not-allowed disabled:opacity-60'
 
+// Settings-style rows: the heading block on the left, every control on the right.
 const sectionClassName =
-  'flex min-w-0 flex-col gap-5 rounded-xl border border-border bg-card p-4 sm:p-6'
+  'grid min-w-0 gap-5 border-b border-border py-8 first-of-type:pt-2 md:grid-cols-[minmax(0,14rem)_minmax(0,1fr)] md:gap-x-10 md:[&>*:not(:first-child)]:col-start-2'
 
 function emptyStandings(): Record<RatedPracticePlatform, StandingInput> {
   return {
@@ -602,13 +603,13 @@ function LearnerProfileFormFields({
   return (
     <form
       aria-busy={isSaving}
-      className="flex w-full max-w-4xl min-w-0 flex-col gap-6"
+      className="flex w-full max-w-5xl min-w-0 flex-col"
       noValidate
       onSubmit={(event) => void handleSubmit(event)}
     >
       {formErrorMessages.length > 0 ? (
         <div
-          className="rounded-lg border border-destructive/40 bg-destructive/5 p-4"
+          className="mb-6 rounded-2xl border border-destructive/40 bg-danger-soft p-4"
           ref={validationSummaryRef}
           role="alert"
           tabIndex={-1}
@@ -630,7 +631,7 @@ function LearnerProfileFormFields({
       >
         <div>
           <h2
-            className="text-xl font-semibold tracking-tight text-foreground"
+            className="text-lg font-semibold tracking-tight text-foreground"
             id={`${idPrefix}-starting-point-heading`}
           >
             Starting point
@@ -640,7 +641,7 @@ function LearnerProfileFormFields({
           </p>
         </div>
 
-        <div className="grid min-w-0 gap-5 md:grid-cols-2">
+        <div className="grid min-w-0 gap-5 2xl:grid-cols-2">
           <SelectField
             disabled={isSaving}
             error={errors.experience}
@@ -672,7 +673,7 @@ function LearnerProfileFormFields({
       >
         <div>
           <h2
-            className="text-xl font-semibold tracking-tight text-foreground"
+            className="text-lg font-semibold tracking-tight text-foreground"
             id={`${idPrefix}-goal-heading`}
           >
             Goal
@@ -700,7 +701,7 @@ function LearnerProfileFormFields({
       >
         <div>
           <h2
-            className="text-xl font-semibold tracking-tight text-foreground"
+            className="text-lg font-semibold tracking-tight text-foreground"
             id={`${idPrefix}-topics-heading`}
           >
             Topics to improve
@@ -753,7 +754,7 @@ function LearnerProfileFormFields({
             >
               {topicSelectionCount} of 5 selected
             </p>
-            <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid min-w-0 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
               {topicOptions.map((option) => (
                 <label
                   className="flex min-w-0 items-start gap-3 rounded-lg border border-border p-3 text-sm text-foreground"
@@ -794,7 +795,7 @@ function LearnerProfileFormFields({
             Optional. Choose up to five. {preferredTopicSelectionCount}{' '}
             selected.
           </p>
-          <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
             {topicOptions.map((option) => (
               <label
                 className="flex min-w-0 items-start gap-3 rounded-lg border border-border p-3 text-sm text-foreground"
@@ -824,7 +825,7 @@ function LearnerProfileFormFields({
       >
         <div>
           <h2
-            className="text-xl font-semibold tracking-tight text-foreground"
+            className="text-lg font-semibold tracking-tight text-foreground"
             id={`${idPrefix}-platforms-heading`}
           >
             Practice platforms
@@ -839,7 +840,7 @@ function LearnerProfileFormFields({
           <legend className="font-medium text-foreground">
             Platforms you use or prefer
           </legend>
-          <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
             {platformOptions.map((option) => (
               <label
                 className="flex min-w-0 items-start gap-3 rounded-lg border border-border p-3 text-sm text-foreground"
@@ -869,7 +870,7 @@ function LearnerProfileFormFields({
             <p className="text-sm text-muted-foreground">
               These fields are optional and do not link an external account.
             </p>
-            <div className="grid min-w-0 gap-4 md:grid-cols-2">
+            <div className="grid min-w-0 gap-4 2xl:grid-cols-2">
               {selectedRatedPlatforms.map((option) => {
                 const standing = state.standings[option.value]
 
@@ -1043,7 +1044,7 @@ function LearnerProfileFormFields({
       >
         <div>
           <h2
-            className="text-xl font-semibold tracking-tight text-foreground"
+            className="text-lg font-semibold tracking-tight text-foreground"
             id={`${idPrefix}-learning-heading`}
           >
             Learning preferences
@@ -1102,7 +1103,7 @@ function LearnerProfileFormFields({
                 : ''
             }`}
             aria-invalid={Boolean(errors.recommendationPreference)}
-            className="min-h-24 w-full min-w-0 resize-y rounded-md border border-input bg-background px-3 py-2 text-base text-foreground outline-none transition-shadow focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 disabled:cursor-not-allowed disabled:opacity-60"
+            className="min-h-24 w-full min-w-0 resize-y rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 py-2 text-base text-foreground outline-none transition-shadow focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15 aria-invalid:border-destructive aria-invalid:ring-destructive/20 disabled:cursor-not-allowed disabled:opacity-60"
             disabled={isSaving}
             id={`${idPrefix}-recommendation-preference`}
             maxLength={500}
@@ -1145,7 +1146,7 @@ function LearnerProfileFormFields({
                 : ''
             }`}
             aria-invalid={Boolean(errors.additionalConsiderations)}
-            className="min-h-28 w-full min-w-0 resize-y rounded-md border border-input bg-background px-3 py-2 text-base text-foreground outline-none transition-shadow focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 disabled:cursor-not-allowed disabled:opacity-60"
+            className="min-h-28 w-full min-w-0 resize-y rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 py-2 text-base text-foreground outline-none transition-shadow focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15 aria-invalid:border-destructive aria-invalid:ring-destructive/20 disabled:cursor-not-allowed disabled:opacity-60"
             disabled={isSaving}
             id={`${idPrefix}-considerations`}
             maxLength={1000}
@@ -1211,7 +1212,7 @@ function LearnerProfileFormFields({
 
       {saveError ? (
         <p
-          className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive"
+          className="mt-6 rounded-2xl border border-destructive/40 bg-danger-soft p-4 text-sm text-danger-foreground"
           role="alert"
         >
           {saveError}
@@ -1220,7 +1221,7 @@ function LearnerProfileFormFields({
 
       {successMessage ? (
         <p
-          className="rounded-lg border border-green-600/40 bg-green-50 p-4 text-sm text-green-900 dark:bg-green-950/30 dark:text-green-300"
+          className="mt-6 rounded-2xl border border-go/35 bg-go-soft p-4 text-sm text-go-foreground"
           role="status"
         >
           {successMessage}
@@ -1228,9 +1229,11 @@ function LearnerProfileFormFields({
       ) : null}
 
       <Button
-        className="min-h-11 w-full sm:w-auto sm:self-start"
+        className="mt-8 w-full sm:w-auto sm:self-end"
         disabled={isSaving}
+        size="lg"
         type="submit"
+        variant="ink"
       >
         {isSaving ? 'Saving profile…' : submitLabel}
       </Button>

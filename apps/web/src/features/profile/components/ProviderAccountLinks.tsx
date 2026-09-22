@@ -41,7 +41,7 @@ const providers: readonly {
 ]
 
 const inputClassName =
-  'h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none transition-shadow focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 disabled:cursor-not-allowed disabled:opacity-60'
+  'h-9 w-full min-w-0 rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 text-sm text-foreground outline-none transition-shadow focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15 aria-invalid:border-destructive aria-invalid:ring-destructive/20 disabled:cursor-not-allowed disabled:opacity-60'
 
 function formatRelativeTime(dateString: string) {
   const seconds = Math.floor(
@@ -151,7 +151,7 @@ function LinkedProviderCard({
       <div className="flex min-w-0 items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <h3 className="font-semibold text-foreground">{label}</h3>
-          <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-400">
+          <span className="inline-flex items-center rounded-full bg-go-soft px-2.5 py-0.5 text-xs font-medium text-go-foreground">
             Connected
           </span>
         </div>

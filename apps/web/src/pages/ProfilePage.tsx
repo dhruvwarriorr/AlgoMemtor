@@ -6,6 +6,7 @@ import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { buttonVariants } from '@/components/ui/button'
 import { useAuth } from '@/features/auth/useAuth'
+import { ProfileBanner } from '@/features/profile/components/ProfileBanner'
 import { AiNoteConsentCard } from '@/features/profile/components/AiNoteConsentCard'
 import { LearnerMemoryPanel } from '@/features/memory/components/LearnerMemoryPanel'
 import { learnerProfileErrorMessage } from '@/features/profile/api/learner-profile'
@@ -21,9 +22,9 @@ function readableLabel(value: string) {
 
 function SummaryItem({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-lg border border-border bg-card p-4 sm:min-w-56">
-      <dt className="text-sm font-medium text-muted-foreground">{label}</dt>
-      <dd className="mt-1 break-words text-foreground">{value}</dd>
+    <div className="grid min-w-0 gap-1 px-5 py-4 sm:grid-cols-[14rem_minmax(0,1fr)] sm:gap-6 sm:px-6">
+      <dt className="text-sm text-muted-foreground">{label}</dt>
+      <dd className="break-words font-medium text-foreground">{value}</dd>
     </div>
   )
 }
@@ -83,29 +84,31 @@ function ProfilePage() {
   return (
     <PageContainer>
       <PageHeader
-        description="The recommendation preferences and optional public provider data saved for your account."
+        description="Everything your coach knows about you, from goals to linked platform evidence."
         title="Profile"
+      />
+
+      <ProfileBanner
+        action={
+          <Link className={buttonVariants({ variant: 'ink' })} to="/settings">
+            Edit in settings
+          </Link>
+        }
+        email={user?.email}
+        profile={profile}
       />
 
       <section
         aria-labelledby="learner-information-heading"
         className="space-y-4"
       >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2
-            className="text-xl font-semibold tracking-tight text-foreground"
-            id="learner-information-heading"
-          >
-            Learner information
-          </h2>
-          <Link
-            className={buttonVariants({ variant: 'outline' })}
-            to="/settings"
-          >
-            Edit in settings
-          </Link>
-        </div>
-        <dl className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <h2
+          className="text-2xl font-semibold tracking-tight text-foreground"
+          id="learner-information-heading"
+        >
+          Learner details
+        </h2>
+        <dl className="min-w-0 divide-y divide-dashed divide-border overflow-hidden rounded-[1.4rem] border border-border bg-card">
           <SummaryItem label="Account email" value={user?.email ?? 'Not set'} />
           <SummaryItem
             label="Experience"

@@ -77,7 +77,7 @@ function ContestHistoryCard({ entry }: { entry: ContestHistoryEntry }) {
           <span
             className={
               ratingDelta >= 0
-                ? 'font-semibold text-emerald-700 dark:text-emerald-300'
+                ? 'font-semibold text-go'
                 : 'font-semibold text-destructive'
             }
           >
@@ -175,19 +175,19 @@ function Distribution({
 }
 
 const topicColors = [
-  '#21745d',
-  '#428f78',
-  '#69a88f',
-  '#8bbc9e',
-  '#b7cba4',
-  '#d4c49b',
-  '#bda476',
-  '#b48e72',
-  '#a78382',
-  '#897e92',
-  '#6b88a2',
-  '#637697',
-  '#87908a',
+  '#1a5ae6',
+  '#3d8ddc',
+  '#7fbcec',
+  '#153b8a',
+  '#138a5c',
+  '#57b98c',
+  '#f5c33b',
+  '#d9a21f',
+  '#5f7fb8',
+  '#a9cdf0',
+  '#2e6f9e',
+  '#9bb0c9',
+  '#6c7a90',
 ] as const
 
 const shortTopicLabels: Record<string, string> = {

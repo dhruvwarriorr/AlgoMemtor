@@ -8,8 +8,12 @@ type EmptyStateProps = {
 
 function EmptyState({ title, description, action }: EmptyStateProps) {
   return (
-    <section className="flex w-full min-w-0 flex-col items-center justify-center rounded-lg border border-border bg-background px-4 py-10 text-center sm:px-6">
-      <h2 className="max-w-full break-words text-xl font-medium text-foreground">
+    <section className="relative isolate flex w-full min-w-0 flex-col items-center justify-center overflow-hidden rounded-xl border border-dashed border-[color-mix(in_oklab,var(--sky-deep)_35%,var(--border))] bg-[linear-gradient(180deg,var(--sky-soft),var(--card)_75%)] px-4 py-12 text-center sm:px-6">
+      <span
+        aria-hidden="true"
+        className="cloud -top-6 left-1/2 w-56 -translate-x-1/2 opacity-70"
+      />
+      <h2 className="max-w-full break-words text-xl font-semibold text-foreground">
         {title}
       </h2>
       {description ? (

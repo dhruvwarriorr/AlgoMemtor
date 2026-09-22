@@ -201,7 +201,7 @@ function ContestsPage() {
         <label className="min-w-40 space-y-1.5 text-sm font-medium text-foreground">
           Status
           <select
-            className="h-10 w-full rounded-md border border-input bg-background px-3 text-base text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
+            className="h-10 w-full rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 text-base text-foreground outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
             id="contest-status"
             onChange={(event) => {
               const next = event.currentTarget.value

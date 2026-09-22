@@ -46,7 +46,7 @@ export function ReflectionDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-[rgb(8_18_40/0.45)] p-0 backdrop-blur-[3px] sm:items-center sm:p-4"
       role="presentation"
     >
       <div
@@ -100,7 +100,7 @@ export function ReflectionDialog({
           <label className="block space-y-1.5 text-sm font-medium text-foreground">
             Perceived difficulty
             <select
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-base text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
+              className="h-10 w-full rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 text-base text-foreground outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
               disabled={isSaving}
               onChange={(event) =>
                 setDifficulty(event.target.value as typeof difficulty)
@@ -116,7 +116,7 @@ export function ReflectionDialog({
           <label className="block space-y-1.5 text-sm font-medium text-foreground">
             Reflection note
             <textarea
-              className="min-h-28 w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-base text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
+              className="min-h-28 w-full resize-y rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 py-2 text-base text-foreground outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
               disabled={isSaving}
               maxLength={1_000}
               onChange={(event) => setNote(event.target.value)}

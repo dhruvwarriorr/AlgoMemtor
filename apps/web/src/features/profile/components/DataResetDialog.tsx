@@ -107,7 +107,7 @@ function DataResetDialogContent({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-[rgb(8_18_40/0.45)] p-0 backdrop-blur-[3px] sm:items-center sm:p-4"
       role="presentation"
     >
       <div
@@ -164,7 +164,7 @@ function DataResetDialogContent({
               Type DELETE to confirm
               <input
                 autoComplete="off"
-                className="h-10 w-full rounded-md border border-input bg-background px-3 font-mono text-base text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
+                className="h-10 w-full rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 font-mono text-base text-foreground outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
                 disabled={isBusy}
                 id={`${dialogId}-confirmation`}
                 onChange={(event) => setConfirmation(event.currentTarget.value)}

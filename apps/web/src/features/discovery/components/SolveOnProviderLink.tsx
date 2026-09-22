@@ -1,5 +1,8 @@
 import type { ProviderKey } from '@algomemtor/shared-contracts'
 
+import { ArrowUpRight } from 'lucide-react'
+
+import { ProviderLogo } from '@/components/brand/ProviderLogo'
 import { buttonVariants } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -28,7 +31,9 @@ export function SolveOnProviderLink({
       rel="noopener noreferrer"
       target="_blank"
     >
+      <ProviderLogo className="size-3.5" provider={provider} />
       Solve on {providerLabel}
+      <ArrowUpRight aria-hidden="true" />
     </a>
   )
 }

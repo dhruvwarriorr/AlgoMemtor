@@ -181,7 +181,7 @@ function ProblemLearningControlsContent({
             <span className="sr-only">Status for {problem.externalId}</span>
             <select
               aria-label={`Status for ${problem.externalId}`}
-              className="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
+              className="h-8 rounded-full border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 text-sm font-medium text-foreground outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
               disabled={statusMutation.isPending}
               onChange={(event) =>
                 void handleStatusChange(
@@ -357,7 +357,7 @@ function TimerControls({
     return (
       <div className="space-y-2">
         {timerErrorNotice()}
-        <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-950 dark:bg-amber-950 dark:text-amber-50">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-xl border border-sun/60 bg-sun-soft p-2.5 text-xs text-sun-foreground">
           <span className="max-w-full break-words">
             A timer is running for {timer.problem.externalId}.
           </span>
@@ -379,7 +379,7 @@ function TimerControls({
     return (
       <div className="space-y-2">
         {timerErrorNotice()}
-        <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-950 dark:bg-amber-950 dark:text-amber-50">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-xl border border-sun/60 bg-sun-soft p-2.5 text-xs text-sun-foreground">
           <span>Pause the other timer and start here?</span>
           <Button
             disabled={isMutating}
@@ -462,7 +462,7 @@ function TimerControls({
       <div className="space-y-2">
         {timerErrorNotice()}
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="text-xs font-medium text-amber-700 dark:text-amber-300">
+          <span className="text-xs font-medium text-sun-foreground">
             {timer.state === 'capped' ? '4-hour cap reached' : 'Paused'}
           </span>
           <Button

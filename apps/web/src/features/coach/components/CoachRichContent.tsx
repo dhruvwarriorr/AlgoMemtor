@@ -28,7 +28,12 @@ type RichContentRendererProps = {
   onSuggestedQuestion: (question: string) => void
 }
 
-const colors = ['#a78bfa', '#34d399', '#60a5fa', '#f59e0b']
+const colors = [
+  'var(--chart-1)',
+  'var(--chart-3)',
+  'var(--chart-2)',
+  'var(--chart-4)',
+]
 
 function formatDisplayDate(value: string) {
   const date = new Date(value)
