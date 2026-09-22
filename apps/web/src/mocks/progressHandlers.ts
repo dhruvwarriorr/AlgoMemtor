@@ -11,6 +11,7 @@ import {
   ProgressHistoryResponseSchema,
   ProgressResponseSchema,
   ProblemReflectionResponseSchema,
+  ProblemReferenceSchema,
   ProblemTimerResponseSchema,
   SaveAiConsentRequestSchema,
   SaveReflectionRequestSchema,
@@ -343,6 +344,51 @@ export const progressHandlers: RequestHandler[] = [
       (counts, status) => ({ ...counts, [status]: counts[status] + 1 }),
       { unsolved: 0, attempted: 0, solved: 0 },
     )
+    const days = new Map(
+      trend.map((day) => [
+        day.date,
+        { attempted: new Set<string>(), solved: new Set<string>() },
+      ]),
+    )
+    const attempted = new Set<string>()
+    const solved = new Set<string>()
+    const firstSolves = new Set<string>()
+    for (const event of [...history].reverse()) {
+      if (event.eventType !== 'status_changed') continue
+      const problem = ProblemReferenceSchema.safeParse(event.problem)
+      if (!problem.success || typeof event.occurredAt !== 'string') continue
+      const problemKey = key(problem.data)
+      const firstSolve =
+        event.status === 'solved' && !firstSolves.has(problemKey)
+      if (event.status === 'solved') firstSolves.add(problemKey)
+      if (event.status !== 'attempted' && event.status !== 'solved') continue
+      const day = days.get(event.occurredAt.slice(0, 10))
+      if (!day) continue
+      day.attempted.add(problemKey)
+      attempted.add(problemKey)
+      if (firstSolve) {
+        day.solved.add(problemKey)
+        solved.add(problemKey)
+      }
+    }
+    const topicCounts = new Map<string, { attempted: number; solved: number }>()
+    for (const problemKey of attempted) {
+      const fixture = problemFixtures.find((item) => key(item) === problemKey)
+      for (const topic of new Set(fixture?.topics ?? [])) {
+        const count = topicCounts.get(topic) ?? { attempted: 0, solved: 0 }
+        count.attempted += 1
+        if (solved.has(problemKey)) count.solved += 1
+        topicCounts.set(topic, count)
+      }
+    }
+    const focusedSeconds = [...timers.values()]
+      .filter(
+        (timer) =>
+          timer.state === 'completed' &&
+          timer.completedAt &&
+          days.has(timer.completedAt.slice(0, 10)),
+      )
+      .reduce((sum, timer) => sum + timer.durationSeconds, 0)
     return HttpResponse.json(
       ProgressAnalyticsResponseSchema.parse({
         data: {
@@ -351,18 +397,20 @@ export const progressHandlers: RequestHandler[] = [
           inventory,
           window: {
             days: 30,
-            attempted: inventory.attempted + inventory.solved,
-            solved: inventory.solved,
+            attempted: attempted.size,
+            solved: solved.size,
           },
-          trend,
-          focusedSeconds: 0,
+          trend: trend.map((day) => ({
+            date: day.date,
+            attempted: days.get(day.date)?.attempted.size ?? 0,
+            solved: days.get(day.date)?.solved.size ?? 0,
+          })),
+          focusedSeconds,
           averageSolvedSeconds: null,
           currentStreak: 0,
           longestStreak: 0,
           completionRate:
-            inventory.attempted + inventory.solved === 0
-              ? 0
-              : inventory.solved / (inventory.attempted + inventory.solved),
+            attempted.size === 0 ? 0 : solved.size / attempted.size,
           recommendationConversions: {
             impressions: 0,
             attempted: 0,
@@ -370,6 +418,10 @@ export const progressHandlers: RequestHandler[] = [
             impressionToAttempt: 0,
             impressionToSolve: 0,
           },
+          topicActivity: [...topicCounts.entries()].map(([topic, counts]) => ({
+            topic,
+            ...counts,
+          })),
           topicScores: [],
         },
       }),

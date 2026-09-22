@@ -95,6 +95,8 @@ export function progressWindow(
   return {
     attempted: attempted.size,
     solved: solved.size,
+    attemptedProblemIds: [...attempted],
+    solvedProblemIds: [...solved],
     solvedDays,
     trend: dates.map((date) => ({
       date,

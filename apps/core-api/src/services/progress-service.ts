@@ -37,6 +37,7 @@ import {
   TimerNotFoundError,
 } from '../repositories/progress-repository.js'
 import { progressWindow } from './progress-window.js'
+import { normalizeTopic } from '../utils/topic-normalization.js'
 
 const identity = (reference: ProblemReference) =>
   `${reference.provider}:${reference.externalId}`
@@ -497,32 +498,28 @@ export class ProgressService {
       'attempted',
     )
     const solved = countStatusConversions(impressionActions, actions, 'solved')
-    const focusedSeconds = timers
-      .filter(
-        (timer) =>
-          timer.state === 'completed' && timer.completedAt !== undefined,
-      )
-      .reduce((total, timer) => total + timer.durationSeconds, 0)
-    const solvedWithTimer = new Set(
-      [...statuses.entries()]
-        .filter(([, action]) => action.learnerStatus === 'solved')
-        .filter(([key]) =>
-          timers.some(
-            (timer) =>
-              identity(timer.problem) === key &&
-              timer.state === 'completed' &&
-              timer.durationSeconds > 0,
-          ),
-        )
-        .map(([key]) => key),
+    const completedTimers = timers.filter(
+      (timer) =>
+        timer.state === 'completed' &&
+        timer.completedAt !== undefined &&
+        windowDates.includes(dateKey(new Date(timer.completedAt), timezone)),
+    )
+    const focusedSeconds = completedTimers.reduce(
+      (total, timer) => total + timer.durationSeconds,
+      0,
+    )
+    const solvedWithTimer = window.solvedProblemIds.filter((key) =>
+      completedTimers.some(
+        (timer) => identity(timer.problem) === key && timer.durationSeconds > 0,
+      ),
     )
     const averageSolvedSeconds =
-      solvedWithTimer.size === 0
+      solvedWithTimer.length === 0
         ? null
-        : [...solvedWithTimer].reduce(
+        : solvedWithTimer.reduce(
             (total, key) =>
               total +
-              timers
+              completedTimers
                 .filter(
                   (timer) =>
                     identity(timer.problem) === key &&
@@ -530,10 +527,39 @@ export class ProgressService {
                 )
                 .reduce((sum, timer) => sum + timer.durationSeconds, 0),
             0,
-          ) / solvedWithTimer.size
+          ) / solvedWithTimer.length
     const problemByIdentity = new Map(
       providerResult.problems.map((problem) => [identity(problem), problem]),
     )
+    const observedTopics = new Map(
+      solvedProblems
+        .filter((problem) => problem.topics?.length)
+        .map((problem) => [identity(problem), problem.topics ?? []]),
+    )
+    const solvedIds = new Set(window.solvedProblemIds)
+    const topicCounts = new Map<string, { attempted: number; solved: number }>()
+    for (const key of window.attemptedProblemIds) {
+      const rawTopics = [
+        ...(observedTopics.get(key) ?? []),
+        ...(problemByIdentity.get(key)?.topics ?? []),
+      ]
+      const topics = new Set(
+        rawTopics.map(normalizeTopic).filter((topic) => topic !== undefined),
+      )
+      for (const topic of topics) {
+        const count = topicCounts.get(topic) ?? { attempted: 0, solved: 0 }
+        count.attempted += 1
+        if (solvedIds.has(key)) count.solved += 1
+        topicCounts.set(topic, count)
+      }
+    }
+    const topicActivity = [...topicCounts.entries()]
+      .map(([topic, counts]) => ({ topic, ...counts }))
+      .sort(
+        (left, right) =>
+          right.attempted - left.attempted ||
+          left.topic.localeCompare(right.topic),
+      )
     const topicScores = calculateTopicScores(
       actions,
       timers,
@@ -564,6 +590,7 @@ export class ProgressService {
           impressionToAttempt: ratio(attempted, impressionActions.length),
           impressionToSolve: ratio(solved, impressionActions.length),
         },
+        topicActivity,
         topicScores,
       },
     })

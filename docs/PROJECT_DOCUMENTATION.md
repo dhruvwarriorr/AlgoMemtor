@@ -271,6 +271,15 @@ actions, bookmarks, dismissals, and reflections are separate
 facts. A provider observation can be partial and bounded; it must not be
 presented as proof of account ownership.
 
+The Progress page's 30-day overview uses dated manual status changes and
+available provider submissions/solved observations. "Problems practiced" counts
+only unique problems newly solved in the learner's local 30-day window, rather
+than the all-time manual status inventory. Daily columns show newly solved
+problems, and practice signals use days with solves plus completed timers in
+that window. Topic charts count recognized tags on those recent solves; one
+problem can contribute to multiple topics. The page does not display the
+activity-history feed.
+
 Decision (2026-09-22): outbound-open tracking is retired. A click is neither a
 learner status nor reliable practice evidence, and showing it as activity was
 confusing. Links remain ordinary safe anchors. Existing `opened` rows are
@@ -393,7 +402,7 @@ and delete/archive/restore controls. The learner can inspect and manage memory.
 - `/contests` — contest catalog and participation with bounded “show more”
   pagination.
 - `/analytics` — unified analytics.
-- `/progress` — manual progress history and analytics.
+- `/progress` — recent practice analytics and visualizations.
 - `/bookmarks` — saved problems.
 - `/memory` — learner memory controls.
 - `/profile` — unified provider profile.
@@ -1752,7 +1761,7 @@ integrations/provider-accounts/
 | `apps/web/src/pages/ActivityPage.tsx`                          | Merged provider event timeline and tags                                       |
 | `apps/web/src/pages/ContestsPage.tsx`                          | Contest catalog and participation view                                        |
 | `apps/web/src/pages/AnalyticsPage.tsx`                         | Provider totals and topic/language/rating distributions                       |
-| `apps/web/src/pages/ProgressPage.tsx`                          | Manual status history and progress analytics                                  |
+| `apps/web/src/pages/ProgressPage.tsx`                          | Recent practice analytics and charts                                          |
 | `apps/web/src/pages/MemoryPage.tsx`                            | Learner memory review and lifecycle controls                                  |
 | `apps/web/src/pages/CoachPage.tsx`                             | Saved coach threads, roadmap, actions, and rich message rendering             |
 | `apps/web/src/features/coach/components/CoachRichContent.tsx`  | Accessible charts, tables, timelines, trusted problems, citations, follow-ups |

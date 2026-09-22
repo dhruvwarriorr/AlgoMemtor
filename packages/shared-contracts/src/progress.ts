@@ -281,6 +281,15 @@ export const ProgressAnalyticsSchema = z
         impressionToSolve: z.number().min(0).max(1),
       })
       .strict(),
+    topicActivity: z.array(
+      z
+        .object({
+          topic: nonEmptyStringSchema.max(64),
+          attempted: z.number().int().nonnegative(),
+          solved: z.number().int().nonnegative(),
+        })
+        .strict(),
+    ),
     topicScores: z.array(TopicScoreSchema),
   })
   .strict()

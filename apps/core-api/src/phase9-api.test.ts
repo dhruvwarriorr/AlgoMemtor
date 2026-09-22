@@ -241,6 +241,9 @@ describe('Phase 9 core progress API', () => {
       attempted: 1,
       solved: 1,
     })
+    expect(analytics.data.topicActivity).toEqual([
+      { topic: 'Implementation', attempted: 1, solved: 1 },
+    ])
     const activityResponse = await jsonRequest(app.baseUrl, '/api/activity')
     const activity = ProviderActivityResponseSchema.parse(
       await activityResponse.json(),
