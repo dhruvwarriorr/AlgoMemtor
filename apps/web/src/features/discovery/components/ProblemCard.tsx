@@ -149,7 +149,6 @@ export function ProblemCard({ problem }: ProblemCardProps) {
         </a>
         <SolveOnProviderLink
           canonicalUrl={problem.canonicalUrl}
-          externalId={problem.externalId}
           provider={problem.provider}
         />
         <ProblemLearningControls

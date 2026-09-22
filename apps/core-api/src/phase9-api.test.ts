@@ -11,6 +11,7 @@ import {
   ProgressAnalyticsResponseSchema,
   ProgressHistoryResponseSchema,
   ProgressResponseSchema,
+  ProviderActivityResponseSchema,
   RecommendationFeedbackResponseSchema,
   type ExternalProblemSummary,
 } from '@algomemtor/shared-contracts'
@@ -22,6 +23,7 @@ import type { SupabaseJwtVerifier } from './auth/supabase-jwt.js'
 import type { ProblemProvider } from './integrations/providers/problem-provider.js'
 import { InMemoryBookmarkRepository } from './repositories/bookmark-repository.js'
 import { InMemoryProblemActionRepository } from './repositories/problem-action-repository.js'
+import { InMemoryProviderDataRepository } from './repositories/provider-data-repository.js'
 import { InMemoryProgressRepository } from './repositories/progress-repository.js'
 import { InMemoryRecommendationRepository } from './repositories/recommendation-repository.js'
 
@@ -126,6 +128,7 @@ const startApp = (clock = createClock()) => {
   const recommendationRepository = new InMemoryRecommendationRepository(
     clock.now,
   )
+  const providerDataRepository = new InMemoryProviderDataRepository()
   const provider: ProblemProvider = {
     key: 'codeforces',
     search: vi.fn(async () => ({
@@ -143,6 +146,7 @@ const startApp = (clock = createClock()) => {
     progressRepository,
     bookmarkRepository,
     recommendationRepository,
+    providerDataRepository,
   }).listen(0)
   servers.push(server)
   const address = server.address() as AddressInfo
@@ -153,6 +157,7 @@ const startApp = (clock = createClock()) => {
     progressRepository,
     bookmarkRepository,
     recommendationRepository,
+    providerDataRepository,
     clock,
   }
 }
@@ -179,6 +184,85 @@ const jsonRequest = (
   })
 
 describe('Phase 9 core progress API', () => {
+  it('serves dated provider activity but hides a legacy open event', async () => {
+    const app = startApp()
+    const timestamp = new Date().toISOString()
+    const provenance = {
+      provider: 'codeforces' as const,
+      providerId: '1900A',
+      canonicalUrl: problems[0]!.canonicalUrl,
+      sourceUrl: 'https://codeforces.com/api/user.status',
+      extractionStrategy: 'official_json' as const,
+      schemaVersion: 'v1',
+      completeness: 'partial' as const,
+      fetchedAt: timestamp,
+      stale: false,
+    }
+    await app.providerDataRepository.saveSubmissions(userId, userId, [
+      {
+        provider: 'codeforces',
+        externalId: '1900A',
+        eventId: 'accepted-1900A',
+        canonicalUrl: problems[0]!.canonicalUrl,
+        verdict: 'OK',
+        occurredAt: timestamp,
+        isAccepted: true,
+        completeness: 'partial',
+        provenance,
+      },
+    ])
+    await app.providerDataRepository.saveSolvedProblems(userId, userId, [
+      {
+        provider: 'codeforces',
+        externalId: '1900A',
+        canonicalUrl: problems[0]!.canonicalUrl,
+        occurredAt: timestamp,
+        firstObservedAt: timestamp,
+        lastObservedAt: timestamp,
+        completeness: 'partial',
+        provenance,
+      },
+    ])
+    await app.actionRepository.appendByAuthUserId(userId, {
+      provider: 'codeforces',
+      externalId: '1900A',
+      actionType: 'opened',
+    })
+
+    const analyticsResponse = await jsonRequest(
+      app.baseUrl,
+      '/api/progress/analytics?days=30',
+    )
+    const analytics = ProgressAnalyticsResponseSchema.parse(
+      await analyticsResponse.json(),
+    )
+    expect(analytics.data.window).toEqual({
+      days: 30,
+      attempted: 1,
+      solved: 1,
+    })
+    const activityResponse = await jsonRequest(app.baseUrl, '/api/activity')
+    const activity = ProviderActivityResponseSchema.parse(
+      await activityResponse.json(),
+    )
+    expect(activity.data.filter((event) => event.source === 'manual')).toEqual(
+      [],
+    )
+    const historyResponse = await jsonRequest(
+      app.baseUrl,
+      '/api/progress/history',
+    )
+    const history = ProgressHistoryResponseSchema.parse(
+      await historyResponse.json(),
+    )
+    expect(history.data).toEqual([])
+    const oldFilterResponse = await jsonRequest(
+      app.baseUrl,
+      '/api/progress/history?eventType=opened',
+    )
+    expect(oldFilterResponse.status).toBe(400)
+  })
+
   it('rejects a reflection status action owned by another learner', async () => {
     const app = startApp()
     const foreignAction = await app.actionRepository.appendByAuthUserId(
@@ -304,7 +388,9 @@ describe('Phase 9 core progress API', () => {
       '/api/problems/codeforces/1900A/progress',
     )
     expect(progressResponse.status).toBe(200)
-    expect(ProgressResponseSchema.parse(await progressResponse.json()).data).toMatchObject({
+    expect(
+      ProgressResponseSchema.parse(await progressResponse.json()).data,
+    ).toMatchObject({
       status: 'attempted',
       evidenceSource: 'manual',
     })
@@ -328,21 +414,34 @@ describe('Phase 9 core progress API', () => {
     const app = startApp()
     const first = await jsonRequest(app.baseUrl, '/api/recommendations')
     expect(first.status).toBe(200)
-    await jsonRequest(app.baseUrl, '/api/problems/codeforces/1900A/reflections', {
-      method: 'POST',
-      body: { perceivedDifficulty: 'hard', note: 'Graph traversal felt difficult.' },
-    })
+    await jsonRequest(
+      app.baseUrl,
+      '/api/problems/codeforces/1900A/reflections',
+      {
+        method: 'POST',
+        body: {
+          perceivedDifficulty: 'hard',
+          note: 'Graph traversal felt difficult.',
+        },
+      },
+    )
     app.clock.advance(1)
-    await jsonRequest(app.baseUrl, '/api/problems/codeforces/1900A/reflections', {
-      method: 'POST',
-      body: { perceivedDifficulty: 'hard', note: 'Graph traversal still felt difficult.' },
-    })
+    await jsonRequest(
+      app.baseUrl,
+      '/api/problems/codeforces/1900A/reflections',
+      {
+        method: 'POST',
+        body: {
+          perceivedDifficulty: 'hard',
+          note: 'Graph traversal still felt difficult.',
+        },
+      },
+    )
 
     const second = await jsonRequest(app.baseUrl, '/api/recommendations')
     expect(second.status).toBe(200)
-    const batches = await app.recommendationRepository.listBatchesByAuthUserId(
-      userId,
-    )
+    const batches =
+      await app.recommendationRepository.listBatchesByAuthUserId(userId)
     expect(batches.length).toBeGreaterThanOrEqual(2)
   })
 
@@ -763,7 +862,7 @@ describe('Phase 9 core progress API', () => {
     ])
   })
 
-  it('deduplicates recommendation impressions, records opens separately, and never marks a problem solved', async () => {
+  it('deduplicates recommendation impressions and never records provider opens', async () => {
     const app = startApp()
     const batch = await app.recommendationRepository.saveBatchByAuthUserId(
       userId,
@@ -810,29 +909,16 @@ describe('Phase 9 core progress API', () => {
       firstImpression.data.actionId,
     )
 
-    app.clock.advance(1)
     const openResponse = await jsonRequest(
       app.baseUrl,
       '/api/problems/codeforces/1900A/open',
-      {
-        method: 'POST',
-        body: {
-          recommendationItemId: item.id,
-          sourceContext: 'recommendation',
-        },
-      },
+      { method: 'POST' },
     )
-    const open = actionResponseSchema.parse(await openResponse.json())
-    expect(openResponse.status).toBe(202)
-    expect(open.data.actionId).not.toBe(firstImpression.data.actionId)
+    expect(openResponse.status).toBe(404)
 
     const actions = await app.actionRepository.listByAuthUserId(userId)
-    expect(actions.map((action) => action.actionType)).toEqual([
-      'impression',
-      'opened',
-    ])
+    expect(actions.map((action) => action.actionType)).toEqual(['impression'])
     expect(actions[0]?.id).toBe(firstImpression.data.actionId)
-    expect(actions[1]?.id).toBe(open.data.actionId)
 
     const progressResponse = await jsonRequest(
       app.baseUrl,
@@ -850,10 +936,8 @@ describe('Phase 9 core progress API', () => {
     )
     expect(analytics.data.recommendationConversions).toMatchObject({
       impressions: 1,
-      opens: 1,
       attempted: 0,
       solved: 0,
-      impressionToOpen: 1,
     })
   })
 

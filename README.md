@@ -47,7 +47,7 @@ The MVP will support:
 - search and filters for provider, difficulty, topic, and status;
 - AI-ranked recommendations with short, user-facing reasons;
 - canonical outbound links that open problems on their source platforms;
-- outbound-click history, bookmarks, and manual completion status;
+- bookmarks and manual completion status;
 - optional provider-account linking and explicitly consented public solved-count
   refreshes for Codeforces, CodeChef, and LeetCode;
 - bounded public submission/activity observations and provider tag enrichment
@@ -261,7 +261,7 @@ AlgoMemtor may cache:
 - title, difficulty/rating, tags, and public statistics;
 - canonical source URL;
 - availability and last-fetched timestamps; and
-- learner-owned bookmark, recommendation, open, and manual-status records.
+- learner-owned bookmark, recommendation, and manual-status records.
 
 AlgoMemtor must not cache:
 

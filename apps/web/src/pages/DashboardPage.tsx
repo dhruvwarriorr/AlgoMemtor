@@ -6,15 +6,16 @@ import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { Button } from '@/components/ui/button'
 import { useCoachRoadmap } from '@/features/coach/hooks'
-import {
-  useProgressAnalytics,
-  useProgressHistory,
-} from '@/features/progress/hooks/useProgress'
+import { useActivity } from '@/features/platform/hooks'
+import { providerLabels } from '@/features/platform/components/provider-labels'
+import { useProgressAnalytics } from '@/features/progress/hooks/useProgress'
 import { useRecommendations } from '@/features/recommendations/hooks/useRecommendations'
+
+import { dashboardActivity, isAcceptedSubmission } from './dashboard-activity'
 
 function DashboardPage() {
   const analyticsQuery = useProgressAnalytics(30)
-  const historyQuery = useProgressHistory({ limit: 6 })
+  const activityQuery = useActivity()
   const recommendationsQuery = useRecommendations()
   const roadmapQuery = useCoachRoadmap()
 
@@ -51,7 +52,7 @@ function DashboardPage() {
   }
 
   const analytics = analyticsQuery.data.data
-  const recentEvents = historyQuery.data?.data ?? []
+  const recentEvents = dashboardActivity(activityQuery.data?.data ?? [])
   const recommendations =
     recommendationsQuery.data?.data?.items.slice(0, 3) ?? []
 
@@ -88,13 +89,15 @@ function DashboardPage() {
               Problems attempted
             </dt>
             <dd className="mt-1 text-2xl font-semibold text-foreground">
-              {analytics.inventory.attempted}
+              {analytics.window.attempted}
             </dd>
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
-            <dt className="text-sm text-muted-foreground">Problems solved</dt>
+            <dt className="text-sm text-muted-foreground">
+              New problems solved
+            </dt>
             <dd className="mt-1 text-2xl font-semibold text-foreground">
-              {analytics.inventory.solved}
+              {analytics.window.solved}
             </dd>
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
@@ -202,36 +205,57 @@ function DashboardPage() {
             View activity
           </Link>
         </div>
-        {historyQuery.isError ? (
+        {activityQuery.isError ? (
           <p
             className="rounded-lg border border-amber-400 bg-amber-50 p-4 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-50"
             role="status"
           >
             Recent activity is temporarily unavailable.
           </p>
+        ) : activityQuery.isPending ? (
+          <p className="text-sm text-muted-foreground" role="status">
+            Loading recent activity…
+          </p>
         ) : recentEvents.length === 0 ? (
           <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-            No recent activity yet. Mark a problem as attempted or solved to
-            start your history.
+            No dated activity yet. Sync a connected platform or record manual
+            progress to start your history.
           </p>
         ) : (
           <ul className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {recentEvents.slice(0, 6).map((event) => (
+            {recentEvents.map((event) => (
               <li
                 className="min-w-0 rounded-lg border border-border bg-card p-4"
                 key={event.id}
               >
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  {event.eventType.replaceAll('_', ' ')}
+                  {providerLabels[event.provider]} ·{' '}
+                  {event.source === 'manual'
+                    ? event.eventType === 'solved'
+                      ? 'Marked solved'
+                      : 'Marked attempted'
+                    : isAcceptedSubmission(event)
+                      ? 'Solved problem'
+                      : event.eventType.replaceAll('_', ' ')}
                 </p>
                 <p className="mt-1 break-words font-medium text-foreground">
-                  {event.problem.provider} · {event.problem.externalId}
+                  {event.title ?? event.externalId ?? 'Contest activity'}
+                </p>
+                {event.verdict && !isAcceptedSubmission(event) ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {event.verdict}
+                  </p>
+                ) : null}
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {event.source === 'manual' ? 'Manual' : 'Provider'} record
                 </p>
                 <time
                   className="mt-2 block text-xs text-muted-foreground"
-                  dateTime={event.occurredAt}
+                  dateTime={event.occurredAt ?? undefined}
                 >
-                  {new Date(event.occurredAt).toLocaleString()}
+                  {event.occurredAt
+                    ? new Date(event.occurredAt).toLocaleString()
+                    : 'Date unavailable'}
                 </time>
               </li>
             ))}

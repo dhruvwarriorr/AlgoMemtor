@@ -3518,11 +3518,6 @@ export class CoachService {
     )
     const excludedTopicSet = new Set(excludedTopics)
     const dismissed = dismissalByIdentity(actions)
-    const opened = new Set(
-      actions
-        .filter((action) => action.actionType === 'opened')
-        .map((action) => identity(action.provider, action.externalId)),
-    )
     const canonicalTopicsByIdentity = new Map<string, Set<string>>()
     const difficultyByIdentity = new Map<
       string,
@@ -3933,9 +3928,7 @@ export class CoachService {
         const problemKey = identity(problem.provider, problem.externalId)
         const suggestionStatus = solvedKeys.has(problemKey)
           ? ('solved' as const)
-          : opened.has(problemKey)
-            ? ('opened' as const)
-            : ('suggested' as const)
+          : ('suggested' as const)
         return {
           id,
           problem,

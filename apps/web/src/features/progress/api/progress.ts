@@ -290,45 +290,23 @@ export function fetchProgressAnalytics(
 
 export function recordProblemAction(input: {
   problem: ProblemReference
-  actionType: 'impression' | 'opened'
+  actionType: 'impression'
   recommendationItemId?: string
-  sourceContext?: string
 }) {
-  if (
-    input.actionType === 'impression' &&
-    input.recommendationItemId === undefined
-  ) {
+  if (input.recommendationItemId === undefined) {
     return Promise.reject(
       new Error('A recommendation item is required to record an impression.'),
     )
   }
 
-  const endpoint =
-    input.actionType === 'impression'
-      ? `/api/recommendation-items/${encodeURIComponent(input.recommendationItemId as string)}/impression`
-      : `${problemPath(input.problem)}/open`
-  const body =
-    input.actionType === 'impression'
-      ? undefined
-      : JSON.stringify({
-          ...(input.recommendationItemId === undefined
-            ? {}
-            : { recommendationItemId: input.recommendationItemId }),
-          ...(input.sourceContext === undefined
-            ? {}
-            : { sourceContext: input.sourceContext }),
-        })
-
-  return requestJson<ActionReceiptResponse>(endpoint, {
-    authentication: 'required',
-    ...(body === undefined ? {} : { body }),
-    ...(body === undefined
-      ? {}
-      : { headers: { 'content-type': 'application/json' } }),
-    keepalive: input.actionType === 'opened',
-    method: 'POST',
-    schema: actionReceiptSchema,
-  })
+  return requestJson<ActionReceiptResponse>(
+    `/api/recommendation-items/${encodeURIComponent(input.recommendationItemId)}/impression`,
+    {
+      authentication: 'required',
+      method: 'POST',
+      schema: actionReceiptSchema,
+    },
+  )
 }
 
 export function fetchAiConsent({ signal }: RequestOptions = {}) {

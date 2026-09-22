@@ -215,10 +215,7 @@ export function RecommendationCard({
       <footer className="flex min-w-0 flex-wrap items-center gap-2">
         <SolveOnProviderLink
           canonicalUrl={problem.canonicalUrl}
-          externalId={problem.externalId}
           provider={problem.provider}
-          recommendationItemId={item.id}
-          sourceContext="recommendation"
         />
         <ProblemLearningControls
           initialBookmarked={

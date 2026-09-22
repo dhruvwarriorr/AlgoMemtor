@@ -17,7 +17,6 @@ const eventTypes: Array<{ value: ProgressHistoryEventType; label: string }> = [
   { value: 'timer_completed', label: 'Timer completed' },
   { value: 'timer_discarded', label: 'Timer discarded' },
   { value: 'impression', label: 'Recommendation impressions' },
-  { value: 'opened', label: 'Provider opens' },
   { value: 'bookmark_added', label: 'Bookmarks added' },
   { value: 'bookmark_removed', label: 'Bookmarks removed' },
 ]

@@ -349,6 +349,11 @@ export const progressHandlers: RequestHandler[] = [
           generatedAt: now(),
           timezone: 'UTC',
           inventory,
+          window: {
+            days: 30,
+            attempted: inventory.attempted + inventory.solved,
+            solved: inventory.solved,
+          },
           trend,
           focusedSeconds: 0,
           averageSolvedSeconds: null,
@@ -360,10 +365,8 @@ export const progressHandlers: RequestHandler[] = [
               : inventory.solved / (inventory.attempted + inventory.solved),
           recommendationConversions: {
             impressions: 0,
-            opens: 0,
             attempted: 0,
             solved: 0,
-            impressionToOpen: 0,
             impressionToAttempt: 0,
             impressionToSolve: 0,
           },
@@ -505,25 +508,6 @@ export const progressHandlers: RequestHandler[] = [
       })
     return HttpResponse.json(actionReceipt())
   }),
-  http.post(
-    '/api/problems/:provider/:externalId/open',
-    async ({ params, request }) => {
-      const problem = referenceFromParams(params)
-      if (!problem)
-        return HttpResponse.json(
-          {
-            error: {
-              code: 'INVALID_OPEN_EVENT',
-              message: 'Invalid open event',
-            },
-          },
-          { status: 400 },
-        )
-      await request.json().catch(() => null)
-      pushHistory({ eventType: 'opened', problem })
-      return HttpResponse.json(actionReceipt())
-    },
-  ),
   http.get('/api/ai-consent', () =>
     HttpResponse.json(AiConsentResponseSchema.parse({ data: aiConsent })),
   ),

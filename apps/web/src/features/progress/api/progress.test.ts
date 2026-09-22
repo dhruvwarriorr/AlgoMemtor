@@ -50,7 +50,7 @@ describe('progress API client', () => {
     expect(parseBody(init)).toEqual({ status: 'attempted' })
   })
 
-  it('tracks impressions and opens on their distinct non-blocking routes', async () => {
+  it('records a recommendation impression without an open event', async () => {
     authenticatedFetchMock.mockImplementation(() =>
       Promise.resolve(
         Response.json({ data: { recorded: true, actionId: 'action-1' } }),
@@ -62,22 +62,10 @@ describe('progress API client', () => {
       problem,
       recommendationItemId: '00000000-0000-4000-8000-000000000011',
     })
-    await recordProblemAction({
-      actionType: 'opened',
-      problem,
-      sourceContext: 'catalog',
-    })
-
     expect(authenticatedFetchMock.mock.calls[0]?.[0]).toBe(
       '/api/recommendation-items/00000000-0000-4000-8000-000000000011/impression',
     )
-    expect(authenticatedFetchMock.mock.calls[1]?.[0]).toBe(
-      '/api/problems/codeforces/100A/open',
-    )
-    expect(parseBody(authenticatedFetchMock.mock.calls[1]?.[1])).toEqual({
-      sourceContext: 'catalog',
-    })
-    expect(authenticatedFetchMock.mock.calls[1]?.[1]?.keepalive).toBe(true)
+    expect(authenticatedFetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('accepts provider 204 deletes and sends typed data-reset confirmation', async () => {

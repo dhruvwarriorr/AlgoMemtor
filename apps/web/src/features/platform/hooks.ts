@@ -103,6 +103,9 @@ export function useProviderSync(provider: LinkableProvider) {
       void queryClient.invalidateQueries({
         queryKey: [...learnerKey(user.id), 'analytics'],
       })
+      void queryClient.invalidateQueries({
+        queryKey: ['progress', 'analytics', user.id],
+      })
     },
   })
 }
@@ -143,6 +146,9 @@ export function useProviderSyncStatus(
     void queryClient.invalidateQueries({
       queryKey: [...learnerKey(user.id), 'analytics'],
     })
+    void queryClient.invalidateQueries({
+      queryKey: ['progress', 'analytics', user.id],
+    })
   }, [lastSucceededAt, queryClient, syncStatus, user])
 
   return query
@@ -160,6 +166,9 @@ export function useDeleteProviderHistory() {
       })
       void queryClient.invalidateQueries({
         queryKey: [...learnerKey(user.id), 'analytics'],
+      })
+      void queryClient.invalidateQueries({
+        queryKey: ['progress', 'analytics', user.id],
       })
       void queryClient.invalidateQueries({
         queryKey: [...learnerKey(user.id), 'activity'],

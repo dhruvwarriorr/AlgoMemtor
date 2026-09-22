@@ -94,8 +94,8 @@ compiler, hidden tests, submissions, verdicts, and account ownership.
   artifacts are never collected or stored.
 - Transient pasted code and copied problem context are processed for one coach
   request only and replaced by an omission marker in saved conversation history.
-- An outbound link is an `opened` event, not proof that a learner solved a
-  problem.
+- Opening an outbound provider link is navigation only and does not create a
+  learner action or change problem status.
 
 ---
 
@@ -130,7 +130,7 @@ The following capabilities are implemented in the current working tree:
 | Coach RAG v2 rich responses                                 | Implemented locally              | Versioned knowledge index, conditional public grounding, deterministic charts/metrics/timelines/problems, persisted rich snapshots |
 | Adaptive improvement roadmap                                | Implemented locally              | `topic-assessment-v1`, manual status precedence, prerequisite graph, capped optional problem sets                                  |
 | In-app coach check-ins                                      | Implemented locally              | Weekly local review and event thresholds with frequency caps and deduplication                                                     |
-| Background provider sync                                    | Implemented                      | PostgreSQL jobs, leases, cooldowns, hourly linked-user schedule                                                                      |
+| Background provider sync                                    | Implemented                      | PostgreSQL jobs, leases, cooldowns, hourly linked-user schedule                                                                    |
 | Authenticated full historical LeetCode/CodeChef/CSES import | Not implemented                  | Requires an approved API, local connector, or user import                                                                          |
 
 Local unit, type-check, build, and mocked integration checks pass when run with
@@ -151,7 +151,7 @@ Supabase project.
 - optional bounded AI ranking and explanations;
 - personalized CP/DSA coaching, deterministic topic assessment, and a
   persistent improvement roadmap;
-- bookmarks, dismissals, outbound-open events, manual statuses, reflections,
+- bookmarks, dismissals, manual statuses, reflections,
   timers, analytics, and learner memory;
 - data deletion, consent, stale-state presentation, and operational controls.
 
@@ -240,8 +240,8 @@ supports it and the deployment review permits it. Premium/private material is
 represented by metadata and a provider link only.
 
 The page can show provider tags, normalized topics, difficulty, rating, status,
-freshness, and source attribution. “Solve on provider” records an outbound-open
-event and then navigates to the trusted canonical URL.
+freshness, and source attribution. “Solve on provider” navigates to the trusted
+canonical URL without recording an open event.
 
 ### 4.5 Recommendations
 
@@ -267,9 +267,16 @@ Learner problem status has exactly three values:
 - `solved`.
 
 Manual status changes, provider-observed accepted activity, recommendation
-actions, bookmarks, dismissals, reflections, and outbound opens are separate
+actions, bookmarks, dismissals, and reflections are separate
 facts. A provider observation can be partial and bounded; it must not be
 presented as proof of account ownership.
+
+Decision (2026-09-22): outbound-open tracking is retired. A click is neither a
+learner status nor reliable practice evidence, and showing it as activity was
+confusing. Links remain ordinary safe anchors. Existing `opened` rows are
+retained for historical database compatibility but are excluded from public
+history, coach suggestion state, and progress analytics; the write endpoint is
+removed. Reconsider only if a separate, opt-in navigation metric is needed.
 
 ### 4.7 Unified profile
 
@@ -309,6 +316,16 @@ The Contests page combines upcoming and historical provider contests with:
 - rating changes where available.
 
 ### 4.10 Analytics
+
+The dashboard's last-30-local-days cards and progress trend count distinct
+dated problem identities from learner status events and stored provider
+submissions/solved observations. The first observed solve date per provider
+problem determines whether it is a new solve in the window; repeated accepted
+submissions and matching solved observations do not inflate the count. Undated aggregate profile totals
+do not establish when a problem was solved and are excluded from this window;
+all-time status inventory remains separate. Recent dashboard activity reads the
+unified provider timeline rather than only learner status history. Provider
+sync completion invalidates the dashboard analytics cache.
 
 Analytics includes:
 
@@ -776,7 +793,6 @@ CSES is rejected by account routes because it is not a linkable provider.
 | `GET`    | `/api/problems/:provider/:externalId/progress` | Learner progress                              |
 | `PUT`    | `/api/problems/:provider/:externalId/status`   | Set manual learner status                     |
 | `DELETE` | `/api/problems/:provider/:externalId/progress` | Remove progress                               |
-| `POST`   | `/api/problems/:provider/:externalId/open`     | Record outbound-open event                    |
 | `GET`    | `/api/activity`                                | Merged submissions, solves, ratings, contests |
 | `GET`    | `/api/contests`                                | Upcoming and historical contests              |
 | `GET`    | `/api/analytics`                               | Unified or provider-filtered analytics        |
@@ -878,7 +894,8 @@ Prisma owns the `core` schema. Important tables include:
 - `core.provider_sync_jobs` — queued work, leases, retries, and idempotency.
 - `core.normalized_topics` — seeded shared topic vocabulary.
 - `core.bookmarks` — learner-owned saved problems.
-- `core.problem_actions` — impressions, opens, dismissals, feedback, status.
+- `core.problem_actions` — impressions, dismissals, feedback, status; legacy
+  open rows may remain but are not surfaced or written.
 - recommendation batches/items/history tables.
 - progress reflections and timer sessions.
 - `core.coach_conversations`, `core.coach_messages`, and
@@ -1193,7 +1210,7 @@ they do not prove production Gemini quality, billing, latency, or browser auth.
 - Use real anchors for external navigation and buttons for actions.
 - Open new tabs with `rel="noopener noreferrer"`.
 - Display provider attribution beside every external problem.
-- Record an outbound-open asynchronously without delaying navigation.
+- Outbound provider navigation does not record a learner action.
 
 ### State presentation
 
@@ -2022,7 +2039,7 @@ destroying the external observation.
 - An AI-selected candidate must exist in the candidate set originally sent by
   Express.
 - A provider aggregate count cannot create a solved observation.
-- An outbound-open event cannot set status to `solved`.
+- Outbound navigation cannot set problem status.
 - A stale refresh cannot erase the last successful record.
 - A missing tag list is different from an empty tag list returned by a provider.
 - Combined solved total is a sum of provider totals, not a sum of incomplete

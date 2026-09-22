@@ -30,7 +30,6 @@ const eventLabels: Record<ProgressHistoryEventType, string> = {
   timer_completed: 'Timer completed',
   timer_discarded: 'Timer discarded',
   impression: 'Recommendation viewed',
-  opened: 'Opened on provider',
   bookmark_added: 'Bookmark added',
   bookmark_removed: 'Bookmark removed',
   dismissed: 'Recommendation dismissed',
@@ -261,9 +260,9 @@ function AnalyticsSection({
               value={`${analytics.data.longestStreak} days`}
             />
             <MetricCard
-              detail={`${conversions.opens} opens from ${conversions.impressions} views`}
-              label="Impressions → opens"
-              value={`${Math.round(conversions.impressionToOpen * 100)}%`}
+              detail={`${conversions.attempted} attempted recommendations`}
+              label="Impressions → attempts"
+              value={`${Math.round(conversions.impressionToAttempt * 100)}%`}
             />
             <MetricCard
               detail={`${conversions.solved} solved recommendations`}

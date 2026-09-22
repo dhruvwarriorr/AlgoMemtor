@@ -30,11 +30,13 @@ import type {
   ProviderAccountRepository,
   ProviderVerifiedActivityRecord,
 } from '../repositories/provider-account-repository.js'
+import type { ProviderDataRepository } from '../repositories/provider-data-repository.js'
 import {
   ActiveTimerError,
   type ProgressRepository,
   TimerNotFoundError,
 } from '../repositories/progress-repository.js'
+import { progressWindow } from './progress-window.js'
 
 const identity = (reference: ProblemReference) =>
   `${reference.provider}:${reference.externalId}`
@@ -134,7 +136,6 @@ const actionToHistory = (
         ? 'bookmark_removed'
         : action.actionType === 'status_changed' ||
             action.actionType === 'impression' ||
-            action.actionType === 'opened' ||
             action.actionType === 'dismissed' ||
             action.actionType === 'dismissal_restored'
           ? action.actionType
@@ -169,6 +170,7 @@ export type ProgressServiceOptions = {
   recommendationRepository?: RecommendationRepository
   provider: ProblemProvider
   providerAccountRepository?: ProviderAccountRepository
+  providerDataRepository?: ProviderDataRepository
   learnerProfileRepository?: LearnerProfileRepository
   logger: { warn(event: string, fields?: Record<string, unknown>): void }
   timezoneForLearner?: (authUserId: string) => Promise<string>
@@ -242,7 +244,7 @@ export class ProgressService {
   async recordAction(
     authUserId: string,
     reference: ProblemReference,
-    actionType: 'impression' | 'opened' | 'bookmarked' | 'unbookmarked',
+    actionType: 'impression' | 'bookmarked' | 'unbookmarked',
     options: {
       recommendationItemId?: string | undefined
       sourceContext?: string | undefined
@@ -442,11 +444,15 @@ export class ProgressService {
   }
 
   async analytics(authUserId: string, days = 30) {
-    const [actions, timers, timezone] = await Promise.all([
-      this.options.actionRepository.listByAuthUserId(authUserId),
-      this.options.progressRepository.listTimerSessions(authUserId),
-      this.timezoneForLearner(authUserId),
-    ])
+    const [actions, timers, timezone, submissions, solvedProblems] =
+      await Promise.all([
+        this.options.actionRepository.listByAuthUserId(authUserId),
+        this.options.progressRepository.listTimerSessions(authUserId),
+        this.timezoneForLearner(authUserId),
+        this.options.providerDataRepository?.listSubmissions(authUserId) ?? [],
+        this.options.providerDataRepository?.listSolvedProblems(authUserId) ??
+          [],
+      ])
     let providerResult: ProblemProviderSearchResult = {
       problems: [],
       freshness: this.options.provider.getHealth(),
@@ -469,68 +475,21 @@ export class ProgressService {
     for (const action of statuses.values()) {
       inventory[action.learnerStatus ?? 'unsolved'] += 1
     }
-    const recentStatusActions = actions.filter(
-      (action) =>
-        action.actionType === 'status_changed' && action.occurredAt >= last30,
-    )
-    const trendMap = new Map<
-      string,
-      { attempted: Set<string>; solved: Set<string> }
-    >()
-    for (const action of recentStatusActions) {
-      const key = dateKey(action.occurredAt, timezone)
-      const entry = trendMap.get(key) ?? {
-        attempted: new Set(),
-        solved: new Set(),
-      }
-      if (
-        action.learnerStatus === 'attempted' ||
-        action.learnerStatus === 'solved'
-      )
-        entry.attempted.add(identity(action))
-      if (action.learnerStatus === 'solved') entry.solved.add(identity(action))
-      trendMap.set(key, entry)
-    }
     const today = dateKey(new Date(), timezone)
-    const trend = Array.from({ length: windowDays }, (_, index) =>
+    const windowDates = Array.from({ length: windowDays }, (_, index) =>
       addDays(today, index - (windowDays - 1)),
-    ).map((date) => {
-      const entry = trendMap.get(date)
-      return {
-        date,
-        attempted: entry?.attempted.size ?? 0,
-        solved: entry?.solved.size ?? 0,
-      }
-    })
-    const solvedDays = new Set(
-      actions
-        .filter(
-          (action) =>
-            action.actionType === 'status_changed' &&
-            action.learnerStatus === 'solved',
-        )
-        .map((action) => dateKey(action.occurredAt, timezone)),
     )
-    const streaks = calculateStreaks(solvedDays, today)
-    const recentProblemIds = new Set(
-      recentStatusActions.map(identity).filter((key) => {
-        const status = statuses.get(key)?.learnerStatus
-        return status === 'attempted' || status === 'solved'
-      }),
+    const window = progressWindow(
+      actions,
+      submissions,
+      solvedProblems,
+      windowDates,
+      (date) => dateKey(date, timezone),
     )
-    const recentSolvedIds = new Set(
-      [...recentProblemIds].filter(
-        (key) => statuses.get(key)?.learnerStatus === 'solved',
-      ),
-    )
+    const streaks = calculateStreaks(window.solvedDays, today)
     const impressionActions = actions.filter(
       (action) =>
         action.actionType === 'impression' && action.occurredAt >= last30,
-    )
-    const opens = conversionIds(
-      impressionActions,
-      actions,
-      (action) => action.actionType === 'opened',
     )
     const attempted = countStatusConversions(
       impressionActions,
@@ -586,21 +545,22 @@ export class ProgressService {
         generatedAt: new Date().toISOString(),
         timezone,
         inventory,
-        trend,
+        window: {
+          days: windowDays,
+          attempted: window.attempted,
+          solved: window.solved,
+        },
+        trend: window.trend,
         focusedSeconds,
         averageSolvedSeconds,
         currentStreak: streaks.current,
         longestStreak: streaks.longest,
         completionRate:
-          recentProblemIds.size === 0
-            ? 0
-            : recentSolvedIds.size / recentProblemIds.size,
+          window.attempted === 0 ? 0 : window.solved / window.attempted,
         recommendationConversions: {
           impressions: impressionActions.length,
-          opens,
           attempted,
           solved,
-          impressionToOpen: ratio(opens, impressionActions.length),
           impressionToAttempt: ratio(attempted, impressionActions.length),
           impressionToSolve: ratio(solved, impressionActions.length),
         },

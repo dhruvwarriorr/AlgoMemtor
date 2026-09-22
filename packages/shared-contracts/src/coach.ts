@@ -66,12 +66,10 @@ export const CoachEvidenceSummarySchema = z
   .strict()
 export type CoachEvidenceSummary = z.infer<typeof CoachEvidenceSummarySchema>
 
-export const CoachProblemSuggestionStatusSchema = z.enum([
-  'suggested',
-  'opened',
-  'dismissed',
-  'solved',
-])
+export const CoachProblemSuggestionStatusSchema = z.preprocess(
+  (value) => (value === 'opened' ? 'suggested' : value),
+  z.enum(['suggested', 'dismissed', 'solved']),
+)
 export type CoachProblemSuggestionStatus = z.infer<
   typeof CoachProblemSuggestionStatusSchema
 >

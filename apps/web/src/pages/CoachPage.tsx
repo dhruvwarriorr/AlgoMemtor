@@ -30,7 +30,6 @@ import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import { useNotification } from '@/app/useNotification'
 import { useAiConsent } from '@/features/profile/hooks/useLearnerSettings'
-import { recordProblemAction } from '@/features/progress/api/progress'
 import {
   useCoachCheckIns,
   useCoachConversation,
@@ -274,16 +273,6 @@ function TopicCard({
                 <a
                   className="min-w-0 break-words text-primary underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   href={suggestion.problem.canonicalUrl}
-                  onClick={() => {
-                    void recordProblemAction({
-                      problem: {
-                        provider: suggestion.problem.provider,
-                        externalId: suggestion.problem.externalId,
-                      },
-                      actionType: 'opened',
-                      sourceContext: 'coach',
-                    }).catch(() => undefined)
-                  }}
                   rel="noopener noreferrer"
                   target="_blank"
                 >

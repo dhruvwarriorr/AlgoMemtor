@@ -86,7 +86,6 @@ function BookmarkCard({ bookmark }: { bookmark: Bookmark }) {
       <footer className="mt-auto flex min-w-0 flex-wrap items-center gap-2 border-t border-border pt-4">
         <SolveOnProviderLink
           canonicalUrl={problem.canonicalUrl}
-          externalId={problem.externalId}
           provider={problem.provider}
         />
         <ProblemLearningControls

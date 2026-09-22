@@ -85,9 +85,9 @@ learner profile
   ranking. Deterministic ranking must remain a usable fallback.
 - Every problem shows source attribution. Never imply partnership or endorsement
   without one.
-- Opening a provider link is an `opened` event, not proof of an attempt or solve.
+- Opening a provider link is navigation only; it creates no learner action.
 - Learner problem status has exactly three values: `unsolved`, `attempted`, and
-  `solved`. Recommendations, bookmarks, dismissals, outbound opens, and evidence
+  `solved`. Recommendations, bookmarks, dismissals, and evidence
   provenance are separate facts.
 - Manual completion and provider-verified completion must remain distinguishable
   in storage, metrics, and UI copy.

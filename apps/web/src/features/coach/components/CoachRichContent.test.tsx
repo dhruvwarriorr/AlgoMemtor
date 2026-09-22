@@ -2,10 +2,6 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { CoachRichContentSchema } from '@algomemtor/shared-contracts'
 
-vi.mock('@/features/progress/api/progress', () => ({
-  recordProblemAction: vi.fn(),
-}))
-
 import { CoachRichContent } from './CoachRichContent'
 
 const timestamp = '2026-09-17T12:00:00.000Z'

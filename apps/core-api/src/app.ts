@@ -712,6 +712,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
     recommendationRepository,
     provider,
     providerAccountRepository,
+    providerDataRepository,
     learnerProfileRepository,
     logger,
     timezoneForLearner: async (authUserId) => {
@@ -2360,68 +2361,6 @@ export const createApp = (options: CreateAppOptions = {}) => {
     },
   )
 
-  app.post(
-    '/api/problems/:provider/:externalId/open',
-    requireAuthenticated,
-    async (request, response) => {
-      if (!progressEnabled) {
-        featureNotEnabled(response)
-        return
-      }
-      const reference = readLearnerProblemReference(request, response)
-      if (reference === null) return
-      const input = z
-        .object({
-          recommendationItemId: z.uuid().optional(),
-          sourceContext: z.string().trim().min(1).max(64).optional(),
-        })
-        .strict()
-        .safeParse(request.body ?? {})
-      if (!input.success) {
-        response.status(400).json(
-          createApiError(
-            'INVALID_OPEN_EVENT',
-            'The problem open event is invalid.',
-            {
-              details: input.error.issues,
-            },
-          ),
-        )
-        return
-      }
-      if (input.data.recommendationItemId !== undefined) {
-        const item = await recommendationRepository.findItemByAuthUserId(
-          authenticatedSubject(response),
-          input.data.recommendationItemId,
-        )
-        if (
-          item === null ||
-          item.provider !== reference.provider ||
-          item.externalId !== reference.externalId
-        ) {
-          response
-            .status(404)
-            .json(
-              createApiError(
-                'RECOMMENDATION_ITEM_NOT_FOUND',
-                'The recommendation item could not be found for this learner.',
-              ),
-            )
-          return
-        }
-      }
-      const action = await progressService.recordAction(
-        authenticatedSubject(response),
-        reference,
-        'opened',
-        input.data,
-      )
-      response
-        .status(202)
-        .json({ data: { recorded: true, actionId: action.id } })
-    },
-  )
-
   app.get(
     '/api/learner-memories',
     requireAuthenticated,
@@ -3266,8 +3205,9 @@ export const createApp = (options: CreateAppOptions = {}) => {
     ])
     const events = actions.flatMap((action) => {
       if (
-        action.actionType !== 'status_changed' &&
-        action.actionType !== 'opened'
+        action.actionType !== 'status_changed' ||
+        action.evidenceSource === 'provider_verified' ||
+        action.learnerStatus === 'unsolved'
       ) {
         return []
       }
@@ -3277,21 +3217,30 @@ export const createApp = (options: CreateAppOptions = {}) => {
           id: action.id,
           provider: action.provider,
           eventType:
-            action.actionType === 'opened' || action.learnerStatus !== 'solved'
-              ? ('submission' as const)
-              : ('solved' as const),
+            action.learnerStatus === 'solved'
+              ? ('solved' as const)
+              : ('submission' as const),
           externalId: action.externalId,
           occurredAt: action.occurredAt.toISOString(),
-          source:
-            action.evidenceSource === 'provider_verified'
-              ? ('provider' as const)
-              : ('manual' as const),
+          source: 'manual' as const,
           completeness: 'complete' as const,
         },
       ]
     })
+    const observedCodeforcesSolves = new Set(
+      solvedProblems
+        .filter(
+          (problem) =>
+            problem.provider === 'codeforces' && problem.occurredAt !== null,
+        )
+        .map((problem) => problem.externalId),
+    )
     const verifiedEvents = verified.flatMap((event) => {
-      if (provider !== undefined && provider !== 'codeforces') return []
+      if (
+        (provider !== undefined && provider !== 'codeforces') ||
+        observedCodeforcesSolves.has(event.externalId)
+      )
+        return []
       return [
         {
           id: event.id,

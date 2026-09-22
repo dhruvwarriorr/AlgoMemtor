@@ -16,8 +16,6 @@ import type {
   ExternalProblemSummary,
 } from '@algomemtor/shared-contracts'
 
-import { recordProblemAction } from '@/features/progress/api/progress'
-
 const providerLabels = {
   codeforces: 'Codeforces',
   codechef: 'CodeChef',
@@ -46,16 +44,6 @@ function ProblemLink({ problem }: { problem: ExternalProblemSummary }) {
     <a
       className="min-w-0 rounded-md border border-border bg-background p-3 transition-colors hover:border-primary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       href={problem.canonicalUrl}
-      onClick={() => {
-        void recordProblemAction({
-          problem: {
-            provider: problem.provider,
-            externalId: problem.externalId,
-          },
-          actionType: 'opened',
-          sourceContext: 'coach',
-        }).catch(() => undefined)
-      }}
       rel="noopener noreferrer"
       target="_blank"
     >

@@ -49,7 +49,6 @@ export function useRecommendationImpression({
           actionType: 'impression',
           problem: { provider, externalId },
           recommendationItemId,
-          sourceContext: 'recommendation',
         }).catch(() => undefined)
         observer.disconnect()
       },

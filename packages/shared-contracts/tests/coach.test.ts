@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   CoachActionProposalSchema,
   CoachMessageSchema,
+  CoachProblemSuggestionStatusSchema,
   CoachRichContentSchema,
   CoachCheckInActionRequestSchema,
   CoachCheckInSchema,
@@ -41,6 +42,10 @@ const topic = {
 }
 
 describe('coach contracts', () => {
+  it('normalizes historical opened suggestions into plain suggestions', () => {
+    expect(CoachProblemSuggestionStatusSchema.parse('opened')).toBe('suggested')
+  })
+
   it('accepts bounded attachments and rejects malformed files', () => {
     const request = {
       content: 'Explain this recording.',

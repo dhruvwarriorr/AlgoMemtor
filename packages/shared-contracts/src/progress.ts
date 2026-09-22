@@ -160,7 +160,6 @@ export const ProgressHistoryEventTypeSchema = z.enum([
   'timer_completed',
   'timer_discarded',
   'impression',
-  'opened',
   'bookmark_added',
   'bookmark_removed',
   'dismissed',
@@ -250,6 +249,13 @@ export const ProgressAnalyticsSchema = z
         solved: z.number().int().nonnegative(),
       })
       .strict(),
+    window: z
+      .object({
+        days: z.number().int().min(1).max(30),
+        attempted: z.number().int().nonnegative(),
+        solved: z.number().int().nonnegative(),
+      })
+      .strict(),
     trend: z
       .array(
         z
@@ -269,10 +275,8 @@ export const ProgressAnalyticsSchema = z
     recommendationConversions: z
       .object({
         impressions: z.number().int().nonnegative(),
-        opens: z.number().int().nonnegative(),
         attempted: z.number().int().nonnegative(),
         solved: z.number().int().nonnegative(),
-        impressionToOpen: z.number().min(0).max(1),
         impressionToAttempt: z.number().min(0).max(1),
         impressionToSolve: z.number().min(0).max(1),
       })
