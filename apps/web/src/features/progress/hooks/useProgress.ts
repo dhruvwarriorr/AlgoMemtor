@@ -7,20 +7,15 @@ import {
   fetchProgress,
   fetchProgressAnalytics,
   fetchProgressHistory,
-  pauseTimer,
   recordProblemAction,
-  resolveTimer,
-  resumeTimer,
   saveProblemReflection,
   setProblemStatus,
-  startProblemTimer,
 } from '../api/progress'
 import type {
   ProblemReference,
   ProgressHistoryQuery,
   SaveReflectionRequest,
   SetProblemStatusRequest,
-  StartTimerRequest,
 } from '../contracts'
 
 export const progressQueryKey = (
@@ -114,54 +109,6 @@ export function useSaveProblemReflection() {
       problem: ProblemReference
       input: SaveReflectionRequest
     }) => saveProblemReflection(problem, input),
-    onSuccess: invalidate,
-  })
-}
-
-export function useStartProblemTimer() {
-  const invalidate = useInvalidateProgress()
-
-  return useMutation({
-    mutationFn: ({
-      problem,
-      input,
-    }: {
-      problem: ProblemReference
-      input?: StartTimerRequest
-    }) => startProblemTimer(problem, input),
-    onSuccess: invalidate,
-  })
-}
-
-export function usePauseTimer() {
-  const invalidate = useInvalidateProgress()
-
-  return useMutation({
-    mutationFn: pauseTimer,
-    onSuccess: invalidate,
-  })
-}
-
-export function useResumeTimer() {
-  const invalidate = useInvalidateProgress()
-
-  return useMutation({
-    mutationFn: resumeTimer,
-    onSuccess: invalidate,
-  })
-}
-
-export function useResolveTimer() {
-  const invalidate = useInvalidateProgress()
-
-  return useMutation({
-    mutationFn: ({
-      timerId,
-      resolution,
-    }: {
-      timerId: string
-      resolution: 'complete' | 'discard'
-    }) => resolveTimer(timerId, { resolution }),
     onSuccess: invalidate,
   })
 }

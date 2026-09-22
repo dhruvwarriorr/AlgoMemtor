@@ -63,7 +63,10 @@ import { AI_POLICY_VERSION } from '@/features/profile/components/AiNoteConsentCa
 import { cn } from '@/lib/utils'
 import { CoachRichContent as CoachRichContentView } from '@/features/coach/components/CoachRichContent'
 import { CoachMessageContent } from '@/features/coach/components/CoachMessageContent'
-import { useDismissProblem, useRecommendationDismissals } from '@/features/recommendations/hooks/useRecommendations'
+import {
+  useDismissProblem,
+  useRecommendationDismissals,
+} from '@/features/recommendations/hooks/useRecommendations'
 
 const laneLabels: Record<CoachRoadmapLane, string> = {
   current_focus: 'Current focus',
@@ -276,10 +279,16 @@ function TopicCard({
       <button
         className="mt-3 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
         disabled={statusPending}
-        onClick={() => onStatus(topic.manualStatus === 'skip_for_now' ? null : 'skip_for_now')}
+        onClick={() =>
+          onStatus(
+            topic.manualStatus === 'skip_for_now' ? null : 'skip_for_now',
+          )
+        }
         type="button"
       >
-        {topic.manualStatus === 'skip_for_now' ? 'Restore topic' : 'Dismiss topic'}
+        {topic.manualStatus === 'skip_for_now'
+          ? 'Restore topic'
+          : 'Dismiss topic'}
       </button>
       <p className="mt-3 text-sm leading-6 text-muted-foreground">
         {topic.reason}
@@ -339,7 +348,12 @@ function TopicCard({
                   aria-label={`Dismiss ${suggestion.problem.title}`}
                   className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
                   disabled={dismissPending}
-                  onClick={() => onDismissProblem(suggestion.problem.provider, suggestion.problem.externalId)}
+                  onClick={() =>
+                    onDismissProblem(
+                      suggestion.problem.provider,
+                      suggestion.problem.externalId,
+                    )
+                  }
                   title="Don't recommend this problem again"
                   type="button"
                 >
@@ -766,7 +780,7 @@ function CoachPage() {
 
   return (
     <main
-      className="flex min-w-0 flex-1 flex-col lg:h-[calc(100dvh-2rem)] lg:flex-none lg:flex-row lg:overflow-hidden"
+      className="flex min-w-0 flex-1 flex-col lg:h-(--app-panel-height) lg:flex-none lg:flex-row lg:overflow-hidden"
       id="main-content"
     >
       {/* History column */}
@@ -1146,9 +1160,19 @@ function CoachPage() {
                             {message.richContent ? (
                               <CoachRichContentView
                                 content={message.richContent}
-                                dismissedProblemKeys={new Set((dismissalsQuery.data?.data ?? []).map((item) => `${item.provider}:${item.externalId}`))}
+                                dismissedProblemKeys={
+                                  new Set(
+                                    (dismissalsQuery.data?.data ?? []).map(
+                                      (item) =>
+                                        `${item.provider}:${item.externalId}`,
+                                    ),
+                                  )
+                                }
                                 onDismissProblem={(provider, externalId) => {
-                                  dismissProblem.mutate({ provider, externalId })
+                                  dismissProblem.mutate({
+                                    provider,
+                                    externalId,
+                                  })
                                 }}
                                 onSuggestedQuestion={(question) => {
                                   setContent(question)

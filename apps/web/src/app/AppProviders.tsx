@@ -3,7 +3,6 @@ import { BrowserRouter } from 'react-router-dom'
 import type { PropsWithChildren } from 'react'
 
 import { AuthProvider } from '@/features/auth/AuthProvider'
-import { TimerProvider } from '@/features/progress/timer/TimerProvider'
 
 import { DevelopmentMocks } from './DevelopmentMocks'
 import { NotificationProvider } from './NotificationProvider'
@@ -26,9 +25,7 @@ export function AppProviders({ children }: PropsWithChildren) {
         <QueryClientProvider client={queryClient}>
           <ThemeProvider>
             <AuthProvider>
-              <TimerProvider>
-                <NotificationProvider>{children}</NotificationProvider>
-              </TimerProvider>
+              <NotificationProvider>{children}</NotificationProvider>
             </AuthProvider>
           </ThemeProvider>
         </QueryClientProvider>

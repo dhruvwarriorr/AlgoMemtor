@@ -30,7 +30,7 @@ export function Dialog({
     <div
       aria-labelledby="dialog-title"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(8_18_40/0.45)] p-4 backdrop-blur-[3px] animate-in fade-in-0 duration-200 motion-reduce:animate-none"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(16_16_18/0.45)] p-4 backdrop-blur-[3px] animate-in fade-in-0 duration-200 motion-reduce:animate-none"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose()
       }}

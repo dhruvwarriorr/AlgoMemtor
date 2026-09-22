@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { useAuth } from '@/features/auth/useAuth'
 import { fetchDeleteAllDataStatus } from '@/features/progress/api/progress'
-import { dataResetEventName } from '@/features/progress/timer/timer-utils'
 
 import {
   deleteAllData,
@@ -60,8 +59,5 @@ export function useDeleteAllDataStatus(enabled: boolean) {
 export function useDeleteAllData() {
   return useMutation({
     mutationFn: deleteAllData,
-    onSuccess: () => {
-      window.dispatchEvent(new Event(dataResetEventName))
-    },
   })
 }

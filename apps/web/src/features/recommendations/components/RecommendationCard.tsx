@@ -107,7 +107,7 @@ export function RecommendationCard({
       <p className="flex gap-3 rounded-2xl bg-sun-soft p-4 text-sm leading-6 text-foreground ring-1 ring-sun/45">
         <span
           aria-hidden="true"
-          className="grid size-6 shrink-0 place-items-center rounded-full bg-sun text-[#0b1220]"
+          className="grid size-6 shrink-0 place-items-center rounded-full bg-sun text-[#101012]"
         >
           <Lightbulb className="size-3.5" strokeWidth={2.5} />
         </span>

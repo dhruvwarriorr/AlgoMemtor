@@ -46,7 +46,7 @@ export function ReflectionDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-[rgb(8_18_40/0.45)] p-0 backdrop-blur-[3px] sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-[rgb(16_16_18/0.45)] p-0 backdrop-blur-[3px] sm:items-center sm:p-4"
       role="presentation"
     >
       <div

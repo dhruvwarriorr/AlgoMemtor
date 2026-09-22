@@ -15,7 +15,6 @@ import {
   ProgressAnalyticsResponseSchema,
   ProgressHistoryResponseSchema,
   ProblemReflectionResponseSchema,
-  ProblemTimerResponseSchema,
   SaveBookmarkRequestSchema,
   ProgressResponseSchema,
   type AiConsentResponse,
@@ -27,17 +26,14 @@ import {
   type DeleteAllDataStatusResponse,
   type LearnerProgress,
   type ProblemReflectionResponse,
-  type ProblemTimerResponse,
   type ProgressAnalyticsResponse,
   type ProgressHistoryQuery,
   type ProgressHistoryResponse,
   type ProgressResponse,
   type ProblemReference,
-  type ResolveTimerRequest,
   type SaveAiConsentRequest,
   type SaveReflectionRequest,
   type SetProblemStatusRequest,
-  type StartTimerRequest,
 } from '../contracts'
 
 type RequestOptions = { signal?: AbortSignal }
@@ -185,58 +181,6 @@ export function saveProblemReflection(
       headers: { 'content-type': 'application/json' },
       method: 'POST',
       schema: ProblemReflectionResponseSchema,
-    },
-  )
-}
-
-export function startProblemTimer(
-  problem: ProblemReference,
-  input: StartTimerRequest = { confirmSwitch: false },
-) {
-  return requestJson<ProblemTimerResponse>(`${problemPath(problem)}/timer`, {
-    authentication: 'required',
-    body: JSON.stringify(input),
-    headers: { 'content-type': 'application/json' },
-    method: 'POST',
-    schema: ProblemTimerResponseSchema,
-  })
-}
-
-export function pauseTimer(timerId: string) {
-  return requestJson<ProblemTimerResponse>(
-    `/api/timers/${encodeURIComponent(timerId)}/pause`,
-    {
-      authentication: 'required',
-      body: JSON.stringify({}),
-      headers: { 'content-type': 'application/json' },
-      method: 'POST',
-      schema: ProblemTimerResponseSchema,
-    },
-  )
-}
-
-export function resumeTimer(timerId: string) {
-  return requestJson<ProblemTimerResponse>(
-    `/api/timers/${encodeURIComponent(timerId)}/resume`,
-    {
-      authentication: 'required',
-      body: JSON.stringify({}),
-      headers: { 'content-type': 'application/json' },
-      method: 'POST',
-      schema: ProblemTimerResponseSchema,
-    },
-  )
-}
-
-export function resolveTimer(timerId: string, input: ResolveTimerRequest) {
-  return requestJson<ProblemTimerResponse>(
-    `/api/timers/${encodeURIComponent(timerId)}/resolve`,
-    {
-      authentication: 'required',
-      body: JSON.stringify(input),
-      headers: { 'content-type': 'application/json' },
-      method: 'POST',
-      schema: ProblemTimerResponseSchema,
     },
   )
 }

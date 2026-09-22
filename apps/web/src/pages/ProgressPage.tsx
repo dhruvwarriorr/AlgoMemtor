@@ -27,14 +27,6 @@ const chartTooltipStyle = {
   color: 'var(--popover-foreground)',
 }
 
-function formatDuration(seconds: number | null) {
-  if (seconds === null) return 'Not recorded'
-  const minutes = Math.round(seconds / 60)
-  return minutes >= 60
-    ? `${Math.floor(minutes / 60)}h ${minutes % 60}m`
-    : `${minutes}m`
-}
-
 function shortDate(date: string) {
   return new Intl.DateTimeFormat(undefined, {
     month: 'short',
@@ -160,10 +152,10 @@ function PracticeSignals({ analytics }: { analytics: Analytics }) {
 
   return (
     <ChartCard
-      description="Based on dated solves from connected providers and your recorded statuses. Timer totals use completed sessions in this period."
+      description="Based on dated solves from connected providers and your recorded statuses."
       title="Practice signals"
     >
-      <dl className="mt-5 grid gap-3 sm:grid-cols-2">
+      <dl className="mt-5 grid gap-3 sm:grid-cols-3">
         <Metric
           detail={`Out of ${analytics.window.days} local days`}
           label="Active days"
@@ -190,11 +182,6 @@ function PracticeSignals({ analytics }: { analytics: Analytics }) {
           detail={`${previousActive} active days in the preceding ${previous.length} days`}
           label="Recent rhythm"
           value={`${last15Active}/${recent.length} days`}
-        />
-        <Metric
-          detail="Only completed practice timers count"
-          label="Timed focus"
-          value={formatDuration(analytics.focusedSeconds)}
         />
       </dl>
     </ChartCard>

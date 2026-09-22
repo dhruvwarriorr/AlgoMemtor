@@ -175,19 +175,19 @@ function Distribution({
 }
 
 const topicColors = [
-  '#1a5ae6',
-  '#3d8ddc',
-  '#7fbcec',
-  '#153b8a',
-  '#138a5c',
-  '#57b98c',
-  '#f5c33b',
-  '#d9a21f',
-  '#5f7fb8',
-  '#a9cdf0',
-  '#2e6f9e',
-  '#9bb0c9',
+  '#ff4d12',
+  '#101012',
+  '#157a47',
+  '#ffb08c',
   '#6c7a90',
+  '#9a2e0b',
+  '#3ccf8e',
+  '#c9c2ac',
+  '#4a4a4d',
+  '#f5c33b',
+  '#7c1d15',
+  '#aab4c4',
+  '#0b4d2e',
 ] as const
 
 const shortTopicLabels: Record<string, string> = {

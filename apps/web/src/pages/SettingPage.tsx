@@ -127,41 +127,41 @@ function ThemePreview({ theme }: { theme: Theme }) {
     <div
       className={cn(
         'flex h-full flex-1 gap-1.5 p-2',
-        mode === 'light' ? 'bg-[#dcebfa]' : 'bg-[#04070d]',
+        mode === 'light' ? 'bg-[#f0ede3]' : 'bg-[#0a0a0b]',
       )}
     >
       <div className="flex w-1/4 flex-col gap-1 pt-1">
         <span
           className={cn(
             'h-2 rounded-full',
-            mode === 'light' ? 'bg-[#0b1220]' : 'bg-[#eaf1fb]',
+            mode === 'light' ? 'bg-[#101012]' : 'bg-[#f4f1ea]',
           )}
         />
         <span
           className={cn(
             'h-1.5 rounded-full',
-            mode === 'light' ? 'bg-white' : 'bg-[#111a29]',
+            mode === 'light' ? 'bg-white' : 'bg-[#17171a]',
           )}
         />
         <span
           className={cn(
             'h-1.5 w-3/4 rounded-full',
-            mode === 'light' ? 'bg-[#0b1220]/15' : 'bg-white/15',
+            mode === 'light' ? 'bg-[#101012]/15' : 'bg-white/15',
           )}
         />
       </div>
       <div
         className={cn(
           'flex flex-1 flex-col gap-1 rounded-md p-1.5',
-          mode === 'light' ? 'bg-[#f4f7fb]' : 'bg-[#0a1019]',
+          mode === 'light' ? 'bg-[#f6f4ee]' : 'bg-[#0d0d0f]',
         )}
       >
-        <span className="h-2 w-1/2 rounded-full bg-[#1a5ae6]" />
+        <span className="h-2 w-1/2 rounded-full bg-[#ff4d12]" />
         <div className="flex flex-1 gap-1">
           <span
             className={cn(
               'flex-1 rounded',
-              mode === 'light' ? 'bg-white' : 'bg-[#111a29]',
+              mode === 'light' ? 'bg-white' : 'bg-[#17171a]',
             )}
           />
           <span className="flex-1 rounded bg-[#f5c33b]/70" />
@@ -282,7 +282,7 @@ function SettingPage() {
       id="main-content"
     >
       <aside className="border-b border-border px-5 pt-6 pb-4 sm:px-8 lg:w-[19rem] lg:shrink-0 lg:border-r lg:border-b-0 lg:px-6 lg:py-9">
-        <div className="lg:sticky lg:top-9">
+        <div className="lg:sticky lg:top-[calc(var(--app-header)+2rem)]">
           <h1 className="text-[2.1rem] leading-none text-foreground">
             Settings
           </h1>

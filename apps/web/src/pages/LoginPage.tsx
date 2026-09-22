@@ -102,7 +102,7 @@ function LoginPage() {
         <p className="mt-6 max-w-md font-heading text-3xl leading-[1.05] font-bold tracking-[-0.035em] sm:text-5xl">
           Your coach remembers where you left off.
         </p>
-        <p className="mt-4 max-w-sm text-[#0b1220]/75 dark:text-[#eaf1fb]/75">
+        <p className="mt-4 max-w-sm text-[#101012]/75 dark:text-[#f4f1ea]/75">
           Your roadmap, streak, memory and next problem are saved to your
           account.
         </p>

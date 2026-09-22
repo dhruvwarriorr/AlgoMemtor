@@ -109,7 +109,7 @@ function ProblemsPage() {
       />
 
       <div className="grid min-w-0 gap-8 xl:grid-cols-[21rem_minmax(0,1fr)]">
-        <div className="min-w-0 xl:sticky xl:top-6 xl:self-start">
+        <div className="min-w-0 xl:sticky xl:top-[calc(var(--app-header)+1.5rem)] xl:self-start">
           <ProblemFilters
             filters={filters}
             hasActiveFilters={hasActiveFilters}

@@ -8,82 +8,91 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * AlgoMemtor "Open Sky" design system.
+ * AlgoMemtor design system — "Fieldnote".
  *
- * Palette: cobalt is the one brand accent, sky blue is the surface family,
- * ink is text. Green ("go") only means success or live state, yellow ("sun")
- * only marks highlights and notices.
+ * Inspired by Browserbase: a warm off-white canvas, near-black ink for
+ * type and primary actions, a single loud orange accent reserved for
+ * highlights and live/active states, thin neutral borders instead of
+ * heavy shadows, and a halftone dot texture on hero/backdrop surfaces.
  *
- * Shape rule: interactive controls are full pills, form fields use radius-md
- * (~13px), containers use radius-lg / radius-xl (16px / 22px), hero panels 2rem.
+ * Shape rule: interactive controls are full pills, form fields use
+ * radius-md (~13px), containers use radius-lg / radius-xl (16px / 22px).
  */
 :root {
-  --background: #f4f7fb;
-  --foreground: #0b1220;
+  --background: #f6f4ee;
+  --foreground: #101012;
   --card: #ffffff;
-  --card-foreground: #0b1220;
+  --card-foreground: #101012;
   --popover: #ffffff;
-  --popover-foreground: #0b1220;
-  --primary: #1a5ae6;
+  --popover-foreground: #101012;
+  --primary: #ff4d12;
   --primary-foreground: #ffffff;
-  --secondary: #e4effb;
-  --secondary-foreground: #0c2a5c;
-  --muted: #edf2f8;
-  --muted-foreground: #556275;
-  --accent: #dcebfb;
-  --accent-foreground: #0c2a5c;
+  --secondary: #efeadf;
+  --secondary-foreground: #101012;
+  --muted: #f0ede3;
+  --muted-foreground: #6b6558;
+  --accent: #fde7da;
+  --accent-foreground: #9a2e0b;
   --destructive: #d23b2f;
-  --border: #dbe4ef;
-  --input: #c9d5e3;
-  --ring: #1a5ae6;
+  --border: #e3ddce;
+  --input: #d6cfba;
+  --ring: #ff4d12;
 
-  --ink: #0b1220;
-  --ink-foreground: #f6f9fd;
-  --sky: #7fbcec;
-  --sky-deep: #3d8ddc;
-  --sky-soft: #cfe5f8;
-  --go: #138a5c;
-  --go-soft: #e2f6ec;
-  --go-foreground: #0b4d33;
-  --sun: #f5c33b;
-  --sun-soft: #fff5d6;
-  --sun-foreground: #5b4300;
+  --ink: #101012;
+  --ink-foreground: #faf8f3;
+  --sky: #aab4c4;
+  --sky-deep: #6c7a90;
+  --sky-soft: #e8e9e8;
+  --go: #157a47;
+  --go-soft: #e2f3ea;
+  --go-foreground: #0b4d2e;
+  --sun: #ff4d12;
+  --sun-soft: #ffe6d9;
+  --sun-foreground: #9a2e0b;
   --danger-soft: #fdebe9;
   --danger-foreground: #7c1d15;
 
-  --chart-1: #1a5ae6;
-  --chart-2: #7fbcec;
-  --chart-3: #138a5c;
-  --chart-4: #f5c33b;
-  --chart-5: #0b1220;
+  --chart-1: #ff4d12;
+  --chart-2: #101012;
+  --chart-3: #157a47;
+  --chart-4: #c9c2ac;
+  --chart-5: #6c7a90;
 
   --radius: 1rem;
 
-  --sidebar: #ffffff;
-  --sidebar-foreground: #0b1220;
-  --sidebar-primary: #1a5ae6;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #edf2f8;
-  --sidebar-accent-foreground: #0b1220;
-  --sidebar-border: #dbe4ef;
-  --sidebar-ring: #1a5ae6;
+  /* App chrome: top bar height plus the gutter around the content panel.
+   * Single-screen pages size themselves with 100dvh - var(--app-chrome). */
+  --app-header: 4.25rem;
+  --app-gutter: 0.5rem;
+  --app-chrome: calc(var(--app-header) + 2 * var(--app-gutter));
+  /* Exact inner height of the content panel (minus its 1px border). */
+  --app-panel-height: calc(100dvh - var(--app-chrome) - 2px);
 
-  /* Shadows are tinted toward the sky hue, never pure black. */
+  --sidebar: #ffffff;
+  --sidebar-foreground: #101012;
+  --sidebar-primary: #101012;
+  --sidebar-primary-foreground: #faf8f3;
+  --sidebar-accent: #f0ede3;
+  --sidebar-accent-foreground: #101012;
+  --sidebar-border: #e3ddce;
+  --sidebar-ring: #ff4d12;
+
+  /* Shadows are neutral ink tint, kept faint — the border carries most
+   * of the definition, the way Browserbase's cards read. */
   --shadow-soft:
-    0 1px 2px rgb(22 52 102 / 0.06), 0 10px 28px -14px rgb(22 52 102 / 0.18);
+    0 1px 2px rgb(16 16 18 / 0.05), 0 10px 22px -16px rgb(16 16 18 / 0.16);
   --shadow-lift:
-    0 2px 4px rgb(22 52 102 / 0.06), 0 24px 48px -20px rgb(22 52 102 / 0.32);
+    0 2px 4px rgb(16 16 18 / 0.06), 0 26px 50px -22px rgb(16 16 18 / 0.3);
 
   /* Full-page app backdrop behind the sidebar and content panel. */
-  --shell-a: #dcebfa;
-  --shell-b: #eef4fb;
-  --shell-c: #d6e7f7;
+  --shell-a: #f6f4ee;
+  --shell-b: #f6f4ee;
+  --shell-c: #efe9db;
 
-  --sky-top: #5fa9e6;
-  --sky-mid: #8cc4ef;
-  --sky-bottom: #dcedfb;
-  --cloud: #ffffff;
-  --cloud-opacity: 0.95;
+  --dot-color: rgb(16 16 18 / 0.14);
+  --dot-color-strong: rgb(16 16 18 / 0.22);
+  --cloud: #fff9f2;
+  --cloud-opacity: 0.9;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -93,67 +102,65 @@
 }
 
 .dark {
-  --background: #0a1019;
-  --foreground: #eaf1fb;
-  --card: #111a29;
-  --card-foreground: #eaf1fb;
-  --popover: #0f1727;
-  --popover-foreground: #eaf1fb;
-  --primary: #5b95ff;
-  --primary-foreground: #04101f;
-  --secondary: #13213a;
-  --secondary-foreground: #d6e5fb;
-  --muted: #111a2b;
-  --muted-foreground: #97a6bc;
-  --accent: #16284a;
-  --accent-foreground: #d6e5fb;
+  --background: #0d0d0f;
+  --foreground: #f4f1ea;
+  --card: #17171a;
+  --card-foreground: #f4f1ea;
+  --popover: #151517;
+  --popover-foreground: #f4f1ea;
+  --primary: #ff6a35;
+  --primary-foreground: #1a0800;
+  --secondary: #212124;
+  --secondary-foreground: #f4f1ea;
+  --muted: #1a1a1d;
+  --muted-foreground: #a6a196;
+  --accent: #2a1a10;
+  --accent-foreground: #ffb08c;
   --destructive: #ff7b6e;
-  --border: #1d2940;
-  --input: #293852;
-  --ring: #5b95ff;
+  --border: #28282b;
+  --input: #343437;
+  --ring: #ff6a35;
 
-  --ink: #eaf1fb;
-  --ink-foreground: #060a12;
-  --sky: #2a5ea8;
-  --sky-deep: #1b3f7a;
-  --sky-soft: #132846;
+  --ink: #f4f1ea;
+  --ink-foreground: #101012;
+  --sky: #3a4658;
+  --sky-deep: #262f3d;
+  --sky-soft: #1c2027;
   --go: #3ccf8e;
   --go-soft: #0c2a1f;
   --go-foreground: #9ff0c8;
-  --sun: #ffd35c;
-  --sun-soft: #2a220a;
-  --sun-foreground: #ffe49a;
+  --sun: #ff6a35;
+  --sun-soft: #2a1a10;
+  --sun-foreground: #ffb08c;
   --danger-soft: #2c1210;
   --danger-foreground: #ffc2bb;
 
-  --chart-1: #5b95ff;
-  --chart-2: #8cc4ef;
+  --chart-1: #ff6a35;
+  --chart-2: #f4f1ea;
   --chart-3: #3ccf8e;
-  --chart-4: #ffd35c;
-  --chart-5: #eaf1fb;
+  --chart-4: #4a453a;
+  --chart-5: #3a4658;
 
-  --sidebar: #0d1422;
-  --sidebar-foreground: #eaf1fb;
-  --sidebar-primary: #5b95ff;
-  --sidebar-primary-foreground: #04101f;
-  --sidebar-accent: #111a2b;
-  --sidebar-accent-foreground: #eaf1fb;
-  --sidebar-border: #1d2940;
-  --sidebar-ring: #5b95ff;
+  --sidebar: #131315;
+  --sidebar-foreground: #f4f1ea;
+  --sidebar-primary: #f4f1ea;
+  --sidebar-primary-foreground: #101012;
+  --sidebar-accent: #1c1c1f;
+  --sidebar-accent-foreground: #f4f1ea;
+  --sidebar-border: #28282b;
+  --sidebar-ring: #ff6a35;
 
   --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 30px -16px rgb(0 0 0 / 0.7);
   --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.4), 0 28px 56px -22px rgb(0 0 0 / 0.8);
 
-  --shell-a: #081427;
-  --shell-b: #04070d;
-  --shell-c: #0a1a33;
+  --shell-a: #0d0d0f;
+  --shell-b: #0a0a0b;
+  --shell-c: #141210;
 
-  /* Night sky: same composition, dimmer clouds. */
-  --sky-top: #081a3a;
-  --sky-mid: #0f2c5c;
-  --sky-bottom: #173d74;
-  --cloud: #c7d8f2;
-  --cloud-opacity: 0.22;
+  --dot-color: rgb(255 255 255 / 0.09);
+  --dot-color-strong: rgb(255 255 255 / 0.16);
+  --cloud: #211a12;
+  --cloud-opacity: 0.5;
 
   color-scheme: dark;
 }
@@ -262,11 +269,11 @@ body {
     letter-spacing: -0.035em;
   }
   ::selection {
-    background: color-mix(in oklab, var(--sun) 70%, transparent);
-    color: #0b1220;
+    background: color-mix(in oklab, var(--sun) 65%, transparent);
+    color: #fff;
   }
   /*
-   * Card surfaces across the app get the same tinted lift, so every panel
+   * Card surfaces across the app get the same faint lift, so every panel
    * reads as one family without repeating shadow utilities in 60 places.
    */
   [class~='bg-card'] {
@@ -278,74 +285,72 @@ body {
   }
 }
 
-/* Sky surface: gradient + soft CSS clouds, used by hero and page headers. */
+/* Dot-grid halftone texture, the way Browserbase textures its hero and
+ * app backdrop. Two staggered radial-gradient dot layers over the flat
+ * surface colour. */
+@utility dot-grid {
+  background-image:
+    radial-gradient(var(--dot-color) 1.1px, transparent 1.1px),
+    radial-gradient(var(--dot-color) 1.1px, transparent 1.1px);
+  background-size: 18px 18px;
+  background-position:
+    0 0,
+    9px 9px;
+}
+
+/* Hero / feature panel surface: flat warm card + dot texture, no ocean
+ * gradient. Replaces the old blue "sky" treatment 1:1 so every page that
+ * already uses this class name picks up the new look automatically. */
 @utility sky-surface {
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  color: #0b1220;
-  background:
-    radial-gradient(
-      120% 90% at 50% 120%,
-      var(--sky-bottom) 0%,
-      transparent 60%
-    ),
-    linear-gradient(
-      180deg,
-      var(--sky-top) 0%,
-      var(--sky-mid) 58%,
-      var(--sky-bottom) 100%
-    );
-
-  .dark & {
-    color: #eaf1fb;
-  }
+  color: var(--foreground);
+  background: var(--shell-c);
+  background-image:
+    radial-gradient(var(--dot-color) 1.1px, transparent 1.1px),
+    radial-gradient(var(--dot-color) 1.1px, transparent 1.1px);
+  background-size: 18px 18px;
+  background-position:
+    0 0,
+    9px 9px;
+  border: 1px solid var(--border);
 }
 
+/* Soft ambient glow blob — kept as the same decorative shape used across
+ * hero/empty states, recoloured from literal clouds to a warm ink/orange
+ * glow so it reads at home on the flat surface. */
 @utility cloud {
   position: absolute;
   z-index: -1;
   pointer-events: none;
   aspect-ratio: 5 / 2;
   opacity: var(--cloud-opacity);
-  filter: blur(6px);
-  background:
-    radial-gradient(closest-side, var(--cloud) 97%, transparent) 4% 80% / 34%
-      56% no-repeat,
-    radial-gradient(closest-side, var(--cloud) 97%, transparent) 28% 46% / 38%
-      88% no-repeat,
-    radial-gradient(closest-side, var(--cloud) 97%, transparent) 56% 30% / 42%
-      100% no-repeat,
-    radial-gradient(closest-side, var(--cloud) 97%, transparent) 80% 58% / 34%
-      74% no-repeat,
-    radial-gradient(closest-side, var(--cloud) 97%, transparent) 50% 92% / 96%
-      40% no-repeat;
-
-  &::after {
-    content: '';
-    position: absolute;
-    inset: -20% -10%;
-    background: radial-gradient(closest-side, var(--cloud), transparent);
-    opacity: 0.45;
-    filter: blur(18px);
-  }
+  filter: blur(28px);
+  border-radius: 9999px;
+  background: radial-gradient(
+    closest-side,
+    var(--cloud) 0%,
+    color-mix(in oklab, var(--sun) 18%, var(--cloud)) 55%,
+    transparent 100%
+  );
 }
 
 @utility glass-pill {
-  border: 1px solid rgb(255 255 255 / 0.7);
-  background: rgb(255 255 255 / 0.86);
-  backdrop-filter: blur(16px) saturate(160%);
-  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid var(--border);
+  background: color-mix(in oklab, var(--card) 92%, transparent);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.9),
-    0 1px 2px rgb(22 52 102 / 0.08),
-    0 10px 24px -12px rgb(22 52 102 / 0.28);
+    inset 0 1px 0 rgb(255 255 255 / 0.6),
+    0 1px 2px rgb(16 16 18 / 0.05),
+    0 10px 22px -14px rgb(16 16 18 / 0.2);
 
   .dark & {
-    border-color: rgb(255 255 255 / 0.09);
-    background: rgb(13 20 34 / 0.78);
+    border-color: rgb(255 255 255 / 0.08);
+    background: rgb(19 19 21 / 0.82);
     box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.06),
+      inset 0 1px 0 rgb(255 255 255 / 0.05),
       0 12px 28px -14px rgb(0 0 0 / 0.8);
   }
 
@@ -356,17 +361,19 @@ body {
   }
 }
 
-/* Yellow marker highlight for a single emphasised word. */
+/* Orange marker highlight for a single emphasised word — the Browserbase
+ * headline-block treatment. */
 @utility marker {
   background: linear-gradient(
       180deg,
-      transparent 58%,
-      color-mix(in oklab, var(--sun) 85%, transparent) 58%,
-      color-mix(in oklab, var(--sun) 85%, transparent) 92%,
-      transparent 92%
+      transparent 12%,
+      var(--sun) 12%,
+      var(--sun) 88%,
+      transparent 88%
     )
     no-repeat;
-  padding-inline: 0.06em;
+  color: #fff;
+  padding-inline: 0.14em;
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
@@ -424,33 +431,40 @@ body {
   }
 }
 
-/* Full-page backdrop for the signed-in workspace. */
+/* Full-page backdrop for the signed-in workspace: flat warm surface with
+ * the same halftone dot texture as the marketing hero, instead of a blue
+ * radial gradient. */
 @utility app-backdrop {
-  background:
-    radial-gradient(60rem 40rem at 0% 0%, var(--shell-a), transparent 60%),
-    radial-gradient(50rem 36rem at 100% 100%, var(--shell-c), transparent 60%),
-    var(--shell-b);
+  background: var(--shell-b);
+  background-image:
+    radial-gradient(var(--dot-color) 1.1px, transparent 1.1px),
+    radial-gradient(var(--dot-color) 1.1px, transparent 1.1px);
+  background-size: 20px 20px;
+  background-position:
+    0 0,
+    10px 10px;
 }
 
-/* Coach orb: a soft lit sphere in the brand blues. */
+/* Coach orb: a lit sphere in ink + the brand orange, replacing the old
+ * blue-sky orb. */
 @utility coach-orb {
   border-radius: 9999px;
   background:
     radial-gradient(
       circle at 32% 28%,
-      rgb(255 255 255 / 0.95) 0 8%,
+      rgb(255 255 255 / 0.9) 0 8%,
       transparent 32%
     ),
     radial-gradient(
       circle at 70% 75%,
-      color-mix(in oklab, var(--sun) 55%, transparent) 0 6%,
+      color-mix(in oklab, var(--sun) 70%, transparent) 0 6%,
       transparent 40%
     ),
-    radial-gradient(circle at 50% 50%, #8cc4ef 0%, #3d8ddc 55%, #1a5ae6 100%);
+    radial-gradient(circle at 50% 50%, #4a4a4d 0%, #1c1c1e 55%, #101012 100%);
   box-shadow:
-    inset -10px -14px 30px rgb(10 40 110 / 0.35),
-    inset 8px 10px 24px rgb(255 255 255 / 0.45),
-    0 20px 60px -10px color-mix(in oklab, var(--primary) 55%, transparent);
+    inset -10px -14px 30px rgb(0 0 0 / 0.45),
+    inset 8px 10px 24px rgb(255 255 255 / 0.12),
+    0 20px 60px -10px color-mix(in oklab, var(--sun) 55%, transparent);
 }
 
 @keyframes orb-breathe {
@@ -490,7 +504,7 @@ body {
     height: 1.2rem;
     border-radius: 9999px;
     background: #fff;
-    box-shadow: 0 1px 3px rgb(11 18 32 / 0.25);
+    box-shadow: 0 1px 3px rgb(16 16 18 / 0.25);
     transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
   }
 
@@ -510,5 +524,17 @@ body {
   &:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+}
+
+@media (min-width: 40rem) {
+  :root {
+    --app-gutter: 0.75rem;
+  }
+}
+
+@media (min-width: 64rem) {
+  :root {
+    --app-gutter: 1rem;
   }
 }

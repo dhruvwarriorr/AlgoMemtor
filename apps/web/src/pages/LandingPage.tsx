@@ -178,7 +178,7 @@ function PrimaryActions({ status }: { status: AuthStatus }) {
               size: 'lg',
               variant: 'outline',
             }),
-            'border-white/70 bg-white/80 text-[#0b1220] backdrop-blur hover:bg-white dark:border-white/15 dark:bg-white/10 dark:text-[#eaf1fb] dark:hover:bg-white/15',
+            'border-white/70 bg-white/80 text-[#101012] backdrop-blur hover:bg-white dark:border-white/15 dark:bg-white/10 dark:text-[#f4f1ea] dark:hover:bg-white/15',
           )}
           to="/login"
         >
@@ -233,16 +233,16 @@ function LandingPage() {
   const { status } = useAuth()
 
   return (
-    <main className="-mt-20 flex-1" id="main-content">
+    <main className="flex-1" id="main-content">
       <section className="px-2 pt-2 sm:px-3 sm:pt-3">
-        <div className="sky-surface flex min-h-[calc(100dvh-1rem)] w-full flex-col items-center rounded-[2rem] px-4 pt-32 text-center sm:rounded-[2.75rem] sm:pt-36">
+        <div className="sky-surface flex min-h-[calc(100dvh-8rem)] w-full flex-col items-center rounded-[2rem] px-4 pt-16 text-center sm:rounded-[2.75rem] sm:pt-20">
           <Cloud className="top-40 -left-24 w-[26rem] [--drift:60px] sm:w-[36rem]" />
           <Cloud className="top-24 -right-28 w-[24rem] opacity-80 [--drift-duration:44s] [--drift:-50px] sm:w-[32rem]" />
           <Cloud className="top-[58%] left-[14%] hidden w-64 opacity-70 [--drift-duration:52s] lg:block" />
           <Cloud className="-right-10 bottom-40 hidden w-[30rem] [--drift:-40px] md:block" />
 
           <p
-            className="animate-rise glass-pill inline-flex items-center gap-2 rounded-full py-1.5 pr-3.5 pl-1.5 text-[0.8125rem] font-medium text-[#0b1220] dark:text-[#eaf1fb]"
+            className="animate-rise glass-pill inline-flex items-center gap-2 rounded-full py-1.5 pr-3.5 pl-1.5 text-[0.8125rem] font-medium text-[#101012] dark:text-[#f4f1ea]"
             style={stagger(0)}
           >
             <span aria-hidden="true" className="coach-orb size-5" />
@@ -255,7 +255,7 @@ function LandingPage() {
           </p>
 
           <h1
-            className="animate-rise mt-6 max-w-5xl pb-1 text-[2.6rem] leading-[1.04] text-[#0b1220] sm:text-6xl lg:text-[5rem] dark:text-[#eaf1fb]"
+            className="animate-rise mt-6 max-w-5xl pb-1 text-[2.6rem] leading-[1.04] text-[#101012] sm:text-6xl lg:text-[5rem] dark:text-[#f4f1ea]"
             style={stagger(1)}
           >
             The AI coach that{' '}
@@ -264,7 +264,7 @@ function LandingPage() {
           </h1>
 
           <p
-            className="animate-rise mt-6 max-w-2xl text-lg leading-8 text-[#0b1220]/75 dark:text-[#eaf1fb]/75"
+            className="animate-rise mt-6 max-w-2xl text-lg leading-8 text-[#101012]/75 dark:text-[#f4f1ea]/75"
             style={stagger(2)}
           >
             AlgoMemtor learns your profile and solve history across Codeforces,
@@ -625,10 +625,10 @@ function LandingPage() {
             aria-hidden="true"
             className="coach-orb animate-orb reveal-on-scroll size-20"
           />
-          <h2 className="reveal-on-scroll mt-8 max-w-3xl text-4xl leading-[1.05] text-[#0b1220] sm:text-6xl dark:text-[#eaf1fb]">
+          <h2 className="reveal-on-scroll mt-8 max-w-3xl text-4xl leading-[1.05] text-[#101012] sm:text-6xl dark:text-[#f4f1ea]">
             Your coach is ready when you are.
           </h2>
-          <p className="reveal-on-scroll mt-5 max-w-md text-lg text-[#0b1220]/75 dark:text-[#eaf1fb]/75">
+          <p className="reveal-on-scroll mt-5 max-w-md text-lg text-[#101012]/75 dark:text-[#f4f1ea]/75">
             Link a profile, set a goal, and get a plan made for you in minutes.
           </p>
           <div className="reveal-on-scroll mt-9 w-full max-w-sm sm:w-auto sm:max-w-none">

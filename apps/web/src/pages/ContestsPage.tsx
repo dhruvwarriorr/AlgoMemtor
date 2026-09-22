@@ -100,9 +100,14 @@ function providerFromSearch(value: string | null) {
   return result.success ? result.data : undefined
 }
 
+// Upcoming contests are the default view; "all" is an explicit choice.
+const allStatuses = 'all'
+
 function statusFromSearch(value: string | null): ContestStatus | undefined {
+  if (value === null) return 'upcoming'
+  if (value === allStatuses) return undefined
   const result = ExternalContestSchema.shape.status.safeParse(value)
-  return result.success ? result.data : undefined
+  return result.success ? result.data : 'upcoming'
 }
 
 function ContestsPage() {
@@ -128,8 +133,8 @@ function ContestsPage() {
     const nextParams = new URLSearchParams(searchParams)
     if (nextProvider === undefined) nextParams.delete('provider')
     else nextParams.set('provider', nextProvider)
-    if (nextStatus === undefined) nextParams.delete('status')
-    else nextParams.set('status', nextStatus)
+    if (nextStatus === 'upcoming') nextParams.delete('status')
+    else nextParams.set('status', nextStatus ?? allStatuses)
     setVisibleCount(12)
     setSearchParams(nextParams)
   }
@@ -152,6 +157,17 @@ function ContestsPage() {
   } else if (contests?.data.length === 0) {
     content = (
       <EmptyState
+        action={
+          status === undefined ? null : (
+            <Button
+              onClick={() => updateFilters(provider, undefined)}
+              type="button"
+              variant="outline"
+            >
+              Show all contests
+            </Button>
+          )
+        }
         description="No contests match the selected provider and status. Try showing all contests."
         title="No contests found"
       />
@@ -207,12 +223,12 @@ function ContestsPage() {
               const next = event.currentTarget.value
               updateFilters(
                 provider,
-                next ? (next as ContestStatus) : undefined,
+                next === allStatuses ? undefined : (next as ContestStatus),
               )
             }}
-            value={status ?? ''}
+            value={status ?? allStatuses}
           >
-            <option value="">All statuses</option>
+            <option value={allStatuses}>All statuses</option>
             {(['upcoming', 'running', 'finished', 'unknown'] as const).map(
               (value) => (
                 <option key={value} value={value}>

@@ -15,7 +15,10 @@ import { providerLabels } from '@/features/platform/components/provider-labels'
 import { useActivity, useAnalytics } from '@/features/platform/hooks'
 import { SolvedHeatmap } from '@/features/progress/components/SolvedHeatmap'
 import { useProgressAnalytics } from '@/features/progress/hooks/useProgress'
-import { useDismissRecommendation, useRecommendations } from '@/features/recommendations/hooks/useRecommendations'
+import {
+  useDismissRecommendation,
+  useRecommendations,
+} from '@/features/recommendations/hooks/useRecommendations'
 import { cn } from '@/lib/utils'
 
 import { dashboardActivity, isAcceptedSubmission } from './dashboard-activity'
@@ -198,7 +201,7 @@ function DashboardPage() {
   ]
 
   return (
-    <PageContainer className="gap-6 lg:h-[calc(100dvh-2rem)] lg:min-h-[46rem] lg:flex-none lg:overflow-hidden">
+    <PageContainer className="gap-6 xl:h-(--app-panel-height) xl:min-h-[34rem] xl:flex-none xl:overflow-hidden">
       <PageHeader
         action={<AskCoachBar />}
         className="sm:items-center"
@@ -206,10 +209,11 @@ function DashboardPage() {
         title={title}
       />
 
-      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-12 lg:grid-rows-2">
+      {/* A strict four-quarter grid: every card edge lands on a shared line. */}
+      <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-2 xl:grid-cols-12 xl:grid-rows-2">
         <section
           aria-labelledby="solved-heading"
-          className="animate-rise relative isolate flex min-h-52 flex-col justify-between overflow-hidden rounded-[1.4rem] p-6 text-white [background:linear-gradient(155deg,#2a6df0,#1a5ae6_45%,#12348f)] lg:col-span-3 lg:min-h-0"
+          className="animate-rise relative isolate flex min-h-52 flex-col justify-between overflow-hidden rounded-[1.4rem] p-6 text-white [background:linear-gradient(155deg,#ff7a3d,#ff4d12_45%,#9a2e0b)] xl:col-span-3 xl:min-h-0"
           style={stagger(1)}
         >
           <span
@@ -240,12 +244,12 @@ function DashboardPage() {
 
         <section
           aria-labelledby="streak-heading"
-          className="animate-rise flex min-h-44 flex-col justify-between rounded-[1.4rem] bg-sun-soft p-5 text-sun-foreground ring-1 ring-sun/45 lg:col-span-2 lg:min-h-0"
+          className="animate-rise flex min-h-44 flex-col justify-between rounded-[1.4rem] bg-sun-soft p-5 text-sun-foreground ring-1 ring-sun/45 xl:col-span-3 xl:min-h-0"
           style={stagger(2)}
         >
           <span
             aria-hidden="true"
-            className="grid size-10 place-items-center rounded-full bg-sun text-[#0b1220]"
+            className="grid size-10 place-items-center rounded-full bg-sun text-[#101012]"
           >
             <Flame className="size-5" strokeWidth={2} />
           </span>
@@ -268,7 +272,7 @@ function DashboardPage() {
 
         <section
           aria-labelledby="snapshot-heading"
-          className={cn(tileClass, 'animate-rise p-0 lg:col-span-4')}
+          className={cn(tileClass, 'animate-rise p-0 xl:col-span-3')}
           style={stagger(3)}
         >
           <h2 className="sr-only" id="snapshot-heading">
@@ -284,7 +288,7 @@ function DashboardPage() {
                   {item.label}
                 </dt>
                 <dd className="min-w-0">
-                  <span className="flex min-w-0 items-center gap-1.5 font-heading text-lg leading-tight font-semibold tracking-[-0.02em] text-foreground">
+                  <span className="flex min-w-0 items-center gap-1.5 font-heading text-base leading-tight font-semibold tracking-[-0.02em] text-foreground">
                     {item.provider ? (
                       <ProviderLogo
                         className="size-4 shrink-0 text-primary"
@@ -302,154 +306,10 @@ function DashboardPage() {
           </dl>
         </section>
 
-        <div
-          className="animate-rise min-h-0 min-w-0 lg:col-span-3 [&>div]:rounded-[1.4rem]"
-          style={stagger(4)}
-        >
-          <SolvedHeatmap trend={analytics.trend} />
-        </div>
-
-        <section
-          aria-labelledby="coach-focus-heading"
-          className="animate-rise relative isolate flex min-h-64 min-w-0 flex-col overflow-hidden rounded-[1.4rem] bg-ink p-6 text-ink-foreground lg:col-span-4 lg:min-h-0"
-          style={stagger(5)}
-        >
-          <span
-            aria-hidden="true"
-            className="coach-orb animate-orb absolute -top-10 -right-10 size-36 opacity-90"
-          />
-          <h2
-            className="font-sans text-sm font-medium opacity-70"
-            id="coach-focus-heading"
-          >
-            Your coach is focusing on
-          </h2>
-          {roadmapQuery.isError ? (
-            <p className={cn(noticeClass, 'mt-4')} role="status">
-              Your roadmap is temporarily unavailable. Open Coach to retry it.
-            </p>
-          ) : leadTopic ? (
-            <>
-              <p className="mt-3 max-w-[70%] font-heading text-3xl leading-tight font-bold tracking-[-0.03em]">
-                {leadTopic.name}
-              </p>
-              <p className="mt-2 line-clamp-2 max-w-md text-sm opacity-70">
-                {leadTopic.reason}
-              </p>
-              <button
-                className="mt-3 w-fit rounded-full border border-white/30 px-3 py-1 text-xs transition-colors hover:bg-white/10 disabled:opacity-50"
-                disabled={setTopicStatus.isPending}
-                onClick={() => void setTopicStatus.mutateAsync({ topic: leadTopic.topic, status: 'skip_for_now' })}
-                type="button"
-              >
-                Dismiss this focus
-              </button>
-              {setTopicStatus.isError ? <p className="mt-2 text-xs" role="alert">Could not dismiss this focus. Try again.</p> : null}
-              {otherTopics.length > 0 ? (
-                <ul className="mt-4 flex flex-wrap gap-1.5">
-                  {otherTopics.slice(0, 3).map((topic) => (
-                    <li
-                      className="rounded-full bg-white/10 px-3 py-1 text-xs dark:bg-black/10"
-                      key={topic.topic}
-                    >
-                      {topic.name}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </>
-          ) : (
-            <p className="mt-3 max-w-sm text-sm opacity-75">
-              No topics are due right now. Your coach will surface the next step
-              as new activity arrives.
-            </p>
-          )}
-          <Link
-            className="group/cta mt-auto inline-flex w-fit items-center gap-2 rounded-full bg-white py-1.5 pr-1.5 pl-4 text-sm font-medium text-[#0b1220] transition-transform duration-300 active:scale-[0.98] dark:bg-[#0b1220] dark:text-white"
-            to="/coach"
-          >
-            Continue with coach
-            <span className="grid size-7 place-items-center rounded-full bg-[#0b1220]/8 transition-transform duration-300 group-hover/cta:translate-x-0.5 group-hover/cta:-translate-y-px dark:bg-white/10">
-              <ArrowUpRight aria-hidden="true" className="size-3.5" />
-            </span>
-          </Link>
-        </section>
-
-        <section
-          aria-labelledby="next-practice-heading"
-          className={cn(tileClass, 'animate-rise lg:col-span-5')}
-          style={stagger(6)}
-        >
-          <div className={tileTitleClass}>
-            <h2
-              className="font-sans text-sm font-medium"
-              id="next-practice-heading"
-            >
-              Next practice
-            </h2>
-            <TileLink label="All picks" to="/recommendations" />
-          </div>
-          {recommendationsQuery.isError ? (
-            <p className={cn(noticeClass, 'mt-4')} role="status">
-              Recommendations are temporarily unavailable.
-            </p>
-          ) : recommendations.length === 0 ? (
-            <p className="mt-4 text-sm text-muted-foreground">
-              No recommendations yet. Visit Recommendations to refresh the feed.
-            </p>
-          ) : (
-            <ul className="mt-2 flex min-h-0 flex-1 flex-col divide-y divide-border">
-              {recommendations.map((item) => (
-                <li
-                  className="flex min-w-0 flex-1 items-center gap-3 py-2"
-                  key={item.id}
-                >
-                  <span
-                    aria-hidden="true"
-                    className="grid size-10 shrink-0 place-items-center rounded-xl bg-secondary text-secondary-foreground"
-                  >
-                    <ProviderLogo
-                      className="size-5"
-                      provider={item.problem.provider}
-                    />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-foreground">
-                      {item.problem.title}
-                    </p>
-                    <p className="truncate text-sm text-muted-foreground">
-                      {item.reason}
-                    </p>
-                  </div>
-                  <a
-                    aria-label={`Solve ${item.problem.title} on ${providerLabels[item.problem.provider]}`}
-                    className="grid size-9 shrink-0 place-items-center rounded-full border border-border text-foreground/70 transition-colors hover:border-primary hover:bg-primary hover:text-primary-foreground"
-                    href={item.problem.canonicalUrl}
-                    rel="noopener noreferrer"
-                    target="_blank"
-                  >
-                    <ArrowUpRight aria-hidden="true" className="size-4" />
-                  </a>
-                  <button
-                    aria-label={`Dismiss ${item.problem.title}`}
-                    className="grid size-9 shrink-0 place-items-center rounded-full border border-border text-foreground/70 transition-colors hover:border-primary hover:text-primary disabled:opacity-50"
-                    disabled={dismissRecommendation.isPending}
-                    onClick={() => void dismissRecommendation.mutateAsync(item.id)}
-                    title="Don't recommend this problem again"
-                    type="button"
-                  >
-                    <X aria-hidden="true" className="size-4" />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
         <section
           aria-labelledby="activity-heading"
-          className={cn(tileClass, 'animate-rise lg:col-span-3')}
-          style={stagger(7)}
+          className={cn(tileClass, 'animate-rise xl:col-span-3')}
+          style={stagger(4)}
         >
           <div className={tileTitleClass}>
             <h2 className="font-sans text-sm font-medium" id="activity-heading">
@@ -505,6 +365,161 @@ function DashboardPage() {
             </ol>
           )}
         </section>
+
+        <section
+          aria-labelledby="coach-focus-heading"
+          className="animate-rise relative isolate flex min-h-64 min-w-0 flex-col overflow-hidden rounded-[1.4rem] bg-ink p-6 text-ink-foreground xl:col-span-3 xl:min-h-0 [@media(max-height:760px)]:p-5"
+          style={stagger(5)}
+        >
+          <span
+            aria-hidden="true"
+            className="coach-orb animate-orb absolute -top-10 -right-10 size-36 opacity-90"
+          />
+          <h2
+            className="font-sans text-sm font-medium opacity-70"
+            id="coach-focus-heading"
+          >
+            Your coach is focusing on
+          </h2>
+          {roadmapQuery.isError ? (
+            <p className={cn(noticeClass, 'mt-4')} role="status">
+              Your roadmap is temporarily unavailable. Open Coach to retry it.
+            </p>
+          ) : leadTopic ? (
+            <>
+              <p className="mt-3 max-w-[70%] font-heading text-3xl leading-tight font-bold tracking-[-0.03em] [@media(max-height:760px)]:mt-2 [@media(max-height:760px)]:text-2xl">
+                {leadTopic.name}
+              </p>
+              <p className="mt-2 line-clamp-2 max-w-md text-sm opacity-70 [@media(max-height:760px)]:line-clamp-1">
+                {leadTopic.reason}
+              </p>
+              <button
+                className="mt-3 w-fit rounded-full border border-white/30 px-3 py-1 text-xs transition-colors hover:bg-white/10 disabled:opacity-50"
+                disabled={setTopicStatus.isPending}
+                onClick={() =>
+                  void setTopicStatus.mutateAsync({
+                    topic: leadTopic.topic,
+                    status: 'skip_for_now',
+                  })
+                }
+                type="button"
+              >
+                Dismiss this focus
+              </button>
+              {setTopicStatus.isError ? (
+                <p className="mt-2 text-xs" role="alert">
+                  Could not dismiss this focus. Try again.
+                </p>
+              ) : null}
+              {otherTopics.length > 0 ? (
+                <ul className="mt-4 flex flex-wrap gap-1.5 [@media(max-height:820px)]:hidden">
+                  {otherTopics.slice(0, 3).map((topic) => (
+                    <li
+                      className="rounded-full bg-white/10 px-3 py-1 text-xs dark:bg-black/10"
+                      key={topic.topic}
+                    >
+                      {topic.name}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </>
+          ) : (
+            <p className="mt-3 max-w-sm text-sm opacity-75">
+              No topics are due right now. Your coach will surface the next step
+              as new activity arrives.
+            </p>
+          )}
+          <Link
+            className="group/cta mt-auto inline-flex w-fit items-center gap-2 rounded-full bg-white py-1.5 pr-1.5 pl-4 text-sm font-medium text-[#101012] transition-transform duration-300 active:scale-[0.98] dark:bg-[#101012] dark:text-white"
+            to="/coach"
+          >
+            Continue with coach
+            <span className="grid size-7 place-items-center rounded-full bg-[#101012]/8 transition-transform duration-300 group-hover/cta:translate-x-0.5 group-hover/cta:-translate-y-px dark:bg-white/10">
+              <ArrowUpRight aria-hidden="true" className="size-3.5" />
+            </span>
+          </Link>
+        </section>
+
+        <section
+          aria-labelledby="next-practice-heading"
+          className={cn(tileClass, 'animate-rise md:col-span-2 xl:col-span-6')}
+          style={stagger(6)}
+        >
+          <div className={tileTitleClass}>
+            <h2
+              className="font-sans text-sm font-medium"
+              id="next-practice-heading"
+            >
+              Next practice
+            </h2>
+            <TileLink label="All picks" to="/recommendations" />
+          </div>
+          {recommendationsQuery.isError ? (
+            <p className={cn(noticeClass, 'mt-4')} role="status">
+              Recommendations are temporarily unavailable.
+            </p>
+          ) : recommendations.length === 0 ? (
+            <p className="mt-4 text-sm text-muted-foreground">
+              No recommendations yet. Visit Recommendations to refresh the feed.
+            </p>
+          ) : (
+            <ul className="mt-1.5 flex min-h-0 flex-1 flex-col divide-y divide-border [@media(max-height:820px)]:[&>li:nth-child(n+3)]:hidden">
+              {recommendations.map((item) => (
+                <li
+                  className="flex min-w-0 flex-1 items-center gap-3 py-1.5"
+                  key={item.id}
+                >
+                  <span
+                    aria-hidden="true"
+                    className="grid size-9 shrink-0 place-items-center rounded-xl bg-secondary text-secondary-foreground"
+                  >
+                    <ProviderLogo
+                      className="size-5"
+                      provider={item.problem.provider}
+                    />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium text-foreground">
+                      {item.problem.title}
+                    </p>
+                    <p className="truncate text-sm text-muted-foreground">
+                      {item.reason}
+                    </p>
+                  </div>
+                  <a
+                    aria-label={`Solve ${item.problem.title} on ${providerLabels[item.problem.provider]}`}
+                    className="grid size-9 shrink-0 place-items-center rounded-full border border-border text-foreground/70 transition-colors hover:border-primary hover:bg-primary hover:text-primary-foreground"
+                    href={item.problem.canonicalUrl}
+                    rel="noopener noreferrer"
+                    target="_blank"
+                  >
+                    <ArrowUpRight aria-hidden="true" className="size-4" />
+                  </a>
+                  <button
+                    aria-label={`Dismiss ${item.problem.title}`}
+                    className="grid size-9 shrink-0 place-items-center rounded-full border border-border text-foreground/70 transition-colors hover:border-primary hover:text-primary disabled:opacity-50"
+                    disabled={dismissRecommendation.isPending}
+                    onClick={() =>
+                      void dismissRecommendation.mutateAsync(item.id)
+                    }
+                    title="Don't recommend this problem again"
+                    type="button"
+                  >
+                    <X aria-hidden="true" className="size-4" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <div
+          className="animate-rise min-h-0 min-w-0 xl:col-span-3 [&>div]:rounded-[1.4rem]"
+          style={stagger(7)}
+        >
+          <SolvedHeatmap trend={analytics.trend} />
+        </div>
       </div>
     </PageContainer>
   )

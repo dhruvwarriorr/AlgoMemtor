@@ -1,11 +1,12 @@
 import { ArrowUpRight } from 'lucide-react'
-import { Link, NavLink, useLocation } from 'react-router-dom'
+import { Link, NavLink } from 'react-router-dom'
 
 import { LogoMark } from '@/components/brand/LogoMark'
 import { buttonVariants } from '@/components/ui/button'
 import { useAuth } from '@/features/auth/useAuth'
 import { cn } from '@/lib/utils'
 
+import { ExploreMenu } from './ExploreMenu'
 import { ThemeToggle } from './ThemeToggle'
 
 const sectionLinks = [
@@ -14,23 +15,17 @@ const sectionLinks = [
   { label: 'Principles', href: '/#principles' },
 ] as const
 
-// Public header: floating pills that sit inside the landing hero.
+// Public header: a flat, full-width bar with a thin bottom border — the
+// Browserbase navbar treatment — instead of a floating glass pill.
 function Topbar() {
-  const location = useLocation()
   const { status } = useAuth()
-  const isLanding = location.pathname === '/'
 
   return (
-    <header
-      className={cn(
-        'sticky top-0 z-30 w-full px-3 pt-3 sm:px-5',
-        isLanding && 'pt-6 sm:px-8 lg:px-12',
-      )}
-    >
-      <div className="flex h-14 w-full items-center justify-between gap-3">
+    <header className="sticky top-0 z-30 w-full border-b border-border bg-background/90 backdrop-blur-md">
+      <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
         <Link
           aria-label="AlgoMemtor home"
-          className="glass-pill flex h-12 min-w-0 items-center gap-2.5 rounded-full py-1.5 pr-4 pl-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex min-w-0 items-center gap-2.5 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
           to="/"
         >
           <LogoMark />
@@ -41,8 +36,9 @@ function Topbar() {
 
         <nav
           aria-label="Page sections"
-          className="glass-pill hidden h-12 items-center gap-0.5 rounded-full p-1.5 lg:flex"
+          className="hidden items-center gap-0.5 lg:flex"
         >
+          <ExploreMenu />
           {sectionLinks.map((item) => (
             <a
               className="inline-flex h-9 items-center rounded-full px-4 text-sm font-medium text-foreground/75 outline-none transition-colors duration-300 hover:bg-secondary hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
@@ -54,20 +50,35 @@ function Topbar() {
           ))}
         </nav>
 
-        <div className="glass-pill flex h-12 items-center gap-1 rounded-full p-1.5">
+        <div className="flex items-center gap-2">
           <ThemeToggle />
           {status === 'authenticated' ? (
             <Link
-              className={buttonVariants({ variant: 'ink' })}
+              className={buttonVariants({ variant: 'default' })}
               to="/dashboard"
             >
               Dashboard
               <ArrowUpRight aria-hidden="true" />
             </Link>
           ) : status === 'unauthenticated' ? (
-            <NavLink className={buttonVariants({ variant: 'ink' })} to="/login">
-              Login
-            </NavLink>
+            <>
+              <NavLink
+                className={cn(
+                  buttonVariants({ variant: 'outline' }),
+                  'hidden sm:inline-flex',
+                )}
+                to="/login"
+              >
+                Log in
+              </NavLink>
+              <NavLink
+                className={buttonVariants({ variant: 'default' })}
+                to="/login"
+              >
+                Get started
+                <ArrowUpRight aria-hidden="true" />
+              </NavLink>
+            </>
           ) : null}
         </div>
       </div>

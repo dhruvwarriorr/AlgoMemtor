@@ -9,7 +9,7 @@ import { useState } from 'react'
 
 import { useNotification } from '@/app/useNotification'
 import { ProviderLogo } from '@/components/brand/ProviderLogo'
-import { Button, buttonVariants } from '@/components/ui/button'
+import { Button } from '@/components/ui/button'
 import { ApiClientError } from '@/features/discovery/api/client'
 import { ProblemLearningControls } from '@/features/progress/components/ProblemLearningControls'
 import { useDismissProblem } from '@/features/recommendations/hooks/useRecommendations'
@@ -201,12 +201,6 @@ export function ProblemCard({ problem }: ProblemCardProps) {
             canonicalUrl={problem.canonicalUrl}
             provider={problem.provider}
           />
-          <a
-            className={buttonVariants({ size: 'sm', variant: 'outline' })}
-            href={`/problems/${problem.provider}/${encodeURIComponent(problem.externalId)}`}
-          >
-            View details
-          </a>
           <Button
             aria-label={`Dismiss ${problem.title}`}
             className="ml-auto"

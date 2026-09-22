@@ -47,7 +47,7 @@ export function ProfileBanner({
             <ul className="mt-3 flex flex-wrap gap-1.5">
               {chips.map((chip) => (
                 <li
-                  className="rounded-full bg-white/75 px-3 py-1 text-xs font-medium text-[#0b1220] backdrop-blur dark:bg-white/10 dark:text-[#eaf1fb]"
+                  className="rounded-full bg-white/75 px-3 py-1 text-xs font-medium text-[#101012] backdrop-blur dark:bg-white/10 dark:text-[#f4f1ea]"
                   key={chip}
                 >
                   {chip}

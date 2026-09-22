@@ -8,11 +8,19 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
+        // Primary action pill — solid ink/black, the Browserbase "Get API
+        // key" treatment. Used for the main call to action.
         default:
-          'bg-primary text-primary-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.22),0_6px_16px_-8px_color-mix(in_oklab,var(--primary)_80%,transparent)] hover:bg-[color-mix(in_oklab,var(--primary),black_12%)] dark:hover:bg-[color-mix(in_oklab,var(--primary),white_10%)]',
-        ink: 'bg-ink text-ink-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.14),0_8px_18px_-10px_rgb(11_18_32/0.7)] hover:bg-[color-mix(in_oklab,var(--ink),var(--primary)_22%)]',
+          'bg-ink text-ink-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.12),0_6px_16px_-8px_rgb(16_16_18/0.5)] hover:bg-[color-mix(in_oklab,var(--ink),var(--primary)_20%)]',
+        ink: 'bg-ink text-ink-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.12),0_8px_18px_-10px_rgb(16_16_18/0.55)] hover:bg-[color-mix(in_oklab,var(--ink),var(--primary)_20%)]',
+        // Loud accent pill — solid orange, reserved for rare "this is the
+        // one thing to click" moments.
+        accent:
+          'bg-primary text-primary-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.25),0_6px_16px_-8px_color-mix(in_oklab,var(--primary)_80%,transparent)] hover:bg-[color-mix(in_oklab,var(--primary),black_10%)]',
+        // Quiet pill — thin border, near-white fill, the Browserbase
+        // "Setup for agents" treatment.
         outline:
-          'border-border bg-card text-foreground shadow-[0_1px_2px_rgb(22_52_102/0.06)] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--border))] hover:bg-secondary aria-expanded:bg-secondary',
+          'border-border bg-card text-foreground hover:border-[color-mix(in_oklab,var(--foreground)_28%,var(--border))] hover:bg-secondary aria-expanded:bg-secondary',
         secondary:
           'bg-secondary text-secondary-foreground hover:bg-accent aria-expanded:bg-accent',
         ghost:
