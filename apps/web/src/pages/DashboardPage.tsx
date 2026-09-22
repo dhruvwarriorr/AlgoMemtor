@@ -1,6 +1,22 @@
-import { useState, type CSSProperties, type FormEvent } from 'react'
+import {
+  useState,
+  type CSSProperties,
+  type FormEvent,
+  type ReactNode,
+} from 'react'
 import type { ProviderKey } from '@algomemtor/shared-contracts'
-import { ArrowRight, ArrowUpRight, Flame, Sparkles, X } from 'lucide-react'
+import {
+  ArrowRight,
+  ArrowUpRight,
+  CheckCheck,
+  Code2,
+  Flame,
+  Link2,
+  Shapes,
+  Sparkles,
+  Trophy,
+  X,
+} from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { ProviderLogo } from '@/components/brand/ProviderLogo'
@@ -11,6 +27,8 @@ import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { useAuth } from '@/features/auth/useAuth'
 import { useCoachRoadmap, useSetCoachTopicStatus } from '@/features/coach/hooks'
+import { RatingTrendCard } from '@/features/dashboard/RatingTrendCard'
+import { TopicMixCard } from '@/features/dashboard/TopicMixCard'
 import { providerLabels } from '@/features/platform/components/provider-labels'
 import { useActivity, useAnalytics } from '@/features/platform/hooks'
 import { SolvedHeatmap } from '@/features/progress/components/SolvedHeatmap'
@@ -32,6 +50,11 @@ const tileTitleClass =
 const noticeClass =
   'rounded-xl border border-sun/60 bg-sun-soft p-3 text-sm text-sun-foreground'
 
+const activityDate = new Intl.DateTimeFormat(undefined, {
+  day: 'numeric',
+  month: 'short',
+})
+
 const stagger = (index: number) => ({ '--i': index }) as CSSProperties
 
 function greeting(date = new Date()) {
@@ -39,6 +62,89 @@ function greeting(date = new Date()) {
   if (hour < 12) return 'Good morning'
   if (hour < 18) return 'Good afternoon'
   return 'Good evening'
+}
+
+// One headline number with its icon. Large type so it reads from across the room.
+function KpiTile({
+  label,
+  value,
+  unit,
+  detail,
+  icon,
+  tone = 'card',
+  index,
+}: {
+  label: string
+  value: string
+  unit?: string
+  detail: string
+  icon: ReactNode
+  tone?: 'card' | 'primary' | 'sun'
+  index: number
+}) {
+  return (
+    <div
+      className={cn(
+        'animate-rise flex min-w-0 flex-col gap-3 rounded-[1.4rem] p-4',
+        tone === 'primary' &&
+          'text-white [background:linear-gradient(155deg,#ff7a3d,#ff4d12_45%,#9a2e0b)]',
+        tone === 'sun' && 'bg-sun-soft text-sun-foreground ring-1 ring-sun/45',
+        tone === 'card' && 'border border-border bg-card',
+      )}
+      style={stagger(index)}
+    >
+      <div className="flex items-center gap-2.5">
+        <span
+          aria-hidden="true"
+          className={cn(
+            'grid size-9 shrink-0 place-items-center rounded-xl',
+            tone === 'primary' && 'bg-white/20 text-white',
+            tone === 'sun' && 'bg-sun text-[#101012]',
+            tone === 'card' && 'bg-accent text-accent-foreground',
+          )}
+        >
+          {icon}
+        </span>
+        <dt
+          className={cn(
+            'min-w-0 text-sm leading-tight font-medium',
+            tone === 'card' && 'text-muted-foreground',
+            tone === 'primary' && 'text-white/85',
+          )}
+        >
+          {label}
+        </dt>
+      </div>
+      <dd className="min-w-0">
+        <span
+          className={cn(
+            'block truncate font-heading leading-none font-bold tracking-[-0.04em]',
+            tone === 'card'
+              ? 'text-[1.85rem] text-foreground'
+              : 'text-[2.4rem]',
+            tone === 'sun' && 'text-foreground',
+          )}
+          title={value}
+        >
+          {value}
+          {unit ? (
+            <span className="ml-1.5 text-lg font-semibold tracking-normal">
+              {unit}
+            </span>
+          ) : null}
+        </span>
+        <span
+          className={cn(
+            'mt-1.5 block truncate text-sm',
+            tone === 'card' && 'text-muted-foreground',
+            tone === 'primary' && 'text-white/80',
+          )}
+        >
+          {detail}
+        </span>
+      </dd>
+    </div>
+  )
 }
 
 function TileLink({ to, label }: { to: string; label: string }) {
@@ -176,32 +282,8 @@ function DashboardPage() {
   )
   const [leadTopic, ...otherTopics] = focusTopics
 
-  const snapshot = [
-    {
-      label: 'Top platform',
-      value: topPlatform ? providerLabels[topPlatform[0]] : 'None yet',
-      detail: topPlatform ? `${topPlatform[1]} solved` : 'Link a profile',
-      provider: topPlatform?.[0],
-    },
-    {
-      label: 'Top topic',
-      value: topTopic ? topTopic.topic : 'None yet',
-      detail: topTopic ? `${topTopic.solved} in 30 days` : 'No solves yet',
-    },
-    {
-      label: 'Language',
-      value: topLanguage ? topLanguage[0] : 'None yet',
-      detail: topLanguage ? `${topLanguage[1]} solves` : 'No submissions',
-    },
-    {
-      label: 'Contests',
-      value: String(recentContests.length),
-      detail: 'Last 30 days',
-    },
-  ]
-
   return (
-    <PageContainer className="gap-6 xl:h-(--app-panel-height) xl:min-h-[34rem] xl:flex-none xl:overflow-hidden">
+    <PageContainer className="gap-6 xl:min-h-(--app-panel-height) xl:flex-none xl:py-7">
       <PageHeader
         action={<AskCoachBar />}
         className="sm:items-center"
@@ -209,166 +291,84 @@ function DashboardPage() {
         title={title}
       />
 
-      {/* A strict four-quarter grid: every card edge lands on a shared line. */}
-      <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-2 xl:grid-cols-12 xl:grid-rows-2">
-        <section
-          aria-labelledby="solved-heading"
-          className="animate-rise relative isolate flex min-h-52 flex-col justify-between overflow-hidden rounded-[1.4rem] p-6 text-white [background:linear-gradient(155deg,#ff7a3d,#ff4d12_45%,#9a2e0b)] xl:col-span-3 xl:min-h-0"
-          style={stagger(1)}
-        >
-          <span
-            aria-hidden="true"
-            className="cloud -right-14 -bottom-12 w-64 opacity-30"
+      {/* KPI strip, then charts, then coaching: all on one 12-column grid. */}
+      <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-2 xl:grid-cols-12 xl:grid-rows-[auto_minmax(16rem,1fr)_minmax(16rem,1fr)]">
+        <dl className="grid min-w-0 grid-cols-1 gap-4 min-[26rem]:grid-cols-2 sm:grid-cols-3 md:col-span-2 xl:col-span-12 xl:grid-cols-6">
+          <KpiTile
+            detail="new in the last 30 days"
+            icon={<CheckCheck className="size-5" strokeWidth={2} />}
+            index={1}
+            label="Solved"
+            tone="primary"
+            value={String(analytics.window.solved)}
           />
-          <div className="flex items-center justify-between text-white/80">
-            <h2 className="font-sans text-sm font-medium" id="solved-heading">
-              New problems solved
-            </h2>
-            <Link
-              aria-label="View analytics"
-              className="grid size-8 place-items-center rounded-full bg-white/15 transition-transform duration-300 hover:scale-110"
-              to="/analytics"
-            >
-              <ArrowUpRight aria-hidden="true" className="size-4" />
-            </Link>
-          </div>
-          <p>
-            <span className="block font-heading text-[5.5rem] leading-none font-bold tracking-[-0.06em]">
-              {analytics.window.solved}
-            </span>
-            <span className="mt-2 block text-sm text-white/75">
-              in the last 30 local days
-            </span>
-          </p>
-        </section>
+          <KpiTile
+            detail={`Longest: ${analytics.longestStreak} ${analytics.longestStreak === 1 ? 'day' : 'days'}`}
+            icon={<Flame className="size-5" strokeWidth={2} />}
+            index={2}
+            label="Solve streak"
+            tone="sun"
+            unit={analytics.currentStreak === 1 ? 'day' : 'days'}
+            value={String(analytics.currentStreak)}
+          />
+          <KpiTile
+            detail={topPlatform ? `${topPlatform[1]} solved` : 'Link a profile'}
+            icon={
+              topPlatform ? (
+                <ProviderLogo className="size-5" provider={topPlatform[0]} />
+              ) : (
+                <Link2 className="size-5" strokeWidth={2} />
+              )
+            }
+            index={3}
+            label="Top platform"
+            value={topPlatform ? providerLabels[topPlatform[0]] : 'None yet'}
+          />
+          <KpiTile
+            detail={
+              topTopic ? `${topTopic.solved} in 30 days` : 'No solves yet'
+            }
+            icon={<Shapes className="size-5" strokeWidth={2} />}
+            index={4}
+            label="Top topic"
+            value={topTopic ? topTopic.topic : 'None yet'}
+          />
+          <KpiTile
+            detail={topLanguage ? `${topLanguage[1]} solves` : 'No submissions'}
+            icon={<Code2 className="size-5" strokeWidth={2} />}
+            index={5}
+            label="Language"
+            value={topLanguage ? topLanguage[0] : 'None yet'}
+          />
+          <KpiTile
+            detail="Last 30 days"
+            icon={<Trophy className="size-5" strokeWidth={2} />}
+            index={6}
+            label="Contests"
+            value={String(recentContests.length)}
+          />
+        </dl>
 
-        <section
-          aria-labelledby="streak-heading"
-          className="animate-rise flex min-h-44 flex-col justify-between rounded-[1.4rem] bg-sun-soft p-5 text-sun-foreground ring-1 ring-sun/45 xl:col-span-3 xl:min-h-0"
-          style={stagger(2)}
-        >
-          <span
-            aria-hidden="true"
-            className="grid size-10 place-items-center rounded-full bg-sun text-[#101012]"
-          >
-            <Flame className="size-5" strokeWidth={2} />
-          </span>
-          <div>
-            <h2 className="font-sans text-sm font-medium" id="streak-heading">
-              Solve streak
-            </h2>
-            <p className="mt-1 font-heading text-5xl leading-none font-bold tracking-[-0.05em] text-foreground">
-              {analytics.currentStreak}
-              <span className="ml-1.5 text-lg font-semibold tracking-normal">
-                {analytics.currentStreak === 1 ? 'day' : 'days'}
-              </span>
-            </p>
-            <p className="mt-2 text-xs">
-              Longest: {analytics.longestStreak}{' '}
-              {analytics.longestStreak === 1 ? 'day' : 'days'}
-            </p>
-          </div>
-        </section>
+        <RatingTrendCard
+          className="animate-rise md:col-span-2 xl:col-span-6 xl:min-h-0"
+          history={platformAnalyticsQuery.data?.ratingHistory ?? []}
+        />
 
-        <section
-          aria-labelledby="snapshot-heading"
-          className={cn(tileClass, 'animate-rise p-0 xl:col-span-3')}
-          style={stagger(3)}
-        >
-          <h2 className="sr-only" id="snapshot-heading">
-            Practice snapshot
-          </h2>
-          <dl className="grid h-full grid-cols-2 [&>div:nth-child(-n+2)]:border-b [&>div:nth-child(odd)]:border-r [&>div]:border-border">
-            {snapshot.map((item) => (
-              <div
-                className="flex min-w-0 flex-col justify-between gap-2 p-4"
-                key={item.label}
-              >
-                <dt className="text-xs font-medium text-muted-foreground">
-                  {item.label}
-                </dt>
-                <dd className="min-w-0">
-                  <span className="flex min-w-0 items-center gap-1.5 font-heading text-base leading-tight font-semibold tracking-[-0.02em] text-foreground">
-                    {item.provider ? (
-                      <ProviderLogo
-                        className="size-4 shrink-0 text-primary"
-                        provider={item.provider}
-                      />
-                    ) : null}
-                    <span className="truncate">{item.value}</span>
-                  </span>
-                  <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                    {item.detail}
-                  </span>
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </section>
+        <TopicMixCard
+          className="animate-rise xl:col-span-3 xl:min-h-0"
+          topics={analytics.topicActivity}
+        />
 
-        <section
-          aria-labelledby="activity-heading"
-          className={cn(tileClass, 'animate-rise xl:col-span-3')}
-          style={stagger(4)}
+        <div
+          className="animate-rise min-h-0 min-w-0 xl:col-span-3 [&>div]:rounded-[1.4rem]"
+          style={stagger(7)}
         >
-          <div className={tileTitleClass}>
-            <h2 className="font-sans text-sm font-medium" id="activity-heading">
-              Recent activity
-            </h2>
-          </div>
-          {activityQuery.isError ? (
-            <p className={cn(noticeClass, 'mt-4')} role="status">
-              Recent activity is temporarily unavailable.
-            </p>
-          ) : activityQuery.isPending ? (
-            <p className="mt-4 text-sm text-muted-foreground" role="status">
-              Loading recent activity…
-            </p>
-          ) : recentEvents.length === 0 ? (
-            <p className="mt-4 text-sm text-muted-foreground">
-              No dated activity yet. Sync a platform or record progress to start
-              your history.
-            </p>
-          ) : (
-            <ol className="mt-3 flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
-              {recentEvents.map((event) => {
-                const solved =
-                  (event.source === 'manual' && event.eventType === 'solved') ||
-                  isAcceptedSubmission(event)
-                return (
-                  <li className="flex min-w-0 items-start gap-3" key={event.id}>
-                    <span
-                      aria-hidden="true"
-                      className={cn(
-                        'mt-1.5 size-2 shrink-0 rounded-full',
-                        solved ? 'bg-go' : 'bg-foreground/25',
-                      )}
-                    />
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-foreground">
-                        {event.title ?? event.externalId ?? 'Contest activity'}
-                      </p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {providerLabels[event.provider]} ·{' '}
-                        {event.source === 'manual'
-                          ? event.eventType === 'solved'
-                            ? 'Marked solved'
-                            : 'Marked attempted'
-                          : solved
-                            ? 'Solved'
-                            : event.eventType.replaceAll('_', ' ')}
-                      </p>
-                    </div>
-                  </li>
-                )
-              })}
-            </ol>
-          )}
-        </section>
+          <SolvedHeatmap trend={analytics.trend} />
+        </div>
 
         <section
           aria-labelledby="coach-focus-heading"
-          className="animate-rise relative isolate flex min-h-64 min-w-0 flex-col overflow-hidden rounded-[1.4rem] bg-ink p-6 text-ink-foreground xl:col-span-3 xl:min-h-0 [@media(max-height:760px)]:p-5"
+          className="animate-rise relative isolate flex min-h-64 min-w-0 flex-col overflow-hidden rounded-[1.4rem] bg-ink p-6 text-ink-foreground xl:col-span-3 xl:min-h-0 xl:p-5"
           style={stagger(5)}
         >
           <span
@@ -387,7 +387,7 @@ function DashboardPage() {
             </p>
           ) : leadTopic ? (
             <>
-              <p className="mt-3 max-w-[70%] font-heading text-3xl leading-tight font-bold tracking-[-0.03em] [@media(max-height:760px)]:mt-2 [@media(max-height:760px)]:text-2xl">
+              <p className="mt-2 max-w-[70%] font-heading text-3xl leading-tight font-bold tracking-[-0.03em] xl:text-[1.7rem]">
                 {leadTopic.name}
               </p>
               <p className="mt-2 line-clamp-2 max-w-md text-sm opacity-70 [@media(max-height:760px)]:line-clamp-1">
@@ -412,7 +412,7 @@ function DashboardPage() {
                 </p>
               ) : null}
               {otherTopics.length > 0 ? (
-                <ul className="mt-4 flex flex-wrap gap-1.5 [@media(max-height:820px)]:hidden">
+                <ul className="mt-4 flex flex-wrap gap-1.5 [@media(max-height:1150px)]:hidden">
                   {otherTopics.slice(0, 3).map((topic) => (
                     <li
                       className="rounded-full bg-white/10 px-3 py-1 text-xs dark:bg-black/10"
@@ -514,12 +514,84 @@ function DashboardPage() {
           )}
         </section>
 
-        <div
-          className="animate-rise min-h-0 min-w-0 xl:col-span-3 [&>div]:rounded-[1.4rem]"
-          style={stagger(7)}
+        <section
+          aria-labelledby="activity-heading"
+          className={cn(tileClass, 'animate-rise xl:col-span-3')}
+          style={stagger(4)}
         >
-          <SolvedHeatmap trend={analytics.trend} />
-        </div>
+          <div className={tileTitleClass}>
+            <h2 className="font-sans text-sm font-medium" id="activity-heading">
+              Recent activity
+            </h2>
+          </div>
+          {activityQuery.isError ? (
+            <p className={cn(noticeClass, 'mt-4')} role="status">
+              Recent activity is temporarily unavailable.
+            </p>
+          ) : activityQuery.isPending ? (
+            <p className="mt-4 text-sm text-muted-foreground" role="status">
+              Loading recent activity…
+            </p>
+          ) : recentEvents.length === 0 ? (
+            <p className="mt-4 text-sm text-muted-foreground">
+              No dated activity yet. Sync a platform or record progress to start
+              your history.
+            </p>
+          ) : (
+            <ol className="mt-1.5 flex min-h-0 flex-1 flex-col divide-y divide-border overflow-hidden [@media(max-height:1000px)]:[&>li:nth-child(n+4)]:hidden">
+              {recentEvents.map((event) => {
+                const solved =
+                  (event.source === 'manual' && event.eventType === 'solved') ||
+                  isAcceptedSubmission(event)
+                return (
+                  <li
+                    className="flex min-w-0 flex-1 items-center gap-3 py-1.5"
+                    key={event.id}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="relative grid size-9 shrink-0 place-items-center rounded-xl bg-secondary text-secondary-foreground"
+                    >
+                      <ProviderLogo
+                        className="size-5"
+                        provider={event.provider}
+                      />
+                      <span
+                        className={cn(
+                          'absolute -right-0.5 -bottom-0.5 size-3 rounded-full ring-2 ring-card',
+                          solved ? 'bg-go' : 'bg-muted-foreground/60',
+                        )}
+                      />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium text-foreground">
+                        {event.title ?? event.externalId ?? 'Contest activity'}
+                      </p>
+                      <p className="truncate text-sm text-muted-foreground">
+                        {providerLabels[event.provider]} ·{' '}
+                        {event.source === 'manual'
+                          ? event.eventType === 'solved'
+                            ? 'Marked solved'
+                            : 'Marked attempted'
+                          : solved
+                            ? 'Solved'
+                            : event.eventType.replaceAll('_', ' ')}
+                      </p>
+                    </div>
+                    {event.occurredAt ? (
+                      <time
+                        className="shrink-0 text-sm text-muted-foreground tabular-nums"
+                        dateTime={event.occurredAt}
+                      >
+                        {activityDate.format(new Date(event.occurredAt))}
+                      </time>
+                    ) : null}
+                  </li>
+                )
+              })}
+            </ol>
+          )}
+        </section>
       </div>
     </PageContainer>
   )

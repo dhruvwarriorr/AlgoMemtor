@@ -538,3 +538,171 @@ body {
     --app-gutter: 1rem;
   }
 }
+
+/* ---- Landing ("kinetic" dark scene) ---------------------------------- */
+
+/* Frosted panels that sit on top of the kinetic grid. */
+@utility glass-panel {
+  background: rgb(255 255 255 / 0.04);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+
+  @media (prefers-reduced-transparency: reduce) {
+    background: var(--card);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@utility glass-panel-strong {
+  background: color-mix(in oklab, var(--card) 72%, transparent);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+
+  @media (prefers-reduced-transparency: reduce) {
+    background: var(--card);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@utility text-brand-gradient {
+  background-image: linear-gradient(
+    120deg,
+    var(--primary) 0%,
+    #ffb27d 45%,
+    var(--primary) 100%
+  );
+  background-size: 200% 200%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@utility bg-brand-gradient {
+  background-image: linear-gradient(
+    135deg,
+    #ff7a3d,
+    var(--primary) 55%,
+    #c2410c
+  );
+}
+
+@utility shadow-glow {
+  box-shadow: 0 20px 60px -20px
+    color-mix(in oklab, var(--primary) 70%, transparent);
+}
+
+@keyframes float-slow {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(12px, -24px, 0);
+  }
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+
+@keyframes gradient-shift {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .animate-float-slow {
+    animation: float-slow 9s ease-in-out infinite;
+  }
+  .animate-pulse-glow {
+    animation: pulse-glow 3s ease-in-out infinite;
+  }
+  .animate-gradient-shift {
+    animation: gradient-shift 8s ease infinite;
+  }
+}
+
+/* ---- Wave text: liquid moving through letters -------------------------
+ * Two wave layers (a bright crest and a softer swell moving the other way)
+ * over the text colour, clipped to the glyphs. The wave period is in em, so
+ * it scales with any font size. --wave-level sets the waterline: 0% leaves
+ * the letters empty, 100% fills them.
+ */
+@utility wave-text {
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200' preserveAspectRatio='none'%3E%3Cpath d='M0 100 C 25 88 75 88 100 100 S 175 112 200 100 V200 H0 Z' fill='%23ff5a1f'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 200' preserveAspectRatio='none'%3E%3Cpath d='M0 96 C 40 84 110 84 150 96 S 260 108 300 96 V200 H0 Z' fill='%23ffb27d' fill-opacity='0.55'/%3E%3C/svg%3E"),
+    linear-gradient(
+      var(--wave-base, var(--foreground)),
+      var(--wave-base, var(--foreground))
+    );
+  background-size:
+    2em 200%,
+    3em 200%,
+    100% 100%;
+  background-repeat: repeat-x, repeat-x, no-repeat;
+  background-position-x: var(--wave-offset, 0em), var(--wave-offset, 0em), 0;
+  background-position-y:
+    var(--wave-level, 42%), calc(var(--wave-level, 42%) + 3%), 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@keyframes wave-flow {
+  to {
+    background-position-x:
+      calc(var(--wave-offset, 0em) + 2em), calc(var(--wave-offset, 0em) - 3em),
+      0;
+  }
+}
+
+/* The liquid sway inside the logo mark. Units are SVG user units. */
+@keyframes logo-wave {
+  to {
+    transform: translateX(-24px);
+  }
+}
+
+@keyframes letter-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-0.04em);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .wave-text {
+    animation: wave-flow 3.2s linear infinite;
+  }
+  .logo-wave {
+    animation: logo-wave 2.4s linear infinite;
+  }
+  .logo-wave-slow {
+    animation: logo-wave 3.8s linear infinite reverse;
+  }
+  .animate-letter-bob {
+    animation: letter-bob 3s ease-in-out infinite;
+    animation-delay: calc(var(--i, 0) * -0.28s);
+  }
+}

@@ -77,7 +77,7 @@ export function SolvedHeatmap({ trend }: { trend: readonly TrendPoint[] }) {
       <div className="flex min-h-0 flex-1 items-center justify-center py-2">
         <div
           aria-label={`Problems solved per day over the last ${trend.length} days`}
-          className="grid grid-flow-col grid-rows-7 gap-1 [--cell:clamp(1rem,2.5dvh,1.6rem)]"
+          className="grid grid-flow-col grid-rows-7 gap-1 [--cell:clamp(1rem,2.1dvh,1.5rem)]"
           role="grid"
           style={{ gridTemplateColumns: `auto repeat(${weeks.length}, auto)` }}
         >

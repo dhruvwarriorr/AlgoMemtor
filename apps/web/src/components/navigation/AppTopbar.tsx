@@ -18,9 +18,6 @@ function AppTopbar() {
           to="/dashboard"
         >
           <LogoMark />
-          <span className="font-heading text-lg font-bold tracking-[-0.03em] text-foreground">
-            AlgoMemtor
-          </span>
         </Link>
 
         <div className="flex min-w-0 items-center gap-2 lg:gap-3">
