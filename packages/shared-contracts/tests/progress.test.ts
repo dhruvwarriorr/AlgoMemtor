@@ -21,6 +21,7 @@ const analytics = {
       impressionToAttempt: 0,
       impressionToSolve: 0,
     },
+    topicActivity: [],
     topicScores: [],
   },
 }

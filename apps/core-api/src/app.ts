@@ -61,6 +61,8 @@ import {
   CoachCheckInActionRequestSchema,
   ImprovementRoadmapResponseSchema,
   SetCoachTopicStatusRequestSchema,
+  CoachRoadmapNoteRequestSchema,
+  CoachRoadmapNoteResponseSchema,
   CreateCoachConversationRequestSchema,
   SendCoachMessageRequestSchema,
   ConfirmCoachActionRequestSchema,
@@ -91,6 +93,10 @@ import {
   type AiCoachClient,
   UnavailableAiCoachClient,
 } from './integrations/ai/ai-coach-client.js'
+import {
+  type AiRoadmapNoteClient,
+  UnavailableAiRoadmapNoteClient,
+} from './integrations/ai/ai-roadmap-note-client.js'
 import { requireAuth } from './auth/require-auth.js'
 import type {
   SupabaseJwtVerifier,
@@ -241,6 +247,7 @@ export type CreateAppOptions = {
   aiRecommendationClient?: AiRecommendationClient
   aiMemoryClient?: AiMemoryClient
   aiCoachClient?: AiCoachClient
+  aiRoadmapNoteClient?: AiRoadmapNoteClient
   coachRepository?: CoachRepository
   internalServiceToken?: string
   webOrigin?: string
@@ -657,6 +664,8 @@ export const createApp = (options: CreateAppOptions = {}) => {
     options.bookmarkRepository ?? new InMemoryBookmarkRepository()
   const recommendationRepository =
     options.recommendationRepository ?? new InMemoryRecommendationRepository()
+  const coachRepository =
+    options.coachRepository ?? new InMemoryCoachRepository()
   const recommendationService = new RecommendationService({
     aiRecommendationClient:
       options.aiRecommendationClient ?? new UnavailableAiRecommendationClient(),
@@ -664,6 +673,8 @@ export const createApp = (options: CreateAppOptions = {}) => {
     providers,
     learnerProfileRepository,
     problemActionRepository,
+    providerDataRepository,
+    coachRepository,
     progressRepository,
     recommendationRepository,
     logger,
@@ -724,9 +735,9 @@ export const createApp = (options: CreateAppOptions = {}) => {
   })
   const aiMemoryClient =
     options.aiMemoryClient ?? new UnavailableAiMemoryClient()
-  const coachRepository =
-    options.coachRepository ?? new InMemoryCoachRepository()
   const aiCoachClient = options.aiCoachClient ?? new UnavailableAiCoachClient()
+  const aiRoadmapNoteClient =
+    options.aiRoadmapNoteClient ?? new UnavailableAiRoadmapNoteClient()
   const coachService = new CoachService({
     repository: coachRepository,
     learnerProfileRepository,
@@ -740,6 +751,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
     progressService,
     aiMemoryClient,
     aiCoachClient,
+    aiRoadmapNoteClient,
     logger,
     memoryGenerationEnabled: process.env.MEMORY_GENERATION_ENABLED !== 'false',
   })
@@ -2630,6 +2642,38 @@ export const createApp = (options: CreateAppOptions = {}) => {
     },
   )
 
+  app.post(
+    '/api/coach/roadmap/notes',
+    requireAuthenticated,
+    async (request, response) => {
+      const input = CoachRoadmapNoteRequestSchema.safeParse(request.body ?? {})
+      if (!input.success) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'INVALID_COACH_ROADMAP_NOTE',
+              'The roadmap note is invalid.',
+              { details: input.error.issues },
+            ),
+          )
+        return
+      }
+      try {
+        response.json(
+          CoachRoadmapNoteResponseSchema.parse({
+            data: await coachService.submitRoadmapNote(
+              authenticatedSubject(response),
+              input.data.note,
+            ),
+          }),
+        )
+      } catch (error) {
+        if (!respondWithCoachError(error, response)) throw error
+      }
+    },
+  )
+
   app.get(
     '/api/coach/preferences',
     requireAuthenticated,
@@ -3767,15 +3811,52 @@ export const createApp = (options: CreateAppOptions = {}) => {
     },
   )
 
+  app.post(
+    '/api/recommendation-dismissals/:provider/:externalId',
+    requireAuthenticated,
+    async (request, response) => {
+      const provider = ProviderKeySchema.safeParse(request.params.provider)
+      const externalId = pathParam(request, 'externalId')
+      if (
+        !provider.success ||
+        externalId === undefined ||
+        !recommendationExternalIdSchema.safeParse(externalId).success
+      ) {
+        response.status(400).json(
+          createApiError('INVALID_RECOMMENDATION_ITEM', 'The problem identity is invalid.'),
+        )
+        return
+      }
+      try {
+        response.json(
+          await recommendationService.dismissProblem(
+            authenticatedSubject(response),
+            provider.data,
+            externalId,
+          ),
+        )
+      } catch (error) {
+        if (respondWithProviderError(error, response)) return
+        if (error instanceof RecommendationNotFoundError) {
+          response.status(404).json(
+            createApiError('RECOMMENDATION_ITEM_NOT_FOUND', error.message),
+          )
+          return
+        }
+        throw error
+      }
+    },
+  )
+
   app.delete(
     '/api/recommendation-dismissals/:provider/:externalId',
     requireAuthenticated,
     async (request, response) => {
-      const providerResult = LinkableProviderSchema.safeParse(
+      const providerResult = ProviderKeySchema.safeParse(
         request.params.provider,
       )
 
-      if (!providerResult.success || providerResult.data !== 'codeforces') {
+      if (!providerResult.success) {
         response
           .status(400)
           .json(

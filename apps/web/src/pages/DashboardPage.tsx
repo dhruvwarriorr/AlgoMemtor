@@ -1,6 +1,6 @@
 import { useState, type CSSProperties, type FormEvent } from 'react'
 import type { ProviderKey } from '@algomemtor/shared-contracts'
-import { ArrowRight, ArrowUpRight, Flame, Sparkles } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, Flame, Sparkles, X } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { ProviderLogo } from '@/components/brand/ProviderLogo'
@@ -10,12 +10,12 @@ import PageHeader from '@/components/layout/PageHeader'
 import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { useAuth } from '@/features/auth/useAuth'
-import { useCoachRoadmap } from '@/features/coach/hooks'
+import { useCoachRoadmap, useSetCoachTopicStatus } from '@/features/coach/hooks'
 import { providerLabels } from '@/features/platform/components/provider-labels'
 import { useActivity, useAnalytics } from '@/features/platform/hooks'
 import { SolvedHeatmap } from '@/features/progress/components/SolvedHeatmap'
 import { useProgressAnalytics } from '@/features/progress/hooks/useProgress'
-import { useRecommendations } from '@/features/recommendations/hooks/useRecommendations'
+import { useDismissRecommendation, useRecommendations } from '@/features/recommendations/hooks/useRecommendations'
 import { cn } from '@/lib/utils'
 
 import { dashboardActivity, isAcceptedSubmission } from './dashboard-activity'
@@ -101,6 +101,8 @@ function DashboardPage() {
   const platformAnalyticsQuery = useAnalytics()
   const recommendationsQuery = useRecommendations()
   const roadmapQuery = useCoachRoadmap()
+  const dismissRecommendation = useDismissRecommendation()
+  const setTopicStatus = useSetCoachTopicStatus()
   const title = `${greeting()}, ${displayNameFromEmail(user?.email)}`
   const description =
     'Your coach has read your latest activity. Here is where your practice stands.'
@@ -334,6 +336,15 @@ function DashboardPage() {
               <p className="mt-2 line-clamp-2 max-w-md text-sm opacity-70">
                 {leadTopic.reason}
               </p>
+              <button
+                className="mt-3 w-fit rounded-full border border-white/30 px-3 py-1 text-xs transition-colors hover:bg-white/10 disabled:opacity-50"
+                disabled={setTopicStatus.isPending}
+                onClick={() => void setTopicStatus.mutateAsync({ topic: leadTopic.topic, status: 'skip_for_now' })}
+                type="button"
+              >
+                Dismiss this focus
+              </button>
+              {setTopicStatus.isError ? <p className="mt-2 text-xs" role="alert">Could not dismiss this focus. Try again.</p> : null}
               {otherTopics.length > 0 ? (
                 <ul className="mt-4 flex flex-wrap gap-1.5">
                   {otherTopics.slice(0, 3).map((topic) => (
@@ -419,6 +430,16 @@ function DashboardPage() {
                   >
                     <ArrowUpRight aria-hidden="true" className="size-4" />
                   </a>
+                  <button
+                    aria-label={`Dismiss ${item.problem.title}`}
+                    className="grid size-9 shrink-0 place-items-center rounded-full border border-border text-foreground/70 transition-colors hover:border-primary hover:text-primary disabled:opacity-50"
+                    disabled={dismissRecommendation.isPending}
+                    onClick={() => void dismissRecommendation.mutateAsync(item.id)}
+                    title="Don't recommend this problem again"
+                    type="button"
+                  >
+                    <X aria-hidden="true" className="size-4" />
+                  </button>
                 </li>
               ))}
             </ul>
@@ -434,7 +455,6 @@ function DashboardPage() {
             <h2 className="font-sans text-sm font-medium" id="activity-heading">
               Recent activity
             </h2>
-            <TileLink label="All" to="/activity" />
           </div>
           {activityQuery.isError ? (
             <p className={cn(noticeClass, 'mt-4')} role="status">

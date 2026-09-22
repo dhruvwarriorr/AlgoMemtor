@@ -12,6 +12,13 @@ vi.mock('@/features/progress/components/ProblemLearningControls', () => ({
   ProblemLearningControls: () => null,
 }))
 
+vi.mock('@/features/recommendations/hooks/useRecommendations', () => ({
+  useDismissProblem: () => ({
+    isPending: false,
+    mutateAsync: vi.fn(),
+  }),
+}))
+
 import { ProblemCatalog } from './ProblemCatalog'
 
 const problem: ExternalProblemSummary = {

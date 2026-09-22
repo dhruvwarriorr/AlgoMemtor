@@ -21,6 +21,7 @@ from app.ranking_service import (
     ModelResult,
     RankingService,
     get_ranking_service,
+    ranking_retrieval_topics,
 )
 from app.settings import AiSettings, get_ai_settings
 from fastapi.testclient import TestClient
@@ -43,7 +44,48 @@ def test_blank_versioned_settings_use_documented_defaults() -> None:
 
     assert configured.llm_model == "gemini-3.5-flash"
     assert configured.llm_pricing_version == "gemini-3.5-flash-standard-2026-09"
-    assert configured.ai_ranking_version == "ai-gemini-rag-v1"
+    assert configured.ai_ranking_version == "ai-gemini-rag-v2"
+
+
+def test_topic_evidence_is_bounded_and_unique() -> None:
+    payload = request_payload()
+    payload["learner"]["topicEvidence"] = [
+        {
+            "topic": "graphs",
+            "observedAttemptedProblems": 2,
+            "observedSolvedProblems": 3,
+        }
+    ]
+    assert (
+        RankingRequest.model_validate(payload).learner.topicEvidence[0].topic
+        == "graphs"
+    )
+    payload["learner"]["topicEvidence"] *= 2
+    with pytest.raises(ValidationError):
+        RankingRequest.model_validate(payload)
+
+
+def test_ranking_retrieval_prioritizes_focus_and_observed_attempts() -> None:
+    payload = request_payload()
+    payload["candidates"][1]["topics"] = ["greedy", "strings"]
+    payload["learner"]["topicEvidence"] = [
+        {
+            "topic": "greedy",
+            "observedAttemptedProblems": 4,
+            "observedSolvedProblems": 1,
+        }
+    ]
+    topics = ranking_retrieval_topics(RankingRequest.model_validate(payload))
+    assert topics == ["graphs", "strings", "greedy"]
+    payload["learner"]["topicEvidence"] = [
+        {
+            "topic": "graphs",
+            "observedAttemptedProblems": -1,
+            "observedSolvedProblems": 3,
+        }
+    ]
+    with pytest.raises(ValidationError):
+        RankingRequest.model_validate(payload)
 
 
 def request_payload(candidate_count: int = 2) -> dict[str, Any]:

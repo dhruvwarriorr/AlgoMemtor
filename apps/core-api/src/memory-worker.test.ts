@@ -237,6 +237,85 @@ describe('memory worker', () => {
     expect(payloads[0]?.note).not.toContain('secret source code')
   })
 
+  it('resolves a topic-note evidence job through the coach repository', async () => {
+    const now = () => new Date('2026-09-13T14:30:00.000Z')
+    const repository: ProgressRepository = new InMemoryProgressRepository(now)
+    await repository.saveConsent(
+      learnerId,
+      true,
+      'personalized-coaching-rag-v2',
+    )
+    const coachRepository = new InMemoryCoachRepository(now)
+    const event = await coachRepository.recordTopicNote(
+      learnerId,
+      'sliding-window',
+      "I'm pretty good at sliding window now.",
+      'practiced',
+      'ai_note',
+    )
+    const payloads: Array<{ note?: string; evidenceType: string }> = []
+    const client = createClient(async (request) => {
+      payloads.push({
+        ...(request.note === undefined ? {} : { note: request.note }),
+        evidenceType: request.evidenceType,
+      })
+      return { status: 'processed' }
+    })
+    const { worker } = createWorker(
+      repository,
+      client,
+      now,
+      undefined,
+      undefined,
+      coachRepository,
+    )
+    await repository.enqueueJob({
+      authUserId: learnerId,
+      jobType: 'memory_generation',
+      evidenceType: 'topic_note',
+      evidenceId: event.id,
+      idempotencyKey: 'memory:topic-note-test',
+    })
+
+    expect(await worker.processOnce()).toBe(true)
+    expect(payloads[0]?.evidenceType).toBe('topic_note')
+    expect(payloads[0]?.note).toContain('sliding window')
+  })
+
+  it('skips a topic-note job when the note event cannot be found', async () => {
+    const now = () => new Date('2026-09-13T14:30:00.000Z')
+    const repository: ProgressRepository = new InMemoryProgressRepository(now)
+    await repository.saveConsent(
+      learnerId,
+      true,
+      'personalized-coaching-rag-v2',
+    )
+    const coachRepository = new InMemoryCoachRepository(now)
+    const payloads: Array<{ evidenceType: string }> = []
+    const client = createClient(async (request) => {
+      payloads.push({ evidenceType: request.evidenceType })
+      return { status: 'processed' }
+    })
+    const { worker } = createWorker(
+      repository,
+      client,
+      now,
+      undefined,
+      undefined,
+      coachRepository,
+    )
+    await repository.enqueueJob({
+      authUserId: learnerId,
+      jobType: 'memory_generation',
+      evidenceType: 'topic_note',
+      evidenceId: evidenceId,
+      idempotencyKey: 'memory:topic-note-missing-test',
+    })
+
+    expect(await worker.processOnce()).toBe(true)
+    expect(payloads).toHaveLength(0)
+  })
+
   it('retries coach audit deletion through the durable outbox', async () => {
     const now = () => new Date('2026-09-13T15:00:00.000Z')
     const repository: ProgressRepository = new InMemoryProgressRepository(now)

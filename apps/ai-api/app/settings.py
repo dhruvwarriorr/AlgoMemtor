@@ -20,7 +20,7 @@ class AiSettings(BaseSettings):
     llm_input_price_per_million_usd: Decimal = Field(default=Decimal("1.50"), ge=0)
     llm_output_price_per_million_usd: Decimal = Field(default=Decimal("9.00"), ge=0)
     llm_pricing_version: str = "gemini-3.5-flash-standard-2026-09"
-    ai_ranking_version: str = "ai-gemini-rag-v1"
+    ai_ranking_version: str = "ai-gemini-rag-v2"
     coach_version: str = "coach-gemini-rag-v2"
     embedding_model: str = "gemini-embedding-001"
     embedding_dimensions: int = Field(default=768, ge=256, le=3072)
@@ -60,7 +60,7 @@ class AiSettings(BaseSettings):
         defaults = {
             "llm_model": "gemini-3.5-flash",
             "llm_pricing_version": "gemini-3.5-flash-standard-2026-09",
-            "ai_ranking_version": "ai-gemini-rag-v1",
+            "ai_ranking_version": "ai-gemini-rag-v2",
             "coach_version": "coach-gemini-rag-v2",
             "embedding_model": "gemini-embedding-001",
             "memory_generation_version": "memory-gemini-v1",

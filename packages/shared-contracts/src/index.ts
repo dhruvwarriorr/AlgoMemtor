@@ -311,6 +311,9 @@ export {
   CoachProblemSuggestionStatusSchema,
   CoachResponseSchema,
   CoachRoadmapLaneSchema,
+  CoachRoadmapNoteRequestSchema,
+  CoachRoadmapNoteResponseSchema,
+  CoachRoadmapNoteSchema,
   ConfirmCoachActionRequestSchema,
   CreateCoachConversationRequestSchema,
   ImprovementRoadmapResponseSchema,
@@ -361,4 +364,7 @@ export {
   type ImprovementTopic,
   type SendCoachMessageRequest,
   type SetCoachTopicStatusRequest,
+  type CoachRoadmapNote,
+  type CoachRoadmapNoteRequest,
+  type CoachRoadmapNoteResponse,
 } from './coach.js'

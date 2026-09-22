@@ -67,6 +67,20 @@ export function dismissRecommendation(itemId: string) {
   )
 }
 
+export function dismissProblem(provider: string, externalId: string) {
+  return requestJson(
+    '/api/recommendation-dismissals/' +
+      encodeURIComponent(provider) +
+      '/' +
+      encodeURIComponent(externalId),
+    {
+      authentication: 'required',
+      method: 'POST',
+      schema: RecommendationDismissalResponseSchema,
+    },
+  )
+}
+
 export function fetchRecommendationDismissals({ signal }: RequestOptions = {}) {
   return requestJson('/api/recommendation-dismissals', {
     authentication: 'required',

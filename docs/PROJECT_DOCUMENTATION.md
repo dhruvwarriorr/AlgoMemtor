@@ -439,7 +439,6 @@ and delete/archive/restore controls. The learner can inspect and manage memory.
 - `/coach` — bounded coaching workspace with saved conversations, an
   independently scrolling message pane, rich evidence, a collapsible learning
   plan, and in-app check-ins.
-- `/activity` — merged activity timeline with bounded “show more” pagination.
 - `/contests` — contest catalog and participation with bounded “show more”
   pagination.
 - `/analytics` — unified analytics.
@@ -855,8 +854,9 @@ CSES is rejected by account routes because it is not a linkable provider.
 | `POST`   | `/api/recommendations/refresh`                         | Queue/build a refreshed feed |
 | `PATCH`  | `/api/recommendation-items/:itemId/feedback`           | Save recommendation feedback |
 | `POST`   | `/api/recommendation-items/:itemId/dismiss`            | Dismiss a recommendation     |
+| `POST`   | `/api/recommendation-dismissals/:provider/:externalId` | Dismiss a trusted problem directly (not recommendation-feed scoped) |
 | `GET`    | `/api/recommendation-dismissals`                       | List dismissed items         |
-| `DELETE` | `/api/recommendation-dismissals/:provider/:externalId` | Restore dismissed item       |
+| `DELETE` | `/api/recommendation-dismissals/:provider/:externalId` | Restore dismissed item (any supported provider) |
 | `POST`   | `/api/recommendation-items/:itemId/impression`         | Record impression            |
 | `GET`    | `/api/bookmarks`                                       | List bookmarks               |
 | `POST`   | `/api/bookmarks`                                       | Create bookmark              |
@@ -879,6 +879,7 @@ CSES is rejected by account routes because it is not a linkable provider.
 | `POST`   | `/api/coach/conversations/:conversationId/messages` | Submit a bounded coaching question and optional transient context |
 | `GET`    | `/api/coach/roadmap`                                | Read the persistent deterministic improvement roadmap             |
 | `PATCH`  | `/api/coach/roadmap/topics/:topic/status`           | Set or clear a manual topic status                                |
+| `POST`   | `/api/coach/roadmap/notes`                          | Submit a free-text learning-plan note; AI picks the topic and status it refers to and queues it as memory evidence |
 | `GET`    | `/api/coach/preferences`                            | Read weekly/event check-in preferences                            |
 | `PUT`    | `/api/coach/preferences`                            | Save weekly local day/time and event preference                   |
 | `GET`    | `/api/coach/check-ins`                              | List generated in-app check-ins and unread count                  |
@@ -1090,6 +1091,11 @@ up to eight chunks from the versioned `coach_knowledge_sources`/
 with pgvector similarity when embeddings are available and caps repeated topics
 for diversity. Retrieved fields are untrusted reference material and cannot
 override the coach safety instructions.
+For a short conversational follow-up, the private knowledge lookup includes a
+bounded, sanitized excerpt of the previous user and coach turns so questions
+such as “why does that work?” retain their algorithm topic. An independent new
+question searches on its own. This conversation excerpt is never added to the
+public-web search query or stored in retrieval audits.
 
 The relevance router invokes at most one Gemini Google Search grounding call
 when the question requests current/public/external information or internal
@@ -1218,6 +1224,18 @@ internal ranking endpoint. FastAPI verifies the internal service token, invokes
 the configured Gemini model through LangChain, and returns structured candidate
 IDs, scores, reasons, fallback state, measured latency, and optional token/cost
 metadata.
+The `ai-gemini-rag-v2` request also includes up to 25 per-topic counts of
+unique observed attempted and solved problems derived from owner-scoped manual
+statuses and permitted provider observations. These are lower bounds, not a
+mastery score or complete cross-provider history. Duplicate submissions do not
+inflate counts, manual status remains authoritative, and unknown or explicitly
+excluded topics are omitted. These history counts are sent to Gemini only under
+current `personalized-coaching-rag-v2` consent; without it, ranking continues
+without the extra learner-history payload. A consent or evidence change
+invalidates a cached recommendation batch so ranking can react appropriately.
+The AI service retrieves reference knowledge for candidate-relevant focus,
+preferred, and observed-attempt topics before lower-priority catalog topics;
+it does not scatter a retrieval query across every tag in the shortlist.
 
 Express validates every selected ID against the original candidate set and
 attaches the canonical URL itself. Reasons are bounded and rejected if they
@@ -1369,7 +1387,7 @@ COACH_THINKING_LEVEL=high
 LLM_INPUT_PRICE_PER_MILLION_USD=1.50
 LLM_OUTPUT_PRICE_PER_MILLION_USD=9.00
 LLM_PRICING_VERSION=gemini-3.5-flash-standard-2026-09
-AI_RANKING_VERSION=ai-gemini-rag-v1
+AI_RANKING_VERSION=ai-gemini-rag-v2
 COACH_VERSION=coach-gemini-rag-v2
 CONSENT_POLICY_VERSION=personalized-coaching-rag-v2
 INTERNAL_SERVICE_TOKEN=
@@ -1799,7 +1817,6 @@ integrations/provider-accounts/
 | `apps/web/src/pages/ProblemsPage.tsx`                          | Catalog filters, pagination, and problem cards                                |
 | `apps/web/src/pages/ProblemDetailPage.tsx`                     | Detail metadata, status, tags, and outbound link                              |
 | `apps/web/src/pages/RecommendationsPage.tsx`                   | Recommendation feed, refresh, feedback, dismissal                             |
-| `apps/web/src/pages/ActivityPage.tsx`                          | Merged provider event timeline and tags                                       |
 | `apps/web/src/pages/ContestsPage.tsx`                          | Contest catalog and participation view                                        |
 | `apps/web/src/pages/AnalyticsPage.tsx`                         | Provider totals and topic/language/rating distributions                       |
 | `apps/web/src/pages/ProgressPage.tsx`                          | Recent practice analytics and charts                                          |

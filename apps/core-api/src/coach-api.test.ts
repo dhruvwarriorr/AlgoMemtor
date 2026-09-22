@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net'
 import {
   CoachActionProposalResponseSchema,
   CoachResponseSchema,
+  CoachRoadmapNoteResponseSchema,
   ExternalProblemSummarySchema,
   ImprovementRoadmapResponseSchema,
   type CoachActionProposal,
@@ -20,6 +21,10 @@ import type {
   AiCoachResult,
 } from './integrations/ai/ai-coach-client.js'
 import type { AiMemoryClient } from './integrations/ai/ai-memory-client.js'
+import type {
+  AiRoadmapNoteClient,
+  AiRoadmapNoteResponse,
+} from './integrations/ai/ai-roadmap-note-client.js'
 import type { ProblemProvider } from './integrations/providers/problem-provider.js'
 import { InMemoryProblemActionRepository } from './repositories/problem-action-repository.js'
 import { InMemoryProgressRepository } from './repositories/progress-repository.js'
@@ -125,6 +130,7 @@ const createMemoryClient = (): AiMemoryClient => ({
 const startApp = (options: {
   aiCoachClient?: AiCoachClient
   aiMemoryClient?: AiMemoryClient
+  aiRoadmapNoteClient?: AiRoadmapNoteClient
   learnerProfileRepository?: InMemoryLearnerProfileRepository
   coachRepository?: InMemoryCoachRepository
   progressRepository?: InMemoryProgressRepository
@@ -157,6 +163,9 @@ const startApp = (options: {
     ...(options.aiCoachClient === undefined
       ? {}
       : { aiCoachClient: options.aiCoachClient }),
+    ...(options.aiRoadmapNoteClient === undefined
+      ? {}
+      : { aiRoadmapNoteClient: options.aiRoadmapNoteClient }),
     ...(options.learnerProfileRepository === undefined
       ? {}
       : { learnerProfileRepository: options.learnerProfileRepository }),
@@ -308,6 +317,194 @@ describe('coach API', () => {
     expect(
       reset.data.topics.find((topic) => topic.topic === 'arrays')?.manualStatus,
     ).toBeUndefined()
+  })
+
+  describe('POST /api/coach/roadmap/notes', () => {
+    const classifyingClient = (
+      result: AiRoadmapNoteResponse | (() => never),
+    ): AiRoadmapNoteClient => ({
+      classify: async () =>
+        typeof result === 'function' ? result() : result,
+    })
+
+    const consented = async () => {
+      const progressRepository = new InMemoryProgressRepository()
+      await progressRepository.saveConsent(
+        userA,
+        true,
+        'personalized-coaching-rag-v2',
+      )
+      return progressRepository
+    }
+
+    it('requires authentication', async () => {
+      const baseUrl = startApp({})
+      const response = await fetch(`${baseUrl}/api/coach/roadmap/notes`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ note: "I'm good at this." }),
+      })
+      expect(response.status).toBe(401)
+    })
+
+    it('requires AI coaching consent', async () => {
+      const baseUrl = startApp({})
+      const response = await fetch(`${baseUrl}/api/coach/roadmap/notes`, {
+        method: 'POST',
+        headers: {
+          ...authorization('user-a'),
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ note: "I'm good at this." }),
+      })
+      const body = (await response.json()) as { error: { code: string } }
+      expect(response.status).toBe(403)
+      expect(body.error.code).toBe('COACH_CONSENT_REQUIRED')
+    })
+
+    it('ignores a topic the AI names outside the canonical taxonomy', async () => {
+      const progressRepository = await consented()
+      const baseUrl = startApp({
+        progressRepository,
+        aiRoadmapNoteClient: classifyingClient({
+          topic: 'not-a-real-topic',
+          status: 'practiced',
+          rationale: 'Hallucinated topic.',
+        }),
+      })
+      const response = await fetch(`${baseUrl}/api/coach/roadmap/notes`, {
+        method: 'POST',
+        headers: {
+          ...authorization('user-a'),
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ note: "I'm good at this." }),
+      })
+      const body = CoachRoadmapNoteResponseSchema.parse(await response.json())
+      expect(response.status).toBe(200)
+      expect(body.data).toMatchObject({
+        topic: null,
+        status: null,
+        statusChanged: false,
+      })
+    })
+
+    it('applies the AI-suggested topic and status, persists a note event, and enqueues memory generation', async () => {
+      const progressRepository = await consented()
+      const coachRepository = new InMemoryCoachRepository()
+      const baseUrl = startApp({
+        progressRepository,
+        coachRepository,
+        aiRoadmapNoteClient: classifyingClient({
+          topic: 'arrays',
+          status: 'practiced',
+          rationale: 'Learner reports comfort with arrays.',
+        }),
+      })
+
+      const response = await fetch(`${baseUrl}/api/coach/roadmap/notes`, {
+        method: 'POST',
+        headers: {
+          ...authorization('user-a'),
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          note: "I'm pretty good at arrays now, no need to keep suggesting it.",
+        }),
+      })
+      const body = CoachRoadmapNoteResponseSchema.parse(await response.json())
+      expect(response.status).toBe(200)
+      expect(body.data).toMatchObject({
+        topic: 'arrays',
+        previousStatus: null,
+        status: 'practiced',
+        statusChanged: true,
+        rationale: 'Learner reports comfort with arrays.',
+      })
+
+      const roadmapResponse = await fetch(`${baseUrl}/api/coach/roadmap`, {
+        headers: authorization('user-a'),
+      })
+      const roadmap = ImprovementRoadmapResponseSchema.parse(
+        await roadmapResponse.json(),
+      )
+      expect(
+        roadmap.data.topics.find((topic) => topic.topic === 'arrays')
+          ?.manualStatus,
+      ).toBe('practiced')
+
+      const job = await progressRepository.claimNextJob()
+      expect(job).toMatchObject({
+        authUserId: userA,
+        jobType: 'memory_generation',
+        evidenceType: 'topic_note',
+      })
+      const event = await coachRepository.getTopicNoteEvent(
+        userA,
+        job?.evidenceId ?? '',
+      )
+      expect(event?.note).toContain("I'm pretty good at arrays now")
+    })
+
+    it('leaves the roadmap status untouched when the AI reports no_change', async () => {
+      const progressRepository = await consented()
+      const coachRepository = new InMemoryCoachRepository()
+      await coachRepository.setTopicStatus(userA, 'arrays', 'working_on')
+      const baseUrl = startApp({
+        progressRepository,
+        coachRepository,
+        aiRoadmapNoteClient: classifyingClient({
+          topic: 'arrays',
+          status: 'no_change',
+          rationale: 'The note is unclear.',
+        }),
+      })
+
+      const response = await fetch(`${baseUrl}/api/coach/roadmap/notes`, {
+        method: 'POST',
+        headers: {
+          ...authorization('user-a'),
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ note: 'Just checking in on this topic.' }),
+      })
+      const body = CoachRoadmapNoteResponseSchema.parse(await response.json())
+      expect(body.data).toMatchObject({
+        topic: 'arrays',
+        previousStatus: 'working_on',
+        status: 'working_on',
+        statusChanged: false,
+      })
+    })
+
+    it('returns gracefully without persisting anything when AI classification fails', async () => {
+      const progressRepository = await consented()
+      const coachRepository = new InMemoryCoachRepository()
+      const baseUrl = startApp({
+        progressRepository,
+        coachRepository,
+        aiRoadmapNoteClient: classifyingClient(() => {
+          throw new Error('AI unavailable')
+        }),
+      })
+
+      const response = await fetch(`${baseUrl}/api/coach/roadmap/notes`, {
+        method: 'POST',
+        headers: {
+          ...authorization('user-a'),
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ note: "I'm good at arrays." }),
+      })
+      const body = CoachRoadmapNoteResponseSchema.parse(await response.json())
+      expect(response.status).toBe(200)
+      expect(body.data.topic).toBeNull()
+      expect(body.data.statusChanged).toBe(false)
+      expect(body.data.status).toBeNull()
+
+      const job = await progressRepository.claimNextJob()
+      expect(job).toBeNull()
+    })
   })
 
   it('joins provider activity to catalog topics by canonical URL when IDs differ', async () => {

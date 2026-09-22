@@ -5,10 +5,14 @@ import type {
   ProviderKey,
 } from '@algomemtor/shared-contracts'
 
+import { useState } from 'react'
+
 import { useNotification } from '@/app/useNotification'
 import { ProviderLogo } from '@/components/brand/ProviderLogo'
 import { Button, buttonVariants } from '@/components/ui/button'
+import { ApiClientError } from '@/features/discovery/api/client'
 import { ProblemLearningControls } from '@/features/progress/components/ProblemLearningControls'
+import { useDismissProblem } from '@/features/recommendations/hooks/useRecommendations'
 import { cn } from '@/lib/utils'
 
 import { SolveOnProviderLink } from './SolveOnProviderLink'
@@ -50,19 +54,36 @@ type ProblemCardProps = {
 
 export function ProblemCard({ problem }: ProblemCardProps) {
   const { notify } = useNotification()
+  const dismissProblem = useDismissProblem()
+  const [dismissed, setDismissed] = useState(false)
   const visibleProviderTags = problem.providerTags.slice(0, 4)
   const hiddenProviderTagCount = Math.max(
     0,
     problem.providerTags.length - visibleProviderTags.length,
   )
 
-  function dismissPlaceholder() {
-    notify({
-      title: 'Dismissing is coming later',
-      description:
-        'Dismissal is not part of the catalog flow yet, so this problem was not changed.',
-      tone: 'info',
-    })
+  async function handleDismiss() {
+    try {
+      await dismissProblem.mutateAsync({
+        provider: problem.provider,
+        externalId: problem.externalId,
+      })
+      setDismissed(true)
+      notify({
+        title: 'Problem dismissed',
+        description: "We won't recommend this problem again.",
+        tone: 'success',
+      })
+    } catch (error) {
+      notify({
+        title: 'Could not dismiss this problem',
+        description:
+          error instanceof ApiClientError
+            ? error.message
+            : 'Something went wrong. Try again.',
+        tone: 'error',
+      })
+    }
   }
 
   return (
@@ -189,12 +210,13 @@ export function ProblemCard({ problem }: ProblemCardProps) {
           <Button
             aria-label={`Dismiss ${problem.title}`}
             className="ml-auto"
-            onClick={dismissPlaceholder}
+            disabled={dismissed || dismissProblem.isPending}
+            onClick={() => void handleDismiss()}
             size="sm"
             type="button"
             variant="ghost"
           >
-            Dismiss
+            {dismissed ? 'Dismissed' : 'Dismiss'}
           </Button>
         </div>
       </footer>

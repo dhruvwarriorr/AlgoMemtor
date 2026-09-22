@@ -14,6 +14,7 @@ import type {
   CoachRichBlock,
   CoachRichContent,
   ExternalProblemSummary,
+  ProviderKey,
 } from '@algomemtor/shared-contracts'
 
 const providerLabels = {
@@ -26,6 +27,8 @@ const providerLabels = {
 type RichContentRendererProps = {
   content: CoachRichContent
   onSuggestedQuestion: (question: string) => void
+  dismissedProblemKeys?: ReadonlySet<string>
+  onDismissProblem?: (provider: ProviderKey, externalId: string) => void
 }
 
 const colors = [
@@ -233,7 +236,7 @@ function ChartBlock({
   )
 }
 
-function RichBlock({ block }: { block: CoachRichBlock }) {
+function RichBlock({ block, dismissedProblemKeys, onDismissProblem }: { block: CoachRichBlock; dismissedProblemKeys?: ReadonlySet<string>; onDismissProblem?: (provider: ProviderKey, externalId: string) => void }) {
   if (block.type === 'metric_grid') {
     const visibleMetrics = block.metrics.filter(
       (metric) => metric.label.toLowerCase() !== 'coverage',
@@ -366,11 +369,19 @@ function RichBlock({ block }: { block: CoachRichBlock }) {
         {block.reason}
       </p>
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
-        {block.problems.map((problem) => (
-          <ProblemLink
-            key={`${problem.provider}:${problem.externalId}`}
-            problem={problem}
-          />
+        {block.problems.filter((problem) => !dismissedProblemKeys?.has(`${problem.provider}:${problem.externalId}`)).map((problem) => (
+          <div className="flex min-w-0 flex-col gap-1" key={`${problem.provider}:${problem.externalId}`}>
+            <ProblemLink problem={problem} />
+            {onDismissProblem ? (
+              <button
+                className="self-end text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => onDismissProblem(problem.provider, problem.externalId)}
+                type="button"
+              >
+                Dismiss problem
+              </button>
+            ) : null}
+          </div>
         ))}
       </div>
     </section>
@@ -380,11 +391,13 @@ function RichBlock({ block }: { block: CoachRichBlock }) {
 export function CoachRichContent({
   content,
   onSuggestedQuestion,
+  dismissedProblemKeys,
+  onDismissProblem,
 }: RichContentRendererProps) {
   return (
     <div className="mt-4 space-y-3 border-t border-border pt-4">
       {content.blocks.map((block, index) => (
-        <RichBlock block={block} key={`${block.type}-${index}`} />
+        <RichBlock block={block} dismissedProblemKeys={dismissedProblemKeys} key={`${block.type}-${index}`} onDismissProblem={onDismissProblem} />
       ))}
       {content.suggestedQuestions.length > 0 ? (
         <section aria-label="Suggested follow-up questions">

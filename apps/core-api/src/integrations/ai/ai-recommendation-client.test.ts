@@ -106,6 +106,29 @@ describe('HTTP AI recommendation client', () => {
     ).toThrow()
   })
 
+  it('rejects duplicated or invalid topic evidence', () => {
+    const valid = {
+      topic: 'graphs',
+      observedAttemptedProblems: 2,
+      observedSolvedProblems: 3,
+    }
+    expect(() =>
+      AiRankingRequestSchema.parse({
+        ...request,
+        learner: { ...request.learner, topicEvidence: [valid, valid] },
+      }),
+    ).toThrow()
+    expect(() =>
+      AiRankingRequestSchema.parse({
+        ...request,
+        learner: {
+          ...request.learner,
+          topicEvidence: [{ ...valid, observedSolvedProblems: -1 }],
+        },
+      }),
+    ).toThrow()
+  })
+
   it('does not retry unavailable responses', async () => {
     const fetchImplementation = vi.fn<typeof fetch>(async () =>
       Response.json({ error: 'unavailable' }, { status: 503 }),

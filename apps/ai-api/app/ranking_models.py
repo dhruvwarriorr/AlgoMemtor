@@ -37,6 +37,12 @@ class PreferredDifficulty(StrictModel):
         return self
 
 
+class RankingTopicEvidence(StrictModel):
+    topic: Topic
+    observedAttemptedProblems: int = Field(ge=0)
+    observedSolvedProblems: int = Field(ge=0)
+
+
 class RankingLearner(StrictModel):
     goal: str = Field(min_length=1, max_length=64)
     experience: str = Field(min_length=1, max_length=64)
@@ -47,6 +53,16 @@ class RankingLearner(StrictModel):
     recommendationPreference: str | None = Field(
         default=None, min_length=1, max_length=500
     )
+    topicEvidence: list[RankingTopicEvidence] = Field(
+        default_factory=list, max_length=25
+    )
+
+    @model_validator(mode="after")
+    def validate_topic_evidence(self) -> RankingLearner:
+        topics = [item.topic for item in self.topicEvidence]
+        if len(topics) != len(set(topics)):
+            raise ValueError("Topic evidence must be unique.")
+        return self
 
 
 class RankingCandidate(StrictModel):

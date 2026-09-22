@@ -702,6 +702,7 @@ model CoachTopicStatusEvent {
   topic     String   @db.VarChar(64)
   status    String?  @db.VarChar(24)
   source    String   @default("manual") @db.VarChar(24)
+  note      String?  @db.Text
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   user      CoreUser @relation(fields: [userId], references: [id], onDelete: Cascade)
 

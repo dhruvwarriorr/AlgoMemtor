@@ -355,6 +355,38 @@ class AuditRepository:
 
 
 @pytest.mark.asyncio
+async def test_coach_uses_conversation_topic_for_private_knowledge_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    queries: list[str] = []
+    service = CoachService(
+        settings(), model=StaticModel(), audit_repository=AuditRepository()
+    )
+
+    async def retrieve(query: str, excluded_topics: object):
+        del excluded_topics
+        queries.append(query)
+        return retrieve_knowledge(query, limit=8)
+
+    monkeypatch.setattr(service, "_retrieve_knowledge", retrieve)
+    request = request_payload().model_copy(
+        update={
+            "question": "Why does that work?",
+            "transientContext": None,
+            "context": {
+                "recentTurns": [
+                    {"role": "user", "content": "Explain a sliding-window invariant."},
+                    {"role": "assistant", "content": "Maintain a valid window."},
+                    {"role": "user", "content": "Why does that work?"},
+                ]
+            },
+        }
+    )
+    await service.respond(request)
+    assert "sliding-window" in queries[0]
+
+
+@pytest.mark.asyncio
 async def test_hint_guidance_is_used_only_for_specific_problem_help() -> None:
     prompts: list[str] = []
 

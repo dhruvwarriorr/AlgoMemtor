@@ -7,7 +7,6 @@ import AppShell from '@/layouts/AppShell'
 
 import ProtectedRoute from './ProtectedRoute'
 
-const ActivityPage = lazy(() => import('@/pages/ActivityPage'))
 const AnalyticsPage = lazy(() => import('@/pages/AnalyticsPage'))
 const BookmarksPage = lazy(() => import('@/pages/BookmarksPage'))
 const ContestsPage = lazy(() => import('@/pages/ContestsPage'))
@@ -64,10 +63,6 @@ function AppRouter() {
           <Route
             path="problems/:provider/:externalId"
             element={page(<ProblemDetailPage />, 'Loading problem')}
-          />
-          <Route
-            path="activity"
-            element={page(<ActivityPage />, 'Loading activity')}
           />
           <Route
             path="contests"

@@ -1,6 +1,7 @@
 import type { AddressInfo } from 'node:net'
 
 import {
+  RecommendationDismissalResponseSchema,
   RecommendationDismissalsResponseSchema,
   RecommendationFeedResponseSchema,
   RecommendationFeedbackResponseSchema,
@@ -169,6 +170,55 @@ const startApp = (
 }
 
 describe('recommendation API', () => {
+  it('passes observed topic progress to AI and refreshes after new evidence', async () => {
+    const problemActionRepository = new InMemoryProblemActionRepository()
+    const progressRepository = new InMemoryProgressRepository()
+    const requests: AiRankingRequest[] = []
+    const rank = vi.fn<AiRecommendationClient['rank']>(async (request) => {
+      requests.push(request)
+      return {
+        items: [],
+        model: 'test-unavailable',
+        fallback: true,
+        fallbackReason: 'not_configured',
+        latencyMs: 0,
+      }
+    })
+    const baseUrl = startApp({
+      aiRecommendationClient: { rank },
+      problemActionRepository,
+      progressRepository,
+    })
+    const headers = authorization('user-a')
+
+    await fetch(`${baseUrl}/api/recommendations`, { headers })
+    expect(requests[0]?.learner.topicEvidence).toEqual([])
+
+    await problemActionRepository.appendByAuthUserId(userA, {
+      provider: 'codeforces',
+      externalId: '800A',
+      actionType: 'status_changed',
+      learnerStatus: 'attempted',
+      evidenceSource: 'manual',
+    })
+    await fetch(`${baseUrl}/api/recommendations`, { headers })
+    expect(requests[1]?.learner.topicEvidence).toEqual([])
+
+    await progressRepository.saveConsent(
+      userA,
+      true,
+      'personalized-coaching-rag-v2',
+    )
+    await fetch(`${baseUrl}/api/recommendations`, { headers })
+
+    expect(requests).toHaveLength(3)
+    expect(requests[2]?.learner.topicEvidence).toContainEqual({
+      topic: 'implementation',
+      observedAttemptedProblems: 1,
+      observedSolvedProblems: 0,
+    })
+  })
+
   it('generates, reuses, feedback-merges, dismisses, and restores a batch', async () => {
     const progressRepository = new InMemoryProgressRepository()
     const baseUrl = startApp({ progressRepository })
@@ -273,6 +323,168 @@ describe('recommendation API', () => {
       ).json(),
     )
     expect(restoredDismissals.data).toHaveLength(0)
+  })
+
+  describe('POST /api/recommendation-dismissals/:provider/:externalId', () => {
+    it('dismisses a trusted problem directly by provider and external ID', async () => {
+      const baseUrl = startApp()
+      const headers = authorization('user-a')
+
+      const response = await fetch(
+        `${baseUrl}/api/recommendation-dismissals/codeforces/800A`,
+        { method: 'POST', headers },
+      )
+      expect(response.status).toBe(200)
+      const body = RecommendationDismissalResponseSchema.parse(
+        await response.json(),
+      )
+      expect(body.data).toMatchObject({
+        provider: 'codeforces',
+        externalId: '800A',
+      })
+
+      const dismissals = RecommendationDismissalsResponseSchema.parse(
+        await (
+          await fetch(`${baseUrl}/api/recommendation-dismissals`, {
+            headers,
+          })
+        ).json(),
+      )
+      expect(dismissals.data.map((item) => item.externalId)).toContain(
+        '800A',
+      )
+    })
+
+    it('is idempotent: dismissing an already-dismissed problem keeps the original timestamp', async () => {
+      const baseUrl = startApp()
+      const headers = authorization('user-a')
+
+      const first = RecommendationDismissalResponseSchema.parse(
+        await (
+          await fetch(
+            `${baseUrl}/api/recommendation-dismissals/codeforces/800A`,
+            { method: 'POST', headers },
+          )
+        ).json(),
+      )
+      const second = RecommendationDismissalResponseSchema.parse(
+        await (
+          await fetch(
+            `${baseUrl}/api/recommendation-dismissals/codeforces/800A`,
+            { method: 'POST', headers },
+          )
+        ).json(),
+      )
+      expect(second.data.dismissedAt).toBe(first.data.dismissedAt)
+
+      const dismissals = RecommendationDismissalsResponseSchema.parse(
+        await (
+          await fetch(`${baseUrl}/api/recommendation-dismissals`, {
+            headers,
+          })
+        ).json(),
+      )
+      expect(
+        dismissals.data.filter((item) => item.externalId === '800A'),
+      ).toHaveLength(1)
+    })
+
+    it('returns 404 for a problem outside the trusted catalog', async () => {
+      const baseUrl = startApp()
+      const headers = authorization('user-a')
+
+      const response = await fetch(
+        `${baseUrl}/api/recommendation-dismissals/codeforces/does-not-exist`,
+        { method: 'POST', headers },
+      )
+      expect(response.status).toBe(404)
+      const body = (await response.json()) as { error: { code: string } }
+      expect(body.error.code).toBe('RECOMMENDATION_ITEM_NOT_FOUND')
+    })
+
+    it('returns 404 when the same external ID exists only under a different provider', async () => {
+      const baseUrl = startApp()
+      const headers = authorization('user-a')
+
+      const response = await fetch(
+        `${baseUrl}/api/recommendation-dismissals/codechef/800A`,
+        { method: 'POST', headers },
+      )
+      expect(response.status).toBe(404)
+      const body = (await response.json()) as { error: { code: string } }
+      expect(body.error.code).toBe('RECOMMENDATION_ITEM_NOT_FOUND')
+    })
+
+    it('rejects an unsupported provider with 400', async () => {
+      const baseUrl = startApp()
+      const headers = authorization('user-a')
+
+      const response = await fetch(
+        `${baseUrl}/api/recommendation-dismissals/not-a-real-provider/800A`,
+        { method: 'POST', headers },
+      )
+      expect(response.status).toBe(400)
+      const body = (await response.json()) as { error: { code: string } }
+      expect(body.error.code).toBe('INVALID_RECOMMENDATION_ITEM')
+    })
+
+    it('rejects a malformed external ID with 400', async () => {
+      const baseUrl = startApp()
+      const headers = authorization('user-a')
+
+      const response = await fetch(
+        `${baseUrl}/api/recommendation-dismissals/codeforces/${encodeURIComponent('has space')}`,
+        { method: 'POST', headers },
+      )
+      expect(response.status).toBe(400)
+      const body = (await response.json()) as { error: { code: string } }
+      expect(body.error.code).toBe('INVALID_RECOMMENDATION_ITEM')
+    })
+
+    it('requires authentication', async () => {
+      const baseUrl = startApp()
+
+      const response = await fetch(
+        `${baseUrl}/api/recommendation-dismissals/codeforces/800A`,
+        { method: 'POST' },
+      )
+      expect(response.status).toBe(401)
+    })
+
+    it('scopes dismissals per learner', async () => {
+      const baseUrl = startApp()
+
+      await fetch(`${baseUrl}/api/recommendation-dismissals/codeforces/800A`, {
+        method: 'POST',
+        headers: authorization('user-a'),
+      })
+
+      const userBDismissals = RecommendationDismissalsResponseSchema.parse(
+        await (
+          await fetch(`${baseUrl}/api/recommendation-dismissals`, {
+            headers: authorization('user-b'),
+          })
+        ).json(),
+      )
+      expect(userBDismissals.data).toHaveLength(0)
+
+      const userBResponse = await fetch(
+        `${baseUrl}/api/recommendation-dismissals/codeforces/800A`,
+        { method: 'POST', headers: authorization('user-b') },
+      )
+      expect(userBResponse.status).toBe(200)
+
+      const userADismissals = RecommendationDismissalsResponseSchema.parse(
+        await (
+          await fetch(`${baseUrl}/api/recommendation-dismissals`, {
+            headers: authorization('user-a'),
+          })
+        ).json(),
+      )
+      expect(userADismissals.data.map((item) => item.externalId)).toContain(
+        '800A',
+      )
+    })
   })
 
   it('rejects a different learner from using another learner’s recommendation item', async () => {

@@ -8,6 +8,7 @@ import {
   CoachMessageSchema,
   CoachPreferencesResponseSchema,
   CoachResponseSchema,
+  CoachRoadmapNoteResponseSchema,
   ImprovementRoadmapResponseSchema,
   type CoachConversation,
   type CoachMessage,
@@ -295,6 +296,43 @@ export const coachHandlers: RequestHandler[] = [
       ImprovementRoadmapResponseSchema.parse({ data: roadmap() }),
     ),
   ),
+  http.post('/api/coach/roadmap/notes', async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as {
+      note?: string
+    }
+    const note = (body.note ?? '').toLowerCase()
+    const matchedTopic = roadmap().topics.find((candidate) =>
+      note.includes(candidate.name.toLowerCase()),
+    )
+    const status =
+      matchedTopic === undefined
+        ? null
+        : /skip|stop|not interested/.test(note)
+          ? 'skip_for_now'
+          : /good|comfortable|know this|practiced|mastered|done/.test(note)
+            ? 'practiced'
+            : /revisit|rusty|unsure|come back/.test(note)
+              ? 'revisit'
+              : null
+    return HttpResponse.json(
+      CoachRoadmapNoteResponseSchema.parse({
+        data: {
+          topic: matchedTopic?.topic ?? null,
+          note: body.note ?? '',
+          previousStatus: matchedTopic?.manualStatus ?? null,
+          status,
+          statusChanged: status !== null,
+          rationale:
+            matchedTopic === undefined
+              ? "The note didn't clearly name a topic from your learning plan, so nothing was updated."
+              : status === null
+                ? "The note didn't clearly indicate a status change, so nothing was updated."
+                : `Your note suggested marking ${matchedTopic.name} as "${status.replaceAll('_', ' ')}".`,
+          createdAt: now(),
+        },
+      }),
+    )
+  }),
   http.get('/api/coach/preferences', () =>
     HttpResponse.json(
       CoachPreferencesResponseSchema.parse({ data: preferences }),

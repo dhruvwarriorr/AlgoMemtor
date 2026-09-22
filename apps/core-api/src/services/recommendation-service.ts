@@ -34,6 +34,8 @@ import {
 } from '../repositories/recommendation-repository.js'
 import type { LearnerProfileRepository } from '../repositories/learner-profile-repository.js'
 import type { ProgressRepository } from '../repositories/progress-repository.js'
+import type { ProviderDataRepository } from '../repositories/provider-data-repository.js'
+import type { CoachRepository } from '../repositories/coach-repository.js'
 import type { StructuredLogger } from '../utils/structured-logger.js'
 import {
   DETERMINISTIC_RANKING_VERSION,
@@ -43,6 +45,10 @@ import {
   rankRecommendations,
   RECOMMENDATION_BATCH_SIZE,
 } from './recommendation-ranking.js'
+import {
+  deriveRecommendationTopicEvidence,
+  type RecommendationTopicEvidence,
+} from './recommendation-topic-evidence.js'
 
 type RecommendationServiceOptions = {
   provider: ProblemProvider
@@ -53,6 +59,8 @@ type RecommendationServiceOptions = {
   aiRecommendationClient: AiRecommendationClient
   logger: StructuredLogger
   progressRepository?: ProgressRepository
+  providerDataRepository: ProviderDataRepository
+  coachRepository?: CoachRepository
   memoryGenerationEnabled?: boolean
 }
 
@@ -65,8 +73,8 @@ type ProviderSnapshot = {
 const identity = (provider: string, externalId: string) =>
   `${provider}:${externalId}`
 
-export const AI_RANKING_VERSION = 'ai-gemini-rag-v1'
-export const AI_FALLBACK_RANKING_VERSION = 'ai-rag-v1-fallback-deterministic-v2'
+export const AI_RANKING_VERSION = 'ai-gemini-rag-v2'
+export const AI_FALLBACK_RANKING_VERSION = 'ai-rag-v2-fallback-deterministic-v2'
 export const AI_CANDIDATE_LIMIT = 40
 const AI_POLICY_VERSION = 'personalized-coaching-rag-v2'
 const reusableRankingVersions = new Set([
@@ -188,6 +196,8 @@ const recommendationProblem = (
 const criteriaFor = (
   profile: ReturnType<typeof deriveRankingProfile>,
   source: LearnerProfile | null,
+  topicEvidence: readonly RecommendationTopicEvidence[],
+  evidenceConsented: boolean,
   provider?: ProviderKey,
 ) => ({
   ...(provider === undefined ? {} : { provider }),
@@ -195,7 +205,11 @@ const criteriaFor = (
   minRating: profile.ratingBand.min,
   maxRating: profile.ratingBand.max,
   pageSize: RECOMMENDATION_BATCH_SIZE,
-  profileSignature: profileSignature(profile, source),
+  profileSignature: createHash('sha256')
+    .update(profileSignature(profile, source))
+    .update(evidenceConsented ? 'consented' : 'not-consented')
+    .update(JSON.stringify(topicEvidence))
+    .digest('hex'),
 })
 
 const unsafeReasonPatterns = [
@@ -315,6 +329,7 @@ export class RecommendationService {
     requestId: string,
     profile: LearnerProfile | null,
     rankingProfile: ReturnType<typeof deriveRankingProfile>,
+    topicEvidence: readonly RecommendationTopicEvidence[],
     shortlist: readonly { problem: ExternalProblemSummary }[],
   ): AiRankingRequest {
     return {
@@ -330,6 +345,7 @@ export class RecommendationService {
         learningPreferences: profile?.learningPreferences ?? [
           'solve_problems_directly',
         ],
+        topicEvidence: [...topicEvidence],
         ...(rankingProfile.recommendationPreference === undefined ||
         rankingProfile.excludedTopics.length > 0
           ? {}
@@ -462,23 +478,66 @@ export class RecommendationService {
     requestId: string,
     signal?: AbortSignal,
   ): Promise<RecommendationFeedResponse> {
-    const [profile, actions, batches, feedback, snapshot, progressChange] =
-      await Promise.all([
-        this.options.learnerProfileRepository.findByAuthUserId(authUserId),
-        this.options.problemActionRepository.listByAuthUserId(authUserId),
-        this.options.recommendationRepository.listBatchesByAuthUserId(
-          authUserId,
-        ),
-        this.options.recommendationRepository.listFeedbackByAuthUserId(
-          authUserId,
-        ),
-        this.loadSnapshot(),
-        this.options.progressRepository?.latestRelevantChangeAt(authUserId),
-      ])
-    const rankingProfile = deriveRankingProfile(profile)
+    const [
+      profile,
+      actions,
+      batches,
+      feedback,
+      snapshot,
+      progressChange,
+      consent,
+      topicStatuses,
+    ] = await Promise.all([
+      this.options.learnerProfileRepository.findByAuthUserId(authUserId),
+      this.options.problemActionRepository.listByAuthUserId(authUserId),
+      this.options.recommendationRepository.listBatchesByAuthUserId(authUserId),
+      this.options.recommendationRepository.listFeedbackByAuthUserId(
+        authUserId,
+      ),
+      this.loadSnapshot(),
+      this.options.progressRepository?.latestRelevantChangeAt(authUserId),
+      this.options.progressRepository?.getConsent(authUserId),
+      this.options.coachRepository?.getTopicStatuses(authUserId),
+    ])
+    const baseRankingProfile = deriveRankingProfile(profile)
+    const skippedTopics = Object.entries(topicStatuses ?? {})
+      .filter(([, status]) => status === 'skip_for_now')
+      .map(([topic]) => topic)
+    const excludedTopics = [
+      ...new Set([...baseRankingProfile.excludedTopics, ...skippedTopics]),
+    ]
+    const rankingProfile = {
+      ...baseRankingProfile,
+      excludedTopics,
+      focusTopics: baseRankingProfile.focusTopics.filter(
+        (topic) => !excludedTopics.includes(topic),
+      ),
+      preferredTopics: baseRankingProfile.preferredTopics.filter(
+        (topic) => !excludedTopics.includes(topic),
+      ),
+    }
+    const evidenceConsented =
+      consent?.enabled === true && consent.policyVersion === AI_POLICY_VERSION
+    const [submissions, solved] = evidenceConsented
+      ? await Promise.all([
+          this.options.providerDataRepository.listSubmissions(authUserId),
+          this.options.providerDataRepository.listSolvedProblems(authUserId),
+        ])
+      : [[], []]
+    const topicEvidence = evidenceConsented
+      ? deriveRecommendationTopicEvidence(
+          snapshot.problems,
+          actions,
+          submissions,
+          solved,
+          rankingProfile.excludedTopics,
+        )
+      : []
     const criteria = criteriaFor(
       rankingProfile,
       profile,
+      topicEvidence,
+      evidenceConsented,
       this.providers.length === 1 ? this.providers[0]?.key : undefined,
     )
     const latestBatch = batches[0]
@@ -556,6 +615,7 @@ export class RecommendationService {
       requestId,
       profile,
       rankingProfile,
+      topicEvidence,
       shortlist,
     )
     const candidateIds = aiRequest.candidates.map((candidate) =>
@@ -762,6 +822,51 @@ export class RecommendationService {
       data: {
         provider: item.provider,
         externalId: item.externalId,
+        dismissedAt: recorded.occurredAt.toISOString(),
+      },
+    })
+  }
+
+  async dismissProblem(
+    authUserId: string,
+    provider: ProviderKey,
+    externalId: string,
+  ) {
+    const [snapshot, actions] = await Promise.all([
+      this.loadSnapshot(),
+      this.options.problemActionRepository.listByAuthUserId(authUserId),
+    ])
+    if (
+      !snapshot.problems.some(
+        (problem) =>
+          problem.provider === provider && problem.externalId === externalId,
+      )
+    ) {
+      throw new RecommendationNotFoundError(
+        'That problem is not in the trusted catalog.',
+      )
+    }
+    const active = currentDismissals(actions).find(
+      (item) => item.provider === provider && item.externalId === externalId,
+    )
+    if (active !== undefined) {
+      return RecommendationDismissalResponseSchema.parse({
+        data: {
+          provider,
+          externalId,
+          dismissedAt: active.dismissedAt.toISOString(),
+        },
+      })
+    }
+    const recorded = await this.options.problemActionRepository.appendByAuthUserId(
+      authUserId,
+      { provider, externalId, actionType: 'dismissed' },
+    )
+    this.invalidateForLearner(authUserId)
+    return RecommendationDismissalResponseSchema.parse({
+      data: {
+        provider,
+        externalId,
         dismissedAt: recorded.occurredAt.toISOString(),
       },
     })

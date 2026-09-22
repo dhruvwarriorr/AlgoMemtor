@@ -7,6 +7,8 @@ import {
   CoachConversationsResponseSchema,
   CoachPreferencesResponseSchema,
   CoachResponseSchema,
+  CoachRoadmapNoteRequestSchema,
+  CoachRoadmapNoteResponseSchema,
   ConfirmCoachActionRequestSchema,
   CreateCoachConversationRequestSchema,
   ImprovementRoadmapResponseSchema,
@@ -14,6 +16,7 @@ import {
   SendCoachMessageRequestSchema,
   SetCoachTopicStatusRequestSchema,
   type CoachPreferences,
+  type CoachRoadmapNoteRequest,
   type ConfirmCoachActionRequest,
   type CreateCoachConversationRequest,
   type SendCoachMessageRequest,
@@ -135,6 +138,17 @@ export function setCoachTopicStatus(
       schema: ImprovementRoadmapResponseSchema,
     },
   )
+}
+
+export function submitCoachRoadmapNote(input: CoachRoadmapNoteRequest) {
+  const parsed = CoachRoadmapNoteRequestSchema.parse(input)
+  return requestJson('/api/coach/roadmap/notes', {
+    authentication: 'required',
+    body: JSON.stringify(parsed),
+    headers: jsonHeaders,
+    method: 'POST',
+    schema: CoachRoadmapNoteResponseSchema,
+  })
 }
 
 export function fetchCoachPreferences({ signal }: RequestOptions = {}) {

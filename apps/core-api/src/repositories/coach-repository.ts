@@ -68,6 +68,17 @@ export type CoachRepository = {
     status: CoachManualTopicStatus,
   ): Promise<void>
   clearTopicStatus?(userId: string, topic: string): Promise<void>
+  recordTopicNote(
+    userId: string,
+    topic: string,
+    note: string,
+    status: CoachManualTopicStatus | null,
+    source: string,
+  ): Promise<{ id: string; occurredAt: Date }>
+  getTopicNoteEvent(
+    userId: string,
+    eventId: string,
+  ): Promise<{ note: string; occurredAt: Date } | null>
   getPreferences(userId: string): Promise<CoachPreferences>
   listCheckInSchedules?(): Promise<
     Array<{
@@ -128,6 +139,17 @@ export class InMemoryCoachRepository implements CoachRepository {
       status: CoachManualTopicStatus | null
       createdAt: string
     }>
+  >()
+  private readonly topicNoteEvents = new Map<
+    string,
+    {
+      userId: string
+      topic: string
+      note: string
+      status: CoachManualTopicStatus | null
+      source: string
+      occurredAt: Date
+    }
   >()
   private readonly preferences = new Map<string, CoachPreferences>()
   private readonly checkIns = new Map<string, CoachCheckIn[]>()
@@ -282,6 +304,9 @@ export class InMemoryCoachRepository implements CoachRepository {
     this.roadmapRevisions.delete(userId)
     this.topicStatuses.delete(userId)
     this.topicStatusEvents.delete(userId)
+    for (const [eventId, event] of this.topicNoteEvents) {
+      if (event.userId === userId) this.topicNoteEvents.delete(eventId)
+    }
     this.preferences.delete(userId)
     this.checkIns.delete(userId)
     for (const [proposalId, proposal] of this.proposals) {
@@ -338,6 +363,35 @@ export class InMemoryCoachRepository implements CoachRepository {
     const events = this.topicStatusEvents.get(userId) ?? []
     events.push({ topic, status: null, createdAt: this.now().toISOString() })
     this.topicStatusEvents.set(userId, events)
+  }
+
+  async recordTopicNote(
+    userId: string,
+    topic: string,
+    note: string,
+    status: CoachManualTopicStatus | null,
+    source: string,
+  ) {
+    const id = randomUUID()
+    const occurredAt = this.now()
+    this.topicNoteEvents.set(id, {
+      userId,
+      topic,
+      note,
+      status,
+      source,
+      occurredAt,
+    })
+    const events = this.topicStatusEvents.get(userId) ?? []
+    events.push({ topic, status, createdAt: occurredAt.toISOString() })
+    this.topicStatusEvents.set(userId, events)
+    return { id, occurredAt }
+  }
+
+  async getTopicNoteEvent(userId: string, eventId: string) {
+    const event = this.topicNoteEvents.get(eventId)
+    if (event === undefined || event.userId !== userId) return null
+    return { note: event.note, occurredAt: event.occurredAt }
   }
 
   async getPreferences(userId: string) {
@@ -787,6 +841,29 @@ export class PrismaCoachRepository implements CoachRepository {
     await this.prisma.coachTopicStatusEvent.create({
       data: { userId, topic, status: null, source: 'manual' },
     })
+  }
+
+  async recordTopicNote(
+    authUserId: string,
+    topic: string,
+    note: string,
+    status: CoachManualTopicStatus | null,
+    source: string,
+  ) {
+    const userId = await this.userId(authUserId)
+    const event = await this.prisma.coachTopicStatusEvent.create({
+      data: { userId, topic, status, source, note },
+    })
+    return { id: event.id, occurredAt: event.createdAt }
+  }
+
+  async getTopicNoteEvent(authUserId: string, eventId: string) {
+    const userId = await this.userId(authUserId)
+    const event = await this.prisma.coachTopicStatusEvent.findFirst({
+      where: { id: eventId, userId, note: { not: null } },
+    })
+    if (event === null || event.note === null) return null
+    return { note: event.note, occurredAt: event.createdAt }
   }
 
   async getPreferences(authUserId: string) {

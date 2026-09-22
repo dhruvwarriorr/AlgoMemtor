@@ -9,7 +9,6 @@ import type {
 import {
   ArrowDown,
   ArrowUp,
-  ArrowUpRight,
   Bell,
   BookOpen,
   Check,
@@ -58,11 +57,13 @@ import {
   useSaveCoachPreferences,
   useSendCoachMessage,
   useSetCoachTopicStatus,
+  useSubmitCoachRoadmapNote,
 } from '@/features/coach/hooks'
 import { AI_POLICY_VERSION } from '@/features/profile/components/AiNoteConsentCard'
 import { cn } from '@/lib/utils'
 import { CoachRichContent as CoachRichContentView } from '@/features/coach/components/CoachRichContent'
 import { CoachMessageContent } from '@/features/coach/components/CoachMessageContent'
+import { useDismissProblem, useRecommendationDismissals } from '@/features/recommendations/hooks/useRecommendations'
 
 const laneLabels: Record<CoachRoadmapLane, string> = {
   current_focus: 'Current focus',
@@ -227,10 +228,14 @@ function TopicCard({
   topic,
   onStatus,
   statusPending,
+  onDismissProblem,
+  dismissPending,
 }: {
   topic: ImprovementTopic
   onStatus: (status: CoachManualTopicStatus | null) => void
   statusPending: boolean
+  onDismissProblem: (provider: ProviderKey, externalId: string) => void
+  dismissPending: boolean
 }) {
   return (
     <article className="min-w-0 rounded-lg border border-border bg-card p-4">
@@ -268,6 +273,14 @@ function TopicCard({
           </select>
         </label>
       </div>
+      <button
+        className="mt-3 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+        disabled={statusPending}
+        onClick={() => onStatus(topic.manualStatus === 'skip_for_now' ? null : 'skip_for_now')}
+        type="button"
+      >
+        {topic.manualStatus === 'skip_for_now' ? 'Restore topic' : 'Dismiss topic'}
+      </button>
       <p className="mt-3 text-sm leading-6 text-muted-foreground">
         {topic.reason}
       </p>
@@ -322,10 +335,16 @@ function TopicCard({
                     {providerLabels[suggestion.problem.provider]}
                   </span>
                 </a>
-                <ArrowUpRight
-                  aria-hidden="true"
-                  className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
-                />
+                <button
+                  aria-label={`Dismiss ${suggestion.problem.title}`}
+                  className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+                  disabled={dismissPending}
+                  onClick={() => onDismissProblem(suggestion.problem.provider, suggestion.problem.externalId)}
+                  title="Don't recommend this problem again"
+                  type="button"
+                >
+                  Dismiss
+                </button>
               </li>
             ))}
           </ul>
@@ -379,6 +398,10 @@ function CoachPage() {
   const deleteConversation = useDeleteCoachConversation()
   const sendMessage = useSendCoachMessage()
   const setTopicStatus = useSetCoachTopicStatus()
+  const submitRoadmapNote = useSubmitCoachRoadmapNote()
+  const [roadmapNoteText, setRoadmapNoteText] = useState('')
+  const dismissProblem = useDismissProblem()
+  const dismissalsQuery = useRecommendationDismissals()
   const confirmAction = useConfirmCoachAction()
   const savePreferences = useSaveCoachPreferences()
   const markCheckIn = useMarkCoachCheckIn()
@@ -1123,6 +1146,10 @@ function CoachPage() {
                             {message.richContent ? (
                               <CoachRichContentView
                                 content={message.richContent}
+                                dismissedProblemKeys={new Set((dismissalsQuery.data?.data ?? []).map((item) => `${item.provider}:${item.externalId}`))}
+                                onDismissProblem={(provider, externalId) => {
+                                  dismissProblem.mutate({ provider, externalId })
+                                }}
                                 onSuggestedQuestion={(question) => {
                                   setContent(question)
                                   void submitMessage(question)
@@ -1247,6 +1274,65 @@ function CoachPage() {
                 {roadmap?.topics.length ?? 0} topics
               </span>
             </div>
+            <form
+              className="mb-6 rounded-lg border border-border bg-card p-3"
+              onSubmit={(event) => {
+                event.preventDefault()
+                const trimmed = roadmapNoteText.trim()
+                if (trimmed === '' || submitRoadmapNote.isPending) return
+                submitRoadmapNote.mutate(trimmed, {
+                  onSuccess: (result) => {
+                    setRoadmapNoteText('')
+                    notify({
+                      title:
+                        result.data.statusChanged && result.data.status !== null
+                          ? `Updated ${
+                              roadmap?.topics.find(
+                                (item) => item.topic === result.data.topic,
+                              )?.name ?? result.data.topic
+                            }: ${statusLabels[result.data.status]}`
+                          : 'Note saved',
+                      description: result.data.rationale,
+                      tone: 'success',
+                    })
+                  },
+                  onError: (error) => {
+                    notify({
+                      title: 'Could not save your note',
+                      description:
+                        error instanceof Error
+                          ? error.message
+                          : 'Try again shortly.',
+                      tone: 'error',
+                    })
+                  },
+                })
+              }}
+            >
+              <label className="sr-only" htmlFor="roadmap-note">
+                Tell your coach about your learning plan
+              </label>
+              <textarea
+                className="block min-h-16 w-full resize-y rounded-md border border-border bg-background p-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                disabled={submitRoadmapNote.isPending}
+                id="roadmap-note"
+                maxLength={500}
+                onChange={(event) => setRoadmapNoteText(event.target.value)}
+                placeholder="Tell your coach about a topic, e.g. I'm pretty good at sliding window now, no need to keep suggesting it."
+                value={roadmapNoteText}
+              />
+              <div className="mt-2 flex justify-end">
+                <button
+                  className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50"
+                  disabled={
+                    submitRoadmapNote.isPending || roadmapNoteText.trim() === ''
+                  }
+                  type="submit"
+                >
+                  {submitRoadmapNote.isPending ? 'Sending…' : 'Send'}
+                </button>
+              </div>
+            </form>
             {roadmap ? (
               <div className="grid min-w-0 gap-6 xl:grid-cols-2">
                 {(Object.keys(laneLabels) as CoachRoadmapLane[]).map((lane) => {
@@ -1272,6 +1358,10 @@ function CoachPage() {
                         topics.map((topic) => (
                           <TopicCard
                             key={topic.topic}
+                            dismissPending={dismissProblem.isPending}
+                            onDismissProblem={(provider, externalId) => {
+                              dismissProblem.mutate({ provider, externalId })
+                            }}
                             onStatus={(status) =>
                               void setTopicStatus.mutateAsync({
                                 topic: topic.topic,

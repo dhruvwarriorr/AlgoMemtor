@@ -21,6 +21,10 @@ import {
   HttpAiCoachClient,
   UnavailableAiCoachClient,
 } from './integrations/ai/ai-coach-client.js'
+import {
+  HttpAiRoadmapNoteClient,
+  UnavailableAiRoadmapNoteClient,
+} from './integrations/ai/ai-roadmap-note-client.js'
 import { CodeChefPublicStatsFetcher } from './integrations/provider-accounts/codechef-public-stats.js'
 import { CodeforcesPublicStatsFetcher } from './integrations/provider-accounts/codeforces-public-stats.js'
 import { LeetCodePublicStatsFetcher } from './integrations/provider-accounts/leetcode-public-stats.js'
@@ -174,6 +178,9 @@ const app = createApp({
         timeoutMs: 125_000,
       })
     : new UnavailableAiCoachClient(),
+  aiRoadmapNoteClient: aiConfig.configured
+    ? new HttpAiRoadmapNoteClient(aiConfig)
+    : new UnavailableAiRoadmapNoteClient(),
   jwtVerifier,
   problemProvider: codeforcesProvider,
   problemProviders,

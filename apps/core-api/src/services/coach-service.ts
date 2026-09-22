@@ -47,6 +47,7 @@ import type {
   AiMemoryClient,
   AiMemoryRecord,
 } from '../integrations/ai/ai-memory-client.js'
+import type { AiRoadmapNoteClient } from '../integrations/ai/ai-roadmap-note-client.js'
 import type { ProblemProvider } from '../integrations/providers/problem-provider.js'
 import type { LearnerProfileRepository } from '../repositories/learner-profile-repository.js'
 import type {
@@ -1532,6 +1533,7 @@ export type CoachServiceOptions = {
   progressService: ProgressService
   aiMemoryClient: AiMemoryClient
   aiCoachClient: AiCoachClient
+  aiRoadmapNoteClient: AiRoadmapNoteClient
   logger: StructuredLogger
   memoryGenerationEnabled?: boolean
   now?: () => Date
@@ -2332,6 +2334,103 @@ export class CoachService {
     return this.getRoadmap(userId)
   }
 
+  async submitRoadmapNote(userId: string, note: string) {
+    const consent = await this.options.progressRepository.getConsent(userId)
+    if (
+      consent?.enabled !== true ||
+      consent.policyVersion !== COACH_POLICY_VERSION
+    ) {
+      throw new CoachConsentRequiredError()
+    }
+
+    const safeNote = redactCoachContextText(note, 500)
+    const statuses = await this.options.repository.getTopicStatuses(userId)
+    const candidateTopics = topicDefinitions.map((definition) => ({
+      slug: definition.slug,
+      name: definition.name,
+      currentStatus: statuses[definition.slug] ?? null,
+    }))
+
+    let classification
+    try {
+      classification = await this.options.aiRoadmapNoteClient.classify({
+        topics: candidateTopics,
+        note: safeNote,
+      })
+    } catch {
+      classification = {
+        topic: null as string | null,
+        status: 'no_change' as const,
+        rationale:
+          'AI status suggestions are unavailable right now; your note was saved.',
+      }
+    }
+
+    if (
+      classification.topic === null ||
+      !definitionBySlug.has(classification.topic)
+    ) {
+      return {
+        topic: null,
+        note: safeNote,
+        previousStatus: null,
+        status: null,
+        statusChanged: false,
+        rationale: classification.rationale,
+        createdAt: this.now().toISOString(),
+      }
+    }
+
+    const canonical = classification.topic
+    const previousStatus = statuses[canonical] ?? null
+    const suggestedStatus = classification.status
+    let nextStatus = previousStatus
+    let statusChanged = false
+    if (suggestedStatus !== 'no_change' && suggestedStatus !== previousStatus) {
+      await this.options.repository.setTopicStatus(
+        userId,
+        canonical,
+        suggestedStatus,
+      )
+      nextStatus = suggestedStatus
+      statusChanged = true
+    }
+
+    const event = await this.options.repository.recordTopicNote(
+      userId,
+      canonical,
+      safeNote,
+      nextStatus,
+      'ai_note',
+    )
+
+    if (this.options.memoryGenerationEnabled !== false) {
+      try {
+        await this.options.progressRepository.enqueueJob({
+          authUserId: userId,
+          jobType: 'memory_generation',
+          evidenceType: 'topic_note',
+          evidenceId: event.id,
+          idempotencyKey: `memory:topic_note:${event.id}`,
+        })
+      } catch {
+        this.options.logger.warn('coach_topic_note_memory_enqueue_failed', {
+          errorCode: 'OUTBOX_UNAVAILABLE',
+        })
+      }
+    }
+
+    return {
+      topic: canonical,
+      note: safeNote,
+      previousStatus,
+      status: nextStatus,
+      statusChanged,
+      rationale: classification.rationale,
+      createdAt: event.occurredAt.toISOString(),
+    }
+  }
+
   async getRoadmap(userId: string) {
     const roadmap = await this.buildRoadmap(userId)
     const existing = await this.options.repository.getRoadmap(userId)
@@ -2985,11 +3084,18 @@ export class CoachService {
       }),
       this.options.repository.getConversation(userId, conversationId),
     ])
-    const excludedTopics = extractCoachTopicExclusions(
-      [profile?.recommendationPreference, profile?.additionalConsiderations]
-        .filter((value): value is string => value !== undefined)
-        .join('\n'),
-    )
+    const excludedTopics = [
+      ...new Set([
+        ...extractCoachTopicExclusions(
+          [profile?.recommendationPreference, profile?.additionalConsiderations]
+            .filter((value): value is string => value !== undefined)
+            .join('\n'),
+        ),
+        ...roadmap.topics
+          .filter((topic) => topic.manualStatus === 'skip_for_now')
+          .map((topic) => topic.topic),
+      ]),
+    ]
     const recentTurns = (conversation?.messages ?? [])
       .slice(-12)
       .map((message) => ({
@@ -3858,7 +3964,7 @@ export class CoachService {
           suggestion,
         ]),
       )
-      const suggestions = selectedSuggestions.map(({ problem, band }) => {
+      const suggestions = (manualStatus === 'skip_for_now' ? [] : selectedSuggestions).map(({ problem, band }) => {
         const id = stableUuid(
           `coach-suggestion:${definition.slug}:${problem.provider}:${problem.externalId}`,
         )

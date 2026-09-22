@@ -1043,6 +1043,42 @@ export const handlers: RequestHandler[] = [
       }),
     ),
   ),
+  http.post(
+    '/api/recommendation-dismissals/:provider/:externalId',
+    ({ params }) => {
+      const provider = String(params.provider)
+      const externalId = String(params.externalId)
+      const key = `${provider}:${externalId}`
+      const problem = problemFixtures.find(
+        (candidate) =>
+          candidate.provider === provider &&
+          candidate.externalId === externalId,
+      )
+
+      if (problem === undefined) {
+        return HttpResponse.json(
+          createApiError(
+            'RECOMMENDATION_ITEM_NOT_FOUND',
+            'That problem is not in the trusted catalog.',
+            {},
+          ),
+          { status: 404 },
+        )
+      }
+
+      dismissedRecommendationIds.add(key)
+      return HttpResponse.json(
+        RecommendationDismissalResponseSchema.parse({
+          data: {
+            provider,
+            externalId,
+            dismissedAt: new Date().toISOString(),
+            problem,
+          },
+        }),
+      )
+    },
+  ),
   http.delete(
     '/api/recommendation-dismissals/:provider/:externalId',
     ({ params }) => {

@@ -41,6 +41,18 @@ export const AiRankingRequestSchema = z
           .strict(),
         learningPreferences: z.array(z.string().trim().min(1).max(64)).max(16),
         recommendationPreference: z.string().trim().min(1).max(500).optional(),
+        topicEvidence: z
+          .array(
+            z
+              .object({
+                topic: topicSchema,
+                observedAttemptedProblems: z.number().int().nonnegative(),
+                observedSolvedProblems: z.number().int().nonnegative(),
+              })
+              .strict(),
+          )
+          .max(25)
+          .optional(),
       })
       .strict(),
     candidates: z.array(aiRankingCandidateSchema).min(1).max(40),
@@ -63,6 +75,18 @@ export const AiRankingRequestSchema = z
         path: ['learner', 'preferredDifficulty'],
       })
     }
+
+    const evidenceTopics = new Set<string>()
+    learner.topicEvidence?.forEach(({ topic }, index) => {
+      if (evidenceTopics.has(topic)) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Topic evidence must be unique.',
+          path: ['learner', 'topicEvidence', index, 'topic'],
+        })
+      }
+      evidenceTopics.add(topic)
+    })
 
     const identities = new Set<string>()
     candidates.forEach((candidate, index) => {

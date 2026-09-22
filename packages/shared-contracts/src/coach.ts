@@ -798,6 +798,33 @@ export type SetCoachTopicStatusRequest = z.infer<
   typeof SetCoachTopicStatusRequestSchema
 >
 
+export const CoachRoadmapNoteRequestSchema = z
+  .object({ note: nonEmptyStringSchema.max(500) })
+  .strict()
+export type CoachRoadmapNoteRequest = z.infer<
+  typeof CoachRoadmapNoteRequestSchema
+>
+
+export const CoachRoadmapNoteSchema = z
+  .object({
+    topic: slugSchema.nullable(),
+    note: nonEmptyStringSchema.max(500),
+    previousStatus: CoachManualTopicStatusSchema.nullable(),
+    status: CoachManualTopicStatusSchema.nullable(),
+    statusChanged: z.boolean(),
+    rationale: nonEmptyStringSchema.max(280),
+    createdAt: dateSchema,
+  })
+  .strict()
+export type CoachRoadmapNote = z.infer<typeof CoachRoadmapNoteSchema>
+
+export const CoachRoadmapNoteResponseSchema = z
+  .object({ data: CoachRoadmapNoteSchema })
+  .strict()
+export type CoachRoadmapNoteResponse = z.infer<
+  typeof CoachRoadmapNoteResponseSchema
+>
+
 export const ConfirmCoachActionRequestSchema = z
   .object({ confirmation: z.literal('CONFIRM') })
   .strict()

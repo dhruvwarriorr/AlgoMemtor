@@ -49,6 +49,13 @@ from .memory_service import MemoryNotFoundError, MemoryService, get_memory_servi
 from .ranking_models import RankingRequest, RankingResponse
 from .ranking_service import RankingService, get_ranking_service
 from .rate_limit import InMemoryRateLimiter, rate_limit_internal_request
+from .roadmap_note_models import RoadmapNoteRequest, RoadmapNoteResponse
+from .roadmap_note_service import (
+    RoadmapNoteGenerationError,
+    RoadmapNoteNotConfiguredError,
+    RoadmapNoteService,
+    get_roadmap_note_service,
+)
 from .settings import get_ai_settings
 
 OPTIONAL_CLEANUP_BODY = Body(default=None)
@@ -115,6 +122,30 @@ async def rank_recommendations(
     service: Annotated[RankingService, Depends(get_ranking_service)],
 ) -> RankingResponse:
     return await service.rank(request)
+
+
+@app.post(
+    "/internal/coach/roadmap-note",
+    response_model=RoadmapNoteResponse,
+    response_model_exclude_none=True,
+    dependencies=[Depends(require_internal_service)],
+)
+async def classify_roadmap_note(
+    request: RoadmapNoteRequest,
+    service: Annotated[RoadmapNoteService, Depends(get_roadmap_note_service)],
+) -> RoadmapNoteResponse:
+    try:
+        return await service.classify(request)
+    except RoadmapNoteNotConfiguredError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Roadmap-note classification is not configured.",
+        ) from error
+    except RoadmapNoteGenerationError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Roadmap-note classification is temporarily unavailable.",
+        ) from error
 
 
 @app.post(

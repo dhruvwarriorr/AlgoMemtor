@@ -156,6 +156,10 @@ Codeforces URLs from its own provider snapshot.
 The model payload contains only the expected count, structured learner fields,
 the optional profile-scoped recommendation note, and provider metadata such as
 Codeforces ID, title, rating, normalized difficulty, topics, and solved count.
+It also includes bounded counts of unique observed attempted and solved
+problems by topic from manual statuses and permitted provider activity; these
+counts are partial evidence, not a mastery score, and require current
+personalized-AI consent before they are sent to Gemini.
 It excludes request/learner service identifiers, canonical URLs,
 `additionalConsiderations`, full problem content, and raw prompts. The note is
 optional, trimmed, capped at 500 characters, and not used by the deterministic
@@ -166,8 +170,8 @@ local unavailable client. If FastAPI has no `LLM_API_KEY`, it returns a
 `not_configured` fallback. Timeouts, provider errors, invalid model output,
 unavailable HTTP responses, invalid JSON, and invalid response schemas all keep
 the deterministic recommendation feed available. AI batches use
-`ai-gemini-rag-v1`; fallback batches use
-`ai-rag-v1-fallback-deterministic-v2`.
+`ai-gemini-rag-v2`; fallback batches use
+`ai-rag-v2-fallback-deterministic-v2`.
 
 The internal endpoint requires the same non-empty token in the AI service. A
 missing AI token configuration returns `503`, while a missing or wrong supplied
@@ -361,7 +365,7 @@ COACH_THINKING_LEVEL=high
 LLM_INPUT_PRICE_PER_MILLION_USD=1.50
 LLM_OUTPUT_PRICE_PER_MILLION_USD=9.00
 LLM_PRICING_VERSION=gemini-3.5-flash-standard-2026-09
-AI_RANKING_VERSION=ai-gemini-rag-v1
+AI_RANKING_VERSION=ai-gemini-rag-v2
 COACH_VERSION=coach-gemini-rag-v2
 CONSENT_POLICY_VERSION=personalized-coaching-rag-v2
 DATABASE_URL=postgresql+psycopg://algomemtor:algomemtor_local@127.0.0.1:5433/algomemtor

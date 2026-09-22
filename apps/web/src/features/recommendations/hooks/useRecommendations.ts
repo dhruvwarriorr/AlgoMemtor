@@ -1,9 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
+import type { RecommendationFeedResponse } from '@algomemtor/shared-contracts'
+
 import { useAuth } from '@/features/auth/useAuth'
 
 import {
   dismissRecommendation,
+  dismissProblem,
   fetchRecommendationDismissals,
   fetchRecommendations,
   refreshRecommendations,
@@ -57,13 +60,17 @@ export function useRecommendationFeedback() {
       itemId: string
       input: Parameters<typeof saveRecommendationFeedback>[1]
     }) => saveRecommendationFeedback(itemId, input),
-    onSuccess: async () => {
+    onSuccess: () => {
       if (user === null) {
         return
       }
 
-      await queryClient.invalidateQueries({
+      // Saving feedback makes the current batch stale server-side, which can
+      // trigger a full AI-ranked regeneration on the next fetch. Mark it
+      // stale without blocking the UI on that regeneration.
+      void queryClient.invalidateQueries({
         queryKey: recommendationsQueryKey(user.id),
+        refetchType: 'none',
       })
     },
   })
@@ -75,19 +82,58 @@ export function useDismissRecommendation() {
 
   return useMutation({
     mutationFn: dismissRecommendation,
-    onSuccess: async () => {
+    onSuccess: (_response, itemId) => {
       if (user === null) {
         return
       }
 
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: recommendationsQueryKey(user.id),
-        }),
-        queryClient.invalidateQueries({
-          queryKey: recommendationDismissalsQueryKey(user.id),
-        }),
-      ])
+      const queryKey = recommendationsQueryKey(user.id)
+      queryClient.setQueryData<RecommendationFeedResponse>(
+        queryKey,
+        (current) =>
+          current?.data === null || current?.data === undefined
+            ? current
+            : {
+                ...current,
+                data: {
+                  ...current.data,
+                  items: current.data.items.filter(
+                    (item) => item.id !== itemId,
+                  ),
+                },
+              },
+      )
+
+      // Dismissing makes the batch stale server-side, which can trigger a
+      // full AI-ranked regeneration on the next fetch. The optimistic
+      // update above already reflects the dismissal, so mark queries stale
+      // without blocking the dismiss button on that regeneration.
+      void queryClient.invalidateQueries({ queryKey, refetchType: 'none' })
+      void queryClient.invalidateQueries({
+        queryKey: recommendationDismissalsQueryKey(user.id),
+      })
+      void queryClient.invalidateQueries({
+        queryKey: ['coach', user.id, 'roadmap'],
+      })
+    },
+  })
+}
+
+export function useDismissProblem() {
+  const queryClient = useQueryClient()
+  const { user } = useAuth()
+  return useMutation({
+    mutationFn: ({ provider, externalId }: { provider: string; externalId: string }) =>
+      dismissProblem(provider, externalId),
+    onSuccess: () => {
+      if (user === null) return
+      // Non-blocking: see useDismissRecommendation for why these aren't awaited.
+      void queryClient.invalidateQueries({
+        queryKey: recommendationsQueryKey(user.id),
+        refetchType: 'none',
+      })
+      void queryClient.invalidateQueries({ queryKey: recommendationDismissalsQueryKey(user.id) })
+      void queryClient.invalidateQueries({ queryKey: ['coach', user.id, 'roadmap'] })
     },
   })
 }
@@ -114,19 +160,22 @@ export function useRestoreRecommendationDismissal() {
       provider: string
       externalId: string
     }) => restoreRecommendationDismissal(provider, externalId),
-    onSuccess: async () => {
+    onSuccess: () => {
       if (user === null) {
         return
       }
 
-      await Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: recommendationsQueryKey(user.id),
-        }),
-        queryClient.invalidateQueries({
-          queryKey: recommendationDismissalsQueryKey(user.id),
-        }),
-      ])
+      // Non-blocking: see useDismissRecommendation for why these aren't awaited.
+      void queryClient.invalidateQueries({
+        queryKey: recommendationsQueryKey(user.id),
+        refetchType: 'none',
+      })
+      void queryClient.invalidateQueries({
+        queryKey: recommendationDismissalsQueryKey(user.id),
+      })
+      void queryClient.invalidateQueries({
+        queryKey: ['coach', user.id, 'roadmap'],
+      })
     },
   })
 }

@@ -17,6 +17,7 @@ import {
   saveCoachPreferences,
   sendCoachMessage,
   setCoachTopicStatus,
+  submitCoachRoadmapNote,
 } from './api'
 
 const coachKey = (userId: string) => ['coach', userId] as const
@@ -187,10 +188,32 @@ export function useSetCoachTopicStatus() {
       status: Parameters<typeof setCoachTopicStatus>[1]['status']
     }) => setCoachTopicStatus(topic, { status }),
     onSuccess: () => {
-      if (user)
+      if (user) {
+        void Promise.all([
+          queryClient.invalidateQueries({
+          queryKey: [...coachKey(user.id), 'roadmap'],
+          }),
+          queryClient.invalidateQueries({ queryKey: ['recommendations', user.id] }),
+        ])
+      }
+    },
+  })
+}
+
+export function useSubmitCoachRoadmapNote() {
+  const queryClient = useQueryClient()
+  const { user } = useAuth()
+  return useMutation({
+    mutationFn: (note: string) => submitCoachRoadmapNote({ note }),
+    onSuccess: () => {
+      if (user) {
         void queryClient.invalidateQueries({
           queryKey: [...coachKey(user.id), 'roadmap'],
         })
+        void queryClient.invalidateQueries({
+          queryKey: ['recommendations', user.id],
+        })
+      }
     },
   })
 }

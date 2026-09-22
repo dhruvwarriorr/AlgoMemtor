@@ -1,5 +1,4 @@
 import {
-  Activity,
   BarChart3,
   Bookmark,
   Brain,
@@ -38,7 +37,6 @@ export const appNavGroups: ReadonlyArray<{
     items: [
       { label: 'Progress', to: '/progress', icon: TrendingUp },
       { label: 'Insights', to: '/analytics', icon: BarChart3 },
-      { label: 'Activity', to: '/activity', icon: Activity },
       { label: 'Memory', to: '/memory', icon: Brain },
     ],
   },

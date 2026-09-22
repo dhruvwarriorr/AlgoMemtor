@@ -34,6 +34,7 @@ from .coach_models import (
     CoachRequest,
 )
 from .knowledge_base import retrieve_knowledge
+from .knowledge_query import build_knowledge_query
 from .knowledge_repository import KnowledgeRepository
 from .memory_model import GeminiMemoryEmbedder, MemoryEmbeddingError
 from .pedagogy import (
@@ -327,8 +328,15 @@ class CoachService:
         input_tokens: int | None = None
         output_tokens: int | None = None
         effective_request = request
+        raw_recent_turns = request.context.get("recentTurns")
+        recent_turns = (
+            [item for item in raw_recent_turns if isinstance(item, dict)]
+            if isinstance(raw_recent_turns, list)
+            else []
+        )
+        knowledge_query = build_knowledge_query(request.question, recent_turns)
         chunks = await self._retrieve_knowledge(
-            request.question, request.context.get("excludedTopics")
+            knowledge_query, request.context.get("excludedTopics")
         )
         retrieval: dict[str, object] = {
             "knowledge": [
@@ -401,12 +409,6 @@ class CoachService:
                         # Grounding metadata is untrusted; keep only citations
                         # that pass the strict public-source contract.
                         continue
-        raw_recent_turns = request.context.get("recentTurns")
-        recent_turns = (
-            [item for item in raw_recent_turns if isinstance(item, dict)]
-            if isinstance(raw_recent_turns, list)
-            else []
-        )
         recent_text = "\n".join(str(item.get("content", "")) for item in recent_turns)
         bloom_level = infer_bloom_level(request.question, recent_turns)
         mistake_patterns = detect_mistake_patterns(recent_text)
