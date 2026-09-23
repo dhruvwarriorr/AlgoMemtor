@@ -17,7 +17,7 @@ function AppShell() {
     >
       <ScrollRestoration />
       <a
-        className="fixed top-3 left-4 z-[100] -translate-y-20 rounded-full bg-ink px-3 py-2 text-sm font-medium text-ink-foreground transition-transform focus:translate-y-0"
+        className="fixed top-3 left-4 z-[100] -translate-y-20 rounded-md bg-ink px-3 py-2 text-sm font-medium text-ink-foreground transition-transform focus:translate-y-0"
         href="#main-content"
       >
         Skip to content

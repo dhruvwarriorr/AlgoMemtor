@@ -100,7 +100,7 @@ export function JourneyTimeline() {
                 viewport={{ once: true }}
                 whileInView={{ opacity: 1, y: 0 }}
               >
-                <span className="grid size-16 shrink-0 place-items-center rounded-full bg-primary font-heading text-lg font-bold text-white shadow-[0_0_24px_rgba(255,106,53,0.45)]">
+                <span className="grid size-16 shrink-0 place-items-center rounded-md bg-primary font-heading text-lg font-bold text-white shadow-[0_0_24px_rgba(255,106,53,0.45)]">
                   {index + 1}
                 </span>
                 <span>
@@ -499,7 +499,7 @@ export function LandingFooter() {
         </nav>
         <div>
           <p className="mb-3 text-sm font-semibold text-white">Attribution</p>
-          <p className="glass-panel inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs text-white/65">
+          <p className="glass-panel inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-xs text-white/65">
             <BadgeCheck aria-hidden="true" className="size-3.5 text-primary" />
             Problems belong to their original platforms
           </p>

@@ -87,7 +87,7 @@ export function RatingTrendCard({
     <section
       aria-labelledby="rating-heading"
       className={cn(
-        'flex min-h-72 min-w-0 flex-col overflow-hidden rounded-[1.4rem] border border-border bg-card p-5',
+        'flex min-h-72 min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-5',
         className,
       )}
     >
@@ -106,7 +106,7 @@ export function RatingTrendCard({
               </p>
               <span
                 className={cn(
-                  'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-sm font-semibold',
+                  'inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-sm font-semibold',
                   rising
                     ? 'bg-go-soft text-go-foreground'
                     : 'bg-danger-soft text-danger-foreground',
@@ -129,14 +129,14 @@ export function RatingTrendCard({
         {providers.length > 1 ? (
           <div
             aria-label="Platform"
-            className="flex gap-1 rounded-full bg-secondary p-1"
+            className="flex gap-1 rounded-md bg-secondary p-1"
             role="radiogroup"
           >
             {providers.map((item) => (
               <button
                 aria-checked={item === provider}
                 className={cn(
-                  'flex h-8 items-center gap-1.5 rounded-full px-3 text-sm font-medium transition-colors',
+                  'flex h-8 items-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors',
                   item === provider
                     ? 'bg-card text-foreground shadow-soft'
                     : 'text-foreground/60 hover:text-foreground',

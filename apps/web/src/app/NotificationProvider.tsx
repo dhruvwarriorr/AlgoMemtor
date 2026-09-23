@@ -120,7 +120,7 @@ export function NotificationProvider({ children }: PropsWithChildren) {
               </div>
               <button
                 aria-label="Dismiss notification"
-                className="grid size-7 shrink-0 place-items-center rounded-full opacity-70 transition hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10"
+                className="grid size-7 shrink-0 place-items-center rounded-md opacity-70 transition hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10"
                 onClick={() => remove(notification.id)}
                 type="button"
               >

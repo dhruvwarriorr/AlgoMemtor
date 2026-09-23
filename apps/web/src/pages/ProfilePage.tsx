@@ -108,7 +108,7 @@ function ProfilePage() {
         >
           Learner details
         </h2>
-        <dl className="min-w-0 divide-y divide-dashed divide-border overflow-hidden rounded-[1.4rem] border border-border bg-card">
+        <dl className="min-w-0 divide-y divide-dashed divide-border overflow-hidden rounded-xl border border-border bg-card">
           <SummaryItem label="Account email" value={user?.email ?? 'Not set'} />
           <SummaryItem
             label="Experience"

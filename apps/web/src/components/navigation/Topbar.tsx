@@ -27,7 +27,7 @@ function Brand() {
   return (
     <Link
       aria-label="AlgoMemtor home"
-      className="flex min-w-0 items-center gap-2.5 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="flex min-w-0 items-center gap-2.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
       to="/"
     >
       <LogoMark />
@@ -92,7 +92,7 @@ function FloatingTopbar() {
     >
       <div
         className={cn(
-          'pointer-events-auto flex h-14 w-full max-w-4xl items-center justify-between gap-3 rounded-full border pr-2 pl-3 transition-[background-color,border-color,box-shadow] duration-300',
+          'pointer-events-auto flex h-14 w-full max-w-4xl items-center justify-between gap-3 rounded-md border pr-2 pl-3 transition-[background-color,border-color,box-shadow] duration-300',
           solid
             ? 'border-white/12 bg-[#151517]/85 shadow-[0_18px_40px_-18px_rgb(0_0_0/0.8)] backdrop-blur-xl'
             : 'border-white/8 bg-white/[0.03] backdrop-blur-md',
@@ -106,7 +106,7 @@ function FloatingTopbar() {
           <ExploreMenu />
           {sectionLinks.map((item) => (
             <a
-              className="inline-flex h-9 items-center rounded-full px-3.5 text-sm font-medium text-white/65 outline-none transition-colors duration-300 hover:bg-white/5 hover:text-white focus-visible:ring-2 focus-visible:ring-ring"
+              className="inline-flex h-9 items-center rounded-md px-3.5 text-sm font-medium text-white/65 outline-none transition-colors duration-300 hover:bg-white/5 hover:text-white focus-visible:ring-2 focus-visible:ring-ring"
               href={item.href}
               key={item.href}
             >

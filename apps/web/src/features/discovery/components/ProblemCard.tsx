@@ -90,7 +90,7 @@ export function ProblemCard({ problem }: ProblemCardProps) {
     <article className="group/card flex min-w-0 flex-col gap-5 rounded-xl border border-border bg-card p-5 transition-[border-color,transform] duration-300 hover:border-[color-mix(in_oklab,var(--primary)_30%,var(--border))] sm:p-6">
       <header className="min-w-0 space-y-3">
         <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary py-1 pr-2.5 pl-1.5 font-medium text-secondary-foreground">
+          <span className="inline-flex items-center gap-1.5 rounded-md bg-secondary py-1 pr-2.5 pl-1.5 font-medium text-secondary-foreground">
             <ProviderLogo className="size-4" provider={problem.provider} />
             {providerLabels[problem.provider]}
           </span>
@@ -100,7 +100,7 @@ export function ProblemCard({ problem }: ProblemCardProps) {
           {problem.learnerStatus ? (
             <span
               className={cn(
-                'ml-auto rounded-full px-2.5 py-1 font-medium',
+                'ml-auto rounded-md px-2.5 py-1 font-medium',
                 statusTone[problem.learnerStatus],
               )}
             >
@@ -117,7 +117,7 @@ export function ProblemCard({ problem }: ProblemCardProps) {
         {problem.normalizedDifficulty ? (
           <div
             className={cn(
-              'flex items-center gap-1 rounded-full px-2.5 py-1',
+              'flex items-center gap-1 rounded-md px-2.5 py-1',
               difficultyTone[problem.normalizedDifficulty],
             )}
           >
@@ -128,7 +128,7 @@ export function ProblemCard({ problem }: ProblemCardProps) {
           </div>
         ) : null}
         {problem.providerDifficulty !== undefined ? (
-          <div className="flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1">
+          <div className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1">
             <dt className="text-muted-foreground">Provider rating:</dt>
             <dd className="font-mono font-medium text-foreground">
               {problem.providerDifficulty}
@@ -136,7 +136,7 @@ export function ProblemCard({ problem }: ProblemCardProps) {
           </div>
         ) : null}
         {problem.solvedCount !== undefined ? (
-          <div className="flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1">
+          <div className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1">
             <dt className="text-muted-foreground">Solved by:</dt>
             <dd className="font-mono font-medium text-foreground">
               {problem.solvedCount.toLocaleString()}
@@ -151,7 +151,7 @@ export function ProblemCard({ problem }: ProblemCardProps) {
           <ul className="flex min-w-0 flex-wrap gap-1.5" aria-label="Topics">
             {problem.topics.map((topic) => (
               <li
-                className="max-w-full break-words rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary dark:bg-primary/15"
+                className="max-w-full break-words rounded-md bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary dark:bg-primary/15"
                 key={topic}
               >
                 {topic}
@@ -168,14 +168,14 @@ export function ProblemCard({ problem }: ProblemCardProps) {
           >
             {visibleProviderTags.map((tag) => (
               <li
-                className="max-w-full break-words rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground"
+                className="max-w-full break-words rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground"
                 key={tag}
               >
                 {tag}
               </li>
             ))}
             {hiddenProviderTagCount > 0 ? (
-              <li className="rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-muted-foreground">
+              <li className="rounded-md border border-dashed border-border px-2.5 py-1 text-xs text-muted-foreground">
                 +{hiddenProviderTagCount} more
               </li>
             ) : null}

@@ -5,7 +5,11 @@ import type {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { ProblemActionRecord } from '../repositories/problem-action-repository.js'
-import { progressWindow } from './progress-window.js'
+import {
+  calculateStreaks,
+  progressBreakdown,
+  progressWindow,
+} from './progress-window.js'
 
 const dates = ['2026-09-20', '2026-09-21', '2026-09-22']
 const localDate = (date: Date) =>
@@ -119,5 +123,126 @@ describe('progressWindow', () => {
     )
     expect(result.attempted).toBe(1)
     expect(result.solved).toBe(0)
+  })
+})
+
+describe('calculateStreaks', () => {
+  const days = (...values: string[]) => new Set(values)
+
+  it('keeps the streak alive before the first solve of today', () => {
+    expect(
+      calculateStreaks(
+        days('2026-09-20', '2026-09-21', '2026-09-22'),
+        '2026-09-23',
+      ),
+    ).toEqual({ current: 3, longest: 3 })
+  })
+
+  it('counts today when the learner already solved today', () => {
+    expect(
+      calculateStreaks(days('2026-09-22', '2026-09-23'), '2026-09-23'),
+    ).toEqual({ current: 2, longest: 2 })
+  })
+
+  it('breaks after a full day without a solve', () => {
+    expect(
+      calculateStreaks(
+        days('2026-09-18', '2026-09-19', '2026-09-20', '2026-09-21'),
+        '2026-09-23',
+      ),
+    ).toEqual({ current: 0, longest: 4 })
+  })
+
+  it('handles month boundaries', () => {
+    expect(
+      calculateStreaks(days('2026-08-31', '2026-09-01'), '2026-09-02'),
+    ).toEqual({ current: 2, longest: 2 })
+  })
+})
+
+describe('progressBreakdown', () => {
+  const submission = (
+    provider: 'codeforces' | 'leetcode',
+    externalId: string,
+    occurredAt: string,
+    verdict: string,
+    isAccepted: boolean,
+  ) =>
+    ({
+      provider,
+      externalId,
+      eventId: `${externalId}-${occurredAt}`,
+      canonicalUrl: 'https://codeforces.com/',
+      verdict,
+      occurredAt,
+      isAccepted,
+      completeness: 'complete',
+      provenance: {} as never,
+    }) as const
+
+  it('splits the window by platform, verdict, difficulty, weekday and hour', () => {
+    const result = progressBreakdown({
+      dates: ['2026-09-21', '2026-09-22'],
+      newlySolved: [
+        { key: 'codeforces:1A', day: '2026-09-21' },
+        { key: 'leetcode:two-sum', day: '2026-09-22' },
+      ],
+      attemptedProblemIds: [
+        'codeforces:1A',
+        'codeforces:2B',
+        'leetcode:two-sum',
+      ],
+      submissions: [
+        submission(
+          'codeforces',
+          '2B',
+          '2026-09-21T09:15:00.000Z',
+          'WRONG_ANSWER',
+          false,
+        ),
+        submission('codeforces', '1A', '2026-09-21T09:40:00.000Z', 'OK', true),
+        submission(
+          'leetcode',
+          'two-sum',
+          '2026-09-22T21:05:00.000Z',
+          'Accepted',
+          true,
+        ),
+        submission('codeforces', '3C', '2026-08-01T10:00:00.000Z', 'OK', true),
+      ],
+      problems: new Map([
+        [
+          'codeforces:1A',
+          { normalizedDifficulty: 'easy', providerDifficulty: 1350 },
+        ],
+        [
+          'leetcode:two-sum',
+          { normalizedDifficulty: 'easy', providerDifficulty: 'Easy' },
+        ],
+      ]),
+      localDate: (date) => date.toISOString().slice(0, 10),
+      localHour: (date) => date.getUTCHours(),
+    })
+    expect(result.submissions).toBe(3)
+    expect(result.providers).toEqual([
+      { provider: 'codeforces', solved: 1, attempted: 2, submissions: 2 },
+      { provider: 'leetcode', solved: 1, attempted: 1, submissions: 1 },
+    ])
+    expect(result.verdicts).toMatchObject({ accepted: 2, wrongAnswer: 1 })
+    expect(result.difficulty).toEqual({
+      easy: 2,
+      medium: 0,
+      hard: 0,
+      unknown: 0,
+    })
+    expect(result.ratingBands).toEqual([{ min: 1200, max: 1399, solved: 1 }])
+    // 2026-09-21 is a Monday.
+    expect(result.weekdays[0]).toEqual({
+      day: 'Mon',
+      solved: 1,
+      submissions: 2,
+    })
+    expect(result.hours[9]).toBe(2)
+    expect(result.hours[21]).toBe(1)
   })
 })

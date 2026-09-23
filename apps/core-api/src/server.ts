@@ -45,6 +45,7 @@ import { PrismaExternalProblemCacheRepository } from './repositories/external-pr
 import { PrismaExternalContestCacheRepository } from './repositories/external-contest-cache-repository.js'
 import { PrismaProblemContentCacheRepository } from './repositories/problem-content-cache-repository.js'
 import { PrismaProviderAccountRepository } from './repositories/provider-account-repository.js'
+import { PrismaAvatarRepository } from './repositories/avatar-repository.js'
 import { PrismaProviderSyncRepository } from './repositories/provider-sync-repository.js'
 import { PrismaProviderProfileRepository } from './repositories/provider-profile-repository.js'
 import { PrismaProviderDataRepository } from './repositories/provider-data-repository.js'
@@ -190,6 +191,7 @@ const app = createApp({
   problemActionRepository: new PrismaProblemActionRepository(prisma),
   progressRepository: new PrismaProgressRepository(prisma),
   bookmarkRepository: new PrismaBookmarkRepository(prisma),
+  avatarRepository: new PrismaAvatarRepository(prisma),
   recommendationRepository: new PrismaRecommendationRepository(prisma),
   providerAccountRepository: new PrismaProviderAccountRepository(prisma),
   providerSyncRepository: new PrismaProviderSyncRepository(prisma),

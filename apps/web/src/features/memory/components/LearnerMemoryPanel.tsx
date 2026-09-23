@@ -252,7 +252,7 @@ export function LearnerMemoryPanel() {
                     {memory.text}
                   </p>
                 </div>
-                <span className="shrink-0 rounded-full bg-muted px-2 py-1 text-xs font-medium text-foreground">
+                <span className="shrink-0 rounded-md bg-muted px-2 py-1 text-xs font-medium text-foreground">
                   {memory.status}
                 </span>
               </div>

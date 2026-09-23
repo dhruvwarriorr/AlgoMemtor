@@ -23,6 +23,7 @@ import { useAuth } from '@/features/auth/useAuth'
 import { learnerProfileErrorMessage } from '@/features/profile/api/learner-profile'
 import { AiNoteConsentCard } from '@/features/profile/components/AiNoteConsentCard'
 import { DataResetDialog } from '@/features/profile/components/DataResetDialog'
+import { IdentityEditor } from '@/features/profile/components/IdentityEditor'
 import { LearnerProfileForm } from '@/features/profile/components/LearnerProfileForm'
 import { ProfileBanner } from '@/features/profile/components/ProfileBanner'
 import { ProviderAccountLinks } from '@/features/profile/components/ProviderAccountLinks'
@@ -133,19 +134,19 @@ function ThemePreview({ theme }: { theme: Theme }) {
       <div className="flex w-1/4 flex-col gap-1 pt-1">
         <span
           className={cn(
-            'h-2 rounded-full',
+            'h-2 rounded-md',
             mode === 'light' ? 'bg-[#101012]' : 'bg-[#f4f1ea]',
           )}
         />
         <span
           className={cn(
-            'h-1.5 rounded-full',
+            'h-1.5 rounded-md',
             mode === 'light' ? 'bg-white' : 'bg-[#17171a]',
           )}
         />
         <span
           className={cn(
-            'h-1.5 w-3/4 rounded-full',
+            'h-1.5 w-3/4 rounded-md',
             mode === 'light' ? 'bg-[#101012]/15' : 'bg-white/15',
           )}
         />
@@ -156,7 +157,7 @@ function ThemePreview({ theme }: { theme: Theme }) {
           mode === 'light' ? 'bg-[#f6f4ee]' : 'bg-[#0d0d0f]',
         )}
       >
-        <span className="h-2 w-1/2 rounded-full bg-[#ff4d12]" />
+        <span className="h-2 w-1/2 rounded-md bg-[#ff4d12]" />
         <div className="flex flex-1 gap-1">
           <span
             className={cn(
@@ -234,7 +235,7 @@ function AppearanceSection() {
                   {selected ? (
                     <span
                       aria-hidden="true"
-                      className="absolute top-3.5 left-3.5 grid size-6 place-items-center rounded-full bg-primary text-primary-foreground shadow-md"
+                      className="absolute top-3.5 left-3.5 grid size-6 place-items-center rounded-md bg-primary text-primary-foreground shadow-md"
                     >
                       <Check className="size-3.5" strokeWidth={3} />
                     </span>
@@ -361,6 +362,15 @@ function SettingPage() {
               />
               <div className="mt-8">
                 <SectionTitle
+                  description="How you appear across AlgoMemtor."
+                  title="Name and avatar"
+                />
+                <div className="pt-6">
+                  <IdentityEditor />
+                </div>
+              </div>
+              <div className="mt-10">
+                <SectionTitle
                   description="These answers shape every recommendation and coaching reply. Your sign-in email is managed separately by Supabase Auth."
                   title="Profile and goals"
                 />
@@ -419,7 +429,7 @@ function SettingPage() {
                 <div className="flex flex-col items-start gap-4 rounded-2xl border border-border bg-card p-5 sm:flex-row sm:items-center">
                   <span
                     aria-hidden="true"
-                    className="grid size-11 shrink-0 place-items-center rounded-full bg-sky-soft text-primary"
+                    className="grid size-11 shrink-0 place-items-center rounded-md bg-sky-soft text-primary"
                   >
                     <Brain className="size-5" strokeWidth={1.7} />
                   </span>

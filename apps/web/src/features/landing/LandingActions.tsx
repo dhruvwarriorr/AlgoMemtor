@@ -4,14 +4,14 @@ import { Link } from 'react-router-dom'
 import type { AuthStatus } from '@/features/auth/auth-context'
 
 const primaryClass =
-  'group inline-flex h-14 items-center gap-2 rounded-full bg-[#f4f1ea] pr-2 pl-7 font-medium text-[#101012] shadow-xl outline-none transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:scale-[1.04] focus-visible:ring-4 focus-visible:ring-primary/40 active:scale-[0.98]'
+  'group inline-flex h-14 items-center gap-2 rounded-md bg-[#f4f1ea] pr-2 pl-7 font-medium text-[#101012] shadow-xl outline-none transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:scale-[1.04] focus-visible:ring-4 focus-visible:ring-primary/40 active:scale-[0.98]'
 
 const secondaryClass =
-  'glass-panel inline-flex h-14 items-center gap-2 rounded-full px-7 font-medium text-white outline-none transition-colors duration-300 hover:bg-white/10 focus-visible:ring-4 focus-visible:ring-primary/40'
+  'glass-panel inline-flex h-14 items-center gap-2 rounded-md px-7 font-medium text-white outline-none transition-colors duration-300 hover:bg-white/10 focus-visible:ring-4 focus-visible:ring-primary/40'
 
 function PrimaryIcon() {
   return (
-    <span className="grid size-10 place-items-center rounded-full bg-[#101012] text-[#f4f1ea] transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-px">
+    <span className="grid size-10 place-items-center rounded-md bg-[#101012] text-[#f4f1ea] transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-px">
       <ArrowUpRight aria-hidden="true" className="size-4" />
     </span>
   )

@@ -22,7 +22,7 @@ function ErrorState({
     >
       <span
         aria-hidden="true"
-        className="mb-4 grid size-12 place-items-center rounded-full bg-sun-soft text-sun-foreground ring-1 ring-sun/50"
+        className="mb-4 grid size-12 place-items-center rounded-md bg-sun-soft text-sun-foreground ring-1 ring-sun/50"
       >
         <CloudOff className="size-5" strokeWidth={1.75} />
       </span>

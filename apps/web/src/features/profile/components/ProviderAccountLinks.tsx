@@ -151,7 +151,7 @@ function LinkedProviderCard({
       <div className="flex min-w-0 items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <h3 className="font-semibold text-foreground">{label}</h3>
-          <span className="inline-flex items-center rounded-full bg-go-soft px-2.5 py-0.5 text-xs font-medium text-go-foreground">
+          <span className="inline-flex items-center rounded-md bg-go-soft px-2.5 py-0.5 text-xs font-medium text-go-foreground">
             Connected
           </span>
         </div>

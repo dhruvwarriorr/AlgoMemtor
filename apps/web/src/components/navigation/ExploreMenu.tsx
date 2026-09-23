@@ -41,7 +41,7 @@ function ExploreMenu() {
       <button
         aria-expanded={open}
         aria-haspopup="true"
-        className="inline-flex h-9 items-center gap-1 rounded-full px-4 text-sm font-medium text-foreground/75 outline-none transition-colors duration-300 hover:bg-secondary hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:bg-secondary aria-expanded:text-foreground"
+        className="inline-flex h-9 items-center gap-1 rounded-md px-4 text-sm font-medium text-foreground/75 outline-none transition-colors duration-300 hover:bg-secondary hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-expanded:bg-secondary aria-expanded:text-foreground"
         onClick={() => setOpen((v) => !v)}
         type="button"
       >

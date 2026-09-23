@@ -381,6 +381,99 @@ export type UnifiedProfileResponse = z.infer<
   typeof UnifiedProfileResponseSchema
 >
 
+const insightCount = z.number().int().nonnegative()
+
+// All-time breakdowns for the Insights page. Every list is bounded; counts
+// come from observed provider data plus manual statuses and can be partial.
+export const AnalyticsInsightsSchema = z
+  .object({
+    timezone: z.string().trim().min(1).max(64),
+    accounts: z
+      .array(
+        z
+          .object({
+            provider: ProviderKeySchema,
+            handle: nonEmptyStringSchema.max(120),
+            rank: z.string().trim().max(80).optional(),
+            rating: z.number().finite().optional(),
+            maxRating: z.number().finite().optional(),
+            globalRank: z.number().int().positive().optional(),
+            solvedCount: insightCount.optional(),
+            contests: insightCount,
+            bestContestRank: z.number().int().positive().optional(),
+          })
+          .strict(),
+      )
+      .max(8),
+    verdicts: z
+      .object({
+        accepted: insightCount,
+        wrongAnswer: insightCount,
+        timeLimit: insightCount,
+        memoryLimit: insightCount,
+        runtimeError: insightCount,
+        compileError: insightCount,
+        other: insightCount,
+      })
+      .strict(),
+    ratingBands: z
+      .array(
+        z
+          .object({
+            min: z.number().int().nonnegative(),
+            max: z.number().int().nonnegative(),
+            codeforces: insightCount,
+            codechef: insightCount,
+            leetcode: insightCount,
+            cses: insightCount,
+          })
+          .strict(),
+      )
+      .max(24),
+    punchCard: z.array(z.array(insightCount).length(24)).length(7),
+    monthly: z
+      .array(
+        z
+          .object({
+            month: z.string().regex(/^\d{4}-\d{2}$/),
+            solved: insightCount,
+            submissions: insightCount,
+            accepted: insightCount,
+          })
+          .strict(),
+      )
+      .max(24),
+    topicStrength: z
+      .array(
+        z
+          .object({
+            topic: nonEmptyStringSchema.max(64),
+            solved: insightCount,
+            failedSubmissions: insightCount,
+            averageRating: z.number().finite().optional(),
+          })
+          .strict(),
+      )
+      .max(24),
+    hardestSolved: z
+      .array(
+        z
+          .object({
+            provider: ProviderKeySchema,
+            externalId: nonEmptyStringSchema,
+            title: nonEmptyStringSchema.max(200),
+            rating: z.number().finite(),
+            solvedAt: z.iso.datetime().optional(),
+          })
+          .strict(),
+      )
+      .max(8),
+    firstActivityAt: z.iso.datetime().optional(),
+    totalSubmissions: insightCount,
+  })
+  .strict()
+export type AnalyticsInsights = z.infer<typeof AnalyticsInsightsSchema>
+
 export const UnifiedAnalyticsSchema = z
   .object({
     solvedTotal: z.number().int().nonnegative(),
@@ -407,6 +500,7 @@ export const UnifiedAnalyticsSchema = z
     dataCompleteness: CompletenessSchema,
     staleProviders: z.array(ProviderKeySchema),
     generatedAt: z.iso.datetime(),
+    insights: AnalyticsInsightsSchema.optional(),
   })
   .strict()
 export type UnifiedAnalytics = z.infer<typeof UnifiedAnalyticsSchema>

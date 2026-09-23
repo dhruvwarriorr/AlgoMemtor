@@ -160,29 +160,8 @@ function RecommendationsPage() {
       />
     )
   } else if (feed !== undefined) {
-    const warnings = recommendationsQuery.data?.meta.warnings ?? []
-    const partial = recommendationsQuery.data?.meta.partial ?? false
-
     content = (
       <div className="min-w-0 space-y-4">
-        {partial ||
-        warnings.some((warning) => warning.code !== 'STALE_DATA') ? (
-          <aside
-            className="rounded-xl border border-sun/60 bg-sun-soft p-4 text-sm text-sun-foreground"
-            role="status"
-          >
-            <p className="font-medium">
-              A connected provider could not be refreshed right now.
-            </p>
-            {warnings
-              .filter((warning) => warning.code !== 'STALE_DATA')
-              .map((warning) => (
-                <p className="mt-1" key={`${warning.provider}:${warning.code}`}>
-                  {warning.message}
-                </p>
-              ))}
-          </aside>
-        ) : null}
         <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
           {feed.items.map((item) => (
             <RecommendationCard

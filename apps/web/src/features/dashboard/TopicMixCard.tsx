@@ -20,7 +20,7 @@ export function TopicMixCard({
     <section
       aria-labelledby="topic-mix-heading"
       className={cn(
-        'flex min-h-72 min-w-0 flex-col overflow-hidden rounded-[1.4rem] border border-border bg-card p-5',
+        'flex min-h-72 min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-5',
         className,
       )}
     >
@@ -47,10 +47,10 @@ export function TopicMixCard({
               <span className="truncate text-[0.95rem] font-medium text-foreground">
                 {topic.topic}
               </span>
-              <span className="h-2.5 overflow-hidden rounded-full bg-muted">
+              <span className="h-2.5 overflow-hidden rounded-md bg-muted">
                 <span
                   className={cn(
-                    'block h-full rounded-full',
+                    'block h-full rounded-md',
                     index === 0 ? 'bg-primary' : 'bg-primary/55',
                   )}
                   style={{ width: `${(topic.solved / max) * 100}%` }}

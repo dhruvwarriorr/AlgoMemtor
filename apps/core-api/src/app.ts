@@ -70,6 +70,14 @@ import {
 } from '@algomemtor/shared-contracts'
 import type { ExternalProblemSummary } from '@algomemtor/shared-contracts'
 import cors from 'cors'
+import { buildAnalyticsInsights } from './services/analytics-insights.js'
+import {
+  AVATAR_MAX_BYTES,
+  InMemoryAvatarRepository,
+  avatarMimeTypes,
+  detectAvatarMimeType,
+  type AvatarRepository,
+} from './repositories/avatar-repository.js'
 import express, {
   type NextFunction,
   type Request,
@@ -226,6 +234,7 @@ import {
 
 export type CreateAppOptions = {
   jwtVerifier?: SupabaseJwtVerifier
+  avatarRepository?: AvatarRepository
   learnerProfileRepository?: LearnerProfileRepository
   problemActionRepository?: ProblemActionRepository
   progressRepository?: ProgressRepository
@@ -662,6 +671,8 @@ export const createApp = (options: CreateAppOptions = {}) => {
     options.progressRepository ?? new InMemoryProgressRepository()
   const bookmarkRepository =
     options.bookmarkRepository ?? new InMemoryBookmarkRepository()
+  const avatarRepository =
+    options.avatarRepository ?? new InMemoryAvatarRepository()
   const recommendationRepository =
     options.recommendationRepository ?? new InMemoryRecommendationRepository()
   const coachRepository =
@@ -722,6 +733,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
     bookmarkRepository,
     recommendationRepository,
     provider,
+    catalogProviders: providers,
     providerAccountRepository,
     providerDataRepository,
     learnerProfileRepository,
@@ -1195,6 +1207,72 @@ export const createApp = (options: CreateAppOptions = {}) => {
       },
     })
   })
+
+  // Learner profile picture. The browser uploads a small, already-resized
+  // image; the server re-checks the size and the real file signature.
+  app.get('/api/me/avatar', requireAuthenticated, async (_request, response) => {
+    const avatar = await avatarRepository.findByAuthUserId(
+      authenticatedSubject(response),
+    )
+    if (avatar === null) {
+      response
+        .status(404)
+        .json(createApiError('AVATAR_NOT_FOUND', 'No profile picture is set.'))
+      return
+    }
+    response.setHeader('Content-Type', avatar.mimeType)
+    response.setHeader('Cache-Control', 'private, no-cache')
+    response.setHeader('X-Content-Type-Options', 'nosniff')
+    response.setHeader('Last-Modified', avatar.updatedAt.toUTCString())
+    response.send(avatar.data)
+  })
+
+  app.put(
+    '/api/me/avatar',
+    requireAuthenticated,
+    express.raw({ type: [...avatarMimeTypes], limit: AVATAR_MAX_BYTES }),
+    async (request, response) => {
+      const body: unknown = request.body
+      const data = Buffer.isBuffer(body) ? body : null
+      const detected = data === null ? null : detectAvatarMimeType(data)
+      if (
+        data === null ||
+        data.length === 0 ||
+        detected === null ||
+        detected !== request.header('content-type')?.split(';')[0]?.trim()
+      ) {
+        response
+          .status(415)
+          .json(
+            createApiError(
+              'AVATAR_INVALID_IMAGE',
+              'Upload a WebP, JPEG or PNG image.',
+            ),
+          )
+        return
+      }
+      const saved = await avatarRepository.saveByAuthUserId(
+        authenticatedSubject(response),
+        { mimeType: detected, data },
+      )
+      response.json({
+        data: {
+          mimeType: saved.mimeType,
+          byteSize: saved.data.length,
+          updatedAt: saved.updatedAt.toISOString(),
+        },
+      })
+    },
+  )
+
+  app.delete(
+    '/api/me/avatar',
+    requireAuthenticated,
+    async (_request, response) => {
+      await avatarRepository.deleteByAuthUserId(authenticatedSubject(response))
+      response.status(204).end()
+    },
+  )
 
   app.get(
     '/api/learner-profile',
@@ -3500,15 +3578,29 @@ export const createApp = (options: CreateAppOptions = {}) => {
         ]),
       ).values(),
     ]
+    // Submitted-but-unsolved problems are looked up too so the Insights
+    // topic-strength view can attribute failed attempts to topics.
+    const lookupReferences = [
+      ...new Map(
+        [
+          ...uniqueSolvedReferences,
+          ...submissions.slice(0, 3_000).map((submission) => ({
+            provider: submission.provider,
+            externalId: submission.externalId,
+          })),
+        ].map((reference) => [
+          `${reference.provider}:${reference.externalId}`,
+          reference,
+        ]),
+      ).values(),
+    ]
     let metadata: ExternalProblemSummary[] = []
     if (
       problemMetadataCache?.findByReferences !== undefined &&
-      uniqueSolvedReferences.length > 0
+      lookupReferences.length > 0
     ) {
       try {
-        metadata = await problemMetadataCache.findByReferences(
-          uniqueSolvedReferences,
-        )
+        metadata = await problemMetadataCache.findByReferences(lookupReferences)
       } catch {
         logger.warn('provider_metadata_lookup_failed', {
           route: '/api/analytics',
@@ -3601,8 +3693,52 @@ export const createApp = (options: CreateAppOptions = {}) => {
         ? profile.solvedTotal
         : (profileProviders.find((item) => item.provider === provider)
             ?.solvedCount ?? 0)
+    const solvedAtByKey = new Map<string, string>()
+    for (const solved of solvedProblems) {
+      if (solved.occurredAt !== null) {
+        solvedAtByKey.set(
+          `${solved.provider}:${solved.externalId}`,
+          solved.occurredAt,
+        )
+      }
+    }
+    for (const action of actions) {
+      if (
+        action.actionType !== 'status_changed' ||
+        action.learnerStatus !== 'solved'
+      ) {
+        continue
+      }
+      const actionKey = `${action.provider}:${action.externalId}`
+      if (!solvedAtByKey.has(actionKey)) {
+        solvedAtByKey.set(actionKey, action.occurredAt.toISOString())
+      }
+    }
+    const learnerProfile =
+      await learnerProfileRepository.findByAuthUserId(authUserId)
+    const insights = buildAnalyticsInsights({
+      timezone: learnerProfile?.timezone ?? 'UTC',
+      now: new Date(),
+      profiles: profileSnapshots,
+      submissions,
+      solved: uniqueSolvedReferences
+        .filter(
+          (reference) => provider === undefined || reference.provider === provider,
+        )
+        .map((reference) => {
+          const solvedAt = solvedAtByKey.get(
+            `${reference.provider}:${reference.externalId}`,
+          )
+          return solvedAt === undefined ? reference : { ...reference, solvedAt }
+        }),
+      ratingChanges,
+      participations,
+      metadata: metadataByKey,
+      normalizeTopic,
+    })
     response.json(
       UnifiedAnalyticsSchema.parse({
+        insights,
         solvedTotal,
         solvedByProvider,
         solvedOverTime,
@@ -3614,7 +3750,9 @@ export const createApp = (options: CreateAppOptions = {}) => {
         contestParticipation: participations,
         dataCompleteness:
           actions.length === 0 &&
-          uniqueSolvedReferences.length === metadataByKey.size
+          uniqueSolvedReferences.every((reference) =>
+            metadataByKey.has(`${reference.provider}:${reference.externalId}`),
+          )
             ? profile.completeness
             : 'partial',
         staleProviders,
@@ -3938,6 +4076,24 @@ export const createApp = (options: CreateAppOptions = {}) => {
               error.code,
               'Progress processing is temporarily unavailable. Please try again.',
               { retryable: true },
+            ),
+          )
+        return
+      }
+      // Body parsers report oversized payloads with status 413; that is a
+      // client error, not a server failure.
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'type' in error &&
+        error.type === 'entity.too.large'
+      ) {
+        response
+          .status(413)
+          .json(
+            createApiError(
+              'PAYLOAD_TOO_LARGE',
+              'The request body is too large.',
             ),
           )
         return

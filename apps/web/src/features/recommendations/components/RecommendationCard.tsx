@@ -81,7 +81,7 @@ export function RecommendationCard({
     >
       <header className="space-y-3">
         <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary py-1 pr-2.5 pl-1.5 font-medium text-secondary-foreground">
+          <span className="inline-flex items-center gap-1.5 rounded-md bg-secondary py-1 pr-2.5 pl-1.5 font-medium text-secondary-foreground">
             <ProviderLogo className="size-4" provider={problem.provider} />
             {providerLabels[problem.provider]}
           </span>
@@ -91,7 +91,7 @@ export function RecommendationCard({
           {problem.learnerStatus ? (
             <span
               className={cn(
-                'ml-auto rounded-full px-2.5 py-1 font-medium',
+                'ml-auto rounded-md px-2.5 py-1 font-medium',
                 statusTone[problem.learnerStatus],
               )}
             >
@@ -107,7 +107,7 @@ export function RecommendationCard({
       <p className="flex gap-3 rounded-2xl bg-sun-soft p-4 text-sm leading-6 text-foreground ring-1 ring-sun/45">
         <span
           aria-hidden="true"
-          className="grid size-6 shrink-0 place-items-center rounded-full bg-sun text-[#101012]"
+          className="grid size-6 shrink-0 place-items-center rounded-md bg-sun text-[#101012]"
         >
           <Lightbulb className="size-3.5" strokeWidth={2.5} />
         </span>
@@ -119,7 +119,7 @@ export function RecommendationCard({
 
       <dl className="flex flex-wrap gap-2 text-xs">
         {problem.providerDifficulty !== undefined ? (
-          <div className="flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1">
+          <div className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1">
             <dt className="text-muted-foreground">Rating:</dt>
             <dd className="font-mono font-medium text-foreground">
               {problem.providerDifficulty}
@@ -129,7 +129,7 @@ export function RecommendationCard({
         {problem.normalizedDifficulty ? (
           <div
             className={cn(
-              'flex items-center gap-1 rounded-full px-2.5 py-1',
+              'flex items-center gap-1 rounded-md px-2.5 py-1',
               difficultyTone[problem.normalizedDifficulty],
             )}
           >
@@ -140,7 +140,7 @@ export function RecommendationCard({
           </div>
         ) : null}
         {problem.solvedCount !== undefined ? (
-          <div className="flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1">
+          <div className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1">
             <dt className="text-muted-foreground">Solved by:</dt>
             <dd className="font-mono font-medium text-foreground">
               {problem.solvedCount.toLocaleString()}
@@ -155,7 +155,7 @@ export function RecommendationCard({
           <ul aria-label="Topics" className="flex flex-wrap gap-1.5">
             {problem.topics.map((topic) => (
               <li
-                className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary dark:bg-primary/15"
+                className="rounded-md bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary dark:bg-primary/15"
                 key={topic}
               >
                 {topic}
@@ -170,7 +170,7 @@ export function RecommendationCard({
             <ul aria-label="Provider tags" className="flex flex-wrap gap-1.5">
               {visibleTags.map((tag) => (
                 <li
-                  className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground"
+                  className="rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground"
                   key={tag}
                 >
                   {tag}

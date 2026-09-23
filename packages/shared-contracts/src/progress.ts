@@ -238,6 +238,72 @@ export const TopicScoreSchema = z
 
 export type TopicScore = z.infer<typeof TopicScoreSchema>
 
+const countSchema = z.number().int().nonnegative()
+
+// Where the last 30 days of practice happened: per platform, verdicts,
+// difficulty, rating bands, weekday and hour-of-day rhythm. Counts are over
+// dated evidence only; provider history can be partial.
+export const ProgressBreakdownSchema = z
+  .object({
+    submissions: countSchema,
+    providers: z
+      .array(
+        z
+          .object({
+            provider: ProviderKeySchema,
+            solved: countSchema,
+            attempted: countSchema,
+            submissions: countSchema,
+          })
+          .strict(),
+      )
+      .max(8),
+    verdicts: z
+      .object({
+        accepted: countSchema,
+        wrongAnswer: countSchema,
+        timeLimit: countSchema,
+        memoryLimit: countSchema,
+        runtimeError: countSchema,
+        compileError: countSchema,
+        other: countSchema,
+      })
+      .strict(),
+    difficulty: z
+      .object({
+        easy: countSchema,
+        medium: countSchema,
+        hard: countSchema,
+        unknown: countSchema,
+      })
+      .strict(),
+    ratingBands: z
+      .array(
+        z
+          .object({
+            min: z.number().int().nonnegative(),
+            max: z.number().int().nonnegative(),
+            solved: countSchema,
+          })
+          .strict(),
+      )
+      .max(20),
+    weekdays: z
+      .array(
+        z
+          .object({
+            day: z.enum(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']),
+            solved: countSchema,
+            submissions: countSchema,
+          })
+          .strict(),
+      )
+      .length(7),
+    hours: z.array(countSchema).length(24),
+  })
+  .strict()
+export type ProgressBreakdown = z.infer<typeof ProgressBreakdownSchema>
+
 export const ProgressAnalyticsSchema = z
   .object({
     generatedAt: z.iso.datetime(),
@@ -291,6 +357,7 @@ export const ProgressAnalyticsSchema = z
         .strict(),
     ),
     topicScores: z.array(TopicScoreSchema),
+    breakdown: ProgressBreakdownSchema.optional(),
   })
   .strict()
 

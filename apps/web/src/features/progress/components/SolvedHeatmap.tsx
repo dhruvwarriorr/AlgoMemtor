@@ -126,7 +126,7 @@ export function SolvedHeatmap({ trend }: { trend: readonly TrendPoint[] }) {
                 >
                   <span
                     className={cn(
-                      'block size-full rounded-[6px] ring-offset-2 ring-offset-card transition-[box-shadow,transform] duration-200 group-hover/cell:scale-110 group-hover/cell:ring-2 group-hover/cell:ring-foreground/70 group-focus-visible/cell:ring-2 group-focus-visible/cell:ring-ring',
+                      'block size-full rounded-sm ring-offset-2 ring-offset-card transition-[box-shadow,transform] duration-200 group-hover/cell:scale-110 group-hover/cell:ring-2 group-hover/cell:ring-foreground/70 group-focus-visible/cell:ring-2 group-focus-visible/cell:ring-ring',
                       level(day.solved),
                     )}
                   />
@@ -155,7 +155,7 @@ export function SolvedHeatmap({ trend }: { trend: readonly TrendPoint[] }) {
         <span className="mr-1">Less</span>
         {levels.map((className) => (
           <span
-            className={cn('size-3 rounded-[4px]', className)}
+            className={cn('size-3 rounded-xs', className)}
             key={className}
           />
         ))}

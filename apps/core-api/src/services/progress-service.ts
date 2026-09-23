@@ -36,7 +36,11 @@ import {
   type ProgressRepository,
   TimerNotFoundError,
 } from '../repositories/progress-repository.js'
-import { progressWindow } from './progress-window.js'
+import {
+  calculateStreaks,
+  progressBreakdown,
+  progressWindow,
+} from './progress-window.js'
 import { normalizeTopic } from '../utils/topic-normalization.js'
 
 const identity = (reference: ProblemReference) =>
@@ -95,6 +99,19 @@ const dateKey = (date: Date, timezone: string) => {
       month: '2-digit',
       day: '2-digit',
     }).format(date)
+  }
+}
+
+const localHour = (date: Date, timezone: string) => {
+  try {
+    const hour = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: '2-digit',
+      hourCycle: 'h23',
+    }).format(date)
+    return Number.parseInt(hour, 10) % 24
+  } catch {
+    return date.getUTCHours()
   }
 }
 
@@ -170,6 +187,8 @@ export type ProgressServiceOptions = {
   bookmarkRepository: BookmarkRepository
   recommendationRepository?: RecommendationRepository
   provider: ProblemProvider
+  /** Every catalog, used to look up difficulty for non-default platforms. */
+  catalogProviders?: readonly ProblemProvider[]
   providerAccountRepository?: ProviderAccountRepository
   providerDataRepository?: ProviderDataRepository
   learnerProfileRepository?: LearnerProfileRepository
@@ -467,6 +486,18 @@ export class ProgressService {
       })
       void error
     }
+    // Other platforms' catalogs add difficulty and topics for their solves.
+    const extraCatalogs = await Promise.allSettled(
+      (this.options.catalogProviders ?? [])
+        .filter((catalog) => catalog !== this.options.provider)
+        .map((catalog) => catalog.search({})),
+    )
+    const catalogProblems = [
+      ...providerResult.problems,
+      ...extraCatalogs.flatMap((result) =>
+        result.status === 'fulfilled' ? result.value.problems : [],
+      ),
+    ]
     const now = Date.now()
     const windowDays = Math.min(30, Math.max(1, Math.trunc(days)))
     const last30 = new Date(now - windowDays * 86_400_000)
@@ -529,8 +560,17 @@ export class ProgressService {
             0,
           ) / solvedWithTimer.length
     const problemByIdentity = new Map(
-      providerResult.problems.map((problem) => [identity(problem), problem]),
+      catalogProblems.map((problem) => [identity(problem), problem]),
     )
+    const breakdown = progressBreakdown({
+      dates: windowDates,
+      newlySolved: window.newlySolved,
+      attemptedProblemIds: window.attemptedProblemIds,
+      submissions,
+      problems: problemByIdentity,
+      localDate: (date) => dateKey(date, timezone),
+      localHour: (date) => localHour(date, timezone),
+    })
     const observedTopics = new Map(
       solvedProblems
         .filter((problem) => problem.topics?.length)
@@ -592,6 +632,7 @@ export class ProgressService {
         },
         topicActivity,
         topicScores,
+        breakdown,
       },
     })
   }
@@ -951,25 +992,6 @@ const countStatusConversions = (
     (action) =>
       action.actionType === 'status_changed' && action.learnerStatus === status,
   )
-
-const calculateStreaks = (days: ReadonlySet<string>, today: string) => {
-  let current = 0
-  for (let cursor = today; days.has(cursor); cursor = addDays(cursor, -1))
-    current += 1
-  let longest = 0
-  let running = 0
-  let previous: string | undefined
-  for (const day of [...days].sort()) {
-    if (previous !== undefined && day === addDays(previous, 1)) {
-      running += 1
-    } else {
-      running = 1
-    }
-    longest = Math.max(longest, running)
-    previous = day
-  }
-  return { current, longest }
-}
 
 const calculateTopicScores = (
   actions: readonly ProblemActionRecord[],

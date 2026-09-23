@@ -24,7 +24,7 @@ function ProviderLogo({ provider, className, title }: ProviderLogoProps) {
         aria-hidden={title ? undefined : true}
         aria-label={title}
         className={cn(
-          'inline-grid size-6 shrink-0 place-items-center rounded-[28%] bg-current',
+          'inline-grid size-6 shrink-0 place-items-center rounded-sm bg-current',
           className,
         )}
         role={title ? 'img' : undefined}

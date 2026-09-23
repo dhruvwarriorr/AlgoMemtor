@@ -236,7 +236,15 @@ function ChartBlock({
   )
 }
 
-function RichBlock({ block, dismissedProblemKeys, onDismissProblem }: { block: CoachRichBlock; dismissedProblemKeys?: ReadonlySet<string>; onDismissProblem?: (provider: ProviderKey, externalId: string) => void }) {
+function RichBlock({
+  block,
+  dismissedProblemKeys,
+  onDismissProblem,
+}: {
+  block: CoachRichBlock
+  dismissedProblemKeys?: ReadonlySet<string>
+  onDismissProblem?: (provider: ProviderKey, externalId: string) => void
+}) {
   if (block.type === 'metric_grid') {
     const visibleMetrics = block.metrics.filter(
       (metric) => metric.label.toLowerCase() !== 'coverage',
@@ -369,20 +377,32 @@ function RichBlock({ block, dismissedProblemKeys, onDismissProblem }: { block: C
         {block.reason}
       </p>
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
-        {block.problems.filter((problem) => !dismissedProblemKeys?.has(`${problem.provider}:${problem.externalId}`)).map((problem) => (
-          <div className="flex min-w-0 flex-col gap-1" key={`${problem.provider}:${problem.externalId}`}>
-            <ProblemLink problem={problem} />
-            {onDismissProblem ? (
-              <button
-                className="self-end text-xs text-muted-foreground hover:text-foreground"
-                onClick={() => onDismissProblem(problem.provider, problem.externalId)}
-                type="button"
-              >
-                Dismiss problem
-              </button>
-            ) : null}
-          </div>
-        ))}
+        {block.problems
+          .filter(
+            (problem) =>
+              !dismissedProblemKeys?.has(
+                `${problem.provider}:${problem.externalId}`,
+              ),
+          )
+          .map((problem) => (
+            <div
+              className="flex min-w-0 flex-col gap-1"
+              key={`${problem.provider}:${problem.externalId}`}
+            >
+              <ProblemLink problem={problem} />
+              {onDismissProblem ? (
+                <button
+                  className="self-end text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() =>
+                    onDismissProblem(problem.provider, problem.externalId)
+                  }
+                  type="button"
+                >
+                  Dismiss problem
+                </button>
+              ) : null}
+            </div>
+          ))}
       </div>
     </section>
   )
@@ -397,7 +417,12 @@ export function CoachRichContent({
   return (
     <div className="mt-4 space-y-3 border-t border-border pt-4">
       {content.blocks.map((block, index) => (
-        <RichBlock block={block} dismissedProblemKeys={dismissedProblemKeys} key={`${block.type}-${index}`} onDismissProblem={onDismissProblem} />
+        <RichBlock
+          block={block}
+          dismissedProblemKeys={dismissedProblemKeys}
+          key={`${block.type}-${index}`}
+          onDismissProblem={onDismissProblem}
+        />
       ))}
       {content.suggestedQuestions.length > 0 ? (
         <section aria-label="Suggested follow-up questions">
@@ -407,7 +432,7 @@ export function CoachRichContent({
           <div className="mt-2 flex flex-wrap gap-2">
             {content.suggestedQuestions.map((question) => (
               <button
-                className="rounded-full border border-border bg-background px-3 py-2 text-left text-xs text-foreground transition-colors hover:border-primary/60 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="rounded-md border border-border bg-background px-3 py-2 text-left text-xs text-foreground transition-colors hover:border-primary/60 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 key={question}
                 onClick={() => onSuggestedQuestion(question)}
                 type="button"

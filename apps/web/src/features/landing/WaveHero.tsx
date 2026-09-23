@@ -154,7 +154,7 @@ export function WaveHero({ status }: { status: AuthStatus }) {
           viewport={{ once: true, margin: '-100px' }}
           whileInView={{ opacity: 1, y: 0 }}
         >
-          <p className="glass-panel mb-8 inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs">
+          <p className="glass-panel mb-8 inline-flex items-center gap-2 rounded-md px-4 py-2 text-xs">
             <span className="animate-pulse-glow size-2 rounded-full bg-primary" />
             <span className="font-medium text-white/80">
               AlgoMemtor · The AI coach for competitive programming
@@ -214,9 +214,9 @@ export function WaveHero({ status }: { status: AuthStatus }) {
                         <span className="text-white/60">{topic.label}</span>
                         <span className="text-white">{topic.value}%</span>
                       </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                      <div className="h-2 overflow-hidden rounded-md bg-white/10">
                         <motion.div
-                          className={cn('h-full rounded-full', topic.tone)}
+                          className={cn('h-full rounded-md', topic.tone)}
                           initial={reduceMotion ? false : { scaleX: 0 }}
                           style={{ width: `${topic.value}%`, originX: 0 }}
                           transition={{

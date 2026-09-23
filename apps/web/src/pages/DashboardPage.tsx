@@ -9,7 +9,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   CheckCheck,
-  Code2,
+  CalendarCheck,
   Flame,
   Link2,
   Shapes,
@@ -20,12 +20,11 @@ import {
 import { Link, useNavigate } from 'react-router-dom'
 
 import { ProviderLogo } from '@/components/brand/ProviderLogo'
-import { displayNameFromEmail } from '@/lib/display-name'
+import { useUserIdentity } from '@/features/auth/user-identity'
 import PageContainer from '@/components/layout/PageContainer'
 import PageHeader from '@/components/layout/PageHeader'
 import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
-import { useAuth } from '@/features/auth/useAuth'
 import { useCoachRoadmap, useSetCoachTopicStatus } from '@/features/coach/hooks'
 import { RatingTrendCard } from '@/features/dashboard/RatingTrendCard'
 import { TopicMixCard } from '@/features/dashboard/TopicMixCard'
@@ -42,7 +41,7 @@ import { cn } from '@/lib/utils'
 import { dashboardActivity, isAcceptedSubmission } from './dashboard-activity'
 
 const tileClass =
-  'flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[1.4rem] border border-border bg-card p-5'
+  'flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-5'
 
 const tileTitleClass =
   'flex items-center justify-between gap-3 text-sm font-medium text-muted-foreground'
@@ -85,7 +84,7 @@ function KpiTile({
   return (
     <div
       className={cn(
-        'animate-rise flex min-w-0 flex-col gap-3 rounded-[1.4rem] p-4',
+        'animate-rise flex min-w-0 flex-col gap-3 rounded-xl p-4',
         tone === 'primary' &&
           'text-white [background:linear-gradient(155deg,#ff7a3d,#ff4d12_45%,#9a2e0b)]',
         tone === 'sun' && 'bg-sun-soft text-sun-foreground ring-1 ring-sun/45',
@@ -174,7 +173,7 @@ function AskCoachBar() {
 
   return (
     <form
-      className="flex h-13 w-full items-center gap-2 rounded-full border border-border bg-card py-1.5 pr-1.5 pl-4 shadow-soft transition-[border-color,box-shadow] duration-300 focus-within:border-ring focus-within:ring-4 focus-within:ring-ring/15 sm:w-[27rem]"
+      className="flex h-13 w-full items-center gap-2 rounded-md border border-border bg-card py-1.5 pr-1.5 pl-4 shadow-soft transition-[border-color,box-shadow] duration-300 focus-within:border-ring focus-within:ring-4 focus-within:ring-ring/15 sm:w-[27rem]"
       onSubmit={submit}
     >
       <Sparkles
@@ -194,7 +193,7 @@ function AskCoachBar() {
       />
       <button
         aria-label="Open coach"
-        className="grid size-10 shrink-0 place-items-center rounded-full bg-ink text-ink-foreground transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:scale-105 active:scale-95"
+        className="grid size-10 shrink-0 place-items-center rounded-md bg-ink text-ink-foreground transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:scale-105 active:scale-95"
         type="submit"
       >
         <ArrowUpRight aria-hidden="true" className="size-4" />
@@ -204,7 +203,7 @@ function AskCoachBar() {
 }
 
 function DashboardPage() {
-  const { user } = useAuth()
+  const identity = useUserIdentity()
   const analyticsQuery = useProgressAnalytics(30)
   const activityQuery = useActivity()
   const platformAnalyticsQuery = useAnalytics()
@@ -212,7 +211,7 @@ function DashboardPage() {
   const roadmapQuery = useCoachRoadmap()
   const dismissRecommendation = useDismissRecommendation()
   const setTopicStatus = useSetCoachTopicStatus()
-  const title = `${greeting()}, ${displayNameFromEmail(user?.email)}`
+  const title = `${greeting()}, ${identity.name}`
   const description =
     'Your coach has read your latest activity. Here is where your practice stands.'
 
@@ -270,9 +269,10 @@ function DashboardPage() {
       new Date(contest.attendedAt).getTime() >= windowStart,
   )
 
-  const topLanguage = Object.entries(
-    platformAnalyticsQuery.data?.languageCounts ?? {},
-  ).sort(([, a], [, b]) => b - a)[0]
+  // A day counts as active when anything was attempted or solved on it.
+  const activeDays = analytics.trend.filter(
+    (point) => point.attempted > 0 || point.solved > 0,
+  ).length
 
   const focusTopics = (roadmapQuery.data?.data?.topics ?? []).filter(
     (topic) =>
@@ -334,11 +334,11 @@ function DashboardPage() {
             value={topTopic ? topTopic.topic : 'None yet'}
           />
           <KpiTile
-            detail={topLanguage ? `${topLanguage[1]} solves` : 'No submissions'}
-            icon={<Code2 className="size-5" strokeWidth={2} />}
+            detail={`of the last ${analytics.window.days} days`}
+            icon={<CalendarCheck className="size-5" strokeWidth={2} />}
             index={5}
-            label="Language"
-            value={topLanguage ? topLanguage[0] : 'None yet'}
+            label="Active days"
+            value={String(activeDays)}
           />
           <KpiTile
             detail="Last 30 days"
@@ -360,7 +360,7 @@ function DashboardPage() {
         />
 
         <div
-          className="animate-rise min-h-0 min-w-0 xl:col-span-3 [&>div]:rounded-[1.4rem]"
+          className="animate-rise min-h-0 min-w-0 xl:col-span-3 [&>div]:rounded-xl"
           style={stagger(7)}
         >
           <SolvedHeatmap trend={analytics.trend} />
@@ -368,7 +368,7 @@ function DashboardPage() {
 
         <section
           aria-labelledby="coach-focus-heading"
-          className="animate-rise relative isolate flex min-h-64 min-w-0 flex-col overflow-hidden rounded-[1.4rem] bg-ink p-6 text-ink-foreground xl:col-span-3 xl:min-h-0 xl:p-5"
+          className="animate-rise relative isolate flex min-h-64 min-w-0 flex-col overflow-hidden rounded-xl bg-ink p-6 text-ink-foreground xl:col-span-3 xl:min-h-0 xl:p-5"
           style={stagger(5)}
         >
           <span
@@ -394,7 +394,7 @@ function DashboardPage() {
                 {leadTopic.reason}
               </p>
               <button
-                className="mt-3 w-fit rounded-full border border-white/30 px-3 py-1 text-xs transition-colors hover:bg-white/10 disabled:opacity-50"
+                className="mt-3 w-fit rounded-md border border-white/30 px-3 py-1 text-xs transition-colors hover:bg-white/10 disabled:opacity-50"
                 disabled={setTopicStatus.isPending}
                 onClick={() =>
                   void setTopicStatus.mutateAsync({
@@ -415,7 +415,7 @@ function DashboardPage() {
                 <ul className="mt-4 flex flex-wrap gap-1.5 [@media(max-height:1150px)]:hidden">
                   {otherTopics.slice(0, 3).map((topic) => (
                     <li
-                      className="rounded-full bg-white/10 px-3 py-1 text-xs dark:bg-black/10"
+                      className="rounded-md bg-white/10 px-3 py-1 text-xs dark:bg-black/10"
                       key={topic.topic}
                     >
                       {topic.name}
@@ -431,11 +431,11 @@ function DashboardPage() {
             </p>
           )}
           <Link
-            className="group/cta mt-auto inline-flex w-fit items-center gap-2 rounded-full bg-white py-1.5 pr-1.5 pl-4 text-sm font-medium text-[#101012] transition-transform duration-300 active:scale-[0.98] dark:bg-[#101012] dark:text-white"
+            className="group/cta mt-auto inline-flex w-fit items-center gap-2 rounded-md bg-white py-1.5 pr-1.5 pl-4 text-sm font-medium text-[#101012] transition-transform duration-300 active:scale-[0.98] dark:bg-[#101012] dark:text-white"
             to="/coach"
           >
             Continue with coach
-            <span className="grid size-7 place-items-center rounded-full bg-[#101012]/8 transition-transform duration-300 group-hover/cta:translate-x-0.5 group-hover/cta:-translate-y-px dark:bg-white/10">
+            <span className="grid size-7 place-items-center rounded-md bg-[#101012]/8 transition-transform duration-300 group-hover/cta:translate-x-0.5 group-hover/cta:-translate-y-px dark:bg-white/10">
               <ArrowUpRight aria-hidden="true" className="size-3.5" />
             </span>
           </Link>
@@ -489,7 +489,7 @@ function DashboardPage() {
                   </div>
                   <a
                     aria-label={`Solve ${item.problem.title} on ${providerLabels[item.problem.provider]}`}
-                    className="grid size-9 shrink-0 place-items-center rounded-full border border-border text-foreground/70 transition-colors hover:border-primary hover:bg-primary hover:text-primary-foreground"
+                    className="grid size-9 shrink-0 place-items-center rounded-md border border-border text-foreground/70 transition-colors hover:border-primary hover:bg-primary hover:text-primary-foreground"
                     href={item.problem.canonicalUrl}
                     rel="noopener noreferrer"
                     target="_blank"
@@ -498,7 +498,7 @@ function DashboardPage() {
                   </a>
                   <button
                     aria-label={`Dismiss ${item.problem.title}`}
-                    className="grid size-9 shrink-0 place-items-center rounded-full border border-border text-foreground/70 transition-colors hover:border-primary hover:text-primary disabled:opacity-50"
+                    className="grid size-9 shrink-0 place-items-center rounded-md border border-border text-foreground/70 transition-colors hover:border-primary hover:text-primary disabled:opacity-50"
                     disabled={dismissRecommendation.isPending}
                     onClick={() =>
                       void dismissRecommendation.mutateAsync(item.id)

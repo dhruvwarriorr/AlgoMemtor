@@ -57,7 +57,7 @@ function ContestCard({ contest }: { contest: ExternalContest }) {
             </a>
           </h3>
         </div>
-        <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-foreground">
+        <span className="rounded-md bg-muted px-2.5 py-1 text-xs font-medium text-foreground">
           {contest.externalId}
         </span>
       </div>

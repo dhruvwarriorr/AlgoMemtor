@@ -58,7 +58,8 @@
   --chart-4: #c9c2ac;
   --chart-5: #6c7a90;
 
-  --radius: 1rem;
+  /* Squared theme: every surface uses a small corner radius. */
+  --radius: 0.5rem;
 
   /* App chrome: top bar height plus the gutter around the content panel.
    * Single-screen pages size themselves with 100dvh - var(--app-chrome). */
@@ -229,13 +230,14 @@ body {
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.6);
-  --radius-3xl: calc(var(--radius) * 2);
-  --radius-4xl: calc(var(--radius) * 2.4);
+  --radius-xl: 10px;
+  --radius-2xl: 12px;
+  --radius-3xl: 12px;
+  --radius-4xl: 14px;
 }
 
 @layer base {
@@ -490,7 +492,7 @@ body {
   flex-shrink: 0;
   width: 2.75rem;
   height: 1.6rem;
-  border-radius: 9999px;
+  border-radius: 8px;
   background: var(--input);
   cursor: pointer;
   transition: background-color 0.3s cubic-bezier(0.32, 0.72, 0, 1);
@@ -502,7 +504,7 @@ body {
     left: 0.2rem;
     width: 1.2rem;
     height: 1.2rem;
-    border-radius: 9999px;
+    border-radius: 5px;
     background: #fff;
     box-shadow: 0 1px 3px rgb(16 16 18 / 0.25);
     transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);

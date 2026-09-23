@@ -423,6 +423,38 @@ export const progressHandlers: RequestHandler[] = [
             ...counts,
           })),
           topicScores: [],
+          breakdown: {
+            submissions: 0,
+            providers: [
+              ...new Set([...attempted].map((item) => item.split(':')[0])),
+            ]
+              .filter((provider) => provider !== undefined)
+              .map((provider) => ({
+                provider,
+                solved: [...solved].filter((item) =>
+                  item.startsWith(`${provider}:`),
+                ).length,
+                attempted: [...attempted].filter((item) =>
+                  item.startsWith(`${provider}:`),
+                ).length,
+                submissions: 0,
+              })),
+            verdicts: {
+              accepted: 0,
+              wrongAnswer: 0,
+              timeLimit: 0,
+              memoryLimit: 0,
+              runtimeError: 0,
+              compileError: 0,
+              other: 0,
+            },
+            difficulty: { easy: 0, medium: 0, hard: 0, unknown: solved.size },
+            ratingBands: [],
+            weekdays: (
+              ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
+            ).map((day) => ({ day, solved: 0, submissions: 0 })),
+            hours: Array.from({ length: 24 }, () => 0),
+          },
         },
       }),
     )

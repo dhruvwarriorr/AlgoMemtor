@@ -14,7 +14,7 @@ function AppTopbar() {
       <div className="flex h-full items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
         <Link
           aria-label="AlgoMemtor home"
-          className="flex min-w-0 shrink-0 items-center gap-2.5 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex min-w-0 shrink-0 items-center gap-2.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
           to="/dashboard"
         >
           <LogoMark />
@@ -28,7 +28,7 @@ function AppTopbar() {
                   <NavLink
                     className={({ isActive }) =>
                       cn(
-                        'group/nav inline-flex h-10 items-center gap-2 rounded-full px-4 text-[0.95rem] font-medium whitespace-nowrap outline-none transition-[background-color,color,box-shadow] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] focus-visible:ring-2 focus-visible:ring-ring',
+                        'group/nav inline-flex h-10 items-center gap-2 rounded-md px-4 text-[0.95rem] font-medium whitespace-nowrap outline-none transition-[background-color,color,box-shadow] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] focus-visible:ring-2 focus-visible:ring-ring',
                         isActive
                           ? 'bg-card text-foreground shadow-soft ring-1 ring-border'
                           : 'text-foreground/60 hover:bg-card/70 hover:text-foreground',

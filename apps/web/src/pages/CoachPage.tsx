@@ -14,6 +14,8 @@ import {
   Check,
   Code2,
   Compass,
+  CornerDownLeft,
+  Lock,
   Crosshair,
   LoaderCircle,
   Map as MapIcon,
@@ -24,7 +26,6 @@ import {
   RefreshCw,
   Route,
   Search,
-  ShieldCheck,
   SlidersHorizontal,
   Sparkles,
   Trash2,
@@ -37,9 +38,8 @@ import PageContainer from '@/components/layout/PageContainer'
 import PageHeader from '@/components/layout/PageHeader'
 import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
-import { displayNameFromEmail } from '@/lib/display-name'
+import { useUserIdentity } from '@/features/auth/user-identity'
 import { Button, buttonVariants } from '@/components/ui/button'
-import { useAuth } from '@/features/auth/useAuth'
 import { Dialog } from '@/components/ui/dialog'
 import { useNotification } from '@/app/useNotification'
 import { useAiConsent } from '@/features/profile/hooks/useLearnerSettings'
@@ -63,6 +63,10 @@ import { AI_POLICY_VERSION } from '@/features/profile/components/AiNoteConsentCa
 import { cn } from '@/lib/utils'
 import { CoachRichContent as CoachRichContentView } from '@/features/coach/components/CoachRichContent'
 import { CoachMessageContent } from '@/features/coach/components/CoachMessageContent'
+import {
+  CoachContextRail,
+  CoachStatStrip,
+} from '@/features/coach/components/CoachInsights'
 import {
   useDismissProblem,
   useRecommendationDismissals,
@@ -128,24 +132,6 @@ const promptIcons: Record<string, LucideIcon> = {
   'Analyze my recent contests': Trophy,
   'Update my roadmap': Route,
   'Explain this concept': BookOpen,
-}
-
-function groupConversations<T extends { updatedAt: string }>(items: T[]) {
-  const startOfToday = new Date()
-  startOfToday.setHours(0, 0, 0, 0)
-  const day = 86_400_000
-  const buckets = [
-    { label: 'Today', from: startOfToday.getTime() },
-    { label: 'Yesterday', from: startOfToday.getTime() - day },
-    { label: 'Previous 7 days', from: startOfToday.getTime() - 7 * day },
-    { label: 'Older', from: Number.NEGATIVE_INFINITY },
-  ]
-  const groups = buckets.map((bucket) => ({ ...bucket, items: [] as T[] }))
-  for (const item of items) {
-    const time = new Date(item.updatedAt).getTime()
-    groups.find((group) => time >= group.from)?.items.push(item)
-  }
-  return groups.filter((group) => group.items.length > 0)
 }
 
 const coachAttachmentTypes = {
@@ -420,7 +406,7 @@ function CoachPage() {
   const savePreferences = useSaveCoachPreferences()
   const markCheckIn = useMarkCoachCheckIn()
   const { notify } = useNotification()
-  const { user } = useAuth()
+  const identity = useUserIdentity()
   const location = useLocation()
   const [selectedConversationId, setSelectedConversationId] = useState<
     string | null
@@ -653,11 +639,9 @@ function CoachPage() {
   const showGreeting =
     !hasConversation || (!conversationQuery.isPending && messages.length === 0)
   const query = search.trim().toLowerCase()
-  const historyGroups = groupConversations(
-    query
-      ? conversations.filter((item) => item.title.toLowerCase().includes(query))
-      : conversations,
-  )
+  const filteredConversations = query
+    ? conversations.filter((item) => item.title.toLowerCase().includes(query))
+    : conversations
   const unreadCheckIns = checkInsQuery.data?.meta.unread ?? 0
   const activeTitle = hasConversation
     ? (conversationQuery.data?.data.title ?? 'Conversation')
@@ -670,10 +654,10 @@ function CoachPage() {
     { id: 'preferences', label: 'Preferences', icon: SlidersHorizontal },
   ] as const
 
-  const composer = (
+  const composerForm = (
     <form
       className={cn(
-        'w-full rounded-[1.6rem] border border-border bg-card p-2 shadow-soft transition-[border-color,box-shadow] duration-300 focus-within:border-[color-mix(in_oklab,var(--primary)_45%,var(--border))] focus-within:ring-4 focus-within:ring-ring/10',
+        'w-full rounded-xl border border-border bg-card p-2 shadow-soft transition-[border-color,box-shadow] duration-300 focus-within:border-[color-mix(in_oklab,var(--primary)_45%,var(--border))] focus-within:ring-4 focus-within:ring-ring/10',
         !consentEnabled && 'opacity-70',
       )}
       onSubmit={(event) => {
@@ -723,7 +707,7 @@ function CoachPage() {
         <button
           aria-pressed={showContext}
           className={cn(
-            'inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-sm font-medium transition-colors',
+            'inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-sm font-medium transition-colors',
             showContext || transientContext
               ? 'border-primary/40 bg-primary/10 text-primary'
               : 'border-border text-foreground/70 hover:bg-secondary',
@@ -737,7 +721,7 @@ function CoachPage() {
         </button>
         <button
           aria-label="Add attachment"
-          className="grid size-9 place-items-center rounded-full text-foreground/65 transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-50"
+          className="grid size-9 place-items-center rounded-md text-foreground/65 transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-50"
           disabled={!consentEnabled || sendMessage.isPending}
           onClick={() => attachmentInputRef.current?.click()}
           title="Add attachment (image, document, audio or video, up to 8 MB)"
@@ -746,11 +730,11 @@ function CoachPage() {
           <Paperclip aria-hidden="true" className="size-4" strokeWidth={1.7} />
         </button>
         {attachmentFile ? (
-          <span className="inline-flex max-w-full items-center gap-1 rounded-full bg-secondary py-1 pr-1 pl-3 text-xs text-secondary-foreground">
+          <span className="inline-flex max-w-full items-center gap-1 rounded-md bg-secondary py-1 pr-1 pl-3 text-xs text-secondary-foreground">
             <span className="max-w-44 truncate">{attachmentFile.name}</span>
             <button
               aria-label="Remove attachment"
-              className="grid size-5 place-items-center rounded-full hover:bg-black/5"
+              className="grid size-5 place-items-center rounded-md hover:bg-black/5"
               onClick={() => setAttachmentFile(null)}
               type="button"
             >
@@ -777,6 +761,29 @@ function CoachPage() {
       </div>
     </form>
   )
+  const composer = (
+    <div className="w-full rounded-xl bg-secondary/70 p-1.5 ring-1 ring-border/60">
+      {composerForm}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 pt-2 pb-1 text-[0.72rem] text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5">
+          <kbd className="inline-grid h-5 min-w-5 place-items-center rounded-md border border-border bg-card px-1 font-sans">
+            <CornerDownLeft aria-hidden="true" className="size-3" />
+          </kbd>
+          send
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <kbd className="inline-grid h-5 place-items-center rounded-md border border-border bg-card px-1.5 font-sans">
+            Shift ↵
+          </kbd>
+          new line
+        </span>
+        <span className="ml-auto inline-flex items-center gap-1.5">
+          <Lock aria-hidden="true" className="size-3" />
+          Pasted code and attachments are never saved
+        </span>
+      </div>
+    </div>
+  )
 
   return (
     <main
@@ -799,7 +806,7 @@ function CoachPage() {
         </div>
 
         <button
-          className="flex h-11 w-full items-center justify-center gap-2 rounded-full bg-ink text-sm font-medium text-ink-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.14)] transition-transform duration-300 active:scale-[0.98]"
+          className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-ink text-sm font-medium text-ink-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.14)] transition-transform duration-300 active:scale-[0.98]"
           onClick={startNewChat}
           type="button"
         >
@@ -815,7 +822,7 @@ function CoachPage() {
             strokeWidth={1.7}
           />
           <input
-            className="h-10 w-full rounded-full border border-input bg-card pr-3 pl-10 text-sm text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
+            className="h-10 w-full rounded-md border border-input bg-card pr-3 pl-10 text-sm text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search"
             type="search"
@@ -833,8 +840,8 @@ function CoachPage() {
               className={cn(
                 'flex h-10 shrink-0 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors',
                 view === item.id
-                  ? 'bg-card text-foreground shadow-soft'
-                  : 'text-foreground/70 hover:bg-card/70 hover:text-foreground',
+                  ? 'bg-ink text-ink-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.12)]'
+                  : 'text-foreground/70 hover:bg-card hover:text-foreground',
               )}
               key={item.id}
               onClick={() => setView(item.id)}
@@ -847,7 +854,7 @@ function CoachPage() {
               />
               {item.label}
               {item.id === 'checkins' && unreadCheckIns > 0 ? (
-                <span className="ml-auto rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground">
+                <span className="ml-auto rounded-md bg-primary px-2 py-0.5 text-xs text-primary-foreground">
                   {unreadCheckIns}
                 </span>
               ) : null}
@@ -861,69 +868,79 @@ function CoachPage() {
               Start with a guided question. Safe chat text is saved until you
               delete it.
             </p>
-          ) : historyGroups.length === 0 ? (
+          ) : filteredConversations.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No conversations match “{search}”.
             </p>
           ) : (
-            historyGroups.map((group) => (
-              <div key={group.label}>
-                <p className="mb-1.5 px-2 text-xs font-medium text-muted-foreground">
-                  {group.label}
-                </p>
-                <ul className="flex flex-col gap-0.5">
-                  {group.items.map((conversation) => (
-                    <li key={conversation.id}>
+            <ul className="flex flex-col gap-0.5">
+              {filteredConversations.map((conversation) => {
+                const active =
+                  activeConversationId === conversation.id && view === 'chat'
+                return (
+                  <li className="group/item relative" key={conversation.id}>
+                    <button
+                      className={cn(
+                        'w-full truncate rounded-md py-2 pr-16 pl-2.5 text-left text-sm transition-colors',
+                        active
+                          ? 'bg-card font-medium text-foreground shadow-soft'
+                          : 'text-foreground/75 hover:bg-card/70 hover:text-foreground',
+                      )}
+                      onClick={() => {
+                        selectConversation(conversation.id)
+                        setView('chat')
+                      }}
+                      title={`${conversation.title} · ${conversation.messageCount} messages`}
+                      type="button"
+                    >
+                      {conversation.title}
+                    </button>
+                    {/* Row actions appear on hover or keyboard focus. */}
+                    <div className="absolute inset-y-0 right-1 flex items-center gap-0.5 opacity-0 transition-opacity group-focus-within/item:opacity-100 group-hover/item:opacity-100">
                       <button
-                        className={cn(
-                          'w-full truncate rounded-lg px-2 py-1.5 text-left text-sm transition-colors',
-                          activeConversationId === conversation.id &&
-                            view === 'chat'
-                            ? 'bg-card font-medium text-foreground shadow-soft'
-                            : 'text-foreground/75 hover:bg-card/70 hover:text-foreground',
-                        )}
+                        aria-label={`Rename ${conversation.title}`}
+                        className="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                         onClick={() => {
-                          selectConversation(conversation.id)
-                          setView('chat')
+                          setRenameTarget({
+                            id: conversation.id,
+                            title: conversation.title,
+                          })
+                          setRenameTitle(conversation.title)
                         }}
-                        title={`${conversation.title} · ${conversation.messageCount} messages`}
+                        title="Rename"
                         type="button"
                       >
-                        {conversation.title}
+                        <Pencil
+                          aria-hidden="true"
+                          className="size-3.5"
+                          strokeWidth={1.8}
+                        />
                       </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))
+                      <button
+                        aria-label={`Delete ${conversation.title}`}
+                        className="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-danger-soft hover:text-destructive"
+                        onClick={() =>
+                          setDeleteTarget({
+                            id: conversation.id,
+                            title: conversation.title,
+                          })
+                        }
+                        title="Delete"
+                        type="button"
+                      >
+                        <Trash2
+                          aria-hidden="true"
+                          className="size-3.5"
+                          strokeWidth={1.8}
+                        />
+                      </button>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
           )}
         </div>
-
-        <Link
-          className={cn(
-            'hidden items-center gap-3 rounded-2xl p-3 text-sm ring-1 transition-colors lg:flex',
-            consentEnabled
-              ? 'bg-go-soft text-go-foreground ring-go/25'
-              : 'bg-sun-soft text-sun-foreground ring-sun/50',
-          )}
-          to="/settings"
-        >
-          <ShieldCheck
-            aria-hidden="true"
-            className="size-5 shrink-0"
-            strokeWidth={1.7}
-          />
-          <span className="min-w-0">
-            <span className="block font-medium">
-              {consentEnabled
-                ? 'Personalized coaching on'
-                : 'Personalization off'}
-            </span>
-            <span className="block text-xs opacity-80">
-              Privacy and consent
-            </span>
-          </span>
-        </Link>
       </aside>
 
       {/* Workspace */}
@@ -933,7 +950,7 @@ function CoachPage() {
       >
         <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-border px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-2.5">
-            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-card py-1 pr-3 pl-1.5 text-xs font-medium text-foreground">
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-card py-1 pr-3 pl-1.5 text-xs font-medium text-foreground">
               <span aria-hidden="true" className="coach-orb size-4" />
               Coach
             </span>
@@ -947,35 +964,6 @@ function CoachPage() {
             </h2>
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            {view === 'chat' && hasConversation && conversationQuery.data ? (
-              <>
-                <Button
-                  aria-label={`Rename ${conversationQuery.data.data.title}`}
-                  onClick={() => {
-                    const target = conversationQuery.data.data
-                    setRenameTarget({ id: target.id, title: target.title })
-                    setRenameTitle(target.title)
-                  }}
-                  size="icon"
-                  type="button"
-                  variant="ghost"
-                >
-                  <Pencil aria-hidden="true" strokeWidth={1.7} />
-                </Button>
-                <Button
-                  aria-label={`Delete ${conversationQuery.data.data.title}`}
-                  onClick={() => {
-                    const target = conversationQuery.data.data
-                    setDeleteTarget({ id: target.id, title: target.title })
-                  }}
-                  size="icon"
-                  type="button"
-                  variant="ghost"
-                >
-                  <Trash2 aria-hidden="true" strokeWidth={1.7} />
-                </Button>
-              </>
-            ) : null}
             <Link
               className={buttonVariants({ size: 'sm', variant: 'outline' })}
               to="/settings"
@@ -1010,26 +998,26 @@ function CoachPage() {
         {view === 'chat' ? (
           showGreeting ? (
             <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-4 py-6 sm:px-8">
-              <div className="my-auto flex w-full max-w-3xl flex-col items-center">
+              <div className="my-auto flex w-full max-w-[52rem] flex-col items-center">
+                <CoachStatStrip className="animate-rise" roadmap={roadmap} />
                 <span
                   aria-hidden="true"
-                  className="coach-orb animate-orb size-20 sm:size-24"
+                  className="coach-orb animate-orb mt-10 size-20 sm:size-24"
                 />
-                <p className="animate-rise mt-5 bg-[linear-gradient(90deg,var(--primary),var(--sky-deep))] bg-clip-text font-heading text-3xl font-semibold tracking-[-0.03em] text-transparent sm:text-4xl">
-                  Hello, {displayNameFromEmail(user?.email)}
-                </p>
                 <p
-                  className="animate-rise mt-1 text-center font-heading text-3xl font-bold tracking-[-0.035em] text-foreground sm:text-[2.6rem]"
+                  className="animate-rise mt-6 text-center font-heading text-3xl font-bold tracking-[-0.035em] text-foreground sm:text-[2.6rem]"
                   style={{ '--i': 1 } as CSSProperties}
                 >
-                  How can I help you improve today?
+                  Hi, {identity.name}! How can I{' '}
+                  <span className="text-primary">help?</span>
                 </p>
                 <p
-                  className="animate-rise mt-3 max-w-lg text-center text-muted-foreground"
+                  className="animate-rise mt-3 max-w-xl text-center text-muted-foreground"
                   style={{ '--i': 2 } as CSSProperties}
                 >
-                  I already know your profile, linked platforms, roadmap and
-                  recent verdicts. Ask anything about CP or DSA.
+                  I know your linked profiles, solved history, contests and
+                  roadmap. Ask about a concept, a failed attempt, your rating or
+                  what to practice next.
                 </p>
                 <div
                   className="animate-rise mt-6 w-full"
@@ -1045,7 +1033,7 @@ function CoachPage() {
                     const Icon = promptIcons[item.label] ?? Sparkles
                     return (
                       <button
-                        className="group flex flex-col items-start gap-3 rounded-[1.3rem] border border-border bg-card p-4 text-left transition-[border-color,transform] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:-translate-y-0.5 hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--border))] disabled:pointer-events-none disabled:opacity-60"
+                        className="group flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-4 text-left transition-[border-color,transform] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:-translate-y-0.5 hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--border))] disabled:pointer-events-none disabled:opacity-60"
                         disabled={!consentEnabled || sendMessage.isPending}
                         key={item.label}
                         onClick={() => {
@@ -1054,7 +1042,7 @@ function CoachPage() {
                         }}
                         type="button"
                       >
-                        <span className="grid size-9 place-items-center rounded-full bg-secondary text-primary">
+                        <span className="grid size-9 place-items-center rounded-md bg-secondary text-primary">
                           <Icon
                             aria-hidden="true"
                             className="size-4"
@@ -1076,7 +1064,7 @@ function CoachPage() {
                 <div className="mt-3 flex flex-wrap justify-center gap-2">
                   {guidedPrompts.slice(3).map((item) => (
                     <button
-                      className="rounded-full border border-border bg-card px-3.5 py-1.5 text-sm text-foreground/80 transition-colors hover:bg-secondary disabled:opacity-60"
+                      className="rounded-md border border-border bg-card px-3.5 py-1.5 text-sm text-foreground/80 transition-colors hover:bg-secondary disabled:opacity-60"
                       disabled={!consentEnabled || sendMessage.isPending}
                       key={item.label}
                       onClick={() => {
@@ -1092,193 +1080,230 @@ function CoachPage() {
               </div>
             </div>
           ) : (
-            <>
-              <div
-                className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-6 sm:px-8"
-                onScroll={(event) => {
-                  const element = event.currentTarget
-                  const nearBottom =
-                    element.scrollHeight -
-                      element.scrollTop -
-                      element.clientHeight <
-                    160
-                  nearPageBottomRef.current = nearBottom
-                  setShowJumpToLatest(!nearBottom)
-                }}
-                ref={messagesScrollRef}
-              >
-                <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
-                  {conversationQuery.isPending ? (
-                    <p className="text-sm text-muted-foreground" role="status">
-                      Loading conversation…
-                    </p>
-                  ) : (
-                    messages.map((message) => (
-                      <article
-                        className={cn(
-                          'border p-4 sm:p-5',
-                          message.role === 'user'
-                            ? 'ml-auto w-fit max-w-[85%] rounded-3xl rounded-br-md border-transparent bg-ink text-ink-foreground'
-                            : 'w-full rounded-3xl rounded-bl-md border-border bg-card',
-                        )}
-                        key={message.id}
+            <div className="flex min-h-0 flex-1">
+              <div className="flex min-w-0 flex-1 flex-col">
+                <div
+                  className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-6 sm:px-6"
+                  onScroll={(event) => {
+                    const element = event.currentTarget
+                    const nearBottom =
+                      element.scrollHeight -
+                        element.scrollTop -
+                        element.clientHeight <
+                      160
+                    nearPageBottomRef.current = nearBottom
+                    setShowJumpToLatest(!nearBottom)
+                  }}
+                  ref={messagesScrollRef}
+                >
+                  <div className="mx-auto flex w-full max-w-[52rem] flex-col gap-7">
+                    {conversationQuery.isPending ? (
+                      <p
+                        className="text-sm text-muted-foreground"
+                        role="status"
                       >
-                        <div
-                          className={cn(
-                            'flex items-center justify-between gap-4 text-xs font-medium',
-                            message.role === 'user'
-                              ? 'opacity-65'
-                              : 'text-muted-foreground',
-                          )}
-                        >
-                          <span className="inline-flex items-center gap-2">
-                            {message.role === 'assistant' ? (
-                              <span
-                                aria-hidden="true"
-                                className="coach-orb size-5"
-                              />
-                            ) : null}
-                            {message.role === 'user' ? 'You' : 'Coach'}
-                          </span>
-                          <time dateTime={message.createdAt}>
-                            {formatDate(message.createdAt)}
-                          </time>
-                        </div>
-                        <CoachMessageContent
-                          content={message.content}
-                          role={message.role}
-                        />
-                        {message.transientContextOmitted ? (
-                          <p className="mt-2 text-xs opacity-70">
-                            Temporary code, problem context, or an attachment
-                            was omitted from saved history.
-                          </p>
-                        ) : null}
-                        {message.role === 'assistant' ? (
-                          <>
-                            <EvidenceList evidence={message.evidence} />
-                            {message.richContent ? (
-                              <CoachRichContentView
-                                content={message.richContent}
-                                dismissedProblemKeys={
-                                  new Set(
-                                    (dismissalsQuery.data?.data ?? []).map(
-                                      (item) =>
-                                        `${item.provider}:${item.externalId}`,
-                                    ),
-                                  )
-                                }
-                                onDismissProblem={(provider, externalId) => {
-                                  dismissProblem.mutate({
-                                    provider,
-                                    externalId,
-                                  })
-                                }}
-                                onSuggestedQuestion={(question) => {
-                                  setContent(question)
-                                  void submitMessage(question)
-                                }}
-                              />
-                            ) : null}
-                            {message.proposals.length ? (
-                              <div className="mt-4 space-y-2 border-t border-border pt-3">
-                                <p className="text-xs font-medium text-muted-foreground">
-                                  Suggested actions
-                                </p>
-                                {message.proposals.map((proposal) => (
-                                  <div
-                                    className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-2xl border border-border p-3"
-                                    key={proposal.id}
-                                  >
-                                    <span className="min-w-0 text-sm text-foreground">
-                                      {proposal.label}
-                                      <span className="mt-1 block text-xs text-muted-foreground">
-                                        {proposal.reason}
-                                      </span>
-                                    </span>
-                                    <Button
-                                      disabled={
-                                        proposal.status !== 'proposed' ||
-                                        confirmAction.isPending
-                                      }
-                                      onClick={() =>
-                                        void confirmAction.mutateAsync(
-                                          proposal.id,
+                        Loading conversation…
+                      </p>
+                    ) : (
+                      messages.map((message) =>
+                        message.role === 'user' ? (
+                          <article
+                            className="animate-rise flex flex-col items-end gap-1.5"
+                            key={message.id}
+                          >
+                            <div className="max-w-[80%] rounded-xl rounded-br-md bg-ink px-4 py-2.5 text-ink-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.1)]">
+                              <h3 className="sr-only">You</h3>
+                              <p className="text-[0.95rem] leading-6 whitespace-pre-wrap">
+                                {message.content}
+                              </p>
+                            </div>
+                            <time
+                              className="px-1 text-[0.7rem] text-muted-foreground"
+                              dateTime={message.createdAt}
+                            >
+                              {formatDate(message.createdAt)}
+                              {message.transientContextOmitted
+                                ? ' · pasted context not saved'
+                                : ''}
+                            </time>
+                          </article>
+                        ) : (
+                          <article
+                            className="animate-rise flex gap-3"
+                            key={message.id}
+                          >
+                            <span
+                              aria-hidden="true"
+                              className="coach-orb mt-0.5 size-8 shrink-0"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-baseline gap-2 text-xs">
+                                <h3 className="font-sans text-sm font-semibold text-foreground">
+                                  Coach
+                                </h3>
+                                <time
+                                  className="text-muted-foreground"
+                                  dateTime={message.createdAt}
+                                >
+                                  {formatDate(message.createdAt)}
+                                </time>
+                              </div>
+                              <div className="text-[0.95rem] [&>div]:mt-1.5">
+                                <CoachMessageContent
+                                  content={message.content}
+                                  role="assistant"
+                                />
+                              </div>
+                              {message.role === 'assistant' ? (
+                                <>
+                                  <EvidenceList evidence={message.evidence} />
+                                  {message.richContent ? (
+                                    <CoachRichContentView
+                                      content={message.richContent}
+                                      dismissedProblemKeys={
+                                        new Set(
+                                          (
+                                            dismissalsQuery.data?.data ?? []
+                                          ).map(
+                                            (item) =>
+                                              `${item.provider}:${item.externalId}`,
+                                          ),
                                         )
                                       }
-                                      size="sm"
-                                      type="button"
-                                    >
-                                      {proposal.status === 'confirmed' ? (
-                                        <>
-                                          <Check aria-hidden="true" /> Confirmed
-                                        </>
-                                      ) : (
-                                        'Confirm'
-                                      )}
-                                    </Button>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : null}
-                          </>
-                        ) : null}
-                      </article>
-                    ))
-                  )}
-                  <div aria-hidden="true" ref={messageEndRef} />
-                  {sendMessage.isPending ? (
-                    <div
-                      className="flex items-center gap-3 text-sm text-muted-foreground"
-                      role="status"
-                    >
-                      <span
-                        aria-hidden="true"
-                        className="coach-orb animate-orb size-6"
-                      />
-                      Reading your profile and learning context…
-                      <Button
-                        className="ml-auto"
-                        onClick={() => sendAbortController.current?.abort()}
-                        size="sm"
-                        type="button"
-                        variant="outline"
+                                      onDismissProblem={(
+                                        provider,
+                                        externalId,
+                                      ) => {
+                                        dismissProblem.mutate({
+                                          provider,
+                                          externalId,
+                                        })
+                                      }}
+                                      onSuggestedQuestion={(question) => {
+                                        setContent(question)
+                                        void submitMessage(question)
+                                      }}
+                                    />
+                                  ) : null}
+                                  {message.proposals.length ? (
+                                    <div className="mt-4 space-y-2 border-t border-border pt-3">
+                                      <p className="text-xs font-medium text-muted-foreground">
+                                        Suggested actions
+                                      </p>
+                                      {message.proposals.map((proposal) => (
+                                        <div
+                                          className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-2xl border border-border p-3"
+                                          key={proposal.id}
+                                        >
+                                          <span className="min-w-0 text-sm text-foreground">
+                                            {proposal.label}
+                                            <span className="mt-1 block text-xs text-muted-foreground">
+                                              {proposal.reason}
+                                            </span>
+                                          </span>
+                                          <Button
+                                            disabled={
+                                              proposal.status !== 'proposed' ||
+                                              confirmAction.isPending
+                                            }
+                                            onClick={() =>
+                                              void confirmAction.mutateAsync(
+                                                proposal.id,
+                                              )
+                                            }
+                                            size="sm"
+                                            type="button"
+                                          >
+                                            {proposal.status === 'confirmed' ? (
+                                              <>
+                                                <Check aria-hidden="true" />{' '}
+                                                Confirmed
+                                              </>
+                                            ) : (
+                                              'Confirm'
+                                            )}
+                                          </Button>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : null}
+                                </>
+                              ) : null}
+                            </div>
+                          </article>
+                        ),
+                      )
+                    )}
+                    <div aria-hidden="true" ref={messageEndRef} />
+                    {sendMessage.isPending ? (
+                      <div
+                        className="flex items-center gap-3 text-sm text-muted-foreground"
+                        role="status"
                       >
-                        Cancel
-                      </Button>
-                    </div>
-                  ) : null}
+                        <span
+                          aria-hidden="true"
+                          className="coach-orb animate-orb size-8"
+                        />
+                        <span className="animate-pulse">
+                          Checking your profile, history and roadmap…
+                        </span>
+                        <Button
+                          className="ml-auto"
+                          onClick={() => sendAbortController.current?.abort()}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="shrink-0 px-4 pt-2 pb-4 sm:px-6 sm:pb-5">
+                  <div className="mx-auto w-full max-w-[52rem]">
+                    {showJumpToLatest ? (
+                      <div className="mb-2 flex justify-center">
+                        <Button
+                          onClick={() => {
+                            nearPageBottomRef.current = true
+                            setShowJumpToLatest(false)
+                            messagesScrollRef.current?.scrollTo({
+                              behavior: 'smooth',
+                              top: messagesScrollRef.current.scrollHeight,
+                            })
+                          }}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <ArrowDown aria-hidden="true" /> Jump to latest
+                        </Button>
+                      </div>
+                    ) : null}
+                    {composer}
+                  </div>
                 </div>
               </div>
-              <div className="shrink-0 px-4 pt-2 pb-4 sm:px-8 sm:pb-6">
-                <div className="mx-auto w-full max-w-3xl">
-                  {showJumpToLatest ? (
-                    <div className="mb-2 flex justify-center">
-                      <Button
-                        onClick={() => {
-                          nearPageBottomRef.current = true
-                          setShowJumpToLatest(false)
-                          messagesScrollRef.current?.scrollTo({
-                            behavior: 'smooth',
-                            top: messagesScrollRef.current.scrollHeight,
-                          })
-                        }}
-                        size="sm"
-                        type="button"
-                        variant="outline"
-                      >
-                        <ArrowDown aria-hidden="true" /> Jump to latest
-                      </Button>
-                    </div>
-                  ) : null}
-                  {composer}
-                  <p className="mt-2 text-center text-xs text-muted-foreground">
-                    Attachments go to Gemini for this answer only and are not
-                    saved in chat history.
-                  </p>
-                </div>
-              </div>
-            </>
+              <CoachContextRail
+                disabled={!consentEnabled || sendMessage.isPending}
+                evidence={
+                  messages
+                    .filter(
+                      (message) =>
+                        message.role === 'assistant' &&
+                        message.fallback !== true,
+                    )
+                    .at(-1)?.evidence ?? []
+                }
+                pending={sendMessage.isPending}
+                onAsk={(question) => {
+                  setContent(question)
+                  void submitMessage(question)
+                }}
+                roadmap={roadmap}
+              />
+            </div>
           )
         ) : null}
 
@@ -1294,7 +1319,7 @@ function CoachPage() {
                   your evidence.
                 </p>
               </div>
-              <span className="rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
+              <span className="rounded-md bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
                 {roadmap?.topics.length ?? 0} topics
               </span>
             </div>
@@ -1548,7 +1573,7 @@ function CoachPage() {
               Choose when you want weekly reviews and activity-based reminders.
             </p>
             {preferencesQuery.data?.data ? (
-              <div className="mt-6 max-w-3xl divide-y divide-border rounded-[1.4rem] border border-border bg-card">
+              <div className="mt-6 max-w-3xl divide-y divide-border rounded-xl border border-border bg-card">
                 <label className="flex items-center justify-between gap-6 p-5">
                   <span>
                     <span className="block font-medium text-foreground">

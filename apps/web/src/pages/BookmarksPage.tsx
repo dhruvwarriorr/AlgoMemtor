@@ -64,7 +64,7 @@ function BookmarkCard({ bookmark }: { bookmark: Bookmark }) {
           </h2>
           <span
             className={cn(
-              'rounded-full px-2.5 py-0.5 text-xs font-medium',
+              'rounded-md px-2.5 py-0.5 text-xs font-medium',
               statusTone[status],
             )}
           >
@@ -106,7 +106,7 @@ function BookmarkCard({ bookmark }: { bookmark: Bookmark }) {
         <ul aria-label="Topics" className="flex min-w-0 flex-wrap gap-1.5">
           {problem.topics.map((topic) => (
             <li
-              className="max-w-full break-words rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary dark:bg-primary/15"
+              className="max-w-full break-words rounded-md bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary dark:bg-primary/15"
               key={topic}
             >
               {topic}
@@ -178,7 +178,7 @@ function BookmarksPage() {
   } else {
     content = (
       <div className="space-y-5">
-        <div className="min-w-0 divide-y divide-border overflow-hidden rounded-[1.4rem] border border-border bg-card shadow-soft">
+        <div className="min-w-0 divide-y divide-border overflow-hidden rounded-xl border border-border bg-card shadow-soft">
           {bookmarks.map((bookmark) => (
             <BookmarkCard bookmark={bookmark} key={bookmark.id} />
           ))}

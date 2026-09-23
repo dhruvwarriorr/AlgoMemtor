@@ -89,7 +89,7 @@ function LoginPage() {
       className="mx-auto grid w-full max-w-7xl flex-1 gap-4 px-3 pt-3 pb-6 sm:px-5 lg:grid-cols-[1.05fr_1fr] lg:gap-6"
       id="main-content"
     >
-      <section className="sky-surface flex min-h-64 flex-col justify-end rounded-[2rem] p-7 sm:p-10 lg:min-h-[36rem]">
+      <section className="sky-surface flex min-h-64 flex-col justify-end rounded-xl p-7 sm:p-10 lg:min-h-[36rem]">
         <span
           aria-hidden="true"
           className="cloud animate-drift -top-6 -left-16 w-[26rem]"
@@ -108,7 +108,7 @@ function LoginPage() {
         </p>
       </section>
 
-      <section className="flex flex-col justify-center rounded-[2rem] border border-border bg-card p-6 sm:p-10 lg:px-14">
+      <section className="flex flex-col justify-center rounded-xl border border-border bg-card p-6 sm:p-10 lg:px-14">
         <div className="mx-auto w-full max-w-md">
           <h1 className="text-4xl text-foreground sm:text-5xl">
             {isSignUp ? 'Create account' : 'Login'}

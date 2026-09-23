@@ -1,328 +1,181 @@
+import { useMemo, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { LinkableProviderSchema } from '@algomemtor/shared-contracts'
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
+import {
+  CalendarDays,
+  CheckCheck,
+  Crown,
+  Flame,
+  Gauge,
+  Sparkles,
+  Swords,
+  Target,
+} from 'lucide-react'
 
 import PageContainer from '@/components/layout/PageContainer'
 import PageHeader from '@/components/layout/PageHeader'
 import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
-import { ProviderFilter } from '@/features/platform/components/ProviderFilter'
-import { providerLabels } from '@/features/platform/components/provider-labels'
-import { useAnalytics } from '@/features/platform/hooks'
+import {
+  AccountCards,
+  DifficultyGauge,
+  HardestSolves,
+  LanguageBars,
+  MonthlyVolume,
+  RatingLadder,
+  TopicPieChart,
+  TopicStrength,
+  VerdictDonut,
+  YearCalendar,
+} from '@/features/insights/InsightsCharts'
 import {
   mergeContestHistory,
   type ContestHistoryEntry,
 } from '@/features/platform/contest-history'
+import { ProviderFilter } from '@/features/platform/components/ProviderFilter'
+import { providerLabels } from '@/features/platform/components/provider-labels'
+import { useAnalytics } from '@/features/platform/hooks'
+import { cn } from '@/lib/utils'
+
+const title = 'Insights'
+const description =
+  'Your complete competitive-programming history across every linked platform.'
 
 function formatDate(value: string) {
   try {
-    return new Intl.DateTimeFormat(undefined, {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    }).format(new Date(value))
+    return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(
+      new Date(value),
+    )
   } catch {
     return value
   }
 }
 
-function MetricCard({
+// All-time streaks and active days from the per-day solve counts.
+function dayStats(solvedOverTime: Record<string, number>) {
+  const days = Object.entries(solvedOverTime)
+    .filter(([, count]) => count > 0)
+    .map(([day]) => day)
+    .sort()
+  let longest = 0
+  let run = 0
+  let previous: number | undefined
+  for (const day of days) {
+    const value = Date.parse(`${day}T00:00:00Z`) / 86_400_000
+    run = previous !== undefined && value - previous === 1 ? run + 1 : 1
+    longest = Math.max(longest, run)
+    previous = value
+  }
+  const busiest = Object.entries(solvedOverTime).sort((a, b) => b[1] - a[1])[0]
+  return { activeDays: days.length, longest, busiest }
+}
+
+function Headline({
+  icon,
   label,
   value,
   detail,
+  className,
 }: {
+  icon: ReactNode
   label: string
   value: string
-  detail?: string
+  detail: string
+  className?: string
 }) {
   return (
-    <div className="min-w-0 rounded-lg border border-border bg-card p-4">
-      <dt className="text-sm font-medium text-muted-foreground">{label}</dt>
-      <dd className="mt-1 break-words text-2xl font-semibold tracking-tight text-foreground">
+    <div
+      className={cn(
+        'animate-rise min-w-0 rounded-xl border border-border bg-card p-4',
+        className,
+      )}
+    >
+      <p className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+        <span className="grid size-8 place-items-center rounded-lg bg-accent text-accent-foreground">
+          {icon}
+        </span>
+        {label}
+      </p>
+      <p className="mt-3 truncate font-heading text-[1.75rem] leading-none font-bold tracking-[-0.03em] tabular-nums">
         {value}
-      </dd>
-      {detail ? (
-        <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
-      ) : null}
+      </p>
+      <p className="mt-1.5 truncate text-xs text-muted-foreground">{detail}</p>
     </div>
   )
 }
 
-function ContestHistoryCard({ entry }: { entry: ContestHistoryEntry }) {
-  const participation = entry.participation
-  const ratingChange = entry.ratingChange
-  const provider = participation?.provider ?? ratingChange?.provider
-  const contestName =
-    participation?.contestName ??
-    ratingChange?.contestName ??
-    participation?.contestId ??
-    ratingChange?.contestId ??
-    'Contest activity'
-  const date = participation?.attendedAt ?? ratingChange?.occurredAt
-  const ratingDelta = ratingChange?.delta ?? participation?.ratingChange
-  const oldRating = ratingChange?.oldRating ?? participation?.oldRating
-  const newRating = ratingChange?.newRating ?? participation?.newRating
-
+function ContestLog({ entries }: { entries: ContestHistoryEntry[] }) {
+  if (entries.length === 0) return null
   return (
-    <li className="rounded-lg border border-border bg-card p-4" key={entry.key}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            {provider === undefined ? 'Provider' : providerLabels[provider]}
-          </p>
-          <p className="mt-1 break-words font-medium text-foreground">
-            {contestName}
-          </p>
-        </div>
-        {ratingDelta !== undefined ? (
-          <span
-            className={
-              ratingDelta >= 0
-                ? 'font-semibold text-go'
-                : 'font-semibold text-destructive'
-            }
-          >
-            {ratingDelta >= 0 ? '+' : ''}
-            {ratingDelta}
-          </span>
-        ) : null}
-      </div>
-      <p className="mt-2 text-sm text-muted-foreground">
-        {participation?.rank === undefined ? '' : `Rank ${participation.rank}`}
-        {participation?.score === undefined
-          ? ''
-          : `${participation?.rank === undefined ? '' : ' · '}Score ${participation.score}`}
-        {oldRating !== undefined && newRating !== undefined
-          ? `${participation?.rank === undefined && participation?.score === undefined ? '' : ' · '}${oldRating} → ${newRating}`
-          : ''}
-        {date
-          ? `${participation?.rank === undefined && participation?.score === undefined && oldRating === undefined ? '' : ' · '}${formatDate(date)}`
-          : ''}
-        {participation?.rank === undefined &&
-        participation?.score === undefined &&
-        oldRating === undefined &&
-        ratingDelta === undefined &&
-        date === undefined
-          ? 'Participation details not reported'
-          : null}
+    <section className="animate-rise rounded-xl border border-border bg-card p-4 sm:p-5">
+      <h3 className="text-lg font-semibold">Contest log</h3>
+      <p className="mt-0.5 text-sm text-muted-foreground">
+        Every synchronized contest with rank and rating change.
       </p>
-    </li>
-  )
-}
-
-function Distribution({
-  entries,
-  label,
-  limit,
-}: {
-  entries: readonly [string, number][]
-  label: string
-  limit?: number
-}) {
-  const sorted = entries
-    .filter(([, value]) => value > 0)
-    .sort((left, right) => right[1] - left[1])
-  const visible = limit === undefined ? sorted : sorted.slice(0, limit)
-  const max = Math.max(1, ...visible.map(([, value]) => value))
-
-  return (
-    <section
-      aria-labelledby={`${label.toLowerCase()}-distribution-heading`}
-      className="min-w-0 space-y-3"
-    >
-      <div>
-        <h3
-          className="text-lg font-semibold text-foreground"
-          id={`${label.toLowerCase()}-distribution-heading`}
-        >
-          {label} distribution
-        </h3>
-        {sorted.length === 0 ? (
-          <p className="mt-1 text-sm text-muted-foreground">
-            No provider observations are available yet.
-          </p>
-        ) : null}
-      </div>
-      <ul className="space-y-2.5">
-        {visible.map(([name, value]) => (
-          <li className="min-w-0" key={name}>
-            <div className="flex items-center justify-between gap-3 text-sm">
-              <span className="min-w-0 break-words text-foreground">
-                {name}
-              </span>
-              <span className="shrink-0 font-medium text-muted-foreground">
-                {value.toLocaleString()}
-              </span>
-            </div>
-            <div
-              aria-hidden="true"
-              className="mt-1 h-2 overflow-hidden rounded-full bg-muted"
-            >
-              <div
-                className="h-full rounded-full bg-primary"
-                style={{ width: `${Math.max(4, (value / max) * 100)}%` }}
-              />
-            </div>
-          </li>
-        ))}
-      </ul>
-      {sorted.length > visible.length ? (
-        <p className="text-xs text-muted-foreground">
-          Showing the {visible.length} most used of {sorted.length} languages.
-        </p>
-      ) : null}
-    </section>
-  )
-}
-
-const topicColors = [
-  '#ff4d12',
-  '#101012',
-  '#157a47',
-  '#ffb08c',
-  '#6c7a90',
-  '#9a2e0b',
-  '#3ccf8e',
-  '#c9c2ac',
-  '#4a4a4d',
-  '#f5c33b',
-  '#7c1d15',
-  '#aab4c4',
-  '#0b4d2e',
-] as const
-
-const shortTopicLabels: Record<string, string> = {
-  'Dynamic Programming': 'Dynamic prog.',
-  'Bit Manipulation': 'Bitwise',
-  'Number Theory': 'Number theory',
-  Implementation: 'Implement.',
-  Constructive: 'Construct.',
-}
-
-function TopicDistribution({ entries }: { entries: [string, number][] }) {
-  const sorted = entries
-    .filter(([, count]) => count > 0)
-    .sort((left, right) => right[1] - left[1])
-  const primary = sorted.slice(0, 12)
-  const otherCount = sorted.slice(12).reduce((sum, [, count]) => sum + count, 0)
-  const chartData = [
-    ...primary.map(([name, count]) => ({ name, count })),
-    ...(otherCount > 0 ? [{ name: 'Other topics', count: otherCount }] : []),
-  ]
-
-  return (
-    <section
-      aria-labelledby="topic-distribution-heading"
-      className="min-w-0 rounded-xl border border-border bg-card p-4 sm:p-5"
-    >
-      <div>
-        <h2
-          className="text-lg font-semibold text-foreground"
-          id="topic-distribution-heading"
-        >
-          Topic distribution
-        </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Recognized problem tags from connected providers. A problem may appear
-          in more than one topic.
-        </p>
-      </div>
-      {chartData.length === 0 ? (
-        <p className="mt-4 text-sm text-muted-foreground">
-          No tagged solves are available yet.
-        </p>
-      ) : (
-        <div className="mt-4 grid min-w-0 items-center gap-5 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-          <div
-            aria-label="Pie chart of the most observed problem topics. Topic counts are listed beside the chart."
-            className="mx-auto h-64 w-full max-w-80"
-            role="img"
-          >
-            <ResponsiveContainer height="100%" width="100%">
-              <PieChart>
-                <Pie
-                  data={chartData}
-                  dataKey="count"
-                  isAnimationActive={false}
-                  nameKey="name"
-                  outerRadius={108}
-                  stroke="var(--card)"
-                  strokeWidth={2}
-                >
-                  {chartData.map((item, index) => (
-                    <Cell
-                      fill={topicColors[index % topicColors.length]}
-                      key={item.name}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(value, name) => [
-                    Number(value).toLocaleString(),
-                    name,
-                  ]}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <ul
-            aria-label="Topic chart legend"
-            className="grid min-w-0 grid-cols-2 gap-x-3 gap-y-2 text-xs sm:gap-x-5 sm:text-sm"
-          >
-            {chartData.map((item, index) => (
-              <li
-                className="flex min-w-0 items-center gap-1.5 sm:gap-2"
-                key={item.name}
-              >
-                <span
-                  aria-hidden="true"
-                  className="size-2.5 shrink-0 rounded-sm"
-                  style={{ backgroundColor: topicColors[index] }}
-                />
-                <span
-                  className="min-w-0 flex-1 truncate text-foreground"
-                  title={item.name}
-                >
-                  {shortTopicLabels[item.name] ?? item.name}
-                </span>
-                <span className="shrink-0 font-medium text-muted-foreground tabular-nums">
-                  {item.count.toLocaleString()}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {sorted.length > 12 ? (
-        <details className="mt-4 border-t border-border pt-3 text-sm">
-          <summary className="cursor-pointer font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            View all {sorted.length} topics
-          </summary>
-          <table className="mt-3 w-full max-w-lg text-left">
-            <thead>
-              <tr className="text-muted-foreground">
-                <th className="py-1 font-medium" scope="col">
-                  Topic
-                </th>
-                <th className="py-1 text-right font-medium" scope="col">
-                  Tag count
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map(([name, count]) => (
-                <tr className="border-t border-border/70" key={name}>
-                  <th className="py-1.5 font-normal" scope="row">
-                    {name}
-                  </th>
-                  <td className="py-1.5 text-right tabular-nums">
-                    {count.toLocaleString()}
+      <div className="mt-4 max-h-96 overflow-y-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="sticky top-0 bg-card text-xs text-muted-foreground">
+            <tr>
+              <th className="py-2 font-medium">Contest</th>
+              <th className="py-2 font-medium">Date</th>
+              <th className="py-2 text-right font-medium">Rank</th>
+              <th className="py-2 text-right font-medium">Rating</th>
+              <th className="py-2 text-right font-medium">Change</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((entry) => {
+              const participation = entry.participation
+              const change = entry.ratingChange
+              const provider = participation?.provider ?? change?.provider
+              const name =
+                participation?.contestName ??
+                change?.contestName ??
+                participation?.contestId ??
+                change?.contestId ??
+                'Contest'
+              const date = participation?.attendedAt ?? change?.occurredAt
+              const delta = change?.delta ?? participation?.ratingChange
+              const rating = change?.newRating ?? participation?.newRating
+              return (
+                <tr className="border-t border-border/70" key={entry.key}>
+                  <td className="max-w-80 py-2 pr-3">
+                    <p className="truncate font-medium" title={name}>
+                      {name}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {provider === undefined ? '' : providerLabels[provider]}
+                    </p>
+                  </td>
+                  <td className="py-2 pr-3 whitespace-nowrap text-muted-foreground">
+                    {date ? formatDate(date) : '—'}
+                  </td>
+                  <td className="py-2 text-right tabular-nums">
+                    {participation?.rank?.toLocaleString() ?? '—'}
+                  </td>
+                  <td className="py-2 text-right tabular-nums">
+                    {rating === undefined ? '—' : Math.round(rating)}
+                  </td>
+                  <td
+                    className={cn(
+                      'py-2 text-right font-semibold tabular-nums',
+                      delta === undefined
+                        ? 'text-muted-foreground'
+                        : delta >= 0
+                          ? 'text-go'
+                          : 'text-destructive',
+                    )}
+                  >
+                    {delta === undefined
+                      ? '—'
+                      : `${delta >= 0 ? '+' : ''}${Math.round(delta)}`}
                   </td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </details>
-      ) : null}
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
     </section>
   )
 }
@@ -335,6 +188,10 @@ function AnalyticsPage() {
   const provider = providerResult.success ? providerResult.data : undefined
   const analyticsQuery = useAnalytics(provider)
   const analytics = analyticsQuery.data
+  const stats = useMemo(
+    () => dayStats(analytics?.solvedOverTime ?? {}),
+    [analytics?.solvedOverTime],
+  )
 
   function updateProvider(next: typeof provider) {
     const nextParams = new URLSearchParams(searchParams)
@@ -346,11 +203,8 @@ function AnalyticsPage() {
   if (analyticsQuery.isPending) {
     return (
       <PageContainer>
-        <PageHeader
-          description="Understand your problem-solving patterns across connected providers."
-          title="Analytics"
-        />
-        <PageSkeleton label="Loading unified analytics" rows={5} />
+        <PageHeader description={description} title={title} />
+        <PageSkeleton label="Loading your insights" rows={5} />
       </PageContainer>
     )
   }
@@ -358,161 +212,244 @@ function AnalyticsPage() {
   if (analyticsQuery.isError || analytics === undefined) {
     return (
       <PageContainer>
-        <PageHeader
-          description="Understand your problem-solving patterns across connected providers."
-          title="Analytics"
-        />
+        <PageHeader description={description} title={title} />
         <ErrorState
           message={
             analyticsQuery.error instanceof Error
               ? analyticsQuery.error.message
-              : 'Analytics could not be loaded.'
+              : 'Insights could not be loaded.'
           }
           onRetry={() => void analyticsQuery.refetch()}
-          title="Unable to load analytics"
+          title="Unable to load insights"
         />
       </PageContainer>
     )
   }
 
-  const providerSolved = (
-    ['codeforces', 'codechef', 'leetcode', 'cses'] as const
-  ).map(
-    (key) =>
-      [providerLabels[key], analytics.solvedByProvider[key]] as [
-        string,
-        number,
-      ],
-  )
-  const difficulty = Object.entries(analytics.solvedByDifficulty)
-  const topics = Object.entries(analytics.topicCounts)
-  const languages = Object.entries(analytics.languageCounts)
+  const insights = analytics.insights
   const contestHistory = mergeContestHistory(
     analytics.contestParticipation,
     analytics.ratingHistory,
   )
-  const visibleContestHistory = contestHistory.slice(0, 6)
-  const additionalContestHistory = contestHistory.slice(6)
+  const peak = Math.max(
+    0,
+    ...(insights?.accounts ?? []).map((account) => account.maxRating ?? 0),
+  )
+  const peakAccount = insights?.accounts.find(
+    (account) => account.maxRating === peak,
+  )
+  const firstActivity = insights?.firstActivityAt
 
   return (
     <PageContainer>
       <PageHeader
-        description="Understand your problem-solving patterns across connected providers. Totals are provider-reported and are not deduplicated across platforms."
-        title="Analytics"
+        action={
+          <ProviderFilter
+            id="analytics-provider"
+            onChange={updateProvider}
+            value={provider}
+          />
+        }
+        description={description}
+        title={title}
       />
 
-      <section
-        aria-label="Analytics filters"
-        className="flex flex-wrap items-end gap-4 rounded-xl border border-border bg-card p-4 sm:p-5"
-      >
-        <ProviderFilter
-          id="analytics-provider"
-          onChange={updateProvider}
-          value={provider}
+      {/* All-time headline */}
+      <section className="animate-rise relative overflow-hidden rounded-xl p-5 text-white [background:linear-gradient(135deg,#1c1c1e,#101012_55%,#3a1405)] sm:p-7">
+        <span
+          aria-hidden="true"
+          className="absolute -top-24 -right-16 size-72 rounded-full bg-primary/40 blur-3xl"
         />
-        <p className="max-w-xl text-sm text-muted-foreground">
-          Filter the derived view by provider. Topic tags are grouped into
-          consistent learning areas; ratings and languages retain provider
-          values.
-        </p>
+        <div className="relative flex flex-wrap items-end justify-between gap-6">
+          <div>
+            <p className="flex items-center gap-2 text-sm text-white/70">
+              <Sparkles aria-hidden="true" className="size-4 text-primary" />
+              {provider === undefined
+                ? 'All platforms, all time'
+                : `${providerLabels[provider]}, all time`}
+            </p>
+            <p className="mt-2 font-heading text-6xl leading-none font-bold tracking-[-0.04em] tabular-nums sm:text-7xl">
+              {analytics.solvedTotal.toLocaleString()}
+            </p>
+            <p className="mt-2 text-white/70">
+              problems solved
+              {firstActivity
+                ? ` · coding since ${new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' }).format(new Date(firstActivity))}`
+                : ''}
+            </p>
+          </div>
+          <dl className="grid grid-cols-3 gap-x-8 gap-y-3">
+            {[
+              ['Contests', contestHistory.length.toLocaleString()],
+              [
+                'Acceptance',
+                analytics.acceptanceRate === undefined
+                  ? '—'
+                  : `${analytics.acceptanceRate.toFixed(1)}%`,
+              ],
+              [
+                'Submissions',
+                (insights?.totalSubmissions ?? 0).toLocaleString(),
+              ],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <dt className="text-xs text-white/60">{label}</dt>
+                <dd className="font-heading text-2xl font-bold tabular-nums">
+                  {value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
       </section>
 
-      <dl className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard
+      <dl className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <Headline
+          detail="Days with at least one solve"
+          icon={<CalendarDays aria-hidden="true" className="size-4" />}
+          label="Active days"
+          value={stats.activeDays.toLocaleString()}
+        />
+        <Headline
+          detail="Consecutive solve days, all time"
+          icon={<Flame aria-hidden="true" className="size-4" />}
+          label="Longest streak"
+          value={`${stats.longest}d`}
+        />
+        <Headline
           detail={
-            provider === undefined
-              ? 'Across active provider links'
-              : providerLabels[provider]
+            stats.busiest ? formatDate(`${stats.busiest[0]}T12:00:00Z`) : '—'
           }
-          label="Total solved"
-          value={analytics.solvedTotal.toLocaleString()}
+          icon={<CheckCheck aria-hidden="true" className="size-4" />}
+          label="Best day"
+          value={stats.busiest ? `${stats.busiest[1]} solves` : '—'}
         />
-        <MetricCard
-          detail="From the available recent submission window"
-          label="Acceptance rate"
+        <Headline
+          detail={
+            peakAccount ? providerLabels[peakAccount.provider] : 'No ratings'
+          }
+          icon={<Crown aria-hidden="true" className="size-4" />}
+          label="Peak rating"
+          value={peak > 0 ? String(Math.round(peak)) : '—'}
+        />
+        <Headline
+          detail={`${analytics.solvedByDifficulty.hard.toLocaleString()} hard problems`}
+          icon={<Gauge aria-hidden="true" className="size-4" />}
+          label="Hardest solve"
           value={
-            analytics.acceptanceRate === undefined
-              ? 'Not available'
-              : `${analytics.acceptanceRate.toFixed(1)}%`
+            insights?.hardestSolved[0]
+              ? String(Math.round(insights.hardestSolved[0].rating))
+              : '—'
           }
         />
-        <MetricCard
-          detail="Native provider rating changes"
-          label="Rating changes"
-          value={analytics.ratingHistory.length.toLocaleString()}
-        />
-        <MetricCard
-          detail="Participation and rating events"
-          label="Contests"
-          value={contestHistory.length.toLocaleString()}
+        <Headline
+          detail={`${Object.keys(analytics.topicCounts).length} topics touched`}
+          icon={<Target aria-hidden="true" className="size-4" />}
+          label="Top topic"
+          value={(
+            Object.entries(analytics.topicCounts).sort(
+              (a, b) => b[1] - a[1],
+            )[0]?.[0] ?? '—'
+          ).replace(/\b\w/g, (letter) => letter.toUpperCase())}
         />
       </dl>
 
-      <div className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <div className="rounded-xl border border-border bg-card p-4 sm:p-5">
-          <Distribution entries={providerSolved} label="Provider" />
-        </div>
-        <div className="rounded-xl border border-border bg-card p-4 sm:p-5">
-          <Distribution entries={difficulty} label="Difficulty" />
-        </div>
-        <div className="rounded-xl border border-border bg-card p-4 sm:p-5 md:col-span-2 xl:col-span-1">
-          <Distribution entries={languages} label="Language" limit={4} />
-        </div>
+      <AccountCards accounts={insights?.accounts ?? []} />
+
+      <YearCalendar solvedOverTime={analytics.solvedOverTime} />
+
+      <div className="grid min-w-0 gap-4 lg:grid-cols-12">
+        <MonthlyVolume monthly={insights?.monthly ?? []} />
+        <DifficultyGauge difficulty={analytics.solvedByDifficulty} />
+        <RatingLadder bands={insights?.ratingBands ?? []} />
+        <VerdictDonut
+          total={insights?.totalSubmissions ?? 0}
+          verdicts={
+            insights?.verdicts ?? {
+              accepted: 0,
+              wrongAnswer: 0,
+              timeLimit: 0,
+              memoryLimit: 0,
+              runtimeError: 0,
+              compileError: 0,
+              other: 0,
+            }
+          }
+        />
+        <TopicPieChart topicCounts={analytics.topicCounts} />
+        <TopicStrength topics={insights?.topicStrength ?? []} />
+        <LanguageBars languages={analytics.languageCounts} />
+        <HardestSolves problems={insights?.hardestSolved ?? []} />
+        <section className="animate-rise flex flex-col justify-between gap-4 rounded-xl border border-border bg-card p-4 sm:p-5 lg:col-span-4">
+          <div>
+            <h3 className="flex items-center gap-2 text-lg font-semibold">
+              <Swords aria-hidden="true" className="size-4 text-primary" />
+              Contest record
+            </h3>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Rated contest outcomes.
+            </p>
+          </div>
+          <ContestRecord entries={contestHistory} />
+        </section>
       </div>
 
-      <TopicDistribution entries={topics} />
+      <ContestLog entries={contestHistory} />
 
-      <section aria-labelledby="contest-activity-heading" className="space-y-3">
-        <div>
-          <h2
-            className="text-xl font-semibold tracking-tight text-foreground"
-            id="contest-activity-heading"
-          >
-            Contest participation
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Participation and rating events are combined here. Rated contests
-            show the provider-reported signed rating change.
-          </p>
-        </div>
-        {contestHistory.length === 0 ? (
-          <p className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-            No contest activity has been synchronized yet.
-          </p>
-        ) : (
-          <div className="space-y-3">
-            <ul className="grid min-w-0 gap-3 md:grid-cols-2">
-              {visibleContestHistory.map((entry) => (
-                <ContestHistoryCard entry={entry} key={entry.key} />
-              ))}
-            </ul>
-            {additionalContestHistory.length > 0 ? (
-              <details className="group rounded-lg border border-border bg-card">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 text-sm font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-                  <span className="group-open:hidden">Show more contests</span>
-                  <span className="hidden group-open:inline">
-                    Show less contests
-                  </span>
-                  <span className="text-xs font-normal text-muted-foreground group-open:hidden">
-                    {additionalContestHistory.length} more
-                  </span>
-                  <span className="hidden text-xs font-normal text-muted-foreground group-open:inline">
-                    Collapse
-                  </span>
-                </summary>
-                <div className="border-t border-border p-4">
-                  <ul className="grid min-w-0 gap-3 md:grid-cols-2">
-                    {additionalContestHistory.map((entry) => (
-                      <ContestHistoryCard entry={entry} key={entry.key} />
-                    ))}
-                  </ul>
-                </div>
-              </details>
-            ) : null}
-          </div>
-        )}
-      </section>
+      <p className="text-xs text-muted-foreground">
+        Totals are provider-reported and are not deduplicated across platforms.
+        Public recent-activity windows mean some breakdowns are lower bounds.
+      </p>
     </PageContainer>
+  )
+}
+
+function ContestRecord({ entries }: { entries: ContestHistoryEntry[] }) {
+  const deltas = entries
+    .map(
+      (entry) => entry.ratingChange?.delta ?? entry.participation?.ratingChange,
+    )
+    .filter((value): value is number => value !== undefined)
+  const gains = deltas.filter((value) => value > 0)
+  const losses = deltas.filter((value) => value < 0)
+  const best = deltas.length ? Math.max(...deltas) : undefined
+  const worst = deltas.length ? Math.min(...deltas) : undefined
+  const winRate = deltas.length
+    ? Math.round((gains.length / deltas.length) * 100)
+    : 0
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <div className="flex h-3 overflow-hidden rounded-md bg-muted">
+          <span className="bg-go" style={{ width: `${winRate}%` }} />
+          <span className="flex-1 bg-destructive/70" />
+        </div>
+        <p className="mt-2 flex justify-between text-xs text-muted-foreground">
+          <span>{gains.length} rating gains</span>
+          <span>{losses.length} drops</span>
+        </p>
+      </div>
+      <dl className="grid grid-cols-2 gap-2">
+        {[
+          ['Win rate', deltas.length ? `${winRate}%` : '—'],
+          ['Best gain', best === undefined ? '—' : `+${Math.round(best)}`],
+          ['Worst drop', worst === undefined ? '—' : String(Math.round(worst))],
+          [
+            'Net change',
+            deltas.length
+              ? `${deltas.reduce((sum, value) => sum + value, 0) >= 0 ? '+' : ''}${Math.round(deltas.reduce((sum, value) => sum + value, 0))}`
+              : '—',
+          ],
+        ].map(([label, value]) => (
+          <div className="rounded-lg border border-border p-3" key={label}>
+            <dt className="text-xs text-muted-foreground">{label}</dt>
+            <dd className="mt-1 font-heading text-xl font-bold tabular-nums">
+              {value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   )
 }
 

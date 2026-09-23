@@ -38,8 +38,23 @@ model CoreUser {
   coachTopicStatusEvents CoachTopicStatusEvent[]
   coachPreferences       CoachPreferences?
   coachCheckIns          CoachCheckIn[]
+  avatar                 UserAvatar?
 
   @@map("users")
+  @@schema("core")
+}
+
+// A learner-uploaded profile picture, resized client-side to a small WebP,
+// JPEG or PNG. Deleted with the user.
+model UserAvatar {
+  userId    String   @id @map("user_id") @db.Uuid
+  mimeType  String   @map("mime_type")
+  data      Bytes
+  byteSize  Int      @map("byte_size")
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user      CoreUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_avatars")
   @@schema("core")
 }
 

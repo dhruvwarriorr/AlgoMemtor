@@ -70,7 +70,7 @@ export function CinematicIntro({ onComplete }: { onComplete: () => void }) {
       transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
     >
       <button
-        className="absolute top-6 right-6 z-10 rounded-full px-4 py-2 text-xs font-semibold tracking-[0.2em] text-white/40 uppercase transition-colors hover:text-white focus-visible:text-white focus-visible:outline-2 focus-visible:outline-white/60"
+        className="absolute top-6 right-6 z-10 rounded-md px-4 py-2 text-xs font-semibold tracking-[0.2em] text-white/40 uppercase transition-colors hover:text-white focus-visible:text-white focus-visible:outline-2 focus-visible:outline-white/60"
         onClick={finish}
         ref={skipRef}
         type="button"

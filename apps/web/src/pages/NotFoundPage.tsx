@@ -7,7 +7,7 @@ import { buttonVariants } from '@/components/ui/button'
 function NotFoundPage() {
   return (
     <PageContainer className="justify-center">
-      <section className="sky-surface flex min-h-[70dvh] flex-col items-center justify-center rounded-[2rem] px-6 py-16 text-center">
+      <section className="sky-surface flex min-h-[70dvh] flex-col items-center justify-center rounded-xl px-6 py-16 text-center">
         <span
           aria-hidden="true"
           className="cloud animate-drift top-10 -left-20 w-[24rem]"

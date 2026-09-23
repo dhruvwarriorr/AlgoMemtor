@@ -171,7 +171,7 @@ function ProblemLearningControlsContent({
             <span className="sr-only">Status for {problem.externalId}</span>
             <select
               aria-label={`Status for ${problem.externalId}`}
-              className="h-8 rounded-full border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 text-sm font-medium text-foreground outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
+              className="h-8 rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 text-sm font-medium text-foreground outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
               disabled={statusMutation.isPending}
               onChange={(event) =>
                 void handleStatusChange(

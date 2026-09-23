@@ -1,12 +1,12 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { ChevronDown, LogOut, Monitor, Moon, Sun } from 'lucide-react'
+import { LogOut, Monitor, Moon, Pencil, Sun } from 'lucide-react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 
 import type { Theme } from '@/app/theme-context'
 import { useTheme } from '@/app/useTheme'
 import { UserAvatar } from '@/components/brand/UserAvatar'
 import { useAuth } from '@/features/auth/useAuth'
-import { displayNameFromEmail } from '@/lib/display-name'
+import { useUserIdentity } from '@/features/auth/user-identity'
 import { cn } from '@/lib/utils'
 
 import { accountMenuGroups, accountMenuPaths, topNavItems } from './nav-items'
@@ -31,6 +31,7 @@ const itemClass =
 function AccountMenu() {
   const location = useLocation()
   const { user } = useAuth()
+  const identity = useUserIdentity()
   const { theme, setTheme } = useTheme()
   const { isSigningOut, signOut } = useSignOut()
   // Remember where the menu was opened; navigating elsewhere closes it.
@@ -74,32 +75,21 @@ function AccountMenu() {
         aria-haspopup="true"
         aria-label="Open account menu"
         className={cn(
-          'flex h-11 items-center gap-2 rounded-full border py-1 pr-3 pl-1 outline-none transition-[background-color,border-color,box-shadow] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] focus-visible:ring-2 focus-visible:ring-ring',
+          'grid size-11 place-items-center rounded-full outline-none ring-offset-2 ring-offset-background transition-[box-shadow] duration-300 focus-visible:ring-2 focus-visible:ring-ring',
           open || isActive
-            ? 'border-border bg-card shadow-soft'
-            : 'border-transparent hover:border-border hover:bg-card',
+            ? 'ring-2 ring-primary/40'
+            : 'hover:ring-2 hover:ring-border',
         )}
         onClick={() => setOpen(!open)}
         ref={buttonRef}
         type="button"
       >
-        <UserAvatar email={user?.email} />
-        <span className="hidden max-w-32 truncate text-sm font-medium text-foreground xl:block">
-          {displayNameFromEmail(user?.email)}
-        </span>
-        <ChevronDown
-          aria-hidden="true"
-          className={cn(
-            'size-4 text-foreground/60 transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]',
-            open && 'rotate-180',
-          )}
-          strokeWidth={2}
-        />
+        <UserAvatar />
       </button>
 
       <div
         className={cn(
-          'absolute top-[calc(100%+0.75rem)] right-0 z-40 w-[min(40rem,calc(100vw-1.5rem))] origin-top-right rounded-[1.4rem] border border-border bg-popover text-popover-foreground shadow-lift transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none',
+          'absolute top-[calc(100%+0.75rem)] right-0 z-40 w-[min(40rem,calc(100vw-1.5rem))] origin-top-right rounded-xl border border-border bg-popover text-popover-foreground shadow-lift transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none',
           open
             ? 'pointer-events-auto translate-y-0 scale-100 opacity-100'
             : 'pointer-events-none -translate-y-1 scale-[0.98] opacity-0',
@@ -108,17 +98,25 @@ function AccountMenu() {
         inert={!open}
       >
         <div className="flex items-center gap-3 border-b border-border px-5 py-4">
-          <UserAvatar className="size-11 text-base" email={user?.email} />
+          <UserAvatar className="size-11 text-base" />
           <div className="min-w-0 flex-1">
             <p className="truncate font-heading text-lg font-semibold text-foreground">
-              {displayNameFromEmail(user?.email)}
+              {identity.name}
             </p>
             <p className="truncate text-sm text-muted-foreground">
               {user?.email ?? 'Signed in'}
             </p>
           </div>
           <Link
-            className="shrink-0 rounded-full border border-border px-3.5 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
+            aria-label="Edit name and avatar"
+            className="grid size-9 shrink-0 place-items-center rounded-md border border-border text-foreground/70 transition-colors hover:bg-secondary hover:text-foreground"
+            title="Edit name and avatar"
+            to="/settings#profile"
+          >
+            <Pencil aria-hidden="true" className="size-4" strokeWidth={1.8} />
+          </Link>
+          <Link
+            className="shrink-0 rounded-md border border-border px-3.5 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
             to="/profile"
           >
             View profile
@@ -199,14 +197,14 @@ function AccountMenu() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3">
           <div
             aria-label="Theme"
-            className="flex rounded-full bg-secondary p-1"
+            className="flex rounded-md bg-secondary p-1"
             role="radiogroup"
           >
             {themeChoices.map((choice) => (
               <button
                 aria-checked={theme === choice.value}
                 className={cn(
-                  'flex h-8 items-center gap-1.5 rounded-full px-3 text-sm font-medium transition-[background-color,color,box-shadow] duration-200',
+                  'flex h-8 items-center gap-1.5 rounded-md px-3 text-sm font-medium transition-[background-color,color,box-shadow] duration-200',
                   theme === choice.value
                     ? 'bg-card text-foreground shadow-soft'
                     : 'text-foreground/60 hover:text-foreground',
@@ -226,7 +224,7 @@ function AccountMenu() {
             ))}
           </div>
           <button
-            className="flex h-9 items-center gap-2 rounded-full px-3.5 text-sm font-medium text-foreground/75 transition-colors hover:bg-danger-soft hover:text-danger-foreground disabled:opacity-50"
+            className="flex h-9 items-center gap-2 rounded-md px-3.5 text-sm font-medium text-foreground/75 transition-colors hover:bg-danger-soft hover:text-danger-foreground disabled:opacity-50"
             disabled={isSigningOut}
             onClick={() => void signOut()}
             type="button"
