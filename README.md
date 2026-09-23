@@ -152,7 +152,17 @@ or Groq when `LLM_PROVIDER=groq` (for example `LLM_MODEL=qwen/qwen3.8-27b` with
 `GROQ_API_KEY`). `LLM_PROVIDER` covers ranking, memory generation, roadmap
 notes, and the coach (`COACH_LLM_PROVIDER` can override it for the coach).
 Embeddings and coach web grounding always use Gemini, so `LLM_API_KEY` stays
-required. It returns up to ten allowlisted provider IDs, scores, concise reasons,
+required. `COACH_HYBRID_ENABLED=true` additionally routes concise text coach
+turns to Qwen and context-heavy, learner-history, web-grounded, or attachment
+turns to `COACH_GEMINI_MODEL` (default `gemini-3.5-flash-lite`). If the chosen
+provider fails or is rate-limited, the coach tries the other provider once;
+if both fail, it reports unavailability rather than fabricating a reply. Qwen
+uses one bounded, structured call with local learner-data prefetch to fit
+smaller Groq quotas; `GROQ_MAX_COMPLETION_TOKENS` defaults to 900 and can be
+raised for a higher-limit account. Gemini handles multimodal inputs natively;
+for Qwen failover, images use its vision input, audio/video is transcribed
+transiently, and PDF text is extracted locally. No attachment or transcript
+is saved in chat history or audits. It returns up to ten allowlisted provider IDs, scores, concise reasons,
 fallback state, measured latency, optional token usage, estimated cost, and an
 optional audit ID. Express validates the response again and resolves canonical
 Codeforces URLs from its own provider snapshot.

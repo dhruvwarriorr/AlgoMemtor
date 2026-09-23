@@ -52,6 +52,7 @@
   --danger-foreground: #7c1d15;
 
   --chart-1: #ff4d12;
+  --chart-line-primary: var(--chart-1);
   --chart-2: #101012;
   --chart-3: #157a47;
   --chart-4: #c9c2ac;

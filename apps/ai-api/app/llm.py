@@ -6,7 +6,7 @@ from langchain_groq import ChatGroq
 
 from .settings import AiSettings, LlmProvider
 
-ThinkingLevel = Literal["low", "medium", "high"]
+ThinkingLevel = Literal["none", "low", "medium", "high"]
 
 
 def chat_model(

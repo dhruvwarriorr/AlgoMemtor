@@ -47,9 +47,15 @@ class AiSettings(BaseSettings):
     # Coach provider; blank follows LLM_PROVIDER. With "groq",
     # COACH_LLM_MODEL (or LLM_MODEL) names a Groq model.
     coach_llm_provider: LlmProvider | None = None
+    # Opt-in coach router: use Qwen for concise text and Gemini for context-
+    # heavy or multimodal turns, with one cross-provider retry on failure.
+    coach_hybrid_enabled: bool = False
+    coach_gemini_model: str = "gemini-3.5-flash-lite"
+    coach_groq_model: str = "qwen/qwen3.8-27b"
     groq_api_key: str = ""
-    # Groq caps completions at 16,384 tokens for its reasoning models.
-    groq_max_completion_tokens: int = Field(default=16_384, ge=512, le=65_536)
+    # Default below the current on-demand Groq account's 1,000 OTPM limit.
+    # Higher-tier deployments can raise this after checking their quota.
+    groq_max_completion_tokens: int = Field(default=900, ge=512, le=16_384)
     coach_input_price_per_million_usd: Decimal | None = Field(default=None, ge=0)
     coach_output_price_per_million_usd: Decimal | None = Field(default=None, ge=0)
     # Process-local cap on coach model requests per minute. 0 disables it.

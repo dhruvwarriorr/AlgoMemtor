@@ -16,9 +16,11 @@ from uuid import UUID
 from xml.etree import ElementTree
 from zipfile import BadZipFile, ZipFile
 
+from groq import AsyncGroq
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from pydantic import ValidationError
+from pypdf import PdfReader
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from .coach_audit import (
@@ -173,6 +175,8 @@ class CoachModelResult:
     output_tokens: int | None = None
     extra_citations: tuple[CoachCitation, ...] = ()
     web_grounding_used: bool = False
+    provider: str | None = None
+    model_name: str | None = None
 
 
 class CoachNotConfiguredError(RuntimeError):
@@ -268,7 +272,10 @@ FINAL_TOOL = "submit_answer"
 
 
 def _human_message(
-    request: CoachRequest, prefetched: dict[str, Any] | None = None
+    request: CoachRequest,
+    prefetched: dict[str, Any] | None = None,
+    *,
+    provider: str = "gemini",
 ) -> HumanMessage:
     payload: dict[str, Any] = {
         "question": request.question,
@@ -292,9 +299,44 @@ def _human_message(
             payload["transientDocumentNote"] = (
                 "The attached document could not be read."
             )
+    if (
+        attachment is not None
+        and provider == "groq"
+        and attachment.mimeType == "application/pdf"
+    ):
+        try:
+            reader = PdfReader(BytesIO(base64.b64decode(attachment.data)))
+            if reader.is_encrypted:
+                raise ValueError("Encrypted PDF")
+            payload["transientDocumentText"] = (
+                "\n".join(page.extract_text() or "" for page in reader.pages[:10])[
+                    :8_000
+                ]
+                or "No extractable text was found in the PDF."
+            )
+        except Exception:  # noqa: BLE001
+            payload["transientDocumentNote"] = (
+                "The PDF could not be read. Ask the learner to paste relevant text or attach an image."
+            )
     text = json.dumps(payload, separators=(",", ":"), default=str)
-    if attachment is None or attachment.mimeType in TEXT_DOCUMENT_TYPES:
+    if (
+        attachment is None
+        or attachment.mimeType in TEXT_DOCUMENT_TYPES
+        or (provider == "groq" and attachment.mimeType == "application/pdf")
+    ):
         return HumanMessage(content=text)
+    if provider == "groq" and attachment.mimeType.startswith("image/"):
+        return HumanMessage(
+            content=[
+                {"type": "text", "text": text},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{attachment.mimeType};base64,{attachment.data}"
+                    },
+                },
+            ]
+        )
     return HumanMessage(
         content=[
             {"type": "text", "text": text},
@@ -304,6 +346,34 @@ def _human_message(
                 "data": attachment.data,
             },
         ]
+    )
+
+
+async def _transcribe_groq_media(
+    settings: AiSettings, request: CoachRequest
+) -> CoachRequest:
+    attachment = request.transientMedia
+    if attachment is None or not attachment.mimeType.startswith(("audio/", "video/")):
+        return request
+    extension = attachment.mimeType.split("/", 1)[1]
+    try:
+        client = AsyncGroq(api_key=settings.groq_api_key, timeout=30, max_retries=0)
+        transcript = await client.audio.transcriptions.create(
+            file=(f"attachment.{extension}", base64.b64decode(attachment.data)),
+            model="whisper-large-v3-turbo",
+        )
+        note = f"Transient attachment audio transcript: {transcript.text[:8_000]}"
+        if attachment.mimeType.startswith("video/"):
+            note += "\nVideo frames were not available; do not infer visual details."
+    except Exception:  # noqa: BLE001
+        note = "The attached audio or video could not be transcribed; ask for text or a screenshot."
+    return request.model_copy(
+        update={
+            "transientMedia": None,
+            "transientContext": "\n".join(
+                part for part in (request.transientContext, note) if part
+            )[:12_000],
+        }
     )
 
 
@@ -330,6 +400,78 @@ def _guidance_prompt(request: CoachRequest) -> str:
 def _usage(message: object) -> tuple[int, int]:
     usage = getattr(message, "usage_metadata", None) or {}
     return int(usage.get("input_tokens") or 0), int(usage.get("output_tokens") or 0)
+
+
+def _compact_for_groq(value: object, depth: int = 0) -> object:
+    """Keep retrieved evidence within a small model's per-minute token budget."""
+    if isinstance(value, str):
+        return value[:500]
+    if depth >= 5:
+        return None
+    if isinstance(value, list):
+        return [_compact_for_groq(item, depth + 1) for item in value[:8]]
+    if isinstance(value, dict):
+        return {
+            str(key): _compact_for_groq(item, depth + 1)
+            for key, item in list(value.items())[:20]
+        }
+    return value
+
+
+def _groq_context(context: dict[str, object]) -> dict[str, object]:
+    """Keep governing preferences and relevant summaries; tools supply details."""
+    keys = (
+        "excludedTopics",
+        "userInstructions",
+        "profile",
+        "preferences",
+        "activityDigest",
+        "providerProfiles",
+        "memories",
+        "recentTurns",
+        "availablePresentationDatasets",
+        "availablePresentationProblems",
+        "coachingGuidance",
+    )
+    compact = {key: _compact_for_groq(context[key]) for key in keys if key in context}
+    roadmap = context.get("roadmap")
+    if isinstance(roadmap, dict):
+        topics = roadmap.get("topics")
+        compact["roadmap"] = {
+            "dataCompleteness": roadmap.get("dataCompleteness"),
+            "topics": [
+                _compact_for_groq(
+                    {
+                        key: topic[key]
+                        for key in (
+                            "topic",
+                            "name",
+                            "lane",
+                            "manualStatus",
+                            "assessment",
+                            "score",
+                            "confidence",
+                            "evidence",
+                        )
+                        if key in topic
+                    }
+                )
+                for topic in topics[:12]
+                if isinstance(topic, dict)
+            ]
+            if isinstance(topics, list)
+            else [],
+        }
+    retrieval = context.get("retrieval")
+    if isinstance(retrieval, dict):
+        knowledge = retrieval.get("knowledge")
+        compact["retrieval"] = {
+            "knowledge": [_compact_for_groq(chunk) for chunk in knowledge[:3]]
+            if isinstance(knowledge, list)
+            else [],
+            "publicResearch": _compact_for_groq(retrieval.get("publicResearch")),
+        }
+    return compact
 
 
 def _message_text(message: object) -> str:
@@ -368,7 +510,13 @@ def coach_chat_model(settings: AiSettings, *, fast: bool = False) -> BaseChatMod
         provider=settings.effective_coach_provider,
         model=settings.effective_coach_model,
         temperature=0.6,
-        thinking_level="low" if fast else settings.coach_thinking_level,
+        thinking_level=(
+            "none"
+            if settings.effective_coach_provider == "groq"
+            else "low"
+            if fast
+            else settings.coach_thinking_level
+        ),
         max_tokens=settings.effective_coach_max_output_tokens,
         timeout=(
             min(settings.llm_timeout_seconds, 60)
@@ -388,8 +536,16 @@ class GeminiCoachModel:
         self.services = services
         self.throttle = ModelRequestThrottle(settings.coach_model_requests_per_minute)
         self.base_model = model
+        # Qwen's on-demand Groq tier can have a much smaller TPM allowance
+        # than its context window. Its single-call path uses the smaller
+        # permissive schema and validates the result locally.
+        output_schema = (
+            {"title": "CoachModelOutput", **coach_output_json_schema()}
+            if settings.effective_coach_provider == "groq"
+            else CoachModelOutput
+        )
         self.structured_model = model.with_structured_output(
-            CoachModelOutput,
+            output_schema,
             method="function_calling",
             include_raw=True,
         )
@@ -397,7 +553,7 @@ class GeminiCoachModel:
         self.fast_structured_model = coach_chat_model(
             settings, fast=True
         ).with_structured_output(
-            CoachModelOutput,
+            output_schema,
             method="function_calling",
             include_raw=True,
         )
@@ -405,6 +561,10 @@ class GeminiCoachModel:
     async def respond(self, request: CoachRequest) -> CoachModelResult:
         base_model = getattr(self, "base_model", None)
         settings = getattr(self, "settings", None)
+        if settings is not None and settings.effective_coach_provider == "groq":
+            # One grounded generation avoids exhausting small TPM quotas on
+            # repeated agent tool rounds. Workspace lookups still run locally.
+            return await self._respond_structured(request)
         if (
             base_model is not None
             and settings is not None
@@ -443,6 +603,16 @@ class GeminiCoachModel:
     async def _respond_structured(
         self, request: CoachRequest, *, fast: bool = False
     ) -> CoachModelResult:
+        prefetched: dict[str, Any] | None = None
+        if (
+            getattr(self, "settings", None) is not None
+            and self.settings.effective_coach_provider == "groq"
+        ):
+            prefetched = await self._prefetch_groq(request)
+            request = await _transcribe_groq_media(self.settings, request)
+            request = request.model_copy(
+                update={"context": _groq_context(request.context)}
+            )
         await self._acquire_slot()
         model = (
             getattr(self, "fast_structured_model", None) or self.structured_model
@@ -452,10 +622,18 @@ class GeminiCoachModel:
         result: dict[str, Any] = await model.ainvoke(
             [
                 ("system", SYSTEM_PROMPT + "\n" + _guidance_prompt(request)),
-                _human_message(request),
+                _human_message(
+                    request,
+                    prefetched,
+                    provider=(
+                        self.settings.effective_coach_provider
+                        if getattr(self, "settings", None) is not None
+                        else "gemini"
+                    ),
+                ),
             ]
         )
-        parsed = result.get("parsed")
+        parsed = coerce_coach_output(result.get("parsed"))
         if not isinstance(parsed, CoachModelOutput):
             # A near-miss payload (one bad field) is repaired rather than
             # turned into an "unavailable" turn.
@@ -470,14 +648,42 @@ class GeminiCoachModel:
                 None,
             )
         if not isinstance(parsed, CoachModelOutput):
-            raise CoachGenerationError("Gemini returned no validated coach output.")
+            raise CoachGenerationError("The model returned no validated coach output.")
         raw = result.get("raw")
         usage = getattr(raw, "usage_metadata", None) or {}
         return CoachModelResult(
             output=parsed,
             input_tokens=usage.get("input_tokens"),
             output_tokens=usage.get("output_tokens"),
+            provider=(
+                self.settings.effective_coach_provider
+                if getattr(self, "settings", None) is not None
+                else None
+            ),
+            model_name=(
+                self.settings.effective_coach_model
+                if getattr(self, "settings", None) is not None
+                else None
+            ),
         )
+
+    async def _prefetch_groq(self, request: CoachRequest) -> dict[str, Any]:
+        if not request.workspace:
+            return {}
+        toolbox = WorkspaceTools(request.workspace)
+        plan = [("get_profile_overview", {})]
+        plan.extend(
+            (name, args)
+            for name, args in prefetch_plan(request.question, limit=3)
+            if name != "get_profile_overview"
+        )
+        results = await asyncio.gather(
+            *(toolbox.execute(name, args) for name, args in plan)
+        )
+        return {
+            name: _compact_for_groq(result)
+            for (name, _), result in zip(plan, results, strict=True)
+        }
 
     async def _respond_with_tools(self, request: CoachRequest) -> CoachModelResult:
         services = self.services
@@ -631,6 +837,8 @@ class GeminiCoachModel:
                         output_tokens=output_tokens,
                         extra_citations=tuple(citations),
                         web_grounding_used=web_used,
+                        provider=self.settings.effective_coach_provider,
+                        model_name=self.settings.effective_coach_model,
                     )
                 if final_step:
                     break
@@ -678,6 +886,50 @@ class GeminiCoachModel:
                     )
                 )
         raise CoachGenerationError("The coach agent did not submit an answer.")
+
+
+def route_coach_provider(request: CoachRequest) -> str:
+    """Route by evidence volume and input modality, never by a topic answer."""
+    retrieval = request.context.get("retrieval")
+    if request.transientMedia is not None:
+        return "gemini"
+    if request.transientContext or len(request.question) > 800:
+        return "gemini"
+    if is_specific_problem_solution_request(request.question, None):
+        return "gemini"
+    if isinstance(retrieval, dict) and retrieval.get("publicResearch"):
+        return "gemini"
+    if (
+        isinstance(retrieval, dict)
+        and isinstance(retrieval.get("knowledgeCount"), int)
+        and retrieval["knowledgeCount"] > 3
+    ):
+        return "gemini"
+    if prefetch_plan(request.question, limit=2):
+        return "gemini"
+    return "groq"
+
+
+class HybridCoachModel:
+    """Use both configured providers; try the other once on a provider failure."""
+
+    def __init__(self, gemini: CoachModel, groq: CoachModel) -> None:
+        self.models = {"gemini": gemini, "groq": groq}
+
+    async def respond(
+        self, request: CoachRequest
+    ) -> CoachModelOutput | CoachModelResult:
+        preferred = route_coach_provider(request)
+        alternate = "groq" if preferred == "gemini" else "gemini"
+        try:
+            return await self.models[preferred].respond(request)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "coach_provider_failed_trying_alternate", extra={"provider": preferred}
+            )
+            return await self.models[alternate].respond(request)
 
 
 class CoachService:
@@ -756,6 +1008,28 @@ class CoachService:
 
     def get_model(self) -> CoachModel:
         if self.model is not None:
+            return self.model
+        if (
+            self.settings.coach_hybrid_enabled
+            and self.settings.llm_api_key
+            and self.settings.groq_api_key
+        ):
+            gemini_settings = self.settings.model_copy(
+                update={
+                    "coach_llm_provider": "gemini",
+                    "coach_llm_model": self.settings.coach_gemini_model,
+                }
+            )
+            groq_settings = self.settings.model_copy(
+                update={
+                    "coach_llm_provider": "groq",
+                    "coach_llm_model": self.settings.coach_groq_model,
+                }
+            )
+            self.model = HybridCoachModel(
+                GeminiCoachModel(gemini_settings, services=self),
+                GeminiCoachModel(groq_settings, services=self),
+            )
             return self.model
         if not self.settings.coach_api_key:
             raise CoachNotConfiguredError
@@ -1000,6 +1274,14 @@ class CoachService:
                 started=started,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
+                model_name=(
+                    result.model_name if isinstance(result, CoachModelResult) else None
+                ),
+                price_known=(
+                    not isinstance(result, CoachModelResult)
+                    or result.provider is None
+                    or result.provider == self.settings.effective_coach_provider
+                ),
             )
             return output
         except CoachNotConfiguredError:
@@ -1059,8 +1341,10 @@ class CoachService:
         started: float,
         input_tokens: int | None,
         output_tokens: int | None,
+        model_name: str | None = None,
+        price_known: bool = True,
     ) -> None:
-        if input_tokens is None or output_tokens is None:
+        if input_tokens is None or output_tokens is None or not price_known:
             estimated_cost = None
         else:
             million = 1_000_000
@@ -1079,7 +1363,7 @@ class CoachService:
             request_id=request.requestId,
             learner_id=request.learnerId,
             conversation_id=request.conversationId,
-            model=self.settings.effective_coach_model,
+            model=model_name or self.settings.effective_coach_model,
             coach_version=self.settings.coach_version,
             fallback=fallback,
             fallback_reason=fallback_reason,

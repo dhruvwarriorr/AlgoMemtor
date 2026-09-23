@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import base64
 import json
 from datetime import UTC, datetime
+from io import BytesIO
 from typing import Any
 from uuid import UUID
 
@@ -12,13 +14,18 @@ from app.coach_service import (
     CoachRateLimitedError,
     CoachService,
     GeminiCoachModel,
+    HybridCoachModel,
     ModelRequestThrottle,
+    _human_message,
+    _transcribe_groq_media,
     is_rate_limit_error,
+    route_coach_provider,
 )
 from app.coach_tools import WorkspaceTools, prefetch_plan, verdict_group
 from app.settings import AiSettings
 from app.web_grounding import PublicCitation, PublicResearch, _title_from_url
 from langchain_core.messages import AIMessage, ToolMessage
+from pypdf import PdfWriter
 
 NOW = datetime(2026, 9, 20, 12, tzinfo=UTC)
 
@@ -536,8 +543,8 @@ def test_coach_can_run_on_groq_while_other_calls_stay_on_gemini() -> None:
     )
     assert groq.coach_api_key == "gsk-test"
     assert groq.llm_api_key == "test-key"
-    # Groq caps completions at 16,384 tokens.
-    assert groq.effective_coach_max_output_tokens == 16_384
+    # The on-demand tier accepts less than 1,000 output tokens per minute.
+    assert groq.effective_coach_max_output_tokens == 900
     model = coach_chat_model(groq)
     assert isinstance(model, ChatGroq)
     assert model.model_name == "qwen/qwen3.8-27b"
@@ -577,5 +584,142 @@ def test_llm_provider_moves_generation_and_coach_to_groq() -> None:
         groq, temperature=0.2, max_tokens=50_000, timeout=10, max_retries=0
     )
     assert isinstance(model, ChatGroq)
-    assert model.max_tokens == 16_384
+    assert model.max_tokens == 900
     assert model.reasoning_effort == "low"
+
+
+@pytest.mark.asyncio
+async def test_groq_coach_uses_one_grounded_structured_call() -> None:
+    class StructuredModel:
+        def __init__(self) -> None:
+            self.calls: list[list[Any]] = []
+
+        async def ainvoke(self, messages: list[Any]) -> dict[str, Any]:
+            self.calls.append(messages)
+            return {"parsed": {"answer": "Review the two recent contest misses."}}
+
+    scripted = StructuredModel()
+    model = object.__new__(GeminiCoachModel)
+    model.settings = settings(
+        coach_llm_provider="groq",
+        coach_llm_model="qwen/qwen3.8-27b",
+        groq_api_key="gsk-test",
+    )
+    model.structured_model = scripted
+    model.throttle = ModelRequestThrottle(per_minute=0)
+    result = await model.respond(request("How did my last contests go?"))
+    assert result.output.answer == "Review the two recent contest misses."
+    assert len(scripted.calls) == 1
+    prompt = scripted.calls[0][1].content
+    assert "Round A" in prompt
+    assert "prefetchedToolResults" in prompt
+
+
+def test_groq_image_attachment_uses_openai_image_url_format() -> None:
+    attached = CoachRequest.model_validate(
+        {
+            **request("Explain this diagram").model_dump(),
+            "transientMedia": {
+                "mimeType": "image/png",
+                "data": base64.b64encode(b"image").decode(),
+            },
+        }
+    )
+    message = _human_message(attached, provider="groq")
+    assert message.content[1]["type"] == "image_url"
+    assert message.content[1]["image_url"]["url"].startswith("data:image/png;base64,")
+
+
+def test_groq_pdf_is_extracted_locally_without_sending_binary() -> None:
+    buffer = BytesIO()
+    writer = PdfWriter()
+    writer.add_blank_page(width=100, height=100)
+    writer.write(buffer)
+    encoded = base64.b64encode(buffer.getvalue()).decode()
+    attached = CoachRequest.model_validate(
+        {
+            **request("Explain this PDF").model_dump(),
+            "transientMedia": {"mimeType": "application/pdf", "data": encoded},
+        }
+    )
+    message = _human_message(attached, provider="groq")
+    assert isinstance(message.content, str)
+    assert "No extractable text" in message.content
+    assert encoded not in message.content
+
+
+@pytest.mark.asyncio
+async def test_groq_audio_is_transcribed_for_current_turn_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Transcriptions:
+        async def create(self, **kwargs: Any) -> Any:
+            assert kwargs["model"] == "whisper-large-v3-turbo"
+            return type("Transcript", (), {"text": "Use breadth-first search."})()
+
+    class FakeGroq:
+        def __init__(self, **kwargs: Any) -> None:
+            self.audio = type("Audio", (), {"transcriptions": Transcriptions()})()
+
+    monkeypatch.setattr("app.coach_service.AsyncGroq", FakeGroq)
+    attached = CoachRequest.model_validate(
+        {
+            **request("What did I say?").model_dump(),
+            "transientMedia": {
+                "mimeType": "audio/webm",
+                "data": base64.b64encode(b"audio").decode(),
+            },
+        }
+    )
+    prepared = await _transcribe_groq_media(settings(groq_api_key="gsk-test"), attached)
+    assert prepared.transientMedia is None
+    assert "Use breadth-first search" in prepared.transientContext
+    assert attached.transientMedia is not None
+
+
+def test_hybrid_router_uses_context_needs_not_topic_hardcoding() -> None:
+    assert route_coach_provider(request("Explain the loop invariant")) == "groq"
+    assert route_coach_provider(request("Review my recent contests")) == "gemini"
+    assert (
+        route_coach_provider(
+            request("Explain this code").model_copy(
+                update={"transientContext": "x" * 1_000}
+            )
+        )
+        == "gemini"
+    )
+
+
+def test_hybrid_service_builds_both_models_when_both_keys_exist() -> None:
+    service = CoachService(
+        settings(
+            coach_hybrid_enabled=True,
+            coach_llm_provider="groq",
+            coach_llm_model="qwen/qwen3.8-27b",
+            groq_api_key="gsk-test",
+        )
+    )
+    assert isinstance(service.get_model(), HybridCoachModel)
+
+
+@pytest.mark.asyncio
+async def test_hybrid_coach_retries_only_with_other_provider() -> None:
+    class Provider:
+        def __init__(self, *, fails: bool) -> None:
+            self.fails = fails
+            self.calls = 0
+
+        async def respond(self, incoming: CoachRequest) -> Any:
+            self.calls += 1
+            if self.fails:
+                raise RuntimeError("429 rate limit")
+            return coerce_coach_output({"answer": "Here is the invariant."})
+
+    qwen = Provider(fails=True)
+    gemini = Provider(fails=False)
+    result = await HybridCoachModel(gemini, qwen).respond(
+        request("Explain the loop invariant")
+    )
+    assert result.answer == "Here is the invariant."
+    assert qwen.calls == 1
+    assert gemini.calls == 1

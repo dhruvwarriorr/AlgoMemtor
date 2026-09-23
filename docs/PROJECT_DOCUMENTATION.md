@@ -1311,7 +1311,11 @@ embedded, or included in AI audits. Learners may also attach one supported image
 document, audio, or video file of up to 8 MiB to a coach turn through a single
 attachment control. JPEG, PNG, WebP, PDF, TXT, Markdown, DOCX, MP3, WAV, M4A,
 MP4, and WebM are accepted. TXT, Markdown, and DOCX text is extracted in memory;
-other formats are sent as transient Gemini media. The attachment is used for that
+other formats are sent as transient Gemini media when Gemini handles the turn.
+With hybrid routing enabled, multimodal turns prefer Gemini 3.5 Flash-Lite;
+if it is unavailable, Qwen receives supported images as vision input,
+audio/video through a transient Whisper transcription, and PDFs through bounded
+local text extraction. The attachment is used for that
 turn only and is never saved in conversation history, embeddings, or audits.
 Attachment analysis requires the existing AI consent and is not used for
 public-web search grounding. Audits retain model/version, latency,

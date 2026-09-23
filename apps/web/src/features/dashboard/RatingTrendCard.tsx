@@ -8,6 +8,7 @@ import { Link } from 'react-router-dom'
 import {
   Area,
   AreaChart,
+  CartesianGrid,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -27,7 +28,7 @@ const tooltipStyle = {
 }
 
 type RatingPoint = {
-  label: string
+  date: string
   rating: number
   delta: number
   contest: string
@@ -71,7 +72,7 @@ export function RatingTrendCard({
             new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime(),
         )
         .map((change) => ({
-          label: shortDate(change.occurredAt),
+          date: shortDate(change.occurredAt),
           rating: Math.round(change.newRating),
           delta: Math.round(change.delta),
           contest: change.contestName ?? change.contestId ?? 'Contest',
@@ -168,36 +169,21 @@ export function RatingTrendCard({
           <ResponsiveContainer height="100%" width="100%">
             <AreaChart
               data={points}
-              margin={{ top: 8, right: 8, left: -4, bottom: 0 }}
+              margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
             >
-              <defs>
-                <linearGradient id="rating-fill" x1="0" x2="0" y1="0" y2="1">
-                  <stop
-                    offset="0%"
-                    stopColor="var(--primary)"
-                    stopOpacity={0.35}
-                  />
-                  <stop
-                    offset="100%"
-                    stopColor="var(--primary)"
-                    stopOpacity={0}
-                  />
-                </linearGradient>
-              </defs>
+              <CartesianGrid
+                horizontal
+                stroke="var(--border)"
+                vertical={false}
+              />
               <XAxis
                 axisLine={false}
-                dataKey="label"
+                dataKey="date"
                 minTickGap={24}
                 tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
                 tickLine={false}
               />
-              <YAxis
-                axisLine={false}
-                domain={['dataMin - 50', 'dataMax + 50']}
-                tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
-                tickLine={false}
-                width={48}
-              />
+              <YAxis domain={['dataMin - 50', 'dataMax + 50']} hide />
               <Tooltip
                 contentStyle={tooltipStyle}
                 formatter={(value, _name, item) => {
@@ -210,11 +196,23 @@ export function RatingTrendCard({
                 }}
               />
               <Area
-                activeDot={{ r: 5, fill: 'var(--primary)' }}
+                activeDot={{
+                  r: 7,
+                  fill: 'var(--card)',
+                  stroke: 'var(--chart-line-primary)',
+                  strokeWidth: 2,
+                }}
                 dataKey="rating"
-                fill="url(#rating-fill)"
+                dot={{
+                  r: 5,
+                  fill: 'var(--card)',
+                  stroke: 'var(--chart-line-primary)',
+                  strokeWidth: 2,
+                }}
+                fill="var(--chart-line-primary)"
+                fillOpacity={0.35}
                 isAnimationActive={false}
-                stroke="var(--primary)"
+                stroke="var(--chart-line-primary)"
                 strokeWidth={2.5}
                 type="monotone"
               />
