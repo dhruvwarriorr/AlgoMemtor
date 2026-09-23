@@ -310,7 +310,7 @@ class CoachProposal(CoachStrictModel):
 
 
 class CoachModelOutput(CoachStrictModel):
-    answer: str = Field(min_length=1, max_length=8_000)
+    answer: str = Field(min_length=1, max_length=12_000)
     evidence: list[CoachEvidence] = Field(default_factory=list, max_length=12)
     proposals: list[CoachProposal] = Field(default_factory=list, max_length=8)
     citations: list[CoachCitation] = Field(default_factory=list, max_length=8)
@@ -333,7 +333,7 @@ class CoachResponseProposal(CoachProposal):
 
 
 class CoachResponse(CoachStrictModel):
-    answer: str = Field(min_length=1, max_length=8_000)
+    answer: str = Field(min_length=1, max_length=12_000)
     evidence: list[CoachEvidence] = Field(default_factory=list, max_length=12)
     proposals: list[CoachResponseProposal] = Field(default_factory=list, max_length=8)
     citations: list[CoachCitation] = Field(default_factory=list, max_length=8)
@@ -372,3 +372,7 @@ class CoachRequest(CoachStrictModel):
     transientContext: str | None = Field(default=None, max_length=12_000)
     transientMedia: CoachTransientMedia | None = None
     context: dict[str, object]
+    # Complete owner-scoped learner data assembled by Express. It is never
+    # placed in the prompt wholesale: the coach agent queries it through
+    # bounded tools so only the rows a question needs reach the model.
+    workspace: dict[str, object] | None = None

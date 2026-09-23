@@ -12,14 +12,35 @@ class AiSettings(BaseSettings):
     database_url: str | None = None
     internal_service_token: str = ""
     llm_api_key: str = ""
-    llm_model: str = "gemini-3.5-flash"
+    llm_model: str = "gemini-3.5-flash-lite"
     llm_timeout_seconds: float = Field(default=90, gt=0, le=120)
     ai_audit_timeout_seconds: float = Field(default=0.5, gt=0, le=5)
     llm_max_output_tokens: int = Field(default=4096, gt=0, le=8192)
     coach_thinking_level: Literal["low", "medium", "high"] = "high"
-    llm_input_price_per_million_usd: Decimal = Field(default=Decimal("1.50"), ge=0)
-    llm_output_price_per_million_usd: Decimal = Field(default=Decimal("9.00"), ge=0)
-    llm_pricing_version: str = "gemini-3.5-flash-standard-2026-09"
+    # Thinking tokens count against the output budget, so the coach needs far
+    # more room than ranking or memory calls. Kept separate from
+    # LLM_MAX_OUTPUT_TOKENS so a small shared budget cannot truncate answers.
+    coach_max_output_tokens: int = Field(default=24_576, ge=2_048, le=65_536)
+    coach_agent_enabled: bool = True
+    # Four tool rounds cover almost every question; each extra round is one
+    # more billable request against per-minute and per-day quotas.
+    coach_agent_max_steps: int = Field(default=4, ge=1, le=12)
+    # Optional coach-only model (e.g. a stronger model for chat while ranking
+    # and memory stay on LLM_MODEL). Blank means LLM_MODEL. Prices apply to
+    # the coach model and fall back to the LLM_* prices when unset.
+    coach_llm_model: str = ""
+    coach_input_price_per_million_usd: Decimal | None = Field(default=None, ge=0)
+    coach_output_price_per_million_usd: Decimal | None = Field(default=None, ge=0)
+    # Process-local cap on coach model requests per minute. 0 disables it.
+    # Set it to the project's RPM quota so turns wait for a free slot
+    # instead of failing with provider 429s.
+    coach_model_requests_per_minute: int = Field(default=0, ge=0, le=10_000)
+    # End-to-end model budget for one coach turn (all agent steps). Express
+    # waits a little longer than this plus web grounding before giving up.
+    coach_response_timeout_seconds: float = Field(default=140, gt=0, le=300)
+    llm_input_price_per_million_usd: Decimal = Field(default=Decimal("0.30"), ge=0)
+    llm_output_price_per_million_usd: Decimal = Field(default=Decimal("2.50"), ge=0)
+    llm_pricing_version: str = "gemini-3.5-flash-lite-standard-2026-09"
     ai_ranking_version: str = "ai-gemini-rag-v2"
     coach_version: str = "coach-gemini-rag-v2"
     embedding_model: str = "gemini-embedding-001"
@@ -58,8 +79,8 @@ class AiSettings(BaseSettings):
         if not isinstance(value, str) or value.strip():
             return value
         defaults = {
-            "llm_model": "gemini-3.5-flash",
-            "llm_pricing_version": "gemini-3.5-flash-standard-2026-09",
+            "llm_model": "gemini-3.5-flash-lite",
+            "llm_pricing_version": "gemini-3.5-flash-lite-standard-2026-09",
             "ai_ranking_version": "ai-gemini-rag-v2",
             "coach_version": "coach-gemini-rag-v2",
             "embedding_model": "gemini-embedding-001",
@@ -67,6 +88,21 @@ class AiSettings(BaseSettings):
             "consent_policy_version": "personalized-coaching-rag-v2",
         }
         return defaults[info.field_name]
+
+    @property
+    def effective_coach_model(self) -> str:
+        return self.coach_llm_model.strip() or self.llm_model
+
+    @property
+    def effective_coach_prices(self) -> tuple[Decimal, Decimal]:
+        return (
+            self.coach_input_price_per_million_usd
+            if self.coach_input_price_per_million_usd is not None
+            else self.llm_input_price_per_million_usd,
+            self.coach_output_price_per_million_usd
+            if self.coach_output_price_per_million_usd is not None
+            else self.llm_output_price_per_million_usd,
+        )
 
 
 @lru_cache

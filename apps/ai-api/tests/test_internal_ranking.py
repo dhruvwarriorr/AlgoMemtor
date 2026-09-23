@@ -42,8 +42,8 @@ def settings(**updates: Any) -> AiSettings:
 def test_blank_versioned_settings_use_documented_defaults() -> None:
     configured = settings(llm_model="", llm_pricing_version="", ai_ranking_version="")
 
-    assert configured.llm_model == "gemini-3.5-flash"
-    assert configured.llm_pricing_version == "gemini-3.5-flash-standard-2026-09"
+    assert configured.llm_model == "gemini-3.5-flash-lite"
+    assert configured.llm_pricing_version == "gemini-3.5-flash-lite-standard-2026-09"
     assert configured.ai_ranking_version == "ai-gemini-rag-v2"
 
 
@@ -339,7 +339,8 @@ async def test_returns_validated_output_with_tokens_cost_and_redacted_audit() ->
     assert response.fallbackReason is None
     assert response.inputTokens == 1000
     assert response.outputTokens == 200
-    assert response.estimatedCostUsd == pytest.approx(0.0033)
+    # 1,000 input and 200 output tokens at Flash-Lite rates ($0.30 / $2.50).
+    assert response.estimatedCostUsd == pytest.approx(0.0008)
     assert response.auditId == audit_repository.audit_id
     assert len(audit_repository.saved) == 1
     audit = audit_repository.saved[0]

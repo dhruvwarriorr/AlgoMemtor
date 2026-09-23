@@ -18,6 +18,7 @@ from .coach_models import (
 from .coach_service import (
     CoachGenerationError,
     CoachNotConfiguredError,
+    CoachRateLimitedError,
     get_coach_service,
 )
 from .internal_auth import require_internal_service
@@ -165,6 +166,12 @@ async def respond_as_coach(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="The AI coach is not configured.",
         ) from error
+    except CoachRateLimitedError as error:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="The AI coach has reached its model usage limit.",
+            headers={"Retry-After": "60"},
+        ) from error
     except CoachGenerationError as error:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -200,6 +207,12 @@ async def stream_coach_response(request: CoachRequest) -> StreamingResponse:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="The AI coach is not configured.",
+        ) from error
+    except CoachRateLimitedError as error:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="The AI coach has reached its model usage limit.",
+            headers={"Retry-After": "60"},
         ) from error
     except CoachGenerationError as error:
         raise HTTPException(
@@ -244,6 +257,12 @@ async def generate_coach_check_in(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="The AI coach is not configured.",
+        ) from error
+    except CoachRateLimitedError as error:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="The AI coach has reached its model usage limit.",
+            headers={"Retry-After": "60"},
         ) from error
     except CoachGenerationError as error:
         raise HTTPException(

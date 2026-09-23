@@ -1261,7 +1261,7 @@ describe('coach API', () => {
     }
   })
 
-  it('preserves generated inline identifiers while omitting generated code blocks', async () => {
+  it('keeps coach-authored code examples and inline identifiers', async () => {
     const progressRepository = new InMemoryProgressRepository()
     await progressRepository.saveConsent(
       userA,
@@ -1297,10 +1297,9 @@ describe('coach API', () => {
     )
     const coachResponse = CoachResponseSchema.parse(await response.json())
 
-    expect(coachResponse.message.content).toContain('left')
-    expect(coachResponse.message.content).toContain('right')
-    expect(coachResponse.message.content).toContain('[code omitted]')
-    expect(coachResponse.message.content).not.toContain('int total')
+    expect(coachResponse.message.content).toContain('`left`')
+    expect(coachResponse.message.content).toContain('`right`')
+    expect(coachResponse.message.content).toContain('```cpp\nint total = 0;\n```')
   })
 
   it('omits transient code from saved conversation history', async () => {
@@ -1351,8 +1350,10 @@ describe('coach API', () => {
     expect(
       saved.every((message) => !message.content.includes('int main')),
     ).toBe(true)
-    expect(saved.at(-1)?.content).toContain('[code omitted]')
+    expect(saved[0]?.content).toBe('Please debug this:\n[code omitted]')
     expect(saved[0]?.transientContextOmitted).toBe(true)
+    // Coach-authored examples are not learner code and stay readable.
+    expect(saved.at(-1)?.content).toContain('const secret = 1')
   })
 
   it('passes media to AI for one turn without saving it in history', async () => {
@@ -1453,10 +1454,9 @@ describe('coach API', () => {
     const saved = (await history.json()).messages as Array<{
       content: string
     }>
-    expect(
-      saved.every((message) => !message.content.includes('int total')),
-    ).toBe(true)
-    expect(saved.at(-1)?.content).toContain('[code omitted]')
+    expect(saved[0]?.content).not.toContain('int total')
+    expect(saved[0]?.content).toContain('[code omitted]')
+    expect(saved.at(-1)?.content).toContain('int total = 0')
   })
 
   it('does not turn transient context into a durable memory proposal', async () => {

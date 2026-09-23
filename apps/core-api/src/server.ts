@@ -175,7 +175,8 @@ const app = createApp({
     ? new HttpAiCoachClient({
         baseUrl: aiConfig.baseUrl,
         internalServiceToken: aiConfig.internalServiceToken,
-        timeoutMs: 125_000,
+        // FastAPI allows up to 20s of web grounding plus a 140s agent budget.
+        timeoutMs: 170_000,
       })
     : new UnavailableAiCoachClient(),
   aiRoadmapNoteClient: aiConfig.configured

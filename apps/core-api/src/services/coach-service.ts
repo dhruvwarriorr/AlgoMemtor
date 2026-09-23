@@ -62,6 +62,11 @@ import type { CoachRepository } from '../repositories/coach-repository.js'
 import type { RecommendationRepository } from '../repositories/recommendation-repository.js'
 import type { StructuredLogger } from '../utils/structured-logger.js'
 import type { ProgressService } from './progress-service.js'
+import {
+  buildCoachWorkspace,
+  type CoachProfileDigest,
+  type CoachWorkspace,
+} from './coach-workspace.js'
 
 export const COACH_POLICY_VERSION = 'personalized-coaching-rag-v2'
 export const TOPIC_ASSESSMENT_VERSION = 'topic-assessment-v1'
@@ -668,45 +673,93 @@ const coachMomentum = (trends: CoachContextSnapshot['activityTrends']) => {
   return { state, recentAverage, priorAverage }
 }
 
+const CODE_LINE_PATTERN =
+  /(?:#include\s*[<"]|\busing\s+namespace\b|^\s*(?:const|let|var|int|long\s+long|bool|string|vector|auto|char|double|float|ll)\b[\w<>:,\s*&]*?\s[\w*&]+\s*(?:=|\[|;|\()|^\s*(?:void|int|long\s+long|bool|string|vector|auto)\s+\w+\s*\([^)]*\)\s*[{;]?\s*$|^\s*(?:for|while|if|else\s+if)\s*\(.*\)\s*\{?\s*$|^\s*[{}]+\s*$|[;{]\s*$|^\s*(?:def|class)\s+\w+.*:\s*$|^\s*return\b.*;\s*$)/
+const PROBLEM_MARKER_PATTERN =
+  /\b(?:problem\s+statement|input\s+(?:format|description)?|output\s+(?:format|description)?|constraints?|sample\s+(?:input|output|tests?)|examples?)\b/gi
+
+// Learner-supplied code and copied problem statements are transient: they
+// reach the model for the current turn but are never stored. Only the lines
+// that look like code are replaced, so the surrounding question survives
+// ("why does this give WA? [code omitted] it fails on n = 1").
 const omitCodeAndProblemText = (content: string) => {
-  const withoutFences = content.replace(/```[\s\S]*?```/g, '[code omitted]')
+  const withoutFences = content.replace(/```[\s\S]*?```/g, '\n[code omitted]\n')
   const withoutInlineCode = withoutFences
     .replace(/<code>[\s\S]*?<\/code>/gi, '[code omitted]')
     .replace(/`[^`\n]*`/g, '[code omitted]')
-    .trim()
-  const containsCodeLikeSyntax =
-    /(?:#include\s*[<"]|using\s+namespace\b|(?:const|let|var|int|long\s+long|bool|string|vector)\s+\w+\s*=|(?:void|int|long\s+long|bool|string|vector)\s+\w+\s*\([^)]*\)\s*[{;]|=>|[{};]\s*$)/im.test(
-      withoutInlineCode,
-    )
-  if (containsCodeLikeSyntax) {
-    return '[code omitted]'
+  const lines: string[] = []
+  for (const line of withoutInlineCode.split('\n')) {
+    const isCode = CODE_LINE_PATTERN.test(line)
+    if (!isCode) {
+      lines.push(line)
+    } else if (lines.at(-1)?.trim() !== '[code omitted]') {
+      lines.push('[code omitted]')
+    }
   }
-  const problemMarkers = withoutInlineCode.match(
-    /\b(?:problem\s+statement|input\s+(?:format|description)?|output\s+(?:format|description)?|constraints?|sample\s+(?:input|output|tests?)|examples?)\b/gi,
-  )
+  const text = lines
+    .join('\n')
+    .replace(/(?:\[code omitted\]\s*){2,}/g, '[code omitted]\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/\n\s*\n(?=\[code omitted\])/g, '\n')
+    .trim()
+  const problemMarkers = text.match(PROBLEM_MARKER_PATTERN)
   if (
-    withoutInlineCode.length >= 120 &&
+    text.length >= 120 &&
     new Set(problemMarkers?.map((marker) => marker.toLowerCase()) ?? []).size >=
       2
   ) {
     return '[problem context omitted]'
   }
-  return withoutInlineCode
+  return text
 }
 
-const omitGeneratedCodeAndProblemText = (content: string) => {
-  const withoutCodeBlocks = content
-    .replace(/```[\s\S]*?```/g, '[code omitted]')
-    .replace(/<code>([\s\S]*?)<\/code>/gi, '$1')
-    .replace(/`([^`\n]*)`/g, '$1')
-    .trim()
-  const containsCodeLikeSyntax =
-    /(?:#include\s*[<"]|using\s+namespace\b|(?:const|let|var|int|long\s+long|bool|string|vector)\s+\w+\s*=|(?:void|int|long\s+long|bool|string|vector)\s+\w+\s*\([^)]*\)\s*[{;]|=>|[{};]\s*$)/im.test(
-      withoutCodeBlocks,
+const stripMarkdownLinkTargets = (content: string) =>
+  content
+    .split(/(```[\s\S]*?```)/)
+    .map((part) =>
+      part.startsWith('```')
+        ? part
+        : part.replace(/(?<!!)\[([^\]\n]{1,200})\]\(([^)\s]{0,2048})\)/g, '$1'),
     )
-  if (containsCodeLikeSyntax) return '[code omitted]'
-  return withoutCodeBlocks
-}
+    .join('')
+
+const redactCoachLinksAndSecrets = (content: string) =>
+  // Keep Markdown link text, drop the target; links come from citations.
+  stripMarkdownLinkTargets(content)
+    .replace(/(?:https?:\/\/|www\.)[^\s)\]>"'`]+/gi, (match) => {
+      try {
+        return new URL(
+          /^https?:/i.test(match) ? match : `https://${match}`,
+        ).hostname.replace(/^www\./, '')
+      } catch {
+        return '[link removed]'
+      }
+    })
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[contact removed]')
+    .replace(
+      /\bbearer\s+[A-Za-z0-9._~+/=-]{12,}|\b(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token)\s*[:=]\s*\S+/gi,
+      '[secret removed]',
+    )
+    .replace(
+      /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi,
+      '[id removed]',
+    )
+
+// Coach-authored answers keep their Markdown and code examples: a CP coach
+// that cannot show code is not useful. Links and secrets are redacted rather
+// than failing the whole turn; sources are attached separately as citations.
+const sanitizeAssistantAnswer = (content: string) =>
+  redactCoachLinksAndSecrets(content).trim().slice(0, 12_000)
+
+const omitGeneratedCodeAndProblemText = (content: string) =>
+  redactCoachLinksAndSecrets(
+    content
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/<code>([\s\S]*?)<\/code>/gi, '$1')
+      .replace(/`([^`\n]*)`/g, '$1'),
+  )
+    .replace(/\s+/g, ' ')
+    .trim()
 
 const redactCoachContextText = (content: string, maxLength: number) =>
   omitCodeAndProblemText(content)
@@ -723,7 +776,11 @@ const redactCoachContextText = (content: string, maxLength: number) =>
     .slice(0, maxLength)
     .trim()
 
-const coachContextForAi = (context: CoachContextSnapshot) => ({
+const coachContextForAi = ({
+  workspace: _workspace,
+  practiceProblems: _practiceProblems,
+  ...context
+}: CoachContextSnapshot) => ({
   ...context,
   availablePresentationDatasets: [
     {
@@ -972,7 +1029,13 @@ export type CoachContextSnapshot = {
   recentSubmissions: Array<
     Pick<
       ProviderSubmission,
-      'provider' | 'externalId' | 'verdict' | 'occurredAt' | 'isAccepted'
+      | 'provider'
+      | 'externalId'
+      | 'verdict'
+      | 'occurredAt'
+      | 'isAccepted'
+      | 'problemTitle'
+      | 'language'
     >
   >
   recentSolved: Array<
@@ -984,7 +1047,12 @@ export type CoachContextSnapshot = {
   recentRatings: Array<
     Pick<
       ProviderRatingChange,
-      'provider' | 'occurredAt' | 'oldRating' | 'newRating' | 'delta'
+      | 'provider'
+      | 'occurredAt'
+      | 'oldRating'
+      | 'newRating'
+      | 'delta'
+      | 'contestName'
     >
   >
   recentContests: Array<
@@ -992,6 +1060,7 @@ export type CoachContextSnapshot = {
       ContestParticipation,
       | 'provider'
       | 'contestId'
+      | 'contestName'
       | 'rank'
       | 'score'
       | 'ratingChange'
@@ -1042,6 +1111,12 @@ export type CoachContextSnapshot = {
   conversationSummary?: string
   recentTurns: Array<{ role: 'user' | 'assistant'; content: string }>
   dataCompleteness: 'complete' | 'partial' | 'unknown'
+  // Complete-profile digest that is always in the prompt; the workspace and
+  // trusted practice problems are queried through agent tools and never
+  // spread into the prompt context.
+  profileDigest?: CoachProfileDigest
+  workspace?: CoachWorkspace
+  practiceProblems?: Map<string, ExternalProblemSummary>
 }
 
 const asRecord = (value: unknown): Record<string, unknown> | null =>
@@ -1109,10 +1184,22 @@ const coachRichContentForContext = (
     /\b(problem|problems|question|questions|practice|next|recommend|suggest)\b/i.test(
       question,
     )
+  // Any explicit ask to see data. The model chooses which dataset fits; this
+  // guard only stops visuals on questions that did not ask to see anything.
+  const requestsAnyVisual =
+    /\b(show|display|visuali[sz]e|plot|chart|graph|trend|over\s+time|history|progress|compare|comparison|breakdown|table|timeline|dashboard|metrics?|stats|statistics)\b/i.test(
+      question,
+    )
   const wantsDataset = (
     id: NonNullable<AiCoachResult['presentation']>['datasetIds'][number],
     legacyDecision: boolean,
   ) => {
+    if (presentation !== undefined) {
+      return (
+        selectedDatasets.has(id) &&
+        (id === 'trusted-problems' ? true : requestsAnyVisual)
+      )
+    }
     const requested =
       id === 'trusted-problems'
         ? requestsProblems
@@ -1123,10 +1210,7 @@ const coachRichContentForContext = (
             : id === 'topic-comparison'
               ? requestsTable
               : requestsChart
-    return (
-      requested &&
-      (presentation === undefined ? legacyDecision : selectedDatasets.has(id))
-    )
+    return requested && legacyDecision
   }
   const requestedProvider = providerFromCoachQuestion(question)
   const focus = context.roadmap.topics.filter(
@@ -1431,29 +1515,46 @@ const coachRichContentForContext = (
         ) === index
       )
     })
-  const selectedProblemIds = new Set(presentation?.problemIds ?? [])
-  const suggestions = (
+  // Problems the model selected are hydrated from trusted records only: any
+  // roadmap suggestion or the validated practice pool. Order follows the
+  // model's selection; unknown IDs are ignored.
+  const trustedProblems = new Map<string, ExternalProblemSummary>()
+  context.roadmap.topics
+    .filter(
+      (topic) => !context.excludedTopics.includes(canonicalTopic(topic.topic)),
+    )
+    .forEach((topic) =>
+      topic.suggestions.forEach((suggestion) =>
+        trustedProblems.set(
+          identity(suggestion.problem.provider, suggestion.problem.externalId),
+          suggestion.problem,
+        ),
+      ),
+    )
+  context.practiceProblems?.forEach((problem, key) => {
+    if (!trustedProblems.has(key)) trustedProblems.set(key, problem)
+  })
+  const selectedProblems =
     presentation === undefined
-      ? allSuggestions
-      : allSuggestions.filter((suggestion) =>
-          selectedProblemIds.has(
-            identity(
-              suggestion.problem.provider,
-              suggestion.problem.externalId,
-            ),
-          ),
-        )
-  ).slice(0, 5)
+      ? allSuggestions.map((suggestion) => suggestion.problem)
+      : (presentation.problemIds ?? []).flatMap((problemId) => {
+          const problem = trustedProblems.get(problemId)
+          return problem === undefined ? [] : [problem]
+        })
+  const problemsToShow = selectedProblems.slice(0, 5)
+  const modelSelectedProblems =
+    presentation !== undefined && problemsToShow.length > 0
   if (
-    suggestions.length > 0 &&
-    wantsDataset('trusted-problems', requestsProblems)
+    problemsToShow.length > 0 &&
+    (modelSelectedProblems ||
+      wantsDataset('trusted-problems', requestsProblems))
   ) {
     blocks.push({
       type: 'problem_list',
-      title: 'Trusted next problems',
+      title: 'Problems picked for you',
       reason:
-        'Selected from the current roadmap focus and validated catalog metadata.',
-      problems: suggestions.map((suggestion) => suggestion.problem),
+        'Chosen by your coach from your roadmap and AlgoMemtor\'s validated catalog, excluding problems you already solved.',
+      problems: problemsToShow,
     })
   }
   if (
@@ -2510,6 +2611,9 @@ export class CoachService {
       ...(transient === undefined ? {} : { transientContext: transient }),
       ...(transientMedia === undefined ? {} : { transientMedia }),
       context: coachContextForAi(context),
+      ...(context.workspace === undefined
+        ? {}
+        : { workspace: context.workspace }),
     }
     let result: AiCoachResult
     try {
@@ -2536,7 +2640,10 @@ export class CoachService {
               ? 'AI_COACH_UNSAFE_OUTPUT'
               : 'AI_COACH_RESPONSE_REJECTED',
       })
-      result = this.unavailableResponse()
+      result = this.unavailableResponse(
+        error instanceof AiCoachClientError &&
+          error.code === 'AI_COACH_RATE_LIMITED',
+      )
     }
     if (result.fallback) {
       const message = CoachMessageSchema.parse({
@@ -2567,7 +2674,7 @@ export class CoachService {
         roadmap: context.roadmap,
       })
     }
-    const savedAnswer = omitGeneratedCodeAndProblemText(result.answer)
+    const savedAnswer = sanitizeAssistantAnswer(result.answer)
     const baseRichContent = coachRichContentForContext(
       input.content,
       context,
@@ -2719,17 +2826,9 @@ export class CoachService {
         proposal.problem.provider,
         proposal.problem.externalId,
       )
-      const roadmap = await this.getRoadmap(userId)
-      const isCurrentCandidate = roadmap.topics.some((topic) =>
-        topic.suggestions.some(
-          (suggestion) =>
-            identity(
-              suggestion.problem.provider,
-              suggestion.problem.externalId,
-            ) === problemKey,
-        ),
-      )
-      if (!isCurrentCandidate) throw new CoachProposalStateError()
+      if (!(await this.isKnownProblem(userId, problemKey))) {
+        throw new CoachProposalStateError()
+      }
     }
     if (
       proposal.actionType === 'set_topic_status' &&
@@ -2822,6 +2921,51 @@ export class CoachService {
     return updated
   }
 
+  // A proposal may be confirmed after the roadmap has moved on, so validity
+  // is "a real problem AlgoMemtor knows about", not "still suggested".
+  private async isKnownProblem(userId: string, problemKey: string) {
+    const roadmap = await this.getRoadmap(userId)
+    if (
+      roadmap.topics.some((topic) =>
+        topic.suggestions.some(
+          (suggestion) =>
+            identity(
+              suggestion.problem.provider,
+              suggestion.problem.externalId,
+            ) === problemKey,
+        ),
+      )
+    ) {
+      return true
+    }
+    const catalogs = await Promise.allSettled(
+      this.options.providers.map((provider) => provider.search({})),
+    )
+    if (
+      catalogs.some(
+        (result) =>
+          result.status === 'fulfilled' &&
+          result.value.problems.some(
+            (problem) =>
+              identity(problem.provider, problem.externalId) === problemKey,
+          ),
+      )
+    ) {
+      return true
+    }
+    const [submissions, solved] = await Promise.all([
+      this.options.providerDataRepository
+        .listSubmissions(userId)
+        .catch(() => []),
+      this.options.providerDataRepository
+        .listSolvedProblems(userId)
+        .catch(() => []),
+    ])
+    return [...submissions, ...solved].some(
+      (record) => identity(record.provider, record.externalId) === problemKey,
+    )
+  }
+
   private summaryForConversation(
     messages: readonly CoachMessage[],
     assistant: CoachMessage,
@@ -2897,42 +3041,75 @@ export class CoachService {
       citations,
       ...(presentation === undefined ? {} : { presentation }),
     }
-    if (
-      !isSafeCoachText(redactedResult.answer) ||
-      redactedEvidence.some(
-        (item) => !isSafeCoachText(item.label) || !isSafeCoachText(item.detail),
-      ) ||
-      proposalsWithRedactedText.some(
+    // Links and secrets are redacted field by field. An unsafe fragment in
+    // one evidence item or proposal drops only that item instead of turning
+    // the entire turn into "Coach is unavailable".
+    const cleanText = (value: string) =>
+      omitGeneratedCodeAndProblemText(value)
+    const safeEvidenceItems = redactedEvidence
+      .map((item) => ({
+        ...item,
+        label: cleanText(item.label).slice(0, 160),
+        detail: cleanText(item.detail).slice(0, 500),
+      }))
+      .filter(
         (item) =>
-          !isSafeCoachText(item.label) ||
-          !isSafeCoachText(item.reason) ||
-          (item.memoryText !== undefined && !isSafeCoachText(item.memoryText)),
-      ) ||
-      citations.some(
-        (citation) =>
-          !isSafeCoachText(citation.title) ||
-          (citation.detail !== undefined &&
-            !isSafeCoachText(citation.detail)) ||
-          (citation.publisher !== undefined &&
-            !isSafeCoachText(citation.publisher)),
-      ) ||
-      presentation?.suggestedQuestions.some(
-        (question) => !isSafeCoachText(question),
-      ) === true
+          item.label.length > 0 &&
+          item.detail.length > 0 &&
+          isSafeCoachText(item.label) &&
+          isSafeCoachText(item.detail),
+      )
+    const safeProposalItems = proposalsWithRedactedText.filter(
+      (item) =>
+        isSafeCoachText(item.label) &&
+        isSafeCoachText(item.reason) &&
+        (item.memoryText === undefined || isSafeCoachText(item.memoryText)),
+    )
+    const safeCitations = citations.filter(
+      (citation) =>
+        isSafeCoachText(citation.title) &&
+        (citation.detail === undefined || isSafeCoachText(citation.detail)) &&
+        (citation.publisher === undefined ||
+          isSafeCoachText(citation.publisher)),
+    )
+    const safePresentation =
+      presentation === undefined
+        ? undefined
+        : {
+            ...presentation,
+            suggestedQuestions: presentation.suggestedQuestions
+              .map((question) => redactCoachLinksAndSecrets(question))
+              .filter(
+                (question) =>
+                  isSafeCoachText(question) && !question.includes('removed]'),
+              ),
+          }
+    const safeAnswer = sanitizeAssistantAnswer(redactedResult.answer)
+    if (safeAnswer.length === 0) {
+      throw new Error('The AI coach returned an empty answer.')
+    }
+    if (
+      safeEvidenceItems.length !== redactedEvidence.length ||
+      safeProposalItems.length !== proposalsWithRedactedText.length ||
+      safeCitations.length !== citations.length
     ) {
-      this.options.logger.warn('coach_unsafe_output_rejected', {
+      this.options.logger.warn('coach_unsafe_output_items_dropped', {
         errorCode: 'AI_COACH_UNSAFE_OUTPUT',
       })
-      throw new Error('The AI coach returned unsafe text.')
     }
-    const allowedProblems = new Set(
-      context.roadmap.topics.flatMap((topic) =>
+    // Actions may target trusted catalog problems (roadmap and practice pool)
+    // or problems already present in the learner's own history.
+    const allowedProblems = new Set([
+      ...context.roadmap.topics.flatMap((topic) =>
         topic.suggestions.map((suggestion) =>
           identity(suggestion.problem.provider, suggestion.problem.externalId),
         ),
       ),
-    )
-    const proposals = proposalsWithRedactedText.flatMap((proposal) => {
+      ...(context.practiceProblems?.keys() ?? []),
+      ...(context.workspace?.solved.map((problem) => problem.id) ?? []),
+      ...(context.workspace?.attempted.map((problem) => problem.id) ?? []),
+    ])
+    const proposals = safeProposalItems.flatMap((proposal) => {
       if (proposal.actionType === 'set_topic_status') {
         const topic =
           proposal.topic === undefined
@@ -2979,8 +3156,8 @@ export class CoachService {
       })
     }
     const safeEvidence =
-      redactedResult.evidence.length > 0
-        ? redactedResult.evidence
+      safeEvidenceItems.length > 0
+        ? safeEvidenceItems
         : [
             fallbackEvidence(
               'roadmap',
@@ -2991,20 +3168,20 @@ export class CoachService {
           ]
     return {
       ...redactedResult,
-      answer: omitGeneratedCodeAndProblemText(redactedResult.answer),
-      evidence: safeEvidence.map((item) => ({
-        ...item,
-        label: omitGeneratedCodeAndProblemText(item.label),
-        detail: omitGeneratedCodeAndProblemText(item.detail),
-      })),
+      answer: safeAnswer,
+      citations: safeCitations,
+      ...(safePresentation === undefined
+        ? {}
+        : { presentation: safePresentation }),
+      evidence: safeEvidence,
       proposals: proposals.map((proposal) => ({
         ...proposal,
         // The AI service may only create new proposals.  Never trust a model
         // response that claims an action was already confirmed or rejected;
         // confirmation is an owner-authenticated core-service transition.
         status: 'proposed' as const,
-        label: omitGeneratedCodeAndProblemText(proposal.label),
-        reason: omitGeneratedCodeAndProblemText(proposal.reason),
+        label: cleanText(proposal.label).slice(0, 160) || 'Suggested action',
+        reason: cleanText(proposal.reason).slice(0, 500) || 'Suggested by your coach.',
       })),
     }
   }
@@ -3084,6 +3261,9 @@ export class CoachService {
       }),
       this.options.repository.getConversation(userId, conversationId),
     ])
+    const catalogSettled = await Promise.allSettled(
+      this.options.providers.map((provider) => provider.search({})),
+    )
     const excludedTopics = [
       ...new Set([
         ...extractCoachTopicExclusions(
@@ -3096,15 +3276,69 @@ export class CoachService {
           .map((topic) => topic.topic),
       ]),
     ]
-    const recentTurns = (conversation?.messages ?? [])
-      .slice(-12)
-      .map((message) => ({
-        role: message.role,
-        content: redactExcludedCoachTopics(
-          redactCoachContextText(message.content, 2_000),
-          excludedTopics,
+    // The newest user message is the current question (sent separately), and
+    // failed "coach unavailable" turns carry no information for the model.
+    const priorMessages = (conversation?.messages ?? []).filter(
+      (message) => message.fallback !== true,
+    )
+    const lastMessage = priorMessages.at(-1)
+    const historyMessages =
+      lastMessage?.role === 'user' ? priorMessages.slice(0, -1) : priorMessages
+    const recentTurns = historyMessages.slice(-12).map((message) => ({
+      role: message.role,
+      content: redactExcludedCoachTopics(
+        message.role === 'assistant'
+          ? redactCoachLinksAndSecrets(message.content).slice(0, 4_000)
+          : redactCoachContextText(message.content, 2_000),
+        excludedTopics,
+      ),
+    }))
+    const statuses = statusByIdentity(actions)
+    const manualSolvedAt = new Map<string, Date>()
+    for (const action of actions) {
+      if (
+        action.actionType !== 'status_changed' ||
+        action.learnerStatus !== 'solved' ||
+        action.evidenceSource !== 'manual'
+      ) {
+        continue
+      }
+      const key = identity(action.provider, action.externalId)
+      const previous = manualSolvedAt.get(key)
+      if (previous === undefined || action.occurredAt > previous) {
+        manualSolvedAt.set(key, action.occurredAt)
+      }
+    }
+    let workspaceResult: ReturnType<typeof buildCoachWorkspace> | undefined
+    try {
+      workspaceResult = buildCoachWorkspace({
+        now: this.now(),
+        timezone: preferences.timezone,
+        providerProfiles,
+        solved,
+        submissions,
+        ratings,
+        contests,
+        catalog: catalogSettled.flatMap((result) =>
+          result.status === 'fulfilled' ? result.value.problems : [],
         ),
-      }))
+        roadmap,
+        statuses,
+        manualSolvedAt,
+        dismissed: dismissalByIdentity(actions),
+        bookmarks,
+        excludedTopics,
+        canonicalTopic,
+        ...(profile?.difficultyComfort === undefined
+          ? {}
+          : { difficultyComfort: profile.difficultyComfort }),
+      })
+    } catch {
+      contextDataFailed = true
+      this.options.logger.warn('coach_workspace_build_failed', {
+        errorCode: 'COACH_WORKSPACE_UNAVAILABLE',
+      })
+    }
     const activityTrends = coachActivityTrends(
       actions,
       submissions,
@@ -3188,13 +3422,25 @@ export class CoachService {
           descendingIsoDate(left.occurredAt, right.occurredAt),
         )
         .slice(0, 50)
-        .map(({ provider, externalId, verdict, occurredAt, isAccepted }) => ({
-          provider,
-          externalId,
-          verdict,
-          occurredAt,
-          isAccepted,
-        })),
+        .map(
+          ({
+            provider,
+            externalId,
+            verdict,
+            occurredAt,
+            isAccepted,
+            problemTitle,
+            language,
+          }) => ({
+            provider,
+            externalId,
+            ...(problemTitle === undefined ? {} : { problemTitle }),
+            verdict,
+            ...(language === undefined ? {} : { language }),
+            occurredAt,
+            isAccepted,
+          }),
+        ),
       recentSolved: solved
         .slice()
         .sort((left, right) =>
@@ -3221,13 +3467,16 @@ export class CoachService {
           descendingIsoDate(left.occurredAt, right.occurredAt),
         )
         .slice(0, 20)
-        .map(({ provider, occurredAt, oldRating, newRating, delta }) => ({
-          provider,
-          occurredAt,
-          oldRating,
-          newRating,
-          delta,
-        })),
+        .map(
+          ({ provider, occurredAt, oldRating, newRating, delta, contestName }) => ({
+            provider,
+            ...(contestName === undefined ? {} : { contestName }),
+            occurredAt,
+            oldRating,
+            newRating,
+            delta,
+          }),
+        ),
       recentContests: contests
         .slice()
         .sort((left, right) =>
@@ -3235,9 +3484,18 @@ export class CoachService {
         )
         .slice(0, 20)
         .map(
-          ({ provider, contestId, rank, score, ratingChange, attendedAt }) => ({
+          ({
             provider,
             contestId,
+            contestName,
+            rank,
+            score,
+            ratingChange,
+            attendedAt,
+          }) => ({
+            provider,
+            contestId,
+            ...(contestName === undefined ? {} : { contestName }),
             rank,
             score,
             ratingChange,
@@ -3338,12 +3596,21 @@ export class CoachService {
         contextDataFailed && roadmap.dataCompleteness === 'complete'
           ? 'partial'
           : roadmap.dataCompleteness,
+      ...(workspaceResult === undefined
+        ? {}
+        : {
+            profileDigest: workspaceResult.workspace.digest,
+            workspace: workspaceResult.workspace,
+            practiceProblems: workspaceResult.practiceProblems,
+          }),
     }
   }
 
-  private unavailableResponse(): AiCoachResult {
+  private unavailableResponse(rateLimited = false): AiCoachResult {
     return {
-      answer: 'Coach is unavailable right now. Please try again later.',
+      answer: rateLimited
+        ? 'Coach has reached its AI usage limit for now. Please try again in a few minutes.'
+        : 'Coach is unavailable right now. Please try again later.',
       evidence: [],
       proposals: [],
       fallback: true,

@@ -1217,6 +1217,49 @@ phase when the learner's local review time arrives) in the existing PostgreSQL
 outbox. It retries those rows with the same bounded lease and retry policy; the
 core endpoint remains owner-scoped by the learner ID carried in the job.
 
+### Coach agent and complete learner workspace
+
+Chat turns run as a bounded tool-using agent (`coach-workspace-v1`). Express
+assembles an owner-scoped workspace for the turn: linked accounts (handle,
+rank, current and peak rating, platform totals, languages), every observed or
+manual solve enriched with catalog title, rating and tags, up to 2,500 recent
+submissions, attempted-but-unsolved problems, all contests and rating changes,
+roadmap topics, bookmarks, and a pool of up to 360 unsolved, non-dismissed,
+non-excluded catalog problems near the learner's level. A compact
+`profileDigest` (totals, rating bands, hardest solves, top and weak tags,
+verdict mix, languages, streaks, contest summary) is always in the prompt; the
+rest is never placed in the prompt wholesale. The model queries it through
+read-only tools (`query_solved_problems`, `query_submissions`,
+`query_unsolved_attempts`, `get_contest_history`, `get_rating_history`,
+`get_topic_breakdown`, `get_activity_summary`, `find_practice_problems`,
+`search_knowledge`, `web_search`) and finishes with `submit_answer`. The
+workspace contains no URLs, source code, statements, or credentials; the agent's
+web-search queries are de-identified and additionally stripped of the learner's
+own handles.
+
+Model output is repaired rather than rejected: links are reduced to their site
+name, Markdown link targets are dropped, invalid evidence/proposal/presentation
+items are removed individually, and over-long answers are shortened on a code
+fence boundary. Coach-authored answers keep Markdown and fenced code examples;
+learner-supplied code is still omitted line by line before storage. Problems
+the model selects are hydrated only from roadmap suggestions or the trusted
+practice pool, and proposals may target those problems or ones already in the
+learner's history. Provider quota errors are surfaced as `429` by FastAPI and
+shown as a usage-limit message instead of triggering another model call.
+Check-ins and other background generations stay on a single model call. For
+clearly personal questions (contests, rating, verdicts, solves, activity,
+topics, practice picks) the evident workspace queries run deterministically
+before the first model step and arrive as `prefetchedToolResults`, which keeps
+lighter models grounded and usually saves a tool round. Each agent turn uses
+one to `COACH_AGENT_MAX_STEPS + 1` model requests (default at most five).
+`COACH_MODEL_REQUESTS_PER_MINUTE` can be set to the project's RPM quota so turns
+wait briefly for a slot instead of receiving provider 429s. The default model is
+`gemini-3.5-flash-lite` ($0.30 input / $2.50 output per million tokens,
+standard tier); `COACH_LLM_MODEL` can move only the coach to a stronger model,
+with `COACH_*_PRICE_PER_MILLION_USD` keeping its audit cost estimates correct.
+Free-tier daily request limits are small, so production needs a paid tier (or
+`COACH_AGENT_ENABLED=false` for single-call mode).
+
 ### FastAPI ranking contract
 
 Express sends a bounded candidate set and structured learner context to the
@@ -1380,13 +1423,23 @@ DATABASE_URL=postgresql+psycopg://algomemtor:algomemtor_local@127.0.0.1:5433/alg
 SUPABASE_URL=
 SUPABASE_JWT_ISSUER=
 LLM_API_KEY=
-LLM_MODEL=gemini-3.5-flash
+LLM_MODEL=gemini-3.5-flash-lite
 LLM_TIMEOUT_SECONDS=90
 LLM_MAX_OUTPUT_TOKENS=4096
 COACH_THINKING_LEVEL=high
-LLM_INPUT_PRICE_PER_MILLION_USD=1.50
-LLM_OUTPUT_PRICE_PER_MILLION_USD=9.00
-LLM_PRICING_VERSION=gemini-3.5-flash-standard-2026-09
+COACH_MAX_OUTPUT_TOKENS=24576
+COACH_AGENT_ENABLED=true
+COACH_AGENT_MAX_STEPS=4
+# Optional: a coach-only model and its prices (blank = LLM_MODEL / LLM_* prices)
+COACH_LLM_MODEL=
+COACH_INPUT_PRICE_PER_MILLION_USD=
+COACH_OUTPUT_PRICE_PER_MILLION_USD=
+# Optional: coach model requests per minute for this process (0 = no cap)
+COACH_MODEL_REQUESTS_PER_MINUTE=0
+COACH_RESPONSE_TIMEOUT_SECONDS=140
+LLM_INPUT_PRICE_PER_MILLION_USD=0.30
+LLM_OUTPUT_PRICE_PER_MILLION_USD=2.50
+LLM_PRICING_VERSION=gemini-3.5-flash-lite-standard-2026-09
 AI_RANKING_VERSION=ai-gemini-rag-v2
 COACH_VERSION=coach-gemini-rag-v2
 CONSENT_POLICY_VERSION=personalized-coaching-rag-v2

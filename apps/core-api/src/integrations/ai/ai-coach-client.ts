@@ -44,7 +44,7 @@ const coachPresentationSchema = z
 
 const aiCoachResponseSchema = z
   .object({
-    answer: z.string().trim().min(1).max(8_000),
+    answer: z.string().trim().min(1).max(12_000),
     evidence: z.array(CoachEvidenceReferenceSchema).max(12),
     proposals: z.array(CoachActionProposalSchema).max(8),
     citations: z.array(CoachCitationSchema).max(8).optional(),
@@ -69,6 +69,7 @@ export type AiCoachRequest = {
   transientContext?: string
   transientMedia?: SendCoachMessageRequest['transientMedia']
   context: Record<string, unknown>
+  workspace?: object
 }
 
 export type AiCoachResult = z.infer<typeof aiCoachResponseSchema>
@@ -151,7 +152,11 @@ export class HttpAiCoachClient implements AiCoachClient {
         },
       )
       if (!response.ok) {
-        throw new AiCoachClientError('AI_COACH_UNAVAILABLE')
+        throw new AiCoachClientError(
+          response.status === 429
+            ? 'AI_COACH_RATE_LIMITED'
+            : 'AI_COACH_UNAVAILABLE',
+        )
       }
       let payload: unknown
       try {
