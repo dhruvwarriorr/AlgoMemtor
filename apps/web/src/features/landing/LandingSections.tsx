@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { animate, motion, useInView, useReducedMotion } from 'motion/react'
+import type { ReactNode } from 'react'
+import { motion, useReducedMotion } from 'motion/react'
 import {
   ArrowRight,
   BadgeCheck,
@@ -13,15 +13,14 @@ import {
   Link2,
   LineChart,
   MessagesSquare,
-  PowerOff,
   Route,
   ScanSearch,
-  ShieldCheck,
   Trophy,
   type LucideIcon,
 } from 'lucide-react'
 
 import { LogoMark } from '@/components/brand/LogoMark'
+import { ProviderLogo } from '@/components/brand/ProviderLogo'
 import { Wordmark } from '@/components/brand/Wordmark'
 import type { AuthStatus } from '@/features/auth/auth-context'
 
@@ -120,132 +119,165 @@ export function JourneyTimeline() {
   )
 }
 
-/* ---------- Why it matters ---------- */
+/* ---------- Coach orbit ---------- */
 
-function CountUp({ to, suffix = '' }: { to: number; suffix?: string }) {
-  const ref = useRef<HTMLSpanElement>(null)
-  const inView = useInView(ref, { once: true })
-  const reduceMotion = useReducedMotion()
-  const [shown, setShown] = useState(reduceMotion ? to : 0)
+const orbitPlatforms = ['codeforces', 'leetcode', 'codechef', 'cses'] as const
 
-  useEffect(() => {
-    if (!inView || reduceMotion) return
-    const controls = animate(0, to, {
-      duration: 1.8,
-      ease: [0.16, 1, 0.3, 1],
-      onUpdate: (value) => setShown(Math.round(value)),
-    })
-    return () => controls.stop()
-  }, [inView, reduceMotion, to])
+const orbitSignals: ReadonlyArray<{ icon: LucideIcon; label: string }> = [
+  { icon: BadgeCheck, label: 'Verdicts' },
+  { icon: LineChart, label: 'Ratings' },
+  { icon: Compass, label: 'Topics' },
+  { icon: Trophy, label: 'Contests' },
+  { icon: CalendarDays, label: 'Streaks' },
+  { icon: Brain, label: 'Memory' },
+]
 
+const orbitPoints = [
+  'Reads your public solves, verdicts and contests from four platforms.',
+  'Remembers the mistakes you repeat and the topics you avoid.',
+  'Re-plans after every solve, so the next problem always fits.',
+]
+
+// Places a child on a ring at `angle`, keeping it upright while the ring
+// spins by counter-rotating it at the same speed.
+function OrbitItem({
+  angle,
+  radius,
+  duration,
+  reverse,
+  children,
+}: {
+  angle: number
+  radius: string
+  duration: number
+  reverse: boolean
+  children: ReactNode
+}) {
   return (
-    <span ref={ref}>
-      {shown}
-      {suffix}
-    </span>
+    <div
+      className="absolute top-1/2 left-1/2"
+      style={{
+        transform: `rotate(${angle}deg) translateX(${radius}) rotate(${-angle}deg)`,
+      }}
+    >
+      <div
+        className="-translate-x-1/2 -translate-y-1/2 motion-reduce:[animation:none]"
+        style={{
+          animation: `spin ${duration}s linear infinite ${reverse ? 'normal' : 'reverse'}`,
+        }}
+      >
+        {children}
+      </div>
+    </div>
   )
 }
 
-// Product facts, not marketing estimates.
-const facts = [
-  { value: 4, suffix: '', label: 'Platforms your coach reads, CSES included.' },
-  {
-    value: 30,
-    suffix: '-day',
-    label: 'Evidence window behind every streak and stat.',
-  },
-  {
-    value: 100,
-    suffix: '%',
-    label: 'Of problems open on their original platform.',
-  },
-]
-
-const principles: ReadonlyArray<{
-  icon: LucideIcon
-  title: string
-  desc: string
-}> = [
-  {
-    icon: Lightbulb,
-    title: 'Every pick has a reason',
-    desc: 'Each suggestion says which gap it closes.',
-  },
-  {
-    icon: Link2,
-    title: 'Respects the source',
-    desc: 'Metadata only. Never statements or editorials.',
-  },
-  {
-    icon: ShieldCheck,
-    title: 'Honest evidence',
-    desc: 'Opening a problem is not solving it.',
-  },
-  {
-    icon: PowerOff,
-    title: 'AI stays optional',
-    desc: 'Search and links work when the model is down.',
-  },
-  {
-    icon: Brain,
-    title: 'Memory you control',
-    desc: 'Review, correct or delete what it remembers.',
-  },
-]
-
-export function WhyItMatters() {
+export function CoachOrbit() {
   const reduceMotion = useReducedMotion()
   return (
     <section
-      aria-labelledby="principles-heading"
-      className="relative scroll-mt-28 px-4 py-24"
-      id="principles"
+      aria-labelledby="platforms-heading"
+      className="relative scroll-mt-28 overflow-hidden px-4 py-16 sm:py-20"
+      id="platforms"
     >
-      <div className="mx-auto max-w-7xl">
-        <SectionTitle
-          accent="trust it"
-          id="principles-heading"
-          subtitle="A coach is only useful if its advice is grounded. These are the rules it follows."
-          title="Why you can"
-        />
-        <div className="mb-14 grid gap-6 sm:grid-cols-3">
-          {facts.map((fact, index) => (
-            <motion.div
-              className="glass-panel-strong rounded-3xl p-8 text-center"
-              initial={reduceMotion ? false : { opacity: 0, y: 20 }}
-              key={fact.label}
-              transition={{ delay: index * 0.1, duration: 0.7, ease }}
-              viewport={{ once: true }}
-              whileInView={{ opacity: 1, y: 0 }}
-            >
-              <p className="mb-2 font-heading text-5xl font-bold tracking-[-0.04em] text-brand-gradient">
-                <CountUp suffix={fact.suffix} to={fact.value} />
-              </p>
-              <p className="text-sm text-white/60">{fact.label}</p>
-            </motion.div>
-          ))}
-        </div>
-        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          {principles.map((item, index) => (
-            <motion.li
-              className="glass-panel rounded-2xl p-5 transition-shadow duration-300 hover:shadow-glow"
-              initial={reduceMotion ? false : { opacity: 0, y: 20 }}
-              key={item.title}
-              transition={{ delay: index * 0.06, duration: 0.6, ease }}
-              viewport={{ once: true }}
-              whileHover={reduceMotion ? undefined : { y: -6 }}
-              whileInView={{ opacity: 1, y: 0 }}
-            >
-              <span className="bg-brand-gradient shadow-glow mb-4 grid size-11 place-items-center rounded-xl">
-                <item.icon aria-hidden="true" className="size-5 text-white" />
-              </span>
-              <p className="mb-1 font-semibold text-white">{item.title}</p>
-              <p className="text-xs leading-relaxed text-white/55">
-                {item.desc}
-              </p>
-            </motion.li>
-          ))}
-        </ul>
+      <div className="mx-auto grid max-w-7xl items-center gap-16 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <motion.div
+          initial={reduceMotion ? false : { opacity: 0, y: 24 }}
+          transition={{ duration: 0.8, ease }}
+          viewport={{ once: true }}
+          whileInView={{ opacity: 1, y: 0 }}
+        >
+          <h2
+            className="text-4xl leading-[1.05] font-bold tracking-tight text-white sm:text-6xl"
+            id="platforms-heading"
+          >
+            Your practice,
+            <br />
+            <span className="text-brand-gradient">connected.</span>
+          </h2>
+          <p className="mt-6 max-w-md text-lg text-white/60">
+            Everything you solve, anywhere, flows into one picture of you, and
+            one coach that acts on it.
+          </p>
+          <ul className="mt-8 flex flex-col gap-4">
+            {orbitPoints.map((point, index) => (
+              <motion.li
+                className="flex items-start gap-3 text-white/75"
+                initial={reduceMotion ? false : { opacity: 0, x: -16 }}
+                key={point}
+                transition={{ delay: 0.2 + index * 0.1, duration: 0.6, ease }}
+                viewport={{ once: true }}
+                whileInView={{ opacity: 1, x: 0 }}
+              >
+                <span className="bg-brand-gradient mt-0.5 grid size-6 shrink-0 place-items-center rounded-md text-xs font-bold text-white">
+                  {index + 1}
+                </span>
+                {point}
+              </motion.li>
+            ))}
+          </ul>
+        </motion.div>
+
+        <motion.div
+          aria-hidden="true"
+          className="relative mx-auto aspect-square w-full max-w-[36rem]"
+          initial={reduceMotion ? false : { opacity: 0, scale: 0.9 }}
+          transition={{ duration: 1.1, ease }}
+          viewport={{ once: true, margin: '-80px' }}
+          whileInView={{ opacity: 1, scale: 1 }}
+        >
+          {/* rings */}
+          <span className="absolute inset-[4%] rounded-full border border-white/10" />
+          <span className="absolute inset-[20%] rounded-full border border-dashed border-white/12" />
+          <span className="absolute inset-[34%] rounded-full bg-primary/20 blur-3xl" />
+
+          {/* outer ring: data the coach reads */}
+          <div
+            className="absolute inset-0 motion-reduce:[animation:none]"
+            style={{ animation: 'spin 60s linear infinite' }}
+          >
+            {orbitSignals.map((signal, index) => (
+              <OrbitItem
+                angle={(index / orbitSignals.length) * 360}
+                duration={60}
+                key={signal.label}
+                radius="clamp(8.5rem, 40vw, 16.5rem)"
+                reverse={false}
+              >
+                <span className="glass-panel-strong flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium whitespace-nowrap text-white">
+                  <signal.icon className="size-4 text-primary" />
+                  {signal.label}
+                </span>
+              </OrbitItem>
+            ))}
+          </div>
+
+          {/* inner ring: platforms, spinning the other way */}
+          <div
+            className="absolute inset-0 motion-reduce:[animation:none]"
+            style={{ animation: 'spin 40s linear infinite reverse' }}
+          >
+            {orbitPlatforms.map((platform, index) => (
+              <OrbitItem
+                angle={(index / orbitPlatforms.length) * 360 + 45}
+                duration={40}
+                key={platform}
+                radius="clamp(5.5rem, 26vw, 10.5rem)"
+                reverse
+              >
+                <span className="grid size-14 place-items-center rounded-full border border-white/15 bg-white shadow-[0_12px_30px_-10px_rgb(0_0_0/0.6)]">
+                  <ProviderLogo className="size-8" provider={platform} />
+                </span>
+              </OrbitItem>
+            ))}
+          </div>
+
+          {/* the big animated mark */}
+          <div className="absolute inset-0 grid place-items-center">
+            <span className="animate-pulse-glow absolute size-44 rounded-full bg-primary/30 blur-2xl" />
+            <LogoMark className="relative size-32 shadow-[0_30px_80px_-20px_rgb(255_77_18/0.7)] ring-4 ring-white/10 sm:size-40" />
+          </div>
+        </motion.div>
       </div>
     </section>
   )
@@ -490,9 +522,9 @@ export function LandingFooter() {
             <li>
               <a
                 className="transition-colors hover:text-white"
-                href="#principles"
+                href="#platforms"
               >
-                Principles
+                Platforms
               </a>
             </li>
           </ul>

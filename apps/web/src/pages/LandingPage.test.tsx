@@ -35,7 +35,12 @@ describe('LandingPage', () => {
     const markup = renderLandingPage('unauthenticated')
 
     expect(markup).toContain('Get Started')
-    expect(markup).toContain('Login')
+    expect(markup).toContain('AlgoMemtor introduction')
+    expect(markup).toContain('Skip intro')
+    expect(markup).toContain('One coach.')
+    expect(markup).toContain('Every platform.')
+    expect(markup).not.toContain('Where your practice stands')
+    expect(markup).not.toContain('Login')
     expect(markup).not.toContain('Go to Dashboard')
   })
 
@@ -43,8 +48,10 @@ describe('LandingPage', () => {
     const markup = renderLandingPage('authenticated')
 
     expect(markup).toContain('Go to Dashboard')
+    expect(markup).not.toContain('AlgoMemtor introduction')
     expect(markup).toContain('href="/dashboard"')
     expect(markup).not.toContain('Get Started')
+    expect(markup).not.toContain('AlgoMemtor introduction')
     expect(markup).not.toContain('Login')
   })
 

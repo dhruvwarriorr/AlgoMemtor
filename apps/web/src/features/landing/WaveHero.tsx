@@ -11,16 +11,6 @@ import type { AuthStatus } from '@/features/auth/auth-context'
 import { cn } from '@/lib/utils'
 
 import { LandingActions } from './LandingActions'
-import { ReadinessRing } from './ReadinessRing'
-
-// Illustrative topic strengths for the hero preview. Labelled as an example.
-const exampleTopics = [
-  { label: 'Arrays', value: 82, tone: 'bg-go' },
-  { label: 'Two pointers', value: 64, tone: 'bg-primary' },
-  { label: 'Greedy', value: 51, tone: 'bg-primary' },
-  { label: 'Graphs', value: 38, tone: 'bg-[#ff8a5c]' },
-  { label: 'Dynamic programming', value: 27, tone: 'bg-destructive' },
-]
 
 const ease = [0.16, 1, 0.3, 1] as const
 const letters = 'ALGOMEMTOR'.split('')
@@ -99,7 +89,7 @@ export function WaveHero({ status }: { status: AuthStatus }) {
     <>
       <section
         aria-label="AlgoMemtor"
-        className={cn('relative', reduceMotion ? 'h-dvh' : 'h-[170dvh]')}
+        className={cn('relative', reduceMotion ? 'h-dvh' : 'h-[135dvh]')}
         ref={sceneRef}
       >
         <div className="sticky top-0 flex h-dvh w-full items-center justify-center overflow-hidden">
@@ -146,93 +136,35 @@ export function WaveHero({ status }: { status: AuthStatus }) {
         </div>
       </section>
 
-      <section className="relative z-20 flex flex-col items-center px-4 pb-32">
+      <section className="relative z-20 flex flex-col items-center px-4 py-20 sm:py-24">
         <motion.div
-          className="flex w-full max-w-5xl flex-col items-center text-center"
+          className="flex w-full max-w-4xl flex-col items-center text-center"
           initial={reduceMotion ? false : { opacity: 0, y: 100 }}
           transition={{ duration: 1.2, ease }}
           viewport={{ once: true, margin: '-100px' }}
           whileInView={{ opacity: 1, y: 0 }}
         >
-          <p className="glass-panel mb-8 inline-flex items-center gap-2 rounded-md px-4 py-2 text-xs">
+          <p className="glass-panel mb-8 inline-flex items-center gap-2 rounded-md px-4 py-2 text-xs sm:text-sm">
             <span className="animate-pulse-glow size-2 rounded-full bg-primary" />
             <span className="font-medium text-white/80">
-              AlgoMemtor · The AI coach for competitive programming
+              Your CP journey, in one place
             </span>
           </p>
 
-          <h1 className="text-5xl leading-[1.05] font-bold tracking-[-0.04em] text-white sm:text-7xl">
-            The AI coach that
+          <h1 className="text-5xl leading-[1.05] font-bold tracking-[-0.05em] text-white sm:text-7xl lg:text-8xl">
+            One coach.
             <br />
-            <span className="text-primary">knows your CP journey.</span>
+            <span className="text-brand-gradient">Every platform.</span>
           </h1>
 
-          <p className="mx-auto mt-8 max-w-2xl text-xl leading-relaxed font-light text-white/60">
-            It reads your profile and solve history across Codeforces, LeetCode
-            and CodeChef, then coaches the topics holding you back.
+          <p className="mx-auto mt-8 max-w-2xl text-lg leading-relaxed font-light text-white/65 sm:text-xl">
+            Bring your public solves and contest history together. Get a coach
+            that understands your progress and helps you decide what to practice
+            next.
           </p>
 
-          <div className="mt-12">
+          <div className="mt-10">
             <LandingActions status={status} />
-          </div>
-
-          <div className="relative mx-auto mt-24 w-full max-w-4xl">
-            <div
-              aria-hidden="true"
-              className="animate-float-slow absolute -top-16 left-1/4 -z-10 size-80 rounded-full bg-primary/25 blur-3xl"
-            />
-            <div className="pointer-events-none absolute inset-0 z-10 rounded-3xl bg-linear-to-t from-[#0d0d0f] via-transparent to-transparent" />
-            <div className="glass-panel relative rounded-3xl p-6 text-left shadow-[0_0_80px_rgba(255,255,255,0.04)] sm:p-8">
-              <div className="mb-8 flex items-center justify-between border-b border-white/10 pb-4">
-                <div>
-                  <p className="text-sm font-medium text-white/50">
-                    Coach readout · Example learner
-                  </p>
-                  <p className="text-lg font-semibold text-white">
-                    Where your practice stands
-                  </p>
-                </div>
-                <div aria-hidden="true" className="flex gap-2">
-                  <span className="size-3 rounded-full bg-destructive/60" />
-                  <span className="size-3 rounded-full bg-primary/60" />
-                  <span className="size-3 rounded-full bg-go/60" />
-                </div>
-              </div>
-
-              <div className="flex flex-col items-center gap-12 md:flex-row">
-                <ReadinessRing label="Contest readiness" value={68} />
-                <ul className="w-full flex-1 space-y-4">
-                  {exampleTopics.map((topic, index) => (
-                    <motion.li
-                      initial={reduceMotion ? false : { opacity: 0, x: 10 }}
-                      key={topic.label}
-                      transition={{ delay: 0.2 + index * 0.1 }}
-                      viewport={{ once: true }}
-                      whileInView={{ opacity: 1, x: 0 }}
-                    >
-                      <div className="mb-1.5 flex justify-between text-sm font-medium">
-                        <span className="text-white/60">{topic.label}</span>
-                        <span className="text-white">{topic.value}%</span>
-                      </div>
-                      <div className="h-2 overflow-hidden rounded-md bg-white/10">
-                        <motion.div
-                          className={cn('h-full rounded-md', topic.tone)}
-                          initial={reduceMotion ? false : { scaleX: 0 }}
-                          style={{ width: `${topic.value}%`, originX: 0 }}
-                          transition={{
-                            delay: 0.4 + index * 0.1,
-                            duration: 1,
-                            ease,
-                          }}
-                          viewport={{ once: true }}
-                          whileInView={{ scaleX: 1 }}
-                        />
-                      </div>
-                    </motion.li>
-                  ))}
-                </ul>
-              </div>
-            </div>
           </div>
         </motion.div>
       </section>

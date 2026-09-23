@@ -2,9 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { XCircle } from 'lucide-react'
 
-import { markIntroSeen } from './intro-storage'
-
-// Once-per-tab opening sequence: a spotlight lands on a failed verdict, the
+// Opening sequence: a spotlight lands on a failed verdict, the
 // lights cut out, then the coach answers it. Skippable at any point.
 
 type Step = 'waiting' | 'spotlight' | 'dark' | 'coach' | 'leaving'
@@ -17,7 +15,6 @@ export function CinematicIntro({ onComplete }: { onComplete: () => void }) {
   const finish = useCallback(() => {
     timers.current.forEach((id) => window.clearTimeout(id))
     timers.current = []
-    markIntroSeen()
     onComplete()
   }, [onComplete])
 

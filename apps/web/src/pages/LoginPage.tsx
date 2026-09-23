@@ -1,6 +1,7 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type CSSProperties, type FormEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
+import { Flame, Sparkles, Target, TrendingUp } from 'lucide-react'
 import { LogoMark } from '@/components/brand/LogoMark'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/features/auth/useAuth'
@@ -89,7 +90,7 @@ function LoginPage() {
       className="mx-auto grid w-full max-w-7xl flex-1 gap-4 px-3 pt-3 pb-6 sm:px-5 lg:grid-cols-[1.05fr_1fr] lg:gap-6"
       id="main-content"
     >
-      <section className="sky-surface flex min-h-64 flex-col justify-end rounded-xl p-7 sm:p-10 lg:min-h-[36rem]">
+      <section className="sky-surface relative flex min-h-64 flex-col justify-end overflow-hidden rounded-xl p-7 sm:p-10 lg:min-h-[36rem] lg:justify-between">
         <span
           aria-hidden="true"
           className="cloud animate-drift -top-6 -left-16 w-[26rem]"
@@ -98,14 +99,16 @@ function LoginPage() {
           aria-hidden="true"
           className="cloud animate-drift top-1/3 -right-24 hidden w-[24rem] [--drift:-40px] sm:block"
         />
-        <LogoMark className="size-12" />
-        <p className="mt-6 max-w-md font-heading text-3xl leading-[1.05] font-bold tracking-[-0.035em] sm:text-5xl">
-          Your coach remembers where you left off.
-        </p>
-        <p className="mt-4 max-w-sm text-[#101012]/75 dark:text-[#f4f1ea]/75">
-          Your roadmap, streak, memory and next problem are saved to your
-          account.
-        </p>
+        <BrandShowcase />
+        <div className="relative">
+          <p className="max-w-md font-heading text-3xl leading-[1.05] font-bold tracking-[-0.035em] sm:text-5xl">
+            Your coach remembers where you left off.
+          </p>
+          <p className="mt-4 max-w-sm text-[#101012]/75 dark:text-[#f4f1ea]/75">
+            Your roadmap, streak, memory and next problem are saved to your
+            account.
+          </p>
+        </div>
       </section>
 
       <section className="flex flex-col justify-center rounded-xl border border-border bg-card p-6 sm:p-10 lg:px-14">
@@ -243,6 +246,99 @@ function LoginPage() {
         </div>
       </section>
     </main>
+  )
+}
+
+// Big animated mark with the kinds of signals the coach keeps for you. Purely
+// decorative sample values, hidden from assistive technology.
+function BrandShowcase() {
+  const chip =
+    'animate-float absolute flex items-center gap-2.5 rounded-lg border border-white/60 bg-white/80 px-3 py-2 text-left shadow-[0_18px_40px_-20px_rgb(16_16_18/0.45)] backdrop-blur-md dark:border-white/10 dark:bg-[#18181b]/85'
+  return (
+    <div
+      aria-hidden="true"
+      className="relative hidden flex-1 place-items-center lg:grid"
+    >
+      <div className="relative grid size-[22rem] place-items-center">
+        {[22, 17, 12].map((size, index) => (
+          <span
+            className="absolute rounded-full border border-[#101012]/10 dark:border-white/10"
+            key={size}
+            style={{
+              width: `${size}rem`,
+              height: `${size}rem`,
+              opacity: 1 - index * 0.15,
+            }}
+          />
+        ))}
+        <span className="absolute size-44 rounded-full bg-primary/25 blur-3xl" />
+        <LogoMark className="relative size-36 shadow-[0_30px_60px_-24px_rgb(255_77_18/0.6)]" />
+
+        <div
+          className={`${chip} -top-2 left-0`}
+          style={{ '--tilt': '-3deg' } as CSSProperties}
+        >
+          <span className="grid size-8 place-items-center rounded-md bg-go-soft text-go-foreground">
+            <TrendingUp className="size-4" />
+          </span>
+          <span>
+            <span className="block text-[0.68rem] text-muted-foreground">
+              Rating
+            </span>
+            <span className="block font-heading text-sm font-bold">
+              1665 <span className="text-go">+49</span>
+            </span>
+          </span>
+        </div>
+
+        <div
+          className={`${chip} top-8 -right-6 [animation-delay:-2s]`}
+          style={{ '--tilt': '3deg' } as CSSProperties}
+        >
+          <span className="grid size-8 place-items-center rounded-md bg-sun-soft text-sun-foreground">
+            <Flame className="size-4" />
+          </span>
+          <span>
+            <span className="block text-[0.68rem] text-muted-foreground">
+              Solve streak
+            </span>
+            <span className="block font-heading text-sm font-bold">
+              12 days
+            </span>
+          </span>
+        </div>
+
+        <div
+          className={`${chip} bottom-20 -left-10 [animation-delay:-4s]`}
+          style={{ '--tilt': '2deg' } as CSSProperties}
+        >
+          <span className="grid size-8 place-items-center rounded-md bg-primary/15 text-primary">
+            <Target className="size-4" />
+          </span>
+          <span>
+            <span className="block text-[0.68rem] text-muted-foreground">
+              Next problem
+            </span>
+            <span className="block font-heading text-sm font-bold">
+              Binary search · 1400
+            </span>
+          </span>
+        </div>
+
+        <div
+          className={`${chip} -right-6 -bottom-4 max-w-52 [animation-delay:-1s]`}
+          style={{ '--tilt': '-2deg' } as CSSProperties}
+        >
+          <span className="coach-orb size-8 shrink-0" />
+          <span className="text-xs leading-snug">
+            <span className="flex items-center gap-1 text-[0.68rem] text-muted-foreground">
+              <Sparkles className="size-3 text-primary" /> Coach
+            </span>
+            Your WA pattern is off-by-one. Try the invariant first.
+          </span>
+        </div>
+      </div>
+    </div>
   )
 }
 
