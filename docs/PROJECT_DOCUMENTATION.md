@@ -300,6 +300,39 @@ The recommendation flow:
 Gemini cannot add an unknown problem, URL, provider, or learner status. If AI is
 unavailable, deterministic ranking remains the visible fallback.
 
+**Learner signals (`recommendation-signals.ts`).** Before shortlisting, Express
+derives bounded (at most eight each) canonical topic lists from the learner's
+own data: `roadmapFocusTopics` (manual `working_on`, then the roadmap's
+`current_focus`, then `revisit` topics), `weakTopics` (roadmap
+`needs_practice`/`needs_more_practice` topics, then topics where at least two
+observed attempts mostly did not end in a solve), and `underPracticedTopics`
+(next-up roadmap topics with `insufficient_evidence`). Skipped, completed, and
+excluded topics never appear. They are merged, after any explicitly selected
+profile topics, into the deterministic focus list, so the 40-candidate
+shortlist the AI reorders already contains plan, weak, and thin-topic problems.
+Catalog tags are canonicalized (`dp` → `dynamic-programming`) before matching.
+A `contestSummary` (rated contests in the last 90 days, current rating, 90-day
+change, and a rising/steady/falling trend) is computed from stored rating
+changes. When the learner lets AlgoMemtor decide difficulty and set no explicit
+range, the rating band is centred on their latest observed Codeforces rating
+(−100/+200) instead of the onboarding estimate.
+
+The signals, the calibrated band, and the merged focus list reach the AI ranker
+only under current `personalized-coaching-rag-v2` consent; without it the model
+sees just the stated profile. FastAPI additionally retrieves the learner's
+active memories (instructions such as a topic to focus on or set aside, topic
+weaknesses, difficulty patterns) and is told to honor them, favoring stated
+focus and placing set-aside topics last. Hard exclusions still come only from
+confirmed actions: `skip_for_now` statuses (for example accepted from a coach
+proposal) and explicit profile exclusions.
+
+**Daily rotation.** A saved batch is reused only on the same calendar day in
+the learner's coach time zone (UTC by default). The first request on a new day
+generates a fresh batch that prefers problems not shown recently. Evidence,
+feedback, profile, consent, memory, and roadmap-refresh changes still
+invalidate the batch immediately. Generation is lazy (on first view of the
+day), so inactive learners cost no model calls.
+
 ### 4.6 Progress and evidence
 
 Learner problem status has exactly three values:
@@ -1101,7 +1134,8 @@ it with `400`.
 | `PATCH`  | `/api/coach/conversations/:conversationId`          | Rename a thread                                                   |
 | `DELETE` | `/api/coach/conversations/:conversationId`          | Delete messages, proposals, summaries, and audit references       |
 | `POST`   | `/api/coach/conversations/:conversationId/messages` | Submit a bounded coaching question and optional transient context |
-| `GET`    | `/api/coach/roadmap`                                | Read the persistent deterministic improvement roadmap             |
+| `GET`    | `/api/coach/roadmap`                                | Read the persistent deterministic improvement roadmap, with a computed `refreshHint` |
+| `POST`   | `/api/coach/roadmap/refresh`                        | Pull the newest data from every linked platform (bounded live refresh), rebuild the plan, record `lastRefreshedAt`, and invalidate the next recommendation batch |
 | `PATCH`  | `/api/coach/roadmap/topics/:topic/status`           | Set or clear a manual topic status                                |
 | `POST`   | `/api/coach/roadmap/notes`                          | Submit a free-text learning-plan note; AI picks the topic and status it refers to and queues it as memory evidence |
 | `GET`    | `/api/coach/preferences`                            | Read weekly/event check-in preferences                            |
@@ -1438,6 +1472,19 @@ active instruction/preference memories and then adds query-relevant semantic and
 keyword matches. Consolidation remains explicit, owner-scoped, and
 confirmation-safe.
 
+**Roadmap refresh.** `GET /api/coach/roadmap` rebuilds the plan from stored
+evidence on every read and saves a new version only when its content changes.
+`POST /api/coach/roadmap/refresh` first runs the bounded live refresh (25 s per
+platform, at most once per learner and platform every 3 minutes; browser-connector
+providers report their last upload) for every linked account, then rebuilds and
+saves the plan with `lastRefreshedAt`, and invalidates the learner's cached
+recommendation batch. Reads carry a computed, never-persisted `refreshHint`
+that suggests a refresh when platform data is stale or the plan has neither
+changed nor been refreshed for seven days; neither field affects the plan's
+version. The Learning plan tab shows a Refresh plan action and the suggestion,
+and the coach receives `roadmap.refreshSuggested` so it can recommend a refresh
+when the learner asks about their plan.
+
 Deterministic goal templates cover Codeforces Expert/1600, interview preparation,
 and ICPC foundations. They order unmet skills through prerequisites, allocate
 bounded weekly targets, carry due-review topics into the plan, and reuse the
@@ -1484,7 +1531,13 @@ rest is never placed in the prompt wholesale. The model queries it through
 read-only tools (`query_solved_problems`, `query_submissions`,
 `query_unsolved_attempts`, `get_contest_history`, `get_rating_history`,
 `get_topic_breakdown`, `get_activity_summary`, `find_practice_problems`,
-`search_knowledge`, `web_search`) and finishes with `submit_answer`. The
+`search_knowledge`, `web_search`, `recall_memory`) and finishes with
+`submit_answer`. `recall_memory` runs the same hybrid (pgvector + keyword)
+retrieval as the up-front memory lane, for up to eight active memories, when the
+answer depends on earlier conversations or history that the preloaded memories
+do not cover. The learner ID comes from the authenticated internal request, not
+from the model, so the tool can read only that learner's memory; a storage
+failure is returned as a tool error rather than failing the turn. The
 workspace contains no URLs, source code, statements, or credentials; the agent's
 web-search queries are de-identified and additionally stripped of the learner's
 own handles.
@@ -1535,6 +1588,19 @@ it does not scatter a retrieval query across every tag in the shortlist.
 Express validates every selected ID against the original candidate set and
 attaches the canonical URL itself. Reasons are bounded and rejected if they
 contain URLs, contact-like data, UUIDs, or copied slices of private notes.
+
+FastAPI repairs model output instead of discarding it whole: unknown and
+duplicate IDs are dropped, an unsafe reason (link, contact data, identifier,
+or copied preference/memory text) is replaced with a reason built only from
+candidate metadata and learner signals, and any shortfall is filled from the
+deterministic shortlist order Express supplied. If fewer than half of the
+expected picks are valid model choices, the whole ranking falls back to
+`invalid_output`. Unsafe text therefore never reaches Express, and a single
+malformed item no longer discards an otherwise useful AI ranking. CSES
+candidates are accepted by the ranking contract. `AI_RANKING_TIMEOUT_MS`
+defaults to 25 seconds: measured ranking latency on Flash-Lite is roughly 9 s
+at the median and 40 s at the 90th percentile, and the previous 8-second
+default silently turned most rankings into deterministic fallbacks.
 
 ### Fallback behavior
 
@@ -1718,7 +1784,7 @@ LEETCODE_CATALOG_MAX_PAGES=10
 PROVIDER_ACTIVITY_MIN_REFRESH_INTERVAL_MS=900000
 AI_API_URL=http://localhost:8000
 CORE_API_URL=http://localhost:3001
-AI_RANKING_TIMEOUT_MS=8000
+AI_RANKING_TIMEOUT_MS=25000
 INTERNAL_SERVICE_TOKEN=
 PROGRESS_ENABLED=true
 MEMORY_GENERATION_ENABLED=true
@@ -1866,6 +1932,54 @@ npm run dev:provider-worker
 Configure email/password authentication, set the site URL to the frontend
 origin, and allow the exact `/dashboard` callback for local and production
 origins. Set `SUPABASE_JWT_ISSUER` to `<SUPABASE_URL>/auth/v1` in both APIs.
+
+### Production deployment (Docker)
+
+Three images are built from the repository root; `docker-compose.prod.yml`
+wires them to PostgreSQL with pgvector:
+
+| Service           | Image / target                           | Role |
+| ----------------- | ---------------------------------------- | ---- |
+| `postgres`        | `pgvector/pgvector:pg16`                 | One database; Prisma owns `core`, Alembic owns `ai` (memories, embeddings, audits, knowledge) |
+| `migrate-core`    | `apps/core-api/Dockerfile`, `migrate`    | One-shot `prisma migrate deploy` plus the idempotent topic seed |
+| `migrate-ai`      | `apps/ai-api/Dockerfile`                 | One-shot `alembic upgrade head`, after `migrate-core` |
+| `ai-api`          | `apps/ai-api/Dockerfile`                 | FastAPI (uvicorn): ranking, coach agent, memory, embeddings |
+| `core-api`        | `apps/core-api/Dockerfile`, `runtime`    | Express API (production dependencies only) |
+| `memory-worker`   | same image, `node dist/memory-worker.js` | Memory generation outbox and scheduled check-ins |
+| `provider-worker` | same image, `node dist/provider-sync-worker.js` | Hourly linked-account sync |
+| `web`             | `apps/web/Dockerfile`                    | Vite build plus browser-connector zips, served by unprivileged nginx on 8080 |
+
+```bash
+cp deploy/compose.env.example .env           # public URL, DB password, shared token
+cp deploy/core.env.example deploy/core.env   # core API settings
+cp deploy/ai.env.example deploy/ai.env       # model keys and AI settings
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+- Only `web` publishes a port. nginx serves the SPA (hashed assets cached for a
+  year, the HTML shell never), proxies `/api/` to `core-api` with a 180 s read
+  timeout for coach turns, and returns 404 for `/internal/*`. Put TLS in front
+  (managed load balancer, Caddy, or Traefik) and use that HTTPS origin as
+  `PUBLIC_SITE_URL`; it is baked into the web build as the site and API origin
+  and into the browser connector.
+- Services talk over the private compose network (`http://ai-api:8000`,
+  `http://core-api:3001`). `AI_API_URL` accepts HTTPS, HTTP loopback, or HTTP
+  to a single-label private service name only.
+- Browser-safe values (`SUPABASE_URL`, the publishable key, `PUBLIC_SITE_URL`)
+  are build arguments; secrets (`LLM_API_KEY`, `GROQ_API_KEY`,
+  `INTERNAL_SERVICE_TOKEN`, the database password) are runtime environment only
+  and never enter an image. Filled-in `.env` and `deploy/*.env` files are
+  git-ignored.
+- Containers run as non-root users and expose `/health` (`/healthz` for web)
+  health checks; the workers depend on healthy APIs, and migrations must
+  complete before either API starts.
+- Use a paid Gemini tier (and optionally `COACH_HYBRID_ENABLED` with a Groq key)
+  in production. Free-tier daily limits are the main cause of
+  “Coach is unavailable” turns; set `COACH_MODEL_REQUESTS_PER_MINUTE` to the
+  project's RPM quota.
+- Add the production `/dashboard` callback to the Supabase URL allowlist.
+  Back up the `postgres_data` volume (or use a managed PostgreSQL with the
+  `vector` extension and point both `DATABASE_URL`s at it).
 
 ---
 

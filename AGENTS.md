@@ -289,6 +289,14 @@ source, tests, and `git status` before relying on it.
 - Bookmark/progress APIs and UI, AI ranking, provider-account verification,
   learner memory, hardening, and deployment remain later-roadmap work unless
   the current source proves otherwise.
+- 2026-09-24: recommendations rotate once per learner-local day and are steered
+  by deterministic plan/weak/under-practiced topic and contest signals
+  (`recommendation-signals.ts`, sent to AI only under consent); FastAPI repairs
+  partially invalid rankings instead of discarding them; the coach agent has a
+  `recall_memory` tool; `POST /api/coach/roadmap/refresh` pulls fresh platform
+  data and rebuilds the plan, and roadmap reads carry a computed
+  `refreshHint`. Production Dockerfiles, `deploy/`, and
+  `docker-compose.prod.yml` exist; live deployment is still unverified.
 
 Important: this snapshot describes the working tree, which currently contains
 uncommitted Week 10 work. It is context, not permission to commit or rewrite it.

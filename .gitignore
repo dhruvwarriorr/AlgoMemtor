@@ -16,3 +16,5 @@ docs/AlgoMemtor_Project_Documentation.docx
 docs/AlgoMemtor_Roadmap.docx
 apps/browser-extension/release/
 apps/web/public/extension/
+# Filled-in production env files for docker-compose.prod.yml
+deploy/*.env

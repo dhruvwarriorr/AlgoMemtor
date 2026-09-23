@@ -34,6 +34,7 @@ import type {
   ContestParticipation,
   ProviderProfile,
   ProblemTimerSession,
+  RoadmapRefreshReason,
 } from '@algomemtor/shared-contracts'
 
 import {
@@ -895,6 +896,9 @@ const coachContextForAi = ({
     dataCompleteness: context.roadmap.dataCompleteness,
     staleProviders: context.roadmap.staleProviders,
     generatedAt: context.roadmap.generatedAt,
+    ...(context.roadmap.refreshHint?.suggested === true
+      ? { refreshSuggested: context.roadmap.refreshHint.reasons }
+      : {}),
     topics: context.roadmap.topics.map((topic) => ({
       topic: topic.topic,
       name: topic.name,
@@ -1037,8 +1041,19 @@ const comparableRoadmap = (roadmap: ImprovementRoadmap) =>
     id: undefined,
     version: undefined,
     generatedAt: undefined,
+    lastRefreshedAt: undefined,
+    refreshHint: undefined,
     topics: roadmap.topics.map(comparableTopic),
   })
+
+// A plan that has not changed or been refreshed for this long is worth
+// rebuilding from fresh platform data.
+export const ROADMAP_REFRESH_AFTER_MS = 7 * 86_400_000
+
+const withoutRefreshHint = ({
+  refreshHint: _refreshHint,
+  ...roadmap
+}: ImprovementRoadmap): ImprovementRoadmap => roadmap
 
 export type CoachContextSnapshot = {
   learnerId: string
@@ -2579,7 +2594,38 @@ export class CoachService {
     }
   }
 
+  // Attach a refresh suggestion when platform data is stale or the plan has
+  // not moved for a week. The hint is computed on read and never stored.
+  private withRefreshHint(roadmap: ImprovementRoadmap): ImprovementRoadmap {
+    const plan = withoutRefreshHint(roadmap)
+    const reasons: RoadmapRefreshReason[] = []
+    if (plan.staleProviders.length > 0) reasons.push('stale_platform_data')
+    const anchor = Math.max(
+      Date.parse(plan.generatedAt),
+      plan.lastRefreshedAt === undefined ? 0 : Date.parse(plan.lastRefreshedAt),
+    )
+    if (this.now().getTime() - anchor > ROADMAP_REFRESH_AFTER_MS) {
+      reasons.push('plan_unchanged')
+    }
+    return { ...plan, refreshHint: { suggested: reasons.length > 0, reasons } }
+  }
+
+  // Rebuild the plan now (callers pull fresh platform data first) and record
+  // when the learner last refreshed it.
+  async refreshRoadmap(userId: string) {
+    const current = withoutRefreshHint(await this.getRoadmap(userId))
+    const saved = await this.options.repository.saveRoadmap(userId, {
+      ...current,
+      lastRefreshedAt: this.now().toISOString(),
+    })
+    return this.withRefreshHint(saved)
+  }
+
   async getRoadmap(userId: string) {
+    return this.withRefreshHint(await this.buildAndSaveRoadmap(userId))
+  }
+
+  private async buildAndSaveRoadmap(userId: string) {
     const roadmap = await this.buildRoadmap(userId)
     const existing = await this.options.repository.getRoadmap(userId)
     const normalizedTopics = roadmap.topics.map((topic) => {
@@ -2590,12 +2636,18 @@ export class CoachService {
         ? { ...topic, updatedAt: prior.updatedAt }
         : { ...topic, updatedAt: this.now().toISOString() }
     })
-    const candidate = { ...roadmap, topics: normalizedTopics }
+    const candidate = {
+      ...withoutRefreshHint(roadmap),
+      topics: normalizedTopics,
+      ...(existing?.lastRefreshedAt === undefined
+        ? {}
+        : { lastRefreshedAt: existing.lastRefreshedAt }),
+    }
     if (
       existing !== null &&
       comparableRoadmap(existing) === comparableRoadmap(candidate)
     ) {
-      return existing
+      return withoutRefreshHint(existing)
     }
     const saved = await this.options.repository.saveRoadmap(userId, {
       ...candidate,

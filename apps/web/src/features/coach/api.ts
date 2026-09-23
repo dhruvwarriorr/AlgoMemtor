@@ -12,6 +12,7 @@ import {
   ConfirmCoachActionRequestSchema,
   CreateCoachConversationRequestSchema,
   ImprovementRoadmapResponseSchema,
+  RoadmapRefreshResponseSchema,
   SaveCoachPreferencesRequestSchema,
   SendCoachMessageRequestSchema,
   SetCoachTopicStatusRequestSchema,
@@ -120,6 +121,15 @@ export function fetchCoachRoadmap({ signal }: RequestOptions = {}) {
     authentication: 'required',
     schema: ImprovementRoadmapResponseSchema,
     signal,
+  })
+}
+
+// Pulls the newest platform data, then rebuilds the plan.
+export function refreshCoachRoadmap() {
+  return requestJson('/api/coach/roadmap/refresh', {
+    authentication: 'required',
+    method: 'POST',
+    schema: RoadmapRefreshResponseSchema,
   })
 }
 

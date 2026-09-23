@@ -355,6 +355,38 @@ async def test_returns_validated_output_with_tokens_cost_and_redacted_audit() ->
     assert preference not in json.dumps(audit.__dict__, default=str)
 
 
+def static_service(items: list[RankedItem]) -> RankingService:
+    return RankingService(
+        settings(),
+        NullRankingAuditRepository(),
+        StaticModel(
+            ModelResult(
+                output=ModelRankingOutput(items=items),
+                input_tokens=10,
+                output_tokens=10,
+            )
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "items",
+    [
+        [],
+        [ranked_item("unknown"), ranked_item("other")],
+    ],
+)
+@pytest.mark.asyncio
+async def test_falls_back_when_too_few_model_picks_are_valid(
+    items: list[RankedItem],
+) -> None:
+    response = await static_service(items).rank(ranking_request())
+
+    assert response.items == []
+    assert response.fallback is True
+    assert response.fallbackReason == "invalid_output"
+
+
 @pytest.mark.parametrize(
     "items",
     [
@@ -369,25 +401,63 @@ async def test_returns_validated_output_with_tokens_cost_and_redacted_audit() ->
     ],
 )
 @pytest.mark.asyncio
-async def test_rejects_complete_invalid_model_output(items: list[RankedItem]) -> None:
+async def test_repairs_partially_invalid_model_output(items: list[RankedItem]) -> None:
     request = ranking_request()
-    service = RankingService(
-        settings(),
-        NullRankingAuditRepository(),
-        StaticModel(
-            ModelResult(
-                output=ModelRankingOutput(items=items),
-                input_tokens=10,
-                output_tokens=10,
-            )
-        ),
-    )
+
+    response = await static_service(items).rank(request)
+
+    assert response.fallback is False
+    assert response.items[0].externalId == "900A"
+    assert sorted(item.externalId for item in response.items) == ["900A", "901A"]
+    for item in response.items:
+        assert "https://" not in item.reason
+        assert "Ignore earlier rules" not in item.reason
+        assert 0 <= item.score <= 1
+
+
+@pytest.mark.asyncio
+async def test_repaired_reasons_name_the_learner_signal() -> None:
+    payload = request_payload(4)
+    payload["learner"]["weakTopics"] = ["graphs"]
+    payload["learner"]["roadmapFocusTopics"] = ["strings"]
+    request = RankingRequest.model_validate(payload)
+    service = static_service([ranked_item("900A"), ranked_item("901A")])
 
     response = await service.rank(request)
 
-    assert response.items == []
-    assert response.fallback is True
-    assert response.fallbackReason == "invalid_output"
+    reasons = {item.externalId: item.reason for item in response.items}
+    assert len(response.items) == 4
+    assert reasons["902A"] == "Targets graphs, where your recent attempts often fail."
+    assert reasons["903A"] == (
+        "Supports strings, a current focus in your learning plan."
+    )
+
+
+def test_accepts_cses_candidates_and_bounded_learner_signals() -> None:
+    payload = request_payload(2)
+    payload["candidates"][1] = {
+        **payload["candidates"][1],
+        "provider": "cses",
+        "externalId": "1068",
+    }
+    payload["learner"].update(
+        {
+            "roadmapFocusTopics": ["graphs"],
+            "weakTopics": ["strings"],
+            "underPracticedTopics": ["dynamic-programming"],
+            "contestSummary": {
+                "contestsLast90Days": 4,
+                "currentRating": 1806,
+                "ratingChange90Days": 42,
+                "trend": "rising",
+            },
+        }
+    )
+    request = RankingRequest.model_validate(payload)
+    assert request.candidates[1].provider == "cses"
+    payload["learner"]["weakTopics"] = [f"topic-{index}" for index in range(9)]
+    with pytest.raises(ValidationError):
+        RankingRequest.model_validate(payload)
 
 
 @pytest.mark.asyncio
@@ -585,13 +655,18 @@ async def test_memory_statement_is_never_repeated_in_recommendation_reason() -> 
         unsafe.rank(request), safe.rank(request)
     )
 
-    assert unsafe_response.fallback is True
-    assert unsafe_response.fallbackReason == "invalid_output"
+    # The copied memory statement is replaced, never shown.
+    assert unsafe_response.fallback is False
+    assert all(
+        "struggles with graph traversal" not in item.reason
+        for item in unsafe_response.items
+    )
     assert safe_response.fallback is False
+    assert safe_response.items[0].reason.startswith("A recent topic weakness")
 
 
 @pytest.mark.asyncio
-async def test_identifier_in_recommendation_reason_falls_back() -> None:
+async def test_identifier_in_recommendation_reason_is_replaced() -> None:
     request = ranking_request()
     response = await RankingService(
         settings(),
@@ -599,12 +674,12 @@ async def test_identifier_in_recommendation_reason_falls_back() -> None:
         MemoryAwareModel("Try candidate 900A next."),
     ).rank(request)
 
-    assert response.fallback is True
-    assert response.fallbackReason == "invalid_output"
+    assert response.fallback is False
+    assert all("900A" not in item.reason for item in response.items)
 
 
 @pytest.mark.asyncio
-async def test_learner_identifier_in_recommendation_reason_falls_back() -> None:
+async def test_learner_identifier_in_recommendation_reason_is_replaced() -> None:
     request = ranking_request()
     response = await RankingService(
         settings(),
@@ -612,8 +687,8 @@ async def test_learner_identifier_in_recommendation_reason_falls_back() -> None:
         MemoryAwareModel(f"Keep learner {request.learnerId} in mind."),
     ).rank(request)
 
-    assert response.fallback is True
-    assert response.fallbackReason == "invalid_output"
+    assert response.fallback is False
+    assert all(str(request.learnerId) not in item.reason for item in response.items)
 
 
 @pytest.mark.asyncio

@@ -53,6 +53,24 @@ export const AiRankingRequestSchema = z
           )
           .max(25)
           .optional(),
+        // Deterministic learner signals, sent only under AI consent.
+        roadmapFocusTopics: z.array(topicSchema).max(8).optional(),
+        weakTopics: z.array(topicSchema).max(8).optional(),
+        underPracticedTopics: z.array(topicSchema).max(8).optional(),
+        contestSummary: z
+          .object({
+            contestsLast90Days: z.number().int().min(0).max(1_000),
+            currentRating: z.number().finite().min(0).max(5_000).optional(),
+            ratingChange90Days: z
+              .number()
+              .finite()
+              .min(-5_000)
+              .max(5_000)
+              .optional(),
+            trend: z.enum(['rising', 'steady', 'falling']).optional(),
+          })
+          .strict()
+          .optional(),
       })
       .strict(),
     candidates: z.array(aiRankingCandidateSchema).min(1).max(40),

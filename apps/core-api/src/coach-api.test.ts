@@ -6,6 +6,7 @@ import {
   CoachRoadmapNoteResponseSchema,
   ExternalProblemSummarySchema,
   ImprovementRoadmapResponseSchema,
+  RoadmapRefreshResponseSchema,
   type CoachActionProposal,
   type ExternalProblemSummary,
   type ProviderSolvedProblem,
@@ -232,6 +233,59 @@ describe('coach API', () => {
     expect(
       extractCoachTopicExclusions('Prefer graph practice this week.'),
     ).toEqual([])
+  })
+
+  it('suggests a refresh for an unchanged plan and records explicit refreshes', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-09-01T10:00:00.000Z'))
+      const coachRepository = new InMemoryCoachRepository()
+      const baseUrl = startApp({ coachRepository })
+      const headers = authorization('user-a')
+      const read = async () =>
+        ImprovementRoadmapResponseSchema.parse(
+          await (await fetch(`${baseUrl}/api/coach/roadmap`, { headers })).json(),
+        ).data
+
+      const first = await read()
+      expect(first.refreshHint).toEqual({ suggested: false, reasons: [] })
+
+      vi.setSystemTime(new Date('2026-09-10T10:00:00.000Z'))
+      const later = await read()
+      expect(later.version).toBe(first.version)
+      expect(later.refreshHint).toEqual({
+        suggested: true,
+        reasons: ['plan_unchanged'],
+      })
+
+      const unauthenticated = await fetch(
+        `${baseUrl}/api/coach/roadmap/refresh`,
+        { method: 'POST' },
+      )
+      expect(unauthenticated.status).toBe(401)
+      const refreshed = RoadmapRefreshResponseSchema.parse(
+        await (
+          await fetch(`${baseUrl}/api/coach/roadmap/refresh`, {
+            method: 'POST',
+            headers,
+          })
+        ).json(),
+      )
+      expect(refreshed.meta.platforms).toEqual([])
+      expect(refreshed.data.version).toBe(first.version)
+      expect(refreshed.data.lastRefreshedAt).toBe('2026-09-10T10:00:00.000Z')
+      expect(refreshed.data.refreshHint).toEqual({
+        suggested: false,
+        reasons: [],
+      })
+      // The hint is computed on read, never stored with the plan.
+      const stored = await coachRepository.getRoadmap(userA)
+      expect(stored?.refreshHint).toBeUndefined()
+      expect(stored?.lastRefreshedAt).toBe('2026-09-10T10:00:00.000Z')
+      expect((await read()).lastRefreshedAt).toBe('2026-09-10T10:00:00.000Z')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('requires authentication and preserves manual roadmap status precedence', async () => {

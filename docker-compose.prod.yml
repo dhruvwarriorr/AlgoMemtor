@@ -1,0 +1,156 @@
+# Production stack: PostgreSQL + pgvector, one-shot migrations, the core API,
+# both workers, the AI API, and the web app behind nginx.
+#
+#   cp deploy/compose.env.example .env           # public URL, DB password, shared token
+#   cp deploy/core.env.example deploy/core.env   # core API settings
+#   cp deploy/ai.env.example deploy/ai.env       # model keys and AI settings
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Only the web container publishes a port. Put TLS in front of it (a managed
+# load balancer, Caddy, or Traefik) and use that HTTPS origin as PUBLIC_SITE_URL.
+
+name: algomemtor-prod
+
+x-core-env: &core-env
+  NODE_ENV: production
+  PORT: '3001'
+  DATABASE_URL: postgresql://${POSTGRES_USER:-algomemtor}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-algomemtor}
+  AI_API_URL: http://ai-api:8000
+  CORE_API_URL: http://core-api:3001
+  WEB_ORIGIN: ${PUBLIC_SITE_URL:?set PUBLIC_SITE_URL}
+  SUPABASE_URL: ${SUPABASE_URL:?set SUPABASE_URL}
+  SUPABASE_JWT_ISSUER: ${SUPABASE_URL:?set SUPABASE_URL}/auth/v1
+  INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN}
+
+x-core-image: &core-image
+  image: algomemtor-core:${IMAGE_TAG:-latest}
+  build:
+    context: .
+    dockerfile: apps/core-api/Dockerfile
+    target: runtime
+
+x-ai-image: &ai-image
+  image: algomemtor-ai:${IMAGE_TAG:-latest}
+  build:
+    context: .
+    dockerfile: apps/ai-api/Dockerfile
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-algomemtor}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-algomemtor}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Prisma owns the `core` schema; its seed (normalized topics) is idempotent.
+  migrate-core:
+    image: algomemtor-core-migrate:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: apps/core-api/Dockerfile
+      target: migrate
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-algomemtor}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-algomemtor}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  # Alembic owns the `ai` schema (memories, embeddings, audits, knowledge).
+  migrate-ai:
+    <<: *ai-image
+    command: ['alembic', 'upgrade', 'head']
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-algomemtor}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-algomemtor}
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate-core:
+        condition: service_completed_successfully
+    restart: 'no'
+
+  ai-api:
+    <<: *ai-image
+    restart: unless-stopped
+    env_file: deploy/ai.env
+    environment:
+      APP_ENV: production
+      PORT: '8000'
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-algomemtor}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-algomemtor}
+      CORE_API_URL: http://core-api:3001
+      WEB_ORIGIN: ${PUBLIC_SITE_URL:?set PUBLIC_SITE_URL}
+      SUPABASE_URL: ${SUPABASE_URL:?set SUPABASE_URL}
+      SUPABASE_JWT_ISSUER: ${SUPABASE_URL:?set SUPABASE_URL}/auth/v1
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?set INTERNAL_SERVICE_TOKEN}
+    depends_on:
+      migrate-ai:
+        condition: service_completed_successfully
+
+  core-api:
+    <<: *core-image
+    restart: unless-stopped
+    env_file: deploy/core.env
+    environment: *core-env
+    depends_on:
+      migrate-ai:
+        condition: service_completed_successfully
+
+  # Turns synced activity and chat turns into memories, and schedules check-ins.
+  memory-worker:
+    <<: *core-image
+    command: ['node', 'dist/memory-worker.js']
+    restart: unless-stopped
+    env_file: deploy/core.env
+    environment: *core-env
+    healthcheck:
+      disable: true
+    depends_on:
+      core-api:
+        condition: service_healthy
+      ai-api:
+        condition: service_healthy
+
+  # Pulls linked Codeforces/CodeChef/LeetCode data on the hourly schedule.
+  provider-worker:
+    <<: *core-image
+    command: ['node', 'dist/provider-sync-worker.js']
+    restart: unless-stopped
+    env_file: deploy/core.env
+    environment: *core-env
+    healthcheck:
+      disable: true
+    depends_on:
+      core-api:
+        condition: service_healthy
+
+  web:
+    image: algomemtor-web:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:?set PUBLIC_SITE_URL}
+        VITE_SUPABASE_URL: ${SUPABASE_URL:?set SUPABASE_URL}
+        VITE_SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:?set SUPABASE_PUBLISHABLE_KEY}
+        VITE_CHROME_EXTENSION_URL: ${CHROME_EXTENSION_URL:-}
+        VITE_FIREFOX_EXTENSION_URL: ${FIREFOX_EXTENSION_URL:-}
+    restart: unless-stopped
+    environment:
+      CORE_API_UPSTREAM: http://core-api:3001
+    ports:
+      - '${WEB_PORT:-8080}:8080'
+    depends_on:
+      core-api:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

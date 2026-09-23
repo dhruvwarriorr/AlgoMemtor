@@ -7,7 +7,7 @@ describe('AI recommendation configuration', () => {
     expect(readAiRecommendationConfig({})).toEqual({
       baseUrl: 'http://localhost:8000/',
       internalServiceToken: '',
-      timeoutMs: 8000,
+      timeoutMs: 25_000,
       configured: false,
     })
   })
@@ -39,10 +39,22 @@ describe('AI recommendation configuration', () => {
     expect(() => readAiRecommendationConfig({ AI_API_URL: baseUrl })).toThrow()
   })
 
-  it('falls back to eight seconds for invalid timeout values', () => {
+  it('falls back to twenty-five seconds for invalid timeout values', () => {
     expect(
       readAiRecommendationConfig({ AI_RANKING_TIMEOUT_MS: 'invalid' })
         .timeoutMs,
-    ).toBe(8000)
+    ).toBe(25_000)
+  })
+
+  it('allows plain HTTP only to a private container service name', () => {
+    expect(
+      readAiRecommendationConfig({ AI_API_URL: 'http://ai-api:8000' }).baseUrl,
+    ).toBe('http://ai-api:8000/')
+    expect(() =>
+      readAiRecommendationConfig({ AI_API_URL: 'http://ai-api.example.com' }),
+    ).toThrow()
+    expect(() =>
+      readAiRecommendationConfig({ AI_API_URL: 'http://203.0.113.5:8000' }),
+    ).toThrow()
   })
 })

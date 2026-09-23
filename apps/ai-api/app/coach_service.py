@@ -155,6 +155,14 @@ tools you need (several in one step when independent), then call
 already present in the context, especially `activityDigest`. Never put the learner's handle, name, rating or
 other private details in a web_search query. When you are done, you must call
 `submit_answer`; plain text replies are discarded.
+When `roadmap.refreshSuggested` is present and the learner asks about their
+plan, progress or what to practice, mention once that refreshing the learning
+plan (Learning plan, then Refresh plan) will pull their newest solves.
+The context already holds the learner's most relevant memories. When the
+question depends on something from their history that those do not cover (an
+earlier conversation, a goal or topic they asked you to focus on or set aside, a
+recurring mistake), call `recall_memory` before answering and act on what it
+returns. Memories are the learner's own history: never quote them word for word.
 """
 
 
@@ -500,6 +508,10 @@ class AgentToolServices(Protocol):
         self, learner_id: UUID, provider: str
     ) -> dict[str, Any]: ...
 
+    async def agent_recall_memory(
+        self, learner_id: UUID, query: str
+    ) -> dict[str, Any]: ...
+
 
 def coach_chat_model(settings: AiSettings, *, fast: bool = False) -> BaseChatModel:
     """The coach's chat model; `fast` is the quick fallback after a timeout."""
@@ -759,11 +771,23 @@ class GeminiCoachModel:
                 return {"error": "Live platform refresh is unavailable."}
             return await services.agent_refresh_platform(request.learnerId, provider)
 
+        has_memory = (
+            services is not None
+            and self.settings.memory_rag_enabled
+            and getattr(services, "agent_recall_memory", None) is not None
+        )
+
+        async def recall_memory(query: str) -> dict[str, Any]:
+            if services is None:
+                return {"error": "Learner memory is unavailable."}
+            return await services.agent_recall_memory(request.learnerId, query)
+
         toolbox = WorkspaceTools(
             request.workspace,
             knowledge_search=knowledge_search if has_knowledge else None,
             web_search=web_search if has_web else None,
             platform_refresh=refresh_platform if has_refresh else None,
+            memory_recall=recall_memory if has_memory else None,
         )
         final_tool = {
             "name": FINAL_TOOL,
@@ -771,12 +795,19 @@ class GeminiCoachModel:
             "parameters": coach_output_json_schema(),
         }
         declarations = (
-            tool_declarations(knowledge=has_knowledge, web=has_web, refresh=has_refresh)
+            tool_declarations(
+                knowledge=has_knowledge,
+                web=has_web,
+                refresh=has_refresh,
+                memory=has_memory,
+            )
             if request.workspace
             else [
                 item
-                for item in tool_declarations(knowledge=has_knowledge, web=has_web)
-                if item["name"] in {"search_knowledge", "web_search"}
+                for item in tool_declarations(
+                    knowledge=has_knowledge, web=has_web, memory=has_memory
+                )
+                if item["name"] in {"search_knowledge", "web_search", "recall_memory"}
             ]
         )
         plan = prefetch_plan(request.question) if request.workspace else []
@@ -1056,6 +1087,33 @@ class CoachService:
     ) -> dict[str, Any]:
         """Fetch a learner's newest data from one platform via the core API."""
         return await request_live_refresh(self.settings, learner_id, provider)
+
+    async def agent_recall_memory(self, learner_id: UUID, query: str) -> dict[str, Any]:
+        """Hybrid (vector + keyword) search over this learner's active memories.
+
+        The learner ID comes from the authenticated internal request, never
+        from the model, so the agent can only read its own learner's memory.
+        """
+        from .memory_service import get_memory_service
+
+        try:
+            retrieved = await get_memory_service().retrieve(learner_id, query, 8)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001
+            return {"error": "Learner memory is temporarily unavailable."}
+        return {
+            "memories": [
+                {
+                    "category": memory.category,
+                    "statement": memory.statement,
+                    "confidence": round(memory.confidence, 2),
+                    "updatedAt": memory.updatedAt.date().isoformat(),
+                }
+                for memory in retrieved.items
+                if memory.status == "active"
+            ]
+        }
 
     async def agent_web_search(
         self, query: str, workspace: dict[str, object] | None

@@ -1,0 +1,18 @@
+# Keep build contexts small and secret-free.
+**/node_modules
+**/dist
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/coverage
+**/.env
+**/.env.*
+!**/.env.example
+.git
+.claude
+docs
+apps/browser-extension/release
+apps/web/public/extension
+apps/core-api/src/generated
+**/.DS_Store

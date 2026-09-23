@@ -10,6 +10,7 @@ import {
   CoachResponseSchema,
   CoachRoadmapNoteResponseSchema,
   ImprovementRoadmapResponseSchema,
+  RoadmapRefreshResponseSchema,
   type CoachConversation,
   type CoachMessage,
   type CoachPreferences,
@@ -289,6 +290,18 @@ export const coachHandlers: RequestHandler[] = [
   http.get('/api/coach/roadmap', () =>
     HttpResponse.json(
       ImprovementRoadmapResponseSchema.parse({ data: roadmap() }),
+    ),
+  ),
+  http.post('/api/coach/roadmap/refresh', () =>
+    HttpResponse.json(
+      RoadmapRefreshResponseSchema.parse({
+        data: {
+          ...roadmap(),
+          lastRefreshedAt: new Date().toISOString(),
+          refreshHint: { suggested: false, reasons: [] },
+        },
+        meta: { platforms: [{ provider: 'codeforces', status: 'refreshed' }] },
+      }),
     ),
   ),
   http.patch('/api/coach/roadmap/topics/:topic/status', () =>

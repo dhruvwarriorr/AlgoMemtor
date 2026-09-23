@@ -106,6 +106,21 @@ export const ImprovementTopicSchema = z
   .strict()
 export type ImprovementTopic = z.infer<typeof ImprovementTopicSchema>
 
+// Why the learner should pull fresh platform data and rebuild the plan.
+export const RoadmapRefreshReasonSchema = z.enum([
+  'stale_platform_data',
+  'plan_unchanged',
+])
+export type RoadmapRefreshReason = z.infer<typeof RoadmapRefreshReasonSchema>
+
+export const RoadmapRefreshHintSchema = z
+  .object({
+    suggested: z.boolean(),
+    reasons: z.array(RoadmapRefreshReasonSchema).max(2),
+  })
+  .strict()
+export type RoadmapRefreshHint = z.infer<typeof RoadmapRefreshHintSchema>
+
 export const ImprovementRoadmapSchema = z
   .object({
     id: identifierSchema,
@@ -115,9 +130,40 @@ export const ImprovementRoadmapSchema = z
     dataCompleteness: z.enum(['complete', 'partial', 'unknown']),
     staleProviders: z.array(ProviderKeySchema),
     generatedAt: dateSchema,
+    // Set when the learner last asked for a refresh (fresh platform data).
+    lastRefreshedAt: dateSchema.optional(),
+    // Computed on read; never part of the plan's content or version.
+    refreshHint: RoadmapRefreshHintSchema.optional(),
   })
   .strict()
 export type ImprovementRoadmap = z.infer<typeof ImprovementRoadmapSchema>
+
+export const RoadmapPlatformRefreshSchema = z
+  .object({
+    provider: ProviderKeySchema,
+    status: z.enum([
+      'refreshed',
+      'recently_refreshed',
+      'browser_connector',
+      'unavailable',
+    ]),
+  })
+  .strict()
+export type RoadmapPlatformRefresh = z.infer<
+  typeof RoadmapPlatformRefreshSchema
+>
+
+export const RoadmapRefreshResponseSchema = z
+  .object({
+    data: ImprovementRoadmapSchema,
+    meta: z
+      .object({ platforms: z.array(RoadmapPlatformRefreshSchema).max(4) })
+      .strict(),
+  })
+  .strict()
+export type RoadmapRefreshResponse = z.infer<
+  typeof RoadmapRefreshResponseSchema
+>
 
 export const ImprovementRoadmapResponseSchema = z
   .object({ data: ImprovementRoadmapSchema })

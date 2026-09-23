@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-Provider = Literal["codeforces", "codechef", "leetcode"]
+Provider = Literal["codeforces", "codechef", "leetcode", "cses"]
 NormalizedDifficulty = Literal["easy", "medium", "hard"]
 FallbackReason = Literal[
     "not_configured",
@@ -43,6 +43,15 @@ class RankingTopicEvidence(StrictModel):
     observedSolvedProblems: int = Field(ge=0)
 
 
+class RankingContestSummary(StrictModel):
+    """Recent contest standing, derived by Express from stored rating changes."""
+
+    contestsLast90Days: int = Field(ge=0, le=1_000)
+    currentRating: float | None = Field(default=None, ge=0, le=5_000)
+    ratingChange90Days: float | None = Field(default=None, ge=-5_000, le=5_000)
+    trend: Literal["rising", "steady", "falling"] | None = None
+
+
 class RankingLearner(StrictModel):
     goal: str = Field(min_length=1, max_length=64)
     experience: str = Field(min_length=1, max_length=64)
@@ -56,6 +65,12 @@ class RankingLearner(StrictModel):
     topicEvidence: list[RankingTopicEvidence] = Field(
         default_factory=list, max_length=25
     )
+    # Deterministic signals computed by Express from the learner's own
+    # evidence and roadmap; each is a bounded list of canonical topic slugs.
+    roadmapFocusTopics: list[Topic] = Field(default_factory=list, max_length=8)
+    weakTopics: list[Topic] = Field(default_factory=list, max_length=8)
+    underPracticedTopics: list[Topic] = Field(default_factory=list, max_length=8)
+    contestSummary: RankingContestSummary | None = None
 
     @model_validator(mode="after")
     def validate_topic_evidence(self) -> RankingLearner:

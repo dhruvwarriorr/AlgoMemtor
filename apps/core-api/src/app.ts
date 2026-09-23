@@ -74,6 +74,7 @@ import {
   CoachActionProposalResponseSchema,
   CoachCheckInActionRequestSchema,
   ImprovementRoadmapResponseSchema,
+  RoadmapRefreshResponseSchema,
   SetCoachTopicStatusRequestSchema,
   CoachRoadmapNoteRequestSchema,
   CoachRoadmapNoteResponseSchema,
@@ -3480,6 +3481,66 @@ export const createApp = (options: CreateAppOptions = {}) => {
         response.json(
           ImprovementRoadmapResponseSchema.parse({
             data: await coachService.getRoadmap(authenticatedSubject(response)),
+          }),
+        )
+      } catch (error) {
+        if (!respondWithCoachError(error, response)) throw error
+      }
+    },
+  )
+
+  // Pull the newest data from every linked platform, then rebuild the plan.
+  // Each platform refresh is bounded and rate-limited by the live refresh
+  // service; one failing platform never fails the whole refresh.
+  app.post(
+    '/api/coach/roadmap/refresh',
+    requireAuthenticated,
+    async (_request, response) => {
+      const userId = authenticatedSubject(response)
+      try {
+        if (await progressRepository.hasPendingDeletion?.(userId)) {
+          response
+            .status(409)
+            .json(
+              createApiError(
+                'LEARNER_DATA_DELETION_PENDING',
+                'Learner data is temporarily hidden while deletion finishes.',
+                { retryable: true },
+              ),
+            )
+          return
+        }
+        const accounts =
+          await providerAccountRepository.findAllByAuthUserId(userId)
+        const platforms = await Promise.all(
+          accounts.map(async (account) => {
+            try {
+              const result = await coachLiveRefresh.refresh(
+                userId,
+                account.provider,
+              )
+              return {
+                provider: account.provider,
+                status:
+                  result.status === 'not_linked'
+                    ? ('unavailable' as const)
+                    : result.status,
+              }
+            } catch {
+              return {
+                provider: account.provider,
+                status: 'unavailable' as const,
+              }
+            }
+          }),
+        )
+        const roadmap = await coachService.refreshRoadmap(userId)
+        // New evidence and focus should reach the next recommendation batch.
+        recommendationService.invalidateForLearner(userId)
+        response.json(
+          RoadmapRefreshResponseSchema.parse({
+            data: roadmap,
+            meta: { platforms },
           }),
         )
       } catch (error) {

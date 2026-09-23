@@ -13,6 +13,7 @@ import {
   fetchCoachPreferences,
   fetchCoachRoadmap,
   markCoachCheckIn,
+  refreshCoachRoadmap,
   renameCoachConversation,
   saveCoachPreferences,
   sendCoachMessage,
@@ -178,6 +179,30 @@ export function useSendCoachMessage() {
   })
 }
 
+export function useRefreshCoachRoadmap() {
+  const queryClient = useQueryClient()
+  const { user } = useAuth()
+  return useMutation({
+    mutationFn: refreshCoachRoadmap,
+    onSuccess: (result) => {
+      if (!user) return
+      queryClient.setQueryData([...coachKey(user.id), 'roadmap'], {
+        data: result.data,
+      })
+      // Fresh platform data feeds picks, analytics and the dashboard too.
+      void Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ['recommendations', user.id],
+        }),
+        queryClient.invalidateQueries({ queryKey: ['platform', user.id] }),
+        queryClient.invalidateQueries({
+          queryKey: ['progress', 'analytics', user.id],
+        }),
+      ])
+    },
+  })
+}
+
 export function useSetCoachTopicStatus() {
   const queryClient = useQueryClient()
   const { user } = useAuth()
@@ -193,9 +218,11 @@ export function useSetCoachTopicStatus() {
       if (user) {
         void Promise.all([
           queryClient.invalidateQueries({
-          queryKey: [...coachKey(user.id), 'roadmap'],
+            queryKey: [...coachKey(user.id), 'roadmap'],
           }),
-          queryClient.invalidateQueries({ queryKey: ['recommendations', user.id] }),
+          queryClient.invalidateQueries({
+            queryKey: ['recommendations', user.id],
+          }),
         ])
       }
     },

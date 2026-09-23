@@ -5,6 +5,8 @@ import type {
   CoachRoadmapLane,
   ImprovementTopic,
   ProviderKey,
+  RoadmapPlatformRefresh,
+  RoadmapRefreshReason,
 } from '@algomemtor/shared-contracts'
 import {
   ArrowDown,
@@ -54,6 +56,7 @@ import {
   useCreateCoachConversation,
   useDeleteCoachConversation,
   useMarkCoachCheckIn,
+  useRefreshCoachRoadmap,
   useRenameCoachConversation,
   useSaveCoachPreferences,
   useSendCoachMessage,
@@ -208,6 +211,24 @@ function formatDate(value: string) {
   } catch {
     return value
   }
+}
+
+const refreshReasonText: Record<RoadmapRefreshReason, string> = {
+  stale_platform_data: 'Some of your platform data is out of date.',
+  plan_unchanged: 'Your plan has not changed in over a week.',
+}
+
+function refreshSummary(platforms: readonly RoadmapPlatformRefresh[]) {
+  const refreshed = platforms
+    .filter((item) => item.status === 'refreshed')
+    .map((item) => providerLabels[item.provider])
+  if (platforms.length === 0) {
+    return 'Rebuilt from your saved activity. Link a platform to pull new data.'
+  }
+  if (refreshed.length === 0) {
+    return 'Your platforms were refreshed recently, so the plan was rebuilt from saved data.'
+  }
+  return `Pulled your latest activity from ${refreshed.join(', ')} and rebuilt the plan.`
 }
 
 function percent(value: number) {
@@ -400,6 +421,7 @@ function CoachPage() {
   const sendMessage = useSendCoachMessage()
   const setTopicStatus = useSetCoachTopicStatus()
   const submitRoadmapNote = useSubmitCoachRoadmapNote()
+  const refreshRoadmap = useRefreshCoachRoadmap()
   const [roadmapNoteText, setRoadmapNoteText] = useState('')
   const dismissProblem = useDismissProblem()
   const dismissalsQuery = useRecommendationDismissals()
@@ -1348,10 +1370,64 @@ function CoachPage() {
                   your evidence.
                 </p>
               </div>
-              <span className="rounded-md bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
-                {roadmap?.topics.length ?? 0} topics
-              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-md bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
+                  {roadmap?.topics.length ?? 0} topics
+                </span>
+                <Button
+                  disabled={refreshRoadmap.isPending}
+                  onClick={() =>
+                    refreshRoadmap.mutate(undefined, {
+                      onSuccess: (result) =>
+                        notify({
+                          title: 'Learning plan refreshed',
+                          description: refreshSummary(result.meta.platforms),
+                          tone: 'success',
+                        }),
+                      onError: (error) =>
+                        notify({
+                          title: 'Could not refresh your plan',
+                          description:
+                            error instanceof Error
+                              ? error.message
+                              : 'Try again shortly.',
+                          tone: 'error',
+                        }),
+                    })
+                  }
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  <RefreshCw
+                    aria-hidden="true"
+                    className={cn(
+                      refreshRoadmap.isPending &&
+                        'animate-spin motion-reduce:animate-none',
+                    )}
+                  />
+                  {refreshRoadmap.isPending ? 'Refreshing…' : 'Refresh plan'}
+                </Button>
+              </div>
             </div>
+            {roadmap?.lastRefreshedAt ? (
+              <p className="-mt-4 mb-4 text-xs text-muted-foreground">
+                Last refreshed {formatDate(roadmap.lastRefreshedAt)}
+              </p>
+            ) : null}
+            {roadmap?.refreshHint?.suggested && !refreshRoadmap.isPending ? (
+              <div
+                className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-sun/40 bg-sun-soft p-3 text-sm text-sun-foreground"
+                role="status"
+              >
+                <p>
+                  {roadmap.refreshHint.reasons
+                    .map((reason) => refreshReasonText[reason])
+                    .join(' ')}{' '}
+                  Refresh to pull your latest solves and rebuild it.
+                </p>
+              </div>
+            ) : null}
             <form
               className="mb-6 rounded-lg border border-border bg-card p-3"
               onSubmit={(event) => {

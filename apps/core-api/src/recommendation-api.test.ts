@@ -19,7 +19,9 @@ import type {
   AiRankingResponse,
 } from './integrations/ai/ai-recommendation-client.js'
 import type { ProblemProvider } from './integrations/providers/problem-provider.js'
+import { InMemoryCoachRepository } from './repositories/coach-repository.js'
 import { InMemoryProblemActionRepository } from './repositories/problem-action-repository.js'
+import { InMemoryProviderDataRepository } from './repositories/provider-data-repository.js'
 import { InMemoryProgressRepository } from './repositories/progress-repository.js'
 import { InMemoryRecommendationRepository } from './repositories/recommendation-repository.js'
 import {
@@ -134,8 +136,10 @@ afterEach(async () => {
 const startApp = (
   options: {
     aiRecommendationClient?: AiRecommendationClient
+    coachRepository?: InMemoryCoachRepository
     problemActionRepository?: InMemoryProblemActionRepository
     progressRepository?: InMemoryProgressRepository
+    providerDataRepository?: InMemoryProviderDataRepository
     recommendationRepository?: InMemoryRecommendationRepository
   } = {},
 ) => {
@@ -153,6 +157,12 @@ const startApp = (
     ...(options.aiRecommendationClient === undefined
       ? {}
       : { aiRecommendationClient: options.aiRecommendationClient }),
+    ...(options.coachRepository === undefined
+      ? {}
+      : { coachRepository: options.coachRepository }),
+    ...(options.providerDataRepository === undefined
+      ? {}
+      : { providerDataRepository: options.providerDataRepository }),
     logger,
     problemActionRepository:
       options.problemActionRepository ?? new InMemoryProblemActionRepository(),
@@ -170,6 +180,118 @@ const startApp = (
 }
 
 describe('recommendation API', () => {
+  it('rotates to a fresh batch once per learner day', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-09-24T08:00:00.000Z'))
+      const baseUrl = startApp()
+      const headers = authorization('user-a')
+      const load = async () =>
+        RecommendationFeedResponseSchema.parse(
+          await (
+            await fetch(`${baseUrl}/api/recommendations`, { headers })
+          ).json(),
+        ).data
+
+      const morning = await load()
+      vi.setSystemTime(new Date('2026-09-24T21:00:00.000Z'))
+      const evening = await load()
+      vi.setSystemTime(new Date('2026-09-25T08:00:00.000Z'))
+      const nextDay = await load()
+
+      expect(evening?.id).toBe(morning?.id)
+      expect(nextDay?.id).not.toBe(morning?.id)
+      const yesterday = new Set(
+        morning?.items.map((item) => item.problem.externalId),
+      )
+      expect(
+        nextDay?.items.some((item) => !yesterday.has(item.problem.externalId)),
+      ).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('sends plan, weak-topic and contest signals to AI only under consent', async () => {
+    const coachRepository = new InMemoryCoachRepository()
+    await coachRepository.setTopicStatus(userA, 'math', 'working_on')
+    await coachRepository.setTopicStatus(userB, 'math', 'working_on')
+    const providerDataRepository = new InMemoryProviderDataRepository()
+    const change = {
+      provider: 'codeforces' as const,
+      eventId: 'round-1',
+      occurredAt: new Date(Date.now() - 5 * 86_400_000).toISOString(),
+      oldRating: 1760,
+      newRating: 1806,
+      delta: 46,
+      provenance: {
+        provider: 'codeforces' as const,
+        providerId: 'round-1',
+        canonicalUrl: 'https://codeforces.com/contests',
+        sourceUrl: 'https://codeforces.com/api/user.rating',
+        extractionStrategy: 'official_json' as const,
+        schemaVersion: 'test-v1',
+        completeness: 'complete' as const,
+        fetchedAt: new Date().toISOString(),
+        stale: false,
+      },
+    }
+    await providerDataRepository.saveRatingChanges(userA, 'account-a', [change])
+    await providerDataRepository.saveRatingChanges(userB, 'account-b', [change])
+    const progressRepository = new InMemoryProgressRepository()
+    await progressRepository.saveConsent(
+      userA,
+      true,
+      'personalized-coaching-rag-v2',
+    )
+    const requests = new Map<string, AiRankingRequest>()
+    const rank = vi.fn<AiRecommendationClient['rank']>(async (request) => {
+      requests.set(request.learnerId, request)
+      return {
+        items: [],
+        model: 'test-unavailable',
+        fallback: true,
+        fallbackReason: 'not_configured',
+        latencyMs: 0,
+      }
+    })
+    const baseUrl = startApp({
+      aiRecommendationClient: { rank },
+      coachRepository,
+      progressRepository,
+      providerDataRepository,
+    })
+
+    await fetch(`${baseUrl}/api/recommendations`, {
+      headers: authorization('user-a'),
+    })
+    await fetch(`${baseUrl}/api/recommendations`, {
+      headers: authorization('user-b'),
+    })
+
+    const consented = requests.get(userA)?.learner
+    expect(consented?.roadmapFocusTopics).toEqual(['math'])
+    // Without a saved profile the learner's plan leads the cold-start topics.
+    expect(consented?.focusTopics[0]).toBe('math')
+    expect(consented?.contestSummary).toEqual({
+      contestsLast90Days: 1,
+      currentRating: 1806,
+      ratingChange90Days: 46,
+      trend: 'rising',
+    })
+    const private_ = requests.get(userB)?.learner
+    expect(private_).toBeDefined()
+    expect(private_).not.toHaveProperty('roadmapFocusTopics')
+    expect(private_).not.toHaveProperty('contestSummary')
+    // Only the stated (cold-start) profile, in its own order.
+    expect(private_?.focusTopics).toEqual([
+      'implementation',
+      'math',
+      'sorting',
+      'strings',
+    ])
+  })
+
   it('passes observed topic progress to AI and refreshes after new evidence', async () => {
     const problemActionRepository = new InMemoryProblemActionRepository()
     const progressRepository = new InMemoryProgressRepository()

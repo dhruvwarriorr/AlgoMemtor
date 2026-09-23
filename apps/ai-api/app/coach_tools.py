@@ -186,7 +186,7 @@ def verdict_group(verdict: object, accepted: object = None) -> str:
 
 
 def tool_declarations(
-    *, knowledge: bool, web: bool, refresh: bool = False
+    *, knowledge: bool, web: bool, refresh: bool = False, memory: bool = False
 ) -> list[ToolDeclaration]:
     common_filters = {
         "provider": {
@@ -366,6 +366,31 @@ def tool_declarations(
                 },
             }
         )
+    if memory:
+        declarations.append(
+            {
+                "name": "recall_memory",
+                "description": (
+                    "Search the learner's long-term memory: things they told you "
+                    "in earlier conversations (goals, topics to focus on or set "
+                    "aside, how they like explanations) and patterns noted from "
+                    "their synced activity (weak topics, repeated mistakes, "
+                    "contest performance). Use it when the answer depends on "
+                    "their history or earlier conversations and the memories "
+                    "already in the context do not cover it."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "What to remember, e.g. 'dp mistakes'.",
+                        }
+                    },
+                    "required": ["query"],
+                },
+            }
+        )
     if refresh:
         declarations.append(
             {
@@ -418,12 +443,14 @@ class WorkspaceTools:
         | None = None,
         web_search: Callable[[str], Awaitable[dict[str, Any]]] | None = None,
         platform_refresh: Callable[[str], Awaitable[dict[str, Any]]] | None = None,
+        memory_recall: Callable[[str], Awaitable[dict[str, Any]]] | None = None,
         now: datetime | None = None,
     ) -> None:
         self.workspace = workspace or {}
         self.knowledge_search = knowledge_search
         self.web_search = web_search
         self.platform_refresh = platform_refresh
+        self.memory_recall = memory_recall
         self.refreshed: set[str] = set()
         self.now = now or datetime.now(UTC)
 
@@ -454,6 +481,8 @@ class WorkspaceTools:
             query = arguments.get("query")
             if not isinstance(query, str) or not query.strip():
                 return {"error": "A non-empty query is required."}
+            if name == "recall_memory" and self.memory_recall is not None:
+                return await self.memory_recall(query.strip()[:300])
             if name == "search_knowledge" and self.knowledge_search is not None:
                 return {"results": await self.knowledge_search(query.strip()[:300])}
             if name == "web_search" and self.web_search is not None:

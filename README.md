@@ -362,7 +362,7 @@ Core API:
 ```text
 AI_API_URL=http://localhost:8000
 CORE_API_URL=http://localhost:3001
-AI_RANKING_TIMEOUT_MS=8000
+AI_RANKING_TIMEOUT_MS=25000
 INTERNAL_SERVICE_TOKEN=
 PROGRESS_ENABLED=true
 MEMORY_GENERATION_ENABLED=true
@@ -501,6 +501,25 @@ npm run dev:worker
 | Express health check | `http://localhost:3001/health`            |
 | FastAPI health check | `http://localhost:8000/health`            |
 | Memory worker        | durable outbox consumer; no HTTP endpoint |
+
+## Production deployment
+
+The repository ships production Dockerfiles for the core API (which also runs
+both workers and the Prisma migrations), the AI API, and the web app (served by
+nginx, which proxies `/api/`), plus `docker-compose.prod.yml` with PostgreSQL +
+pgvector and one-shot migration jobs:
+
+```bash
+cp deploy/compose.env.example .env
+cp deploy/core.env.example deploy/core.env
+cp deploy/ai.env.example deploy/ai.env
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+Only the web container publishes a port; terminate TLS in front of it and use
+that HTTPS origin as `PUBLIC_SITE_URL`. See “Production deployment (Docker)” in
+[`docs/PROJECT_DOCUMENTATION.md`](docs/PROJECT_DOCUMENTATION.md) for the service
+layout, secrets handling, and release checklist.
 
 ## Mock-first development
 

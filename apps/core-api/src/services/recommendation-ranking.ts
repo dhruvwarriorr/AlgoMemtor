@@ -296,16 +296,24 @@ export const deriveRecommendationHistory = (
   }
 }
 
+// Catalog topics and roadmap topics can name the same idea differently
+// ("dp" and "dynamic-programming"), so both spellings are compared.
+const matchingTopic = (
+  problem: Pick<ExternalProblemSummary, 'topics'>,
+  topics: readonly string[],
+) =>
+  problem.topics.find(
+    (topic) =>
+      topics.includes(topic) || topics.includes(canonicalCoachTopic(topic)),
+  )
+
 const topicMatch = (
   problem: ExternalProblemSummary,
   profile: NormalizedRankingProfile,
 ) => {
-  const weakMatch = problem.topics.some((topic) =>
-    profile.focusTopics.includes(topic),
-  )
-  const preferredMatch = problem.topics.some((topic) =>
-    profile.preferredTopics.includes(topic),
-  )
+  const weakMatch = matchingTopic(problem, profile.focusTopics) !== undefined
+  const preferredMatch =
+    matchingTopic(problem, profile.preferredTopics) !== undefined
 
   if (weakMatch) {
     return 1
@@ -367,12 +375,8 @@ const diversityMatch = (
 ) => {
   const selectedTopics = new Set(selected.flatMap((item) => item.topics))
 
-  if (
-    problem.topics.some(
-      (topic) =>
-        profile.focusTopics.includes(topic) && !selectedTopics.has(topic),
-    )
-  ) {
+  const focusTopic = matchingTopic(problem, profile.focusTopics)
+  if (focusTopic !== undefined && !selectedTopics.has(focusTopic)) {
     return 1
   }
 
@@ -424,16 +428,12 @@ const reasonFor = (
   const revision = revisionMatch(problem, history)
 
   if (topic === 1) {
-    const topic = problem.topics.find((item) =>
-      profile.focusTopics.includes(item),
-    )
+    const topic = matchingTopic(problem, profile.focusTopics)
     if (topic !== undefined) {
       reasons.push(`Practises your focus topic: ${topic}.`)
     }
   } else if (topic === 0.75) {
-    const topic = problem.topics.find((item) =>
-      profile.preferredTopics.includes(item),
-    )
+    const topic = matchingTopic(problem, profile.preferredTopics)
     if (topic !== undefined) {
       reasons.push(`Includes a topic you enjoy: ${topic}.`)
     }

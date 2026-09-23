@@ -46,6 +46,11 @@ import {
   RECOMMENDATION_BATCH_SIZE,
 } from './recommendation-ranking.js'
 import {
+  deriveRecommendationSignals,
+  learnerDayKey,
+  type RecommendationSignals,
+} from './recommendation-signals.js'
+import {
   deriveRecommendationTopicEvidence,
   type RecommendationTopicEvidence,
 } from './recommendation-topic-evidence.js'
@@ -62,6 +67,7 @@ type RecommendationServiceOptions = {
   providerDataRepository: ProviderDataRepository
   coachRepository?: CoachRepository
   memoryGenerationEnabled?: boolean
+  now?: () => Date
 }
 
 type ProviderSnapshot = {
@@ -72,6 +78,29 @@ type ProviderSnapshot = {
 
 const identity = (provider: string, externalId: string) =>
   `${provider}:${externalId}`
+
+const FOCUS_TOPIC_LIMIT = 12
+
+const roundToHundred = (value: number) => Math.round(value / 100) * 100
+
+// A learner who lets AlgoMemtor decide gets a band around their latest
+// observed Codeforces rating rather than their onboarding estimate.
+const calibratedRatingBand = (
+  profile: LearnerProfile | null,
+  current: ReturnType<typeof deriveRankingProfile>['ratingBand'],
+  observedRating: number | undefined,
+) => {
+  if (
+    profile === null ||
+    observedRating === undefined ||
+    profile.ratingComfortRange !== undefined ||
+    profile.difficultyComfort !== 'let_algomemtor_decide'
+  ) {
+    return current
+  }
+  const min = Math.max(800, roundToHundred(observedRating - 100))
+  return { min, max: Math.max(min, roundToHundred(observedRating + 200)) }
+}
 
 export const AI_RANKING_VERSION = 'ai-gemini-rag-v2'
 export const AI_FALLBACK_RANKING_VERSION = 'ai-rag-v2-fallback-deterministic-v2'
@@ -331,6 +360,7 @@ export class RecommendationService {
     rankingProfile: ReturnType<typeof deriveRankingProfile>,
     topicEvidence: readonly RecommendationTopicEvidence[],
     shortlist: readonly { problem: ExternalProblemSummary }[],
+    signals: RecommendationSignals | null,
   ): AiRankingRequest {
     return {
       requestId,
@@ -346,6 +376,16 @@ export class RecommendationService {
           'solve_problems_directly',
         ],
         topicEvidence: [...topicEvidence],
+        ...(signals === null
+          ? {}
+          : {
+              roadmapFocusTopics: signals.roadmapFocusTopics,
+              weakTopics: signals.weakTopics,
+              underPracticedTopics: signals.underPracticedTopics,
+              ...(signals.contestSummary === undefined
+                ? {}
+                : { contestSummary: signals.contestSummary }),
+            }),
         ...(rankingProfile.recommendationPreference === undefined ||
         rankingProfile.excludedTopics.length > 0
           ? {}
@@ -487,6 +527,9 @@ export class RecommendationService {
       progressChange,
       consent,
       topicStatuses,
+      storedRoadmap,
+      coachPreferences,
+      ratingChanges,
     ] = await Promise.all([
       this.options.learnerProfileRepository.findByAuthUserId(authUserId),
       this.options.problemActionRepository.listByAuthUserId(authUserId),
@@ -498,7 +541,17 @@ export class RecommendationService {
       this.options.progressRepository?.latestRelevantChangeAt(authUserId),
       this.options.progressRepository?.getConsent(authUserId),
       this.options.coachRepository?.getTopicStatuses(authUserId),
+      this.options.coachRepository
+        ?.getRoadmap(authUserId)
+        .catch(() => null) ?? Promise.resolve(null),
+      this.options.coachRepository
+        ?.getPreferences(authUserId)
+        .catch(() => undefined) ?? Promise.resolve(undefined),
+      this.options.providerDataRepository
+        .listRatingChanges(authUserId)
+        .catch(() => []),
     ])
+    const now = this.options.now?.() ?? new Date()
     const baseRankingProfile = deriveRankingProfile(profile)
     const skippedTopics = Object.entries(topicStatuses ?? {})
       .filter(([, status]) => status === 'skip_for_now')
@@ -506,7 +559,7 @@ export class RecommendationService {
     const excludedTopics = [
       ...new Set([...baseRankingProfile.excludedTopics, ...skippedTopics]),
     ]
-    const rankingProfile = {
+    const profileRankingProfile = {
       ...baseRankingProfile,
       excludedTopics,
       focusTopics: baseRankingProfile.focusTopics.filter(
@@ -530,9 +583,42 @@ export class RecommendationService {
           actions,
           submissions,
           solved,
-          rankingProfile.excludedTopics,
+          profileRankingProfile.excludedTopics,
         )
       : []
+    // Steer the shortlist with the learner's plan, weak and thin topics, and
+    // their observed rating. Explicitly selected topics keep priority.
+    const signals = deriveRecommendationSignals({
+      roadmap: storedRoadmap,
+      topicStatuses: topicStatuses ?? {},
+      topicEvidence,
+      ratingChanges,
+      excludedTopics: profileRankingProfile.excludedTopics,
+      now,
+    })
+    const explicitFocus =
+      profile?.topicPreference.mode === 'selected'
+        ? profileRankingProfile.focusTopics
+        : []
+    const rankingProfile = {
+      ...profileRankingProfile,
+      focusTopics: [
+        ...new Set([
+          ...explicitFocus,
+          ...signals.roadmapFocusTopics,
+          ...signals.weakTopics,
+          ...(explicitFocus.length > 0 ? [] : profileRankingProfile.focusTopics),
+          ...signals.underPracticedTopics,
+        ]),
+      ]
+        .filter((topic) => !excludedTopics.includes(topic))
+        .slice(0, FOCUS_TOPIC_LIMIT),
+      ratingBand: calibratedRatingBand(
+        profile,
+        profileRankingProfile.ratingBand,
+        signals.observedCodeforcesRating,
+      ),
+    }
     const criteria = criteriaFor(
       rankingProfile,
       profile,
@@ -569,8 +655,16 @@ export class RecommendationService {
       latestBatch?.items.every((item) =>
         availableProblemIds.has(identity(item.provider, item.externalId)),
       ) ?? false
+    // Picks rotate once per calendar day in the learner's time zone.
+    const timeZone = coachPreferences?.timezone ?? 'UTC'
+    const latestBatchIsToday =
+      latestBatch !== undefined &&
+      learnerDayKey(latestBatch.createdAt, timeZone) ===
+        learnerDayKey(now, timeZone)
+    const dailyRotation = latestBatch !== undefined && !latestBatchIsToday
     const reusable =
       !forceRefresh &&
+      latestBatchIsToday &&
       latestBatch !== undefined &&
       latestBatch.rankingVersion !== undefined &&
       reusableRankingVersions.has(latestBatch.rankingVersion) &&
@@ -599,7 +693,7 @@ export class RecommendationService {
       candidates: snapshot.problems,
       history,
       profile: rankingProfile,
-      preferNewItems: forceRefresh,
+      preferNewItems: forceRefresh || dailyRotation,
       limit: AI_CANDIDATE_LIMIT,
     })
 
@@ -610,13 +704,16 @@ export class RecommendationService {
       })
     }
 
+    // Without AI consent the model sees only the learner's stated profile,
+    // never topics or bands derived from their activity.
     const aiRequest = this.buildAiRequest(
       authUserId,
       requestId,
       profile,
-      rankingProfile,
+      evidenceConsented ? rankingProfile : profileRankingProfile,
       topicEvidence,
       shortlist,
+      evidenceConsented ? signals : null,
     )
     const candidateIds = aiRequest.candidates.map((candidate) =>
       identity(candidate.provider, candidate.externalId),

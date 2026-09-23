@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+import math
 from collections import Counter
 from dataclasses import dataclass
 from decimal import Decimal
@@ -26,6 +27,7 @@ from .ranking_audit import (
 from .ranking_models import (
     ModelRankingOutput,
     RankedItem,
+    RankingCandidate,
     RankingRequest,
     RankingResponse,
     is_safe_reason,
@@ -45,8 +47,20 @@ Topic evidence counts are unique observed problems, not complete provider histor
 mastery scores. Favor a relevant unsolved attempt or evidence-backed gap when it
 fits the learner's stated goals; do not infer weakness from a missing count.
 When a supplied learner-memory signal materially affects ordering, refer to its category generically (for example, a recent topic weakness or difficulty pattern), but never quote or closely paraphrase the memory statement.
+Learner memory includes instructions and preferences the learner gave the coach in
+conversation (for example a topic to focus on or to set aside for now). Honor them:
+favor candidates that serve a stated focus and place candidates on a set-aside topic
+last.
+Build a balanced set from these deterministic signals, in priority order:
+roadmapFocusTopics (the learner's current learning plan), weakTopics (topics where
+the learner's attempts often fail), underPracticedTopics (topics with few solves for
+the learner's level), then preferred topics. Mix in one or two problems slightly above
+the learner's band when contestSummary shows a rising trend, and keep most picks inside
+the band when it shows a falling trend.
 Do not quote the learner request or reveal names, handles, contact details, IDs, or private data.
 """
+# Below this share of valid model picks the whole ranking falls back.
+MIN_VALID_MODEL_SHARE = 0.5
 RANKING_RETRIEVAL_ERRORS = (OSError, RuntimeError, TypeError, ValueError)
 RANKING_OUTPUT_ERRORS = (ValidationError, TypeError, ValueError)
 
@@ -63,7 +77,10 @@ def ranking_retrieval_topics(request: RankingRequest) -> list[str]:
         key=lambda item: (-item.observedAttemptedProblems, item.topic),
     )
     ordered = (
-        request.learner.focusTopics
+        request.learner.roadmapFocusTopics
+        + request.learner.weakTopics
+        + request.learner.focusTopics
+        + request.learner.underPracticedTopics
         + request.learner.preferredTopics
         + [item.topic for item in evidence if item.observedAttemptedProblems > 0]
         + [topic for topic, _ in frequency.most_common()]
@@ -191,50 +208,124 @@ class RankingService:
         self.model = GeminiRankingModel(self.settings)
         return self.model
 
-    def validate_output(
+    def reason_is_safe(
+        self,
+        request: RankingRequest,
+        reason: str,
+        memories: list[StoredMemory] | None = None,
+    ) -> bool:
+        identifiers = [
+            request.requestId,
+            str(request.learnerId),
+            *(candidate.externalId for candidate in request.candidates),
+            *(
+                identifier
+                for memory in memories or []
+                for identifier in (
+                    str(memory.id),
+                    *(str(evidence_id) for evidence_id in memory.evidenceIds),
+                )
+            ),
+        ]
+        return (
+            is_safe_reason(reason)
+            and not repeats_identifier(identifiers, reason)
+            and not repeats_preference_text(
+                request.learner.recommendationPreference, reason
+            )
+            and not repeats_memory_text(
+                [memory.statement for memory in memories or []], reason
+            )
+        )
+
+    def metadata_reason(
+        self, request: RankingRequest, candidate: RankingCandidate
+    ) -> str:
+        """A reason built only from candidate metadata and learner signals."""
+        learner = request.learner
+        priority = [
+            *learner.roadmapFocusTopics,
+            *learner.weakTopics,
+            *learner.underPracticedTopics,
+            *learner.focusTopics,
+            *learner.preferredTopics,
+        ]
+        topic = next(
+            (item for item in priority if item in candidate.topics),
+            candidate.topics[0],
+        )
+        label = topic.replace("-", " ")
+        if topic in learner.roadmapFocusTopics:
+            reason = f"Supports {label}, a current focus in your learning plan."
+        elif topic in learner.weakTopics:
+            reason = f"Targets {label}, where your recent attempts often fail."
+        elif topic in learner.underPracticedTopics:
+            reason = f"Builds practice in {label}, which you have solved little of."
+        elif candidate.normalizedDifficulty is not None:
+            reason = (
+                f"Practises {label} at {candidate.normalizedDifficulty} difficulty."
+            )
+        else:
+            reason = f"Practises {label} within your target difficulty."
+        return (
+            reason
+            if self.reason_is_safe(request, reason)
+            else "Fits your current practice plan and target difficulty."
+        )
+
+    def repair_output(
         self,
         request: RankingRequest,
         items: list[RankedItem],
         memories: list[StoredMemory] | None = None,
-    ) -> None:
-        allowed = {
-            f"{candidate.provider}:{candidate.externalId}"
+    ) -> list[RankedItem]:
+        """Keep valid model picks, never let unsafe text through, fill the rest.
+
+        Unknown or duplicate IDs are dropped. An unsafe reason is replaced with
+        one built from candidate metadata. When too few picks survive, the
+        ranking falls back; otherwise it is completed from the deterministic
+        shortlist order in which Express supplied the candidates.
+        """
+        candidates = {
+            f"{candidate.provider}:{candidate.externalId}": candidate
             for candidate in request.candidates
         }
-        returned = [f"{item.provider}:{item.externalId}" for item in items]
-        if len(items) != request.expectedCount:
-            raise ValueError("Gemini returned the wrong number of items.")
-        if len(returned) != len(set(returned)):
-            raise ValueError("Gemini returned duplicate candidate IDs.")
-        if not set(returned).issubset(allowed):
-            raise ValueError("Gemini returned an unknown candidate ID.")
-        if not all(
-            is_safe_reason(item.reason)
-            and not repeats_identifier(
-                [
-                    request.requestId,
-                    str(request.learnerId),
-                    *(candidate.externalId for candidate in request.candidates),
-                    *(
-                        identifier
-                        for memory in memories or []
-                        for identifier in (
-                            str(memory.id),
-                            *(str(evidence_id) for evidence_id in memory.evidenceIds),
-                        )
-                    ),
-                ],
-                item.reason,
+        kept: list[RankedItem] = []
+        seen: set[str] = set()
+        for item in items:
+            key = f"{item.provider}:{item.externalId}"
+            candidate = candidates.get(key)
+            if candidate is None or key in seen:
+                continue
+            seen.add(key)
+            reason = (
+                item.reason
+                if self.reason_is_safe(request, item.reason, memories)
+                else self.metadata_reason(request, candidate)
             )
-            and not repeats_preference_text(
-                request.learner.recommendationPreference, item.reason
+            kept.append(item.model_copy(update={"reason": reason}))
+            if len(kept) == request.expectedCount:
+                break
+        minimum = max(1, math.ceil(request.expectedCount * MIN_VALID_MODEL_SHARE))
+        if len(kept) < minimum:
+            raise ValueError("The model returned too few valid candidate IDs.")
+        floor = min(item.score for item in kept)
+        for key, candidate in candidates.items():
+            if len(kept) == request.expectedCount:
+                break
+            if key in seen:
+                continue
+            seen.add(key)
+            floor = max(0.0, floor - 0.01)
+            kept.append(
+                RankedItem(
+                    provider=candidate.provider,
+                    externalId=candidate.externalId,
+                    score=floor,
+                    reason=self.metadata_reason(request, candidate),
+                )
             )
-            and not repeats_memory_text(
-                [memory.statement for memory in memories or []], item.reason
-            )
-            for item in items
-        ):
-            raise ValueError("Gemini returned an unsafe recommendation reason.")
+        return kept
 
     def estimated_cost(
         self, input_tokens: int | None, output_tokens: int | None
@@ -362,7 +453,9 @@ class RankingService:
                 f"Learner is preparing for {request.learner.goal} at "
                 f"{request.learner.experience} level. Focus topics: "
                 f"{', '.join(request.learner.focusTopics)}. Preferred topics: "
-                f"{', '.join(request.learner.preferredTopics)}. Candidate topics: "
+                f"{', '.join(request.learner.preferredTopics)}. Weak topics: "
+                f"{', '.join(request.learner.weakTopics)}. Plan focus: "
+                f"{', '.join(request.learner.roadmapFocusTopics)}. Candidate topics: "
                 f"{', '.join(candidate_topics)}. Target difficulty "
                 f"{request.learner.preferredDifficulty.min:g}-"
                 f"{request.learner.preferredDifficulty.max:g}."
@@ -404,10 +497,9 @@ class RankingService:
                 fallback_reason = "provider_error"
                 items = []
             else:
-                items = result.output.items
                 input_tokens = result.input_tokens
                 output_tokens = result.output_tokens
-                self.validate_output(request, items, memories)
+                items = self.repair_output(request, result.output.items, memories)
         except TimeoutError:
             fallback_reason = "timeout"
             items = []
