@@ -1,4 +1,4 @@
-import { Download, ExternalLink } from 'lucide-react'
+import { Download, ExternalLink } from '@/components/icons/algo-icons'
 
 import { browserFamily, type BrowserFamily } from './extension-bridge'
 

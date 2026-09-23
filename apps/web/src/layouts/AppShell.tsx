@@ -12,7 +12,7 @@ function AppShell() {
     <div
       className={cn(
         'flex min-h-svh w-full min-w-0 flex-col bg-background',
-        isLanding && 'dark bg-[#0d0d0f] text-foreground',
+        isLanding && 'dark bg-[#0a0a0b] text-foreground',
       )}
     >
       <ScrollRestoration />

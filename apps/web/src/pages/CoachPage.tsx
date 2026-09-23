@@ -31,8 +31,8 @@ import {
   Trash2,
   Trophy,
   X,
-  type LucideIcon,
-} from 'lucide-react'
+  type IconComponent,
+} from '@/components/icons/algo-icons'
 
 import PageContainer from '@/components/layout/PageContainer'
 import PageHeader from '@/components/layout/PageHeader'
@@ -41,6 +41,7 @@ import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { useUserIdentity } from '@/features/auth/user-identity'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
+import { ThinkingOrbs } from '@/components/motion/ThinkingOrbs'
 import { useNotification } from '@/app/useNotification'
 import { useAiConsent } from '@/features/profile/hooks/useLearnerSettings'
 import {
@@ -126,7 +127,7 @@ const guidedPrompts = [
   },
 ] as const
 
-const promptIcons: Record<string, LucideIcon> = {
+const promptIcons: Record<string, IconComponent> = {
   'What should I practice next?': Compass,
   'Review my weak topics': Crosshair,
   'Analyze my recent contests': Trophy,
@@ -514,6 +515,16 @@ function CoachPage() {
       })
       return
     }
+    // Clear the composer straight away so the question moves into the
+    // thread; put it back if the send fails or is cancelled.
+    const draft = {
+      content,
+      transientContext,
+      attachmentFile,
+    }
+    setContent('')
+    setTransientContext('')
+    setAttachmentFile(null)
     try {
       const attachmentType =
         attachmentFile === null ? null : attachmentMimeType(attachmentFile)
@@ -534,10 +545,10 @@ function CoachPage() {
         transientMedia,
         signal: controller.signal,
       })
-      setContent('')
-      setTransientContext('')
-      setAttachmentFile(null)
     } catch (error) {
+      setContent((current) => current || draft.content || message)
+      setTransientContext((current) => current || draft.transientContext)
+      setAttachmentFile((current) => current ?? draft.attachmentFile)
       if (error instanceof DOMException && error.name === 'AbortError') return
       if (error instanceof Error && error.name === 'AbortError') return
       notify({
@@ -636,8 +647,16 @@ function CoachPage() {
   const messages = hasConversation
     ? (conversationQuery.data?.messages ?? [])
     : []
+  // The question being sent, shown in the thread before the reply arrives.
+  const pendingQuestion =
+    sendMessage.isPending &&
+    sendMessage.variables?.conversationId === activeConversationId
+      ? sendMessage.variables.content
+      : null
   const showGreeting =
-    !hasConversation || (!conversationQuery.isPending && messages.length === 0)
+    pendingQuestion === null &&
+    (!hasConversation ||
+      (!conversationQuery.isPending && messages.length === 0))
   const query = search.trim().toLowerCase()
   const filteredConversations = query
     ? conversations.filter((item) => item.title.toLowerCase().includes(query))
@@ -1234,17 +1253,27 @@ function CoachPage() {
                         ),
                       )
                     )}
+                    {pendingQuestion !== null ? (
+                      <article className="animate-rise flex flex-col items-end gap-1.5">
+                        <div className="max-w-[80%] rounded-xl rounded-br-md bg-ink px-4 py-2.5 text-ink-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.1)]">
+                          <h3 className="sr-only">You</h3>
+                          <p className="text-[0.95rem] leading-6 whitespace-pre-wrap">
+                            {pendingQuestion}
+                          </p>
+                        </div>
+                        <span className="px-1 text-[0.7rem] text-muted-foreground">
+                          Sending…
+                        </span>
+                      </article>
+                    ) : null}
                     <div aria-hidden="true" ref={messageEndRef} />
                     {sendMessage.isPending ? (
                       <div
                         className="flex items-center gap-3 text-sm text-muted-foreground"
                         role="status"
                       >
-                        <span
-                          aria-hidden="true"
-                          className="coach-orb animate-orb size-8"
-                        />
-                        <span className="animate-pulse">
+                        <ThinkingOrbs />
+                        <span className="shimmer-text">
                           Checking your profile, history and roadmap…
                         </span>
                         <Button

@@ -1,4 +1,4 @@
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw } from '@/components/icons/algo-icons'
 
 import { Button } from '@/components/ui/button'
 

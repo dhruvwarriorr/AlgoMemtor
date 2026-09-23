@@ -3,20 +3,14 @@ import { useReducedMotion } from 'motion/react'
 
 import { useAuth } from '@/features/auth/useAuth'
 import { CinematicIntro } from '@/features/landing/CinematicIntro'
+import { LandingFooter } from '@/features/landing/LandingFooter'
 import { WaveHero } from '@/features/landing/WaveHero'
 import { WaveField } from '@/features/landing/WaveField'
-import {
-  ClosingCta,
-  CoachOrbit,
-  CoachToolkit,
-  HowItWorks,
-  JourneyTimeline,
-  LandingFooter,
-} from '@/features/landing/LandingSections'
 
-// Dark, cinematic landing: an opening sequence on each guest visit, a wave
-// field, a brand word that fills with liquid and scatters on scroll, then the
-// coach story section by section.
+// Dark landing: a skippable opening sequence on each guest visit, then one
+// pinned scene over the wave field where the brand word fills with liquid
+// and scatters and the big orbiting logo takes its place. The top bar
+// carries the one action.
 function LandingPage() {
   const { status } = useAuth()
   const reduceMotion = useReducedMotion()
@@ -33,14 +27,9 @@ function LandingPage() {
         className="relative z-10 flex-1 overflow-x-clip text-white"
         id="main-content"
       >
-        <WaveHero status={status} />
-        <CoachOrbit />
-        <JourneyTimeline />
-        <HowItWorks />
-        <CoachToolkit />
-        <ClosingCta status={status} />
+        <WaveHero />
       </main>
-      <div className="relative z-10">
+      <div className="relative z-10 bg-[#0a0a0b]/80">
         <LandingFooter />
       </div>
     </>

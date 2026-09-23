@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useReducedMotion } from 'motion/react'
 
 // Landing background: a field of dots riding two slow traveling waves.
-// Crests swell and warm toward the brand orange, the cursor raises a local
+// Crests swell from sky blue into green, the cursor raises a local
 // swell, and a click drops a "pebble" whose ring rolls through the field.
 
 type Pebble = { x: number; y: number; born: number }
@@ -10,7 +10,7 @@ type Pebble = { x: number; y: number; born: number }
 const SPACING = 26
 const FRAME_MS = 1000 / 30
 const CURSOR_RADIUS = 220
-const BG = '#0d0d0f'
+const BG = '#0a0a0b'
 
 export function WaveField() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -71,7 +71,10 @@ export function WaveField() {
           const dy = (h - 0.5) * -4
           const radius = 0.7 + h * 1.4
           if (lift > 0.08) {
-            ctx.fillStyle = `rgba(255,${Math.round(150 - lift * 60)},${Math.round(90 - lift * 50)},${(0.12 + lift * 0.75).toFixed(3)})`
+            // Sky blue (56,189,248) at the foot of a crest, green (74,222,128)
+            // at its peak.
+            const k = Math.min(1, lift)
+            ctx.fillStyle = `rgba(${Math.round(56 + k * 18)},${Math.round(189 + k * 33)},${Math.round(248 - k * 120)},${(0.12 + lift * 0.75).toFixed(3)})`
           } else {
             ctx.fillStyle = `rgba(255,255,255,${(0.05 + h * 0.1).toFixed(3)})`
           }

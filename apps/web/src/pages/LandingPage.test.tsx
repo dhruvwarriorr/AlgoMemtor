@@ -32,35 +32,34 @@ function renderLandingPage(status: AuthStatus) {
 }
 
 describe('LandingPage', () => {
-  it('shows guest actions when unauthenticated', () => {
-    const markup = renderLandingPage('unauthenticated')
+  it('renders only the brand scene and the footer', () => {
+    for (const status of [
+      'unauthenticated',
+      'authenticated',
+      'loading',
+    ] as const) {
+      const markup = renderLandingPage(status)
 
-    expect(markup).toContain('Get Started')
-    expect(markup).toContain('AlgoMemtor introduction')
-    expect(markup).toContain('Skip intro')
-    expect(markup).toContain('One coach.')
-    expect(markup).toContain('Every platform.')
-    expect(markup).not.toContain('Where your practice stands')
-    expect(markup).not.toContain('Login')
-    expect(markup).not.toContain('Go to Dashboard')
+      expect(markup).toContain('aria-label="AlgoMemtor"')
+      expect(markup).toContain('Problems belong to their original platforms.')
+      expect(markup).not.toContain('One coach.')
+      expect(markup).not.toContain('How it')
+      // The single action lives in the top bar, not in the page body.
+      expect(markup).not.toContain('Get Started')
+      expect(markup).not.toContain('Go to Dashboard')
+    }
   })
 
-  it('shows only the dashboard action when authenticated', () => {
-    const markup = renderLandingPage('authenticated')
+  it('plays the skippable intro only for guests', () => {
+    const guest = renderLandingPage('unauthenticated')
+    expect(guest).toContain('AlgoMemtor introduction')
+    expect(guest).toContain('Skip intro')
 
-    expect(markup).toContain('Go to Dashboard')
-    expect(markup).not.toContain('AlgoMemtor introduction')
-    expect(markup).toContain('href="/dashboard"')
-    expect(markup).not.toContain('Get Started')
-    expect(markup).not.toContain('AlgoMemtor introduction')
-    expect(markup).not.toContain('Login')
-  })
-
-  it('hides actions while the session is loading', () => {
-    const markup = renderLandingPage('loading')
-
-    expect(markup).not.toContain('Get Started')
-    expect(markup).not.toContain('Login')
-    expect(markup).not.toContain('Go to Dashboard')
+    expect(renderLandingPage('authenticated')).not.toContain(
+      'AlgoMemtor introduction',
+    )
+    expect(renderLandingPage('loading')).not.toContain(
+      'AlgoMemtor introduction',
+    )
   })
 })

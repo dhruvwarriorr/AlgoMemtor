@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from 'react'
 
-import { X } from 'lucide-react'
+import { X } from '@/components/icons/algo-icons'
 
 import { Button } from './button'
 

@@ -5,7 +5,12 @@ import {
   type FormEvent,
   type ReactNode,
 } from 'react'
-import { Check, ImageUp, LoaderCircle, Trash2 } from 'lucide-react'
+import {
+  Check,
+  ImageUp,
+  LoaderCircle,
+  Trash2,
+} from '@/components/icons/algo-icons'
 
 import { useNotification } from '@/app/useNotification'
 import { UserAvatar } from '@/components/brand/UserAvatar'

@@ -1,3 +1,5 @@
+import type { CSSProperties } from 'react'
+
 import { cn } from '@/lib/utils'
 
 type TrendPoint = {
@@ -8,12 +10,13 @@ type TrendPoint = {
 // Weeks start on Monday, so rows read M, T, W, T, F, S, S.
 const WEEKDAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 
+// Sky blue for light days, rising into green on the busiest ones.
 const levels = [
   'bg-muted',
-  'bg-primary/25',
-  'bg-primary/50',
-  'bg-primary/75',
-  'bg-primary',
+  'bg-sun/30',
+  'bg-sun/60',
+  'bg-sun',
+  'bg-go',
 ] as const
 
 function parseLocalDate(date: string): Date {
@@ -126,9 +129,10 @@ export function SolvedHeatmap({ trend }: { trend: readonly TrendPoint[] }) {
                 >
                   <span
                     className={cn(
-                      'block size-full rounded-sm ring-offset-2 ring-offset-card transition-[box-shadow,transform] duration-200 group-hover/cell:scale-110 group-hover/cell:ring-2 group-hover/cell:ring-foreground/70 group-focus-visible/cell:ring-2 group-focus-visible/cell:ring-ring',
+                      'animate-pop block size-full rounded-sm ring-offset-2 ring-offset-card transition-[box-shadow,transform] duration-200 group-hover/cell:scale-110 group-hover/cell:ring-2 group-hover/cell:ring-foreground/70 group-focus-visible/cell:ring-2 group-focus-visible/cell:ring-ring',
                       level(day.solved),
                     )}
+                    style={{ '--i': weekIndex * 7 + dayIndex } as CSSProperties}
                   />
                   <span
                     aria-hidden="true"

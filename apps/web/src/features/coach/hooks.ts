@@ -160,17 +160,19 @@ export function useSendCoachMessage() {
     onSuccess: (_data, variables) => {
       if (!user) return
       void queryClient.invalidateQueries({
+        queryKey: [...coachKey(user.id), 'conversations'],
+      })
+      void queryClient.invalidateQueries({
+        queryKey: [...coachKey(user.id), 'roadmap'],
+      })
+      // Stay pending until the saved thread (question and reply) is back,
+      // so the optimistic question never blinks out of view.
+      return queryClient.invalidateQueries({
         queryKey: [
           ...coachKey(user.id),
           'conversation',
           variables.conversationId,
         ],
-      })
-      void queryClient.invalidateQueries({
-        queryKey: [...coachKey(user.id), 'conversations'],
-      })
-      void queryClient.invalidateQueries({
-        queryKey: [...coachKey(user.id), 'roadmap'],
       })
     },
   })

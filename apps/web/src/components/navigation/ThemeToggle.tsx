@@ -1,4 +1,4 @@
-import { Monitor, Moon, Sun } from 'lucide-react'
+import { Monitor, Moon, Sun } from '@/components/icons/algo-icons'
 
 import type { Theme } from '@/app/theme-context'
 import { useTheme } from '@/app/useTheme'

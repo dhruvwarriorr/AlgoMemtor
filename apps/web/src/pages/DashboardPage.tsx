@@ -16,10 +16,16 @@ import {
   Sparkles,
   Trophy,
   X,
-} from 'lucide-react'
+} from '@/components/icons/algo-icons'
+import { motion, useReducedMotion } from 'motion/react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { ProviderLogo } from '@/components/brand/ProviderLogo'
+import { AnimatedItem } from '@/components/motion/AnimatedItem'
+import { CountUp } from '@/components/motion/CountUp'
+import { RadialProgress } from '@/components/motion/RadialProgress'
+import { ThinkingOrbs } from '@/components/motion/ThinkingOrbs'
+import { TiltCard } from '@/components/motion/TiltCard'
 import { useUserIdentity } from '@/features/auth/user-identity'
 import PageContainer from '@/components/layout/PageContainer'
 import PageHeader from '@/components/layout/PageHeader'
@@ -42,7 +48,7 @@ import { cn } from '@/lib/utils'
 import { dashboardActivity, isAcceptedSubmission } from './dashboard-activity'
 
 const tileClass =
-  'flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-5'
+  'flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-5 transition-[box-shadow,border-color] duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] hover:border-[color-mix(in_oklab,var(--primary)_28%,var(--border))] hover:shadow-lift'
 
 const tileTitleClass =
   'flex items-center justify-between gap-3 text-sm font-medium text-muted-foreground'
@@ -64,86 +70,159 @@ function greeting(date = new Date()) {
   return 'Good evening'
 }
 
-// One headline number with its icon. Large type so it reads from across the room.
+type KpiTone = 'card' | 'mesh' | 'ink'
+
+// One headline number: label and icon chip on top, a large count below, and
+// an optional visual (sparkline, week dots, ring) beside it. Tiles lean
+// toward the pointer and catch a soft spotlight.
 function KpiTile({
   label,
   value,
+  count,
   unit,
   detail,
   icon,
+  aside,
   tone = 'card',
   index,
 }: {
   label: string
-  value: string
+  value?: string
+  count?: number
   unit?: string
   detail: string
   icon: ReactNode
-  tone?: 'card' | 'primary' | 'sun'
+  aside?: ReactNode
+  tone?: KpiTone
   index: number
 }) {
+  const display = value ?? String(count ?? 0)
+
   return (
-    <div
-      className={cn(
-        'animate-rise flex min-w-0 flex-col gap-3 rounded-xl p-4',
-        tone === 'primary' &&
-          'text-white [background:linear-gradient(155deg,#ff7a3d,#ff4d12_45%,#9a2e0b)]',
-        tone === 'sun' && 'bg-sun-soft text-sun-foreground ring-1 ring-sun/45',
-        tone === 'card' && 'border border-border bg-card',
-      )}
-      style={stagger(index)}
+    <li className="min-w-0">
+      <TiltCard
+        className={cn(
+          'animate-rise flex h-full min-h-[9.25rem] min-w-0 flex-col justify-between gap-4 overflow-hidden rounded-xl p-4',
+          tone === 'mesh' && 'mesh-card',
+          tone === 'ink' && 'bg-ink text-ink-foreground',
+          tone === 'card' && 'bezel-core ring-1 ring-border',
+        )}
+        max={5}
+        style={stagger(index)}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <p
+            className={cn(
+              'min-w-0 text-sm leading-tight font-medium',
+              tone === 'card' && 'text-muted-foreground',
+              tone !== 'card' && 'opacity-75',
+            )}
+          >
+            {label}
+          </p>
+          <span
+            aria-hidden="true"
+            className={cn(
+              'grid size-9 shrink-0 place-items-center rounded-lg [&_svg]:size-[18px]',
+              tone === 'mesh' &&
+                'bg-white/12 text-white ring-1 ring-white/20 [--icon-node:#4ade80]',
+              tone === 'ink' &&
+                'bg-[color-mix(in_oklab,var(--ink-foreground)_12%,transparent)] text-sky [--icon-node:var(--go)]',
+              tone === 'card' &&
+                'bg-accent text-accent-foreground [--icon-node:var(--go)]',
+            )}
+          >
+            {icon}
+          </span>
+        </div>
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-end justify-between gap-3">
+            <p
+              className={cn(
+                'min-w-0 truncate font-heading leading-none font-bold tracking-[-0.02em]',
+                count === undefined ? 'text-[1.7rem]' : 'text-[2.4rem]',
+              )}
+              title={display}
+            >
+              {count === undefined ? value : <CountUp value={count} />}
+              {unit ? (
+                <span className="ml-1.5 text-base font-semibold tracking-normal opacity-70">
+                  {unit}
+                </span>
+              ) : null}
+            </p>
+            {aside}
+          </div>
+          <p
+            className={cn(
+              'mt-1.5 truncate text-sm',
+              tone === 'card' ? 'text-muted-foreground' : 'opacity-70',
+            )}
+          >
+            {detail}
+          </p>
+        </div>
+      </TiltCard>
+    </li>
+  )
+}
+
+// Daily solves drawn as a line that traces itself in.
+function Sparkline({ values }: { values: readonly number[] }) {
+  const reduceMotion = useReducedMotion()
+  if (values.length < 2) return null
+  const max = Math.max(1, ...values)
+  const points = values
+    .map((value, index) => {
+      const x = (index / (values.length - 1)) * 76 + 2
+      const y = 30 - (value / max) * 26
+      return `${x.toFixed(1)},${y.toFixed(1)}`
+    })
+    .join(' ')
+
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-9 w-20 shrink-0 overflow-visible"
+      viewBox="0 0 80 32"
     >
-      <div className="flex items-center gap-2.5">
-        <span
-          aria-hidden="true"
-          className={cn(
-            'grid size-9 shrink-0 place-items-center rounded-xl',
-            tone === 'primary' && 'bg-white/20 text-white',
-            tone === 'sun' && 'bg-sun text-[#101012]',
-            tone === 'card' && 'bg-accent text-accent-foreground',
-          )}
-        >
-          {icon}
-        </span>
-        <dt
-          className={cn(
-            'min-w-0 text-sm leading-tight font-medium',
-            tone === 'card' && 'text-muted-foreground',
-            tone === 'primary' && 'text-white/85',
-          )}
-        >
-          {label}
-        </dt>
-      </div>
-      <dd className="min-w-0">
-        <span
-          className={cn(
-            'block truncate font-heading leading-none font-bold tracking-[-0.01em]',
-            tone === 'card'
-              ? 'text-[1.85rem] text-foreground'
-              : 'text-[2.4rem]',
-            tone === 'sun' && 'text-foreground',
-          )}
-          title={value}
-        >
-          {value}
-          {unit ? (
-            <span className="ml-1.5 text-lg font-semibold tracking-normal">
-              {unit}
-            </span>
-          ) : null}
-        </span>
+      <motion.polyline
+        fill="none"
+        initial={reduceMotion ? false : { pathLength: 0 }}
+        points={points}
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeOpacity="0.9"
+        strokeWidth="2"
+        transition={{ duration: 1.6, ease: [0.16, 1, 0.3, 1], delay: 0.4 }}
+        animate={{ pathLength: 1 }}
+      />
+    </svg>
+  )
+}
+
+// The last seven days as squares: green where something was solved.
+function WeekDots({
+  days,
+}: {
+  days: readonly { date: string; solved: number }[]
+}) {
+  return (
+    <span aria-hidden="true" className="flex shrink-0 gap-1">
+      {days.map((day, index) => (
         <span
           className={cn(
-            'mt-1.5 block truncate text-sm',
-            tone === 'card' && 'text-muted-foreground',
-            tone === 'primary' && 'text-white/80',
+            'animate-pop size-2.5 rounded-[3px]',
+            day.solved > 0
+              ? 'bg-go'
+              : 'bg-[color-mix(in_oklab,currentColor_18%,transparent)]',
           )}
-        >
-          {detail}
-        </span>
-      </dd>
-    </div>
+          key={day.date}
+          style={{ '--i': 30 + index * 4 } as CSSProperties}
+        />
+      ))}
+    </span>
   )
 }
 
@@ -179,8 +258,7 @@ function AskCoachBar() {
     >
       <Sparkles
         aria-hidden="true"
-        className="size-4 shrink-0 text-primary"
-        strokeWidth={1.8}
+        className="size-[18px] shrink-0 text-primary [--icon-node:var(--go)]"
       />
       <label className="sr-only" htmlFor="dashboard-ask-coach">
         Ask your coach
@@ -194,7 +272,7 @@ function AskCoachBar() {
       />
       <button
         aria-label="Open coach"
-        className="grid size-10 shrink-0 place-items-center rounded-md bg-ink text-ink-foreground transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:scale-105 active:scale-95"
+        className="group grid size-10 shrink-0 place-items-center rounded-md bg-ink text-ink-foreground transition-transform duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:scale-105 active:scale-95 [--icon-node:var(--go)]"
         type="submit"
       >
         <ArrowUpRight aria-hidden="true" className="size-4" />
@@ -299,23 +377,34 @@ function DashboardPage() {
 
       {/* KPI strip, then charts, then coaching: all on one 12-column grid. */}
       <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-2 xl:grid-cols-12 xl:grid-rows-[auto_minmax(16rem,1fr)_minmax(16rem,1fr)]">
-        <dl className="grid min-w-0 grid-cols-1 gap-4 min-[26rem]:grid-cols-2 sm:grid-cols-3 md:col-span-2 xl:col-span-12 xl:grid-cols-6">
+        <ul
+          aria-label="Last 30 days at a glance"
+          className="grid min-w-0 grid-cols-1 gap-3 min-[26rem]:grid-cols-2 sm:grid-cols-3 md:col-span-2 xl:col-span-12 xl:grid-cols-6"
+        >
           <KpiTile
+            aside={
+              <span className="text-[#bbf7d0]">
+                <Sparkline
+                  values={analytics.trend.slice(-14).map((day) => day.solved)}
+                />
+              </span>
+            }
+            count={analytics.window.solved}
             detail="new in the last 30 days"
-            icon={<CheckCheck className="size-5" strokeWidth={2} />}
+            icon={<CheckCheck />}
             index={1}
             label="Solved"
-            tone="primary"
-            value={String(analytics.window.solved)}
+            tone="mesh"
           />
           <KpiTile
+            aside={<WeekDots days={analytics.trend.slice(-7)} />}
+            count={analytics.currentStreak}
             detail={`Longest: ${analytics.longestStreak} ${analytics.longestStreak === 1 ? 'day' : 'days'}`}
-            icon={<Flame className="size-5" strokeWidth={2} />}
+            icon={<Flame />}
             index={2}
             label="Solve streak"
-            tone="sun"
+            tone="ink"
             unit={analytics.currentStreak === 1 ? 'day' : 'days'}
-            value={String(analytics.currentStreak)}
           />
           <KpiTile
             detail={topPlatform ? `${topPlatform[1]} solved` : 'Link a profile'}
@@ -323,7 +412,7 @@ function DashboardPage() {
               topPlatform ? (
                 <ProviderLogo className="size-5" provider={topPlatform[0]} />
               ) : (
-                <Link2 className="size-5" strokeWidth={2} />
+                <Link2 />
               )
             }
             index={3}
@@ -334,26 +423,33 @@ function DashboardPage() {
             detail={
               topTopic ? `${topTopic.solved} in 30 days` : 'No solves yet'
             }
-            icon={<Shapes className="size-5" strokeWidth={2} />}
+            icon={<Shapes />}
             index={4}
             label="Top topic"
             value={topTopic ? topTopic.topic : 'None yet'}
           />
           <KpiTile
+            aside={
+              <RadialProgress
+                className="size-12 shrink-0"
+                thickness={12}
+                value={activeDays / Math.max(1, analytics.window.days)}
+              />
+            }
+            count={activeDays}
             detail={`of the last ${analytics.window.days} days`}
-            icon={<CalendarCheck className="size-5" strokeWidth={2} />}
+            icon={<CalendarCheck />}
             index={5}
             label="Active days"
-            value={String(activeDays)}
           />
           <KpiTile
+            count={recentContests.length}
             detail="Last 30 days"
-            icon={<Trophy className="size-5" strokeWidth={2} />}
+            icon={<Trophy />}
             index={6}
             label="Contests"
-            value={String(recentContests.length)}
           />
-        </dl>
+        </ul>
 
         <RatingTrendCard
           className="animate-rise md:col-span-2 xl:col-span-6 xl:min-h-0"
@@ -374,19 +470,22 @@ function DashboardPage() {
 
         <section
           aria-labelledby="coach-focus-heading"
-          className="animate-rise relative isolate flex min-h-64 min-w-0 flex-col overflow-hidden rounded-xl bg-ink p-6 text-ink-foreground xl:col-span-3 xl:min-h-0 xl:p-5"
+          className="mesh-card animate-rise relative isolate flex min-h-64 min-w-0 flex-col overflow-hidden rounded-xl p-6 xl:col-span-3 xl:min-h-0 xl:p-5"
           style={stagger(5)}
         >
           <span
             aria-hidden="true"
-            className="coach-orb animate-orb absolute -top-10 -right-10 size-36 opacity-90"
+            className="animate-aurora absolute -top-16 -right-16 -z-10 size-48 rounded-full bg-[radial-gradient(closest-side,rgb(125_211_252/0.35),transparent)]"
           />
-          <h2
-            className="font-sans text-sm font-medium opacity-70"
-            id="coach-focus-heading"
-          >
-            Your coach is focusing on
-          </h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2
+              className="shimmer-text font-sans text-sm font-medium text-white/70 [--shimmer:#ffffff]"
+              id="coach-focus-heading"
+            >
+              Your coach is focusing on
+            </h2>
+            <ThinkingOrbs className="size-9" />
+          </div>
           {roadmapQuery.isError ? (
             <p className={cn(noticeClass, 'mt-4')} role="status">
               Your roadmap is temporarily unavailable. Open Coach to retry it.
@@ -400,7 +499,7 @@ function DashboardPage() {
                 {leadTopic.reason}
               </p>
               <button
-                className="mt-3 w-fit rounded-md border border-white/30 px-3 py-1 text-xs transition-colors hover:bg-white/10 disabled:opacity-50"
+                className="mt-3 w-fit rounded-md border border-white/25 px-3 py-1 text-xs transition-colors duration-300 hover:bg-white/10 disabled:opacity-50"
                 disabled={setTopicStatus.isPending}
                 onClick={() =>
                   void setTopicStatus.mutateAsync({
@@ -421,7 +520,7 @@ function DashboardPage() {
                 <ul className="mt-4 flex flex-wrap gap-1.5 [@media(max-height:1150px)]:hidden">
                   {otherTopics.slice(0, 3).map((topic) => (
                     <li
-                      className="rounded-md bg-white/10 px-3 py-1 text-xs dark:bg-black/10"
+                      className="rounded-md bg-white/10 px-3 py-1 text-xs ring-1 ring-white/10"
                       key={topic.topic}
                     >
                       {topic.name}
@@ -437,11 +536,11 @@ function DashboardPage() {
             </p>
           )}
           <Link
-            className="group/cta mt-auto inline-flex w-fit items-center gap-2 rounded-md bg-white py-1.5 pr-1.5 pl-4 text-sm font-medium text-[#101012] transition-transform duration-300 active:scale-[0.98] dark:bg-[#101012] dark:text-white"
+            className="group/cta mt-auto inline-flex w-fit items-center gap-2 rounded-lg bg-[#f4f1ea] py-1.5 pr-1.5 pl-4 text-sm font-medium text-[#0b0c0e] transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] active:scale-[0.98]"
             to="/coach"
           >
             Continue with coach
-            <span className="grid size-7 place-items-center rounded-md bg-[#101012]/8 transition-transform duration-300 group-hover/cta:translate-x-0.5 group-hover/cta:-translate-y-px dark:bg-white/10">
+            <span className="grid size-7 place-items-center rounded-md bg-[#0b0c0e] text-[#f4f1ea] transition-transform duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover/cta:translate-x-0.5 group-hover/cta:-translate-y-0.5 group-hover/cta:scale-110 [--icon-node:#4ade80]">
               <ArrowUpRight aria-hidden="true" className="size-3.5" />
             </span>
           </Link>
@@ -471,14 +570,15 @@ function DashboardPage() {
             </p>
           ) : (
             <ul className="mt-1.5 flex min-h-0 flex-1 flex-col divide-y divide-border [@media(max-height:820px)]:[&>li:nth-child(n+3)]:hidden">
-              {recommendations.map((item) => (
-                <li
-                  className="flex min-w-0 flex-1 items-center gap-3 py-1.5"
+              {recommendations.map((item, index) => (
+                <AnimatedItem
+                  className="group/row -mx-2 flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1.5 transition-colors duration-300 hover:bg-secondary/60"
+                  index={index}
                   key={item.id}
                 >
                   <span
                     aria-hidden="true"
-                    className="grid size-9 shrink-0 place-items-center rounded-xl bg-secondary text-secondary-foreground"
+                    className="grid size-9 shrink-0 place-items-center rounded-lg bg-secondary text-secondary-foreground transition-transform duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover/row:-rotate-6"
                   >
                     <ProviderLogo
                       className="size-5"
@@ -495,7 +595,7 @@ function DashboardPage() {
                   </div>
                   <a
                     aria-label={`Solve ${item.problem.title} on ${providerLabels[item.problem.provider]}`}
-                    className="grid size-9 shrink-0 place-items-center rounded-md border border-border text-foreground/70 transition-colors hover:border-primary hover:bg-primary hover:text-primary-foreground"
+                    className="grid size-9 shrink-0 place-items-center rounded-md border border-border text-foreground/70 transition-colors duration-300 hover:border-primary hover:bg-primary hover:text-primary-foreground [--icon-node:var(--go)]"
                     href={item.problem.canonicalUrl}
                     rel="noopener noreferrer"
                     target="_blank"
@@ -514,7 +614,7 @@ function DashboardPage() {
                   >
                     <X aria-hidden="true" className="size-4" />
                   </button>
-                </li>
+                </AnimatedItem>
               ))}
             </ul>
           )}
@@ -545,18 +645,19 @@ function DashboardPage() {
             </p>
           ) : (
             <ol className="mt-1.5 flex min-h-0 flex-1 flex-col divide-y divide-border overflow-hidden [@media(max-height:1000px)]:[&>li:nth-child(n+4)]:hidden">
-              {recentEvents.map((event) => {
+              {recentEvents.map((event, index) => {
                 const solved =
                   (event.source === 'manual' && event.eventType === 'solved') ||
                   isAcceptedSubmission(event)
                 return (
-                  <li
+                  <AnimatedItem
                     className="flex min-w-0 flex-1 items-center gap-3 py-1.5"
+                    index={index}
                     key={event.id}
                   >
                     <span
                       aria-hidden="true"
-                      className="relative grid size-9 shrink-0 place-items-center rounded-xl bg-secondary text-secondary-foreground"
+                      className="relative grid size-9 shrink-0 place-items-center rounded-lg bg-secondary text-secondary-foreground"
                     >
                       <ProviderLogo
                         className="size-5"
@@ -565,7 +666,9 @@ function DashboardPage() {
                       <span
                         className={cn(
                           'absolute -right-0.5 -bottom-0.5 size-3 rounded-full ring-2 ring-card',
-                          solved ? 'bg-go' : 'bg-muted-foreground/60',
+                          solved
+                            ? 'bg-go shadow-[0_0_8px_var(--go)]'
+                            : 'bg-muted-foreground/60',
                         )}
                       />
                     </span>
@@ -592,7 +695,7 @@ function DashboardPage() {
                         {activityDate.format(new Date(event.occurredAt))}
                       </time>
                     ) : null}
-                  </li>
+                  </AnimatedItem>
                 )
               })}
             </ol>

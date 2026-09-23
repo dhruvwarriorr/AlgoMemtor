@@ -7,7 +7,7 @@ import {
   type PropsWithChildren,
 } from 'react'
 
-import { X } from 'lucide-react'
+import { X } from '@/components/icons/algo-icons'
 
 import {
   NotificationContext,

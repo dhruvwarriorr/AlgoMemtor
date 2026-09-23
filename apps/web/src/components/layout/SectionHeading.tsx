@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight } from '@/components/icons/algo-icons'
 import { Link } from 'react-router-dom'
 
 type SectionHeadingProps = {

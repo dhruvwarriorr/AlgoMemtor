@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import type {
   ProviderKey,
   ProviderRatingChange,
 } from '@algomemtor/shared-contracts'
-import { TrendingDown, TrendingUp } from 'lucide-react'
+import { TrendingDown, TrendingUp } from '@/components/icons/algo-icons'
 import { Link } from 'react-router-dom'
 import {
   Area,
@@ -60,6 +60,7 @@ export function RatingTrendCard({
       .map(([provider]) => provider)
   }, [history])
   const [picked, setPicked] = useState<ProviderKey | null>(null)
+  const fillId = `rating-${useId().replace(/[^\w-]/g, '')}`
   const provider =
     picked !== null && providers.includes(picked) ? picked : providers[0]
 
@@ -88,7 +89,7 @@ export function RatingTrendCard({
     <section
       aria-labelledby="rating-heading"
       className={cn(
-        'flex min-h-72 min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-5',
+        'flex min-h-72 min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-5 transition-[box-shadow,border-color] duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] hover:border-[color-mix(in_oklab,var(--primary)_28%,var(--border))] hover:shadow-lift',
         className,
       )}
     >
@@ -137,7 +138,7 @@ export function RatingTrendCard({
               <button
                 aria-checked={item === provider}
                 className={cn(
-                  'flex h-8 items-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors',
+                  'flex h-8 items-center gap-1.5 rounded-md px-3 text-sm font-medium transition-[background-color,color,box-shadow] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]',
                   item === provider
                     ? 'bg-card text-foreground shadow-soft'
                     : 'text-foreground/60 hover:text-foreground',
@@ -171,6 +172,20 @@ export function RatingTrendCard({
               data={points}
               margin={{ top: 10, right: 10, left: 10, bottom: 0 }}
             >
+              <defs>
+                <linearGradient id={fillId} x1="0" x2="0" y1="0" y2="1">
+                  <stop
+                    offset="0%"
+                    stopColor="var(--chart-1)"
+                    stopOpacity={0.4}
+                  />
+                  <stop
+                    offset="100%"
+                    stopColor="var(--chart-3)"
+                    stopOpacity={0}
+                  />
+                </linearGradient>
+              </defs>
               <CartesianGrid
                 horizontal
                 stroke="var(--border)"
@@ -209,9 +224,10 @@ export function RatingTrendCard({
                   stroke: 'var(--chart-line-primary)',
                   strokeWidth: 2,
                 }}
-                fill="var(--chart-line-primary)"
-                fillOpacity={0.35}
-                isAnimationActive={false}
+                animationDuration={1400}
+                animationEasing="ease-out"
+                fill={`url(#${fillId})`}
+                fillOpacity={1}
                 stroke="var(--chart-line-primary)"
                 strokeWidth={2.5}
                 type="monotone"

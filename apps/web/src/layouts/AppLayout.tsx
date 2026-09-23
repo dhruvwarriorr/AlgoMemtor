@@ -1,10 +1,12 @@
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 
 import { AppTopbar } from '@/components/navigation/AppTopbar'
 import { ScrollRestoration } from '@/routes/ScrollRestoration'
 
 // Signed-in workspace: a top bar over one large, full-width content panel.
 function AppLayout() {
+  const { pathname } = useLocation()
+
   return (
     <div className="app-backdrop flex min-h-dvh w-full min-w-0 flex-col">
       <ScrollRestoration />
@@ -17,7 +19,13 @@ function AppLayout() {
       <AppTopbar />
       <div className="flex min-w-0 flex-1 flex-col p-(--app-gutter)">
         <div className="flex min-h-[calc(100dvh-var(--app-chrome))] min-w-0 flex-1 flex-col rounded-xl border border-border bg-card shadow-soft">
-          <Outlet />
+          {/* Keyed by path so each page rises in when you navigate. */}
+          <div
+            className="animate-page flex min-w-0 flex-1 flex-col"
+            key={pathname}
+          >
+            <Outlet />
+          </div>
         </div>
       </div>
     </div>

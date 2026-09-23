@@ -1,4 +1,4 @@
-import { useEffect, useRef, type CSSProperties } from 'react'
+import { useEffect, useRef, type CSSProperties, type RefObject } from 'react'
 import {
   motion,
   useReducedMotion,
@@ -7,13 +7,18 @@ import {
   type MotionValue,
 } from 'motion/react'
 
-import type { AuthStatus } from '@/features/auth/auth-context'
-import { cn } from '@/lib/utils'
+import { LogoOrbit } from './LogoOrbit'
 
-import { LandingActions } from './LandingActions'
-
-const ease = [0.16, 1, 0.3, 1] as const
 const letters = 'ALGOMEMTOR'.split('')
+
+// Position of `v` between `from` and `to`, clamped to 0–1.
+function span(v: number, from: number, to: number) {
+  return Math.min(1, Math.max(0, (v - from) / (to - from)))
+}
+
+function ease(t: number) {
+  return t * t * (3 - 2 * t)
+}
 
 // One letter of the brand word. On scroll it lifts away on its own curve, so
 // the word breaks up like a wave rolling through it.
@@ -27,46 +32,42 @@ function DriftLetter({
   progress: MotionValue<number>
 }) {
   const phase = Math.sin(index * 0.9)
-  const start = 0.32 + index * 0.025
+  const start = 0.3 + index * 0.02
+  const lift = -38 - 22 * (phase + 1)
+  // Function transforms: the accelerated native scroll path mis-ranges
+  // value-list transforms inside the sticky scene.
   const y = useTransform(
     progress,
-    [start, 0.9],
-    ['0vh', `${-38 - 22 * (phase + 1)}vh`],
+    (v) => `${lift * ease(span(v, start, 0.66))}vh`,
   )
-  const rotate = useTransform(progress, [start, 0.9], [0, phase * 14])
-  const opacity = useTransform(progress, [start + 0.15, 0.85], [1, 0])
+  const rotate = useTransform(
+    progress,
+    (v) => phase * 14 * ease(span(v, start, 0.66)),
+  )
+  const opacity = useTransform(progress, (v) => 1 - span(v, start + 0.08, 0.62))
 
   return (
     <motion.span className="inline-block" style={{ y, rotate, opacity }}>
-      <span
-        className="animate-letter-bob wave-text inline-block [--wave-base:#f4f1ea]"
-        data-wave-letter=""
-        style={{ '--i': index } as CSSProperties}
-      >
-        {letter}
-      </span>
+      <WaveLetter index={index} letter={letter} />
     </motion.span>
   )
 }
 
-export function WaveHero({ status }: { status: AuthStatus }) {
-  const reduceMotion = useReducedMotion()
-  const sceneRef = useRef<HTMLElement>(null)
-  const wordRef = useRef<HTMLDivElement>(null)
-  const { scrollYProgress } = useScroll({
-    target: sceneRef,
-    offset: ['start start', 'end start'],
-  })
-  // First the letters fill with liquid, then they drift apart.
-  const level = useTransform(scrollYProgress, [0, 0.3], ['30%', '94%'])
-  // A function transform keeps this on Motion's scroll tracking; the
-  // accelerated native path mis-ranges it inside the sticky scene.
-  const cueOpacity = useTransform(scrollYProgress, (v) =>
-    Math.max(0, 1 - v / 0.08),
+function WaveLetter({ letter, index }: { letter: string; index: number }) {
+  return (
+    <span
+      className="animate-letter-bob wave-text inline-block [--wave-base:#f4f1ea]"
+      data-wave-letter=""
+      style={{ '--i': index } as CSSProperties}
+    >
+      {letter}
+    </span>
   )
+}
 
-  // Offset each letter's waves by its position so the liquid reads as one
-  // continuous surface across the whole word.
+// Offset each letter's waves by its position so the liquid reads as one
+// continuous surface across the whole word.
+function useAlignedWaves(wordRef: RefObject<HTMLDivElement | null>) {
   useEffect(() => {
     const word = wordRef.current
     if (!word) return
@@ -83,91 +84,108 @@ export function WaveHero({ status }: { status: AuthStatus }) {
     const observer = new ResizeObserver(align)
     observer.observe(word)
     return () => observer.disconnect()
-  }, [])
+  }, [wordRef])
+}
 
-  return (
-    <>
-      <section
-        aria-label="AlgoMemtor"
-        className={cn('relative', reduceMotion ? 'h-dvh' : 'h-[135dvh]')}
-        ref={sceneRef}
-      >
-        <div className="sticky top-0 flex h-dvh w-full items-center justify-center overflow-hidden">
-          <motion.div
+const wordClass =
+  'flex font-heading text-[14vw] leading-none font-extrabold tracking-[-0.01em] uppercase select-none'
+
+// The whole landing in one pinned scene: the brand word fills with liquid,
+// its letters scatter, and the big orbiting logo rises into their place.
+export function WaveHero() {
+  const reduceMotion = useReducedMotion()
+  const sceneRef = useRef<HTMLElement>(null)
+  const wordRef = useRef<HTMLDivElement>(null)
+  const { scrollYProgress } = useScroll({
+    target: sceneRef,
+    offset: ['start start', 'end end'],
+  })
+  useAlignedWaves(wordRef)
+
+  // Function transforms keep these on Motion's scroll tracking; the
+  // accelerated native path mis-ranges them inside the sticky scene.
+  const level = useTransform(
+    scrollYProgress,
+    (v) => `${30 + 64 * span(v, 0, 0.26)}%`,
+  )
+  const cueOpacity = useTransform(scrollYProgress, (v) =>
+    Math.max(0, 1 - v / 0.06),
+  )
+  const orbitOpacity = useTransform(scrollYProgress, (v) => span(v, 0.5, 0.72))
+  const orbitScale = useTransform(
+    scrollYProgress,
+    (v) => 0.55 + 0.45 * (1 - (1 - span(v, 0.5, 0.8)) ** 3),
+  )
+  const orbitBlur = useTransform(
+    scrollYProgress,
+    (v) => `blur(${((1 - span(v, 0.5, 0.72)) * 16).toFixed(1)}px)`,
+  )
+
+  if (reduceMotion) {
+    return (
+      <section aria-label="AlgoMemtor" className="flex flex-col items-center">
+        <div className="flex h-dvh w-full items-center justify-center overflow-hidden">
+          <div
             aria-hidden="true"
-            className="flex font-heading text-[14vw] leading-none font-extrabold tracking-[-0.01em] uppercase select-none"
+            className={wordClass}
             ref={wordRef}
-            style={
-              reduceMotion
-                ? ({ '--wave-level': '72%' } as CSSProperties)
-                : ({ '--wave-level': level } as unknown as CSSProperties)
-            }
+            style={{ '--wave-level': '72%' } as CSSProperties}
           >
-            {letters.map((letter, index) =>
-              reduceMotion ? (
-                <span
-                  className="wave-text inline-block [--wave-base:#f4f1ea]"
-                  data-wave-letter=""
-                  key={index}
-                >
-                  {letter}
-                </span>
-              ) : (
-                <DriftLetter
-                  index={index}
-                  key={index}
-                  letter={letter}
-                  progress={scrollYProgress}
-                />
-              ),
-            )}
-          </motion.div>
-
-          {reduceMotion ? null : (
-            <motion.div
-              aria-hidden="true"
-              className="absolute bottom-10 left-1/2 flex -translate-x-1/2 flex-col items-center gap-2 text-sm text-white/40"
-              style={{ opacity: cueOpacity }}
-            >
-              <span>Scroll to fill</span>
-              <span className="h-10 w-px bg-linear-to-b from-white/40 to-transparent" />
-            </motion.div>
-          )}
+            {letters.map((letter, index) => (
+              <WaveLetter index={index} key={index} letter={letter} />
+            ))}
+          </div>
+        </div>
+        <div className="flex min-h-dvh w-full items-center justify-center px-4 py-24">
+          <LogoOrbit />
         </div>
       </section>
+    )
+  }
 
-      <section className="relative z-20 flex flex-col items-center px-4 py-20 sm:py-24">
+  return (
+    <section
+      aria-label="AlgoMemtor"
+      className="relative h-[280dvh]"
+      ref={sceneRef}
+    >
+      <div className="sticky top-0 flex h-dvh w-full items-center justify-center overflow-hidden">
         <motion.div
-          className="flex w-full max-w-4xl flex-col items-center text-center"
-          initial={reduceMotion ? false : { opacity: 0, y: 100 }}
-          transition={{ duration: 1.2, ease }}
-          viewport={{ once: true, margin: '-100px' }}
-          whileInView={{ opacity: 1, y: 0 }}
+          aria-hidden="true"
+          className={wordClass}
+          ref={wordRef}
+          style={{ '--wave-level': level } as unknown as CSSProperties}
         >
-          <p className="glass-panel mb-8 inline-flex items-center gap-2 rounded-md px-4 py-2 text-xs sm:text-sm">
-            <span className="animate-pulse-glow size-2 rounded-full bg-primary" />
-            <span className="font-medium text-white/80">
-              Your CP journey, in one place
-            </span>
-          </p>
-
-          <h1 className="text-5xl leading-[1.05] font-bold tracking-[-0.01em] text-white sm:text-7xl lg:text-8xl">
-            One coach.
-            <br />
-            <span className="text-brand-gradient">Every platform.</span>
-          </h1>
-
-          <p className="mx-auto mt-8 max-w-2xl text-lg leading-relaxed font-light text-white/65 sm:text-xl">
-            Bring your public solves and contest history together. Get a coach
-            that understands your progress and helps you decide what to practice
-            next.
-          </p>
-
-          <div className="mt-10">
-            <LandingActions status={status} />
-          </div>
+          {letters.map((letter, index) => (
+            <DriftLetter
+              index={index}
+              key={index}
+              letter={letter}
+              progress={scrollYProgress}
+            />
+          ))}
         </motion.div>
-      </section>
-    </>
+
+        <motion.div
+          className="absolute inset-0 flex items-center justify-center px-4"
+          style={{
+            opacity: orbitOpacity,
+            scale: orbitScale,
+            filter: orbitBlur,
+          }}
+        >
+          <LogoOrbit />
+        </motion.div>
+
+        <motion.div
+          aria-hidden="true"
+          className="absolute bottom-10 left-1/2 flex -translate-x-1/2 flex-col items-center gap-2 text-sm text-white/40"
+          style={{ opacity: cueOpacity }}
+        >
+          <span>Scroll to fill</span>
+          <span className="h-10 w-px bg-linear-to-b from-white/40 to-transparent" />
+        </motion.div>
+      </div>
+    </section>
   )
 }

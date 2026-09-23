@@ -13,7 +13,7 @@ import {
   ShieldCheck,
   Trash2,
   Unplug,
-} from 'lucide-react'
+} from '@/components/icons/algo-icons'
 
 import { useNotification } from '@/app/useNotification'
 import { ErrorState } from '@/components/states/ErrorState'

@@ -10,13 +10,13 @@ import {
   TrendingUp,
   Trophy,
   UserRound,
-  type LucideIcon,
-} from 'lucide-react'
+  type IconComponent,
+} from '@/components/icons/algo-icons'
 
 export type AppNavItem = {
   label: string
   to: string
-  icon: LucideIcon
+  icon: IconComponent
 }
 
 export type AccountMenuItem = AppNavItem & {
@@ -45,19 +45,19 @@ export const accountMenuGroups: ReadonlyArray<{
         label: 'Problems',
         to: '/problems',
         icon: ListChecks,
-        chip: 'bg-[#ff4d12] text-white',
+        chip: 'bg-[#0ea5e9] text-[#03121c]',
       },
       {
         label: 'Bookmarks',
         to: '/bookmarks',
         icon: Bookmark,
-        chip: 'bg-[#cfe0f4] text-[#1b4f8a]',
+        chip: 'bg-[#efe6d2] text-[#5b4a2a]',
       },
       {
         label: 'Contests',
         to: '/contests',
         icon: Trophy,
-        chip: 'bg-[#f7d774] text-[#5b4300]',
+        chip: 'bg-[#22c55e] text-[#052e14]',
       },
     ],
   },
@@ -68,19 +68,19 @@ export const accountMenuGroups: ReadonlyArray<{
         label: 'Profile',
         to: '/profile',
         icon: UserRound,
-        chip: 'bg-[#f3cfe0] text-[#8a1f52]',
+        chip: 'bg-[#0b0c0e] text-[#f4f1ea] dark:bg-[#f4f1ea] dark:text-[#0b0c0e]',
       },
       {
         label: 'Memory',
         to: '/memory',
         icon: Brain,
-        chip: 'bg-[#d9cdf2] text-[#4b2a8f]',
+        chip: 'bg-[#e0f2fe] text-[#075985]',
       },
       {
         label: 'Settings',
         to: '/settings',
         icon: Settings,
-        chip: 'bg-[#c9ecd8] text-[#0b4d2e]',
+        chip: 'bg-[#dcfce7] text-[#14532d]',
       },
     ],
   },

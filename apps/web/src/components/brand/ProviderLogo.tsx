@@ -1,6 +1,7 @@
 import type { ProviderKey } from '@algomemtor/shared-contracts'
 import { siCodechef, siCodeforces, siLeetcode } from 'simple-icons'
 
+import csesLogo from '@/assets/cses-logo.png'
 import { cn } from '@/lib/utils'
 
 const simpleIcons = {
@@ -15,8 +16,9 @@ type ProviderLogoProps = {
   title?: string
 }
 
-// Official marks from Simple Icons. CSES publishes no logo, so it gets a
-// typographic mark in the same footprint.
+// Official marks from Simple Icons. CSES is not in Simple Icons, so its
+// wordmark ships as an image, drawn a little wider than the square footprint
+// so the letters stay legible.
 function ProviderLogo({ provider, className, title }: ProviderLogoProps) {
   if (provider === 'cses') {
     return (
@@ -24,14 +26,17 @@ function ProviderLogo({ provider, className, title }: ProviderLogoProps) {
         aria-hidden={title ? undefined : true}
         aria-label={title}
         className={cn(
-          'inline-grid size-6 shrink-0 place-items-center rounded-sm bg-current',
+          'inline-grid size-6 shrink-0 place-items-center overflow-visible',
           className,
         )}
         role={title ? 'img' : undefined}
       >
-        <span className="font-mono text-[0.42em] leading-none font-bold tracking-tight text-background">
-          CSES
-        </span>
+        <img
+          alt=""
+          className="h-auto w-[140%] max-w-none object-contain drop-shadow-[0_0_0.6px_rgb(0_0_0/0.55)]"
+          draggable={false}
+          src={csesLogo}
+        />
       </span>
     )
   }

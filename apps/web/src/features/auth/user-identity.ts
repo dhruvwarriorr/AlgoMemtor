@@ -6,8 +6,8 @@ import {
   Flame,
   Trophy,
   Zap,
-  type LucideIcon,
-} from 'lucide-react'
+  type IconComponent,
+} from '@/components/icons/algo-icons'
 
 import { fetchAvatarPhoto } from '@/features/profile/api/avatar'
 import { displayNameFromEmail } from '@/lib/display-name'
@@ -25,7 +25,7 @@ export type AvatarPreset = {
   id: string
   label: string
   background: string
-  icon?: LucideIcon
+  icon?: IconComponent
 }
 
 export const avatarPresets: readonly AvatarPreset[] = [
@@ -37,7 +37,7 @@ export const avatarPresets: readonly AvatarPreset[] = [
   {
     id: 'ember',
     label: 'Ember',
-    background: 'linear-gradient(140deg,#ff8a4c,#c2380b)',
+    background: 'linear-gradient(140deg,#38bdf8,#0369a1)',
   },
   {
     id: 'ink',
@@ -68,7 +68,7 @@ export const avatarPresets: readonly AvatarPreset[] = [
   {
     id: 'trophy',
     label: 'Contestant',
-    background: 'linear-gradient(140deg,#f2b84b,#b86b0a)',
+    background: 'linear-gradient(140deg,#4ade80,#15803d)',
     icon: Trophy,
   },
   {
@@ -80,7 +80,7 @@ export const avatarPresets: readonly AvatarPreset[] = [
   {
     id: 'flame',
     label: 'Streak',
-    background: 'linear-gradient(140deg,#ff8a4c,#c2380b)',
+    background: 'linear-gradient(140deg,#38bdf8,#0369a1)',
     icon: Flame,
   },
   {

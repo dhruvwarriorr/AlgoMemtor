@@ -1,7 +1,12 @@
 import { useState, type CSSProperties, type FormEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
-import { Flame, Sparkles, Target, TrendingUp } from 'lucide-react'
+import {
+  Flame,
+  Sparkles,
+  Target,
+  TrendingUp,
+} from '@/components/icons/algo-icons'
 import { LogoMark } from '@/components/brand/LogoMark'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/features/auth/useAuth'

@@ -1,4 +1,4 @@
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft } from '@/components/icons/algo-icons'
 import { Link } from 'react-router-dom'
 
 import PageContainer from '@/components/layout/PageContainer'

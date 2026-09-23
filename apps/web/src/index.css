@@ -7,59 +7,62 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * AlgoMemtor design system — "Fieldnote".
+ * AlgoMemtor design system — "Signal".
  *
- * Inspired by Browserbase: a warm off-white canvas, near-black ink for
- * type and primary actions, a single loud orange accent reserved for
- * highlights and live/active states, thin neutral borders instead of
- * heavy shadows, and a halftone dot texture on hero/backdrop surfaces.
+ * A warm beige canvas, near-black ink and pure white surfaces, with two
+ * cool accents: sky blue for focus, links and live states, and green for
+ * progress and success. Brand highlights run as a sky-to-green gradient.
  *
- * Shape rule: interactive controls are full pills, form fields use
- * radius-md (~13px), containers use radius-lg / radius-xl (16px / 22px).
+ * Shape rule: surfaces are squarish with a small radius (6–10px); only
+ * status dots and orbs are fully round.
  */
 :root {
   --background: #f6f4ee;
-  --foreground: #101012;
+  --foreground: #0b0c0e;
   --card: #ffffff;
-  --card-foreground: #101012;
+  --card-foreground: #0b0c0e;
   --popover: #ffffff;
-  --popover-foreground: #101012;
-  --primary: #ff4d12;
+  --popover-foreground: #0b0c0e;
+  --primary: #0284c7;
   --primary-foreground: #ffffff;
   --secondary: #efeadf;
-  --secondary-foreground: #101012;
+  --secondary-foreground: #0b0c0e;
   --muted: #f0ede3;
   --muted-foreground: #6b6558;
-  --accent: #fde7da;
-  --accent-foreground: #9a2e0b;
+  --accent: #e0f2fe;
+  --accent-foreground: #075985;
   --destructive: #d23b2f;
   --border: #e3ddce;
   --input: #d6cfba;
-  --ring: #ff4d12;
+  --ring: #0284c7;
 
-  --ink: #101012;
+  --ink: #0b0c0e;
   --ink-foreground: #faf8f3;
-  --sky: #aab4c4;
-  --sky-deep: #6c7a90;
-  --sky-soft: #e8e9e8;
-  --go: #157a47;
-  --go-soft: #e2f3ea;
-  --go-foreground: #0b4d2e;
-  --sun: #ff4d12;
-  --sun-soft: #ffe6d9;
-  --sun-foreground: #9a2e0b;
+  --sky: #7dd3fc;
+  --sky-deep: #0369a1;
+  --sky-soft: #e8f5fc;
+  --go: #16a34a;
+  --go-soft: #dcfce7;
+  --go-foreground: #14532d;
+  --sun: #0ea5e9;
+  --sun-soft: #e0f2fe;
+  --sun-foreground: #075985;
   --danger-soft: #fdebe9;
   --danger-foreground: #7c1d15;
 
-  --chart-1: #ff4d12;
+  /* Brand gradient stops. */
+  --brand-a: #38bdf8;
+  --brand-b: #22c55e;
+
+  --chart-1: #0ea5e9;
   --chart-line-primary: var(--chart-1);
-  --chart-2: #101012;
-  --chart-3: #157a47;
+  --chart-2: #0b0c0e;
+  --chart-3: #16a34a;
   --chart-4: #c9c2ac;
-  --chart-5: #6c7a90;
+  --chart-5: #0369a1;
 
   /* Squared theme: every surface uses a small corner radius. */
-  --radius: 0.5rem;
+  --radius: 0.4375rem;
 
   /* App chrome: top bar height plus the gutter around the content panel.
    * Single-screen pages size themselves with 100dvh - var(--app-chrome). */
@@ -70,29 +73,29 @@
   --app-panel-height: calc(100dvh - var(--app-chrome) - 2px);
 
   --sidebar: #ffffff;
-  --sidebar-foreground: #101012;
-  --sidebar-primary: #101012;
+  --sidebar-foreground: #0b0c0e;
+  --sidebar-primary: #0b0c0e;
   --sidebar-primary-foreground: #faf8f3;
   --sidebar-accent: #f0ede3;
-  --sidebar-accent-foreground: #101012;
+  --sidebar-accent-foreground: #0b0c0e;
   --sidebar-border: #e3ddce;
-  --sidebar-ring: #ff4d12;
+  --sidebar-ring: #0284c7;
 
   /* Shadows are neutral ink tint, kept faint — the border carries most
-   * of the definition, the way Browserbase's cards read. */
+   * of the definition. */
   --shadow-soft:
-    0 1px 2px rgb(16 16 18 / 0.05), 0 10px 22px -16px rgb(16 16 18 / 0.16);
+    0 1px 2px rgb(11 12 14 / 0.05), 0 10px 22px -16px rgb(11 12 14 / 0.16);
   --shadow-lift:
-    0 2px 4px rgb(16 16 18 / 0.06), 0 26px 50px -22px rgb(16 16 18 / 0.3);
+    0 2px 4px rgb(11 12 14 / 0.06), 0 26px 50px -22px rgb(11 12 14 / 0.3);
 
-  /* Full-page app backdrop behind the sidebar and content panel. */
+  /* Full-page app backdrop behind the content panel. */
   --shell-a: #f6f4ee;
   --shell-b: #f6f4ee;
   --shell-c: #efe9db;
 
-  --dot-color: rgb(16 16 18 / 0.14);
-  --dot-color-strong: rgb(16 16 18 / 0.22);
-  --cloud: #fff9f2;
+  --dot-color: rgb(11 12 14 / 0.14);
+  --dot-color-strong: rgb(11 12 14 / 0.22);
+  --cloud: #f4fbff;
   --cloud-opacity: 0.9;
 
   font-synthesis: none;
@@ -103,64 +106,67 @@
 }
 
 .dark {
-  --background: #0d0d0f;
+  --background: #0a0a0b;
   --foreground: #f4f1ea;
-  --card: #17171a;
+  --card: #141416;
   --card-foreground: #f4f1ea;
-  --popover: #151517;
+  --popover: #131315;
   --popover-foreground: #f4f1ea;
-  --primary: #ff6a35;
-  --primary-foreground: #1a0800;
-  --secondary: #212124;
+  --primary: #38bdf8;
+  --primary-foreground: #03121c;
+  --secondary: #1f1f22;
   --secondary-foreground: #f4f1ea;
-  --muted: #1a1a1d;
+  --muted: #19191c;
   --muted-foreground: #a6a196;
-  --accent: #2a1a10;
-  --accent-foreground: #ffb08c;
+  --accent: #0c2433;
+  --accent-foreground: #7dd3fc;
   --destructive: #ff7b6e;
-  --border: #28282b;
+  --border: #27272a;
   --input: #343437;
-  --ring: #ff6a35;
+  --ring: #38bdf8;
 
   --ink: #f4f1ea;
-  --ink-foreground: #101012;
-  --sky: #3a4658;
-  --sky-deep: #262f3d;
-  --sky-soft: #1c2027;
-  --go: #3ccf8e;
-  --go-soft: #0c2a1f;
-  --go-foreground: #9ff0c8;
-  --sun: #ff6a35;
-  --sun-soft: #2a1a10;
-  --sun-foreground: #ffb08c;
+  --ink-foreground: #0b0c0e;
+  --sky: #38bdf8;
+  --sky-deep: #0c4a6e;
+  --sky-soft: #0f1c24;
+  --go: #4ade80;
+  --go-soft: #0b2a17;
+  --go-foreground: #bbf7d0;
+  --sun: #38bdf8;
+  --sun-soft: #0c2433;
+  --sun-foreground: #bae6fd;
   --danger-soft: #2c1210;
   --danger-foreground: #ffc2bb;
 
-  --chart-1: #ff6a35;
+  --brand-a: #38bdf8;
+  --brand-b: #4ade80;
+
+  --chart-1: #38bdf8;
   --chart-2: #f4f1ea;
-  --chart-3: #3ccf8e;
+  --chart-3: #4ade80;
   --chart-4: #4a453a;
-  --chart-5: #3a4658;
+  --chart-5: #0c4a6e;
 
   --sidebar: #131315;
   --sidebar-foreground: #f4f1ea;
   --sidebar-primary: #f4f1ea;
-  --sidebar-primary-foreground: #101012;
+  --sidebar-primary-foreground: #0b0c0e;
   --sidebar-accent: #1c1c1f;
   --sidebar-accent-foreground: #f4f1ea;
-  --sidebar-border: #28282b;
-  --sidebar-ring: #ff6a35;
+  --sidebar-border: #27272a;
+  --sidebar-ring: #38bdf8;
 
   --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 30px -16px rgb(0 0 0 / 0.7);
   --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.4), 0 28px 56px -22px rgb(0 0 0 / 0.8);
 
-  --shell-a: #0d0d0f;
-  --shell-b: #0a0a0b;
-  --shell-c: #141210;
+  --shell-a: #0a0a0b;
+  --shell-b: #09090a;
+  --shell-c: #121210;
 
   --dot-color: rgb(255 255 255 / 0.09);
   --dot-color-strong: rgb(255 255 255 / 0.16);
-  --cloud: #211a12;
+  --cloud: #0e2230;
   --cloud-opacity: 0.5;
 
   color-scheme: dark;
@@ -181,7 +187,8 @@ body {
 }
 
 @theme inline {
-  --font-heading: 'Space Grotesk Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-heading:
+    'Space Grotesk Variable', ui-sans-serif, system-ui, sans-serif;
   --font-sans: 'Space Grotesk Variable', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
   /* Keep tight tracking close to neutral for Space Grotesk. */
@@ -197,6 +204,8 @@ body {
   --color-sun: var(--sun);
   --color-sun-soft: var(--sun-soft);
   --color-sun-foreground: var(--sun-foreground);
+  --color-brand-a: var(--brand-a);
+  --color-brand-b: var(--brand-b);
   --color-danger-soft: var(--danger-soft);
   --color-danger-foreground: var(--danger-foreground);
   --shadow-soft: var(--shadow-soft);
@@ -236,10 +245,10 @@ body {
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: var(--radius);
-  --radius-xl: 10px;
-  --radius-2xl: 12px;
+  --radius-xl: 8px;
+  --radius-2xl: 10px;
   --radius-3xl: 12px;
-  --radius-4xl: 14px;
+  --radius-4xl: 12px;
 }
 
 @layer base {
@@ -321,9 +330,8 @@ body {
   border: 1px solid var(--border);
 }
 
-/* Soft ambient glow blob — kept as the same decorative shape used across
- * hero/empty states, recoloured from literal clouds to a warm ink/orange
- * glow so it reads at home on the flat surface. */
+/* Soft ambient glow blob used behind hero and empty states, tinted with
+ * the sky accent so it reads at home on the flat surface. */
 @utility cloud {
   position: absolute;
   z-index: -1;
@@ -365,8 +373,7 @@ body {
   }
 }
 
-/* Orange marker highlight for a single emphasised word — the Browserbase
- * headline-block treatment. */
+/* Sky marker highlight for a single emphasised word. */
 @utility marker {
   background: linear-gradient(
       180deg,
@@ -413,8 +420,10 @@ body {
 }
 
 @media (prefers-reduced-motion: no-preference) {
+  /* Entry animations fill backwards only, so once they finish they release
+   * transform for hover lifts and 3D tilt. */
   .animate-rise {
-    animation: rise-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation: rise-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) backwards;
     animation-delay: calc(var(--i, 0) * 90ms);
   }
   .animate-drift {
@@ -449,8 +458,8 @@ body {
     10px 10px;
 }
 
-/* Coach orb: a lit sphere in ink + the brand orange, replacing the old
- * blue-sky orb. */
+/* Coach orb: a lit glass sphere in ink with sky and green light caught
+ * inside it. */
 @utility coach-orb {
   border-radius: 9999px;
   background:
@@ -460,15 +469,20 @@ body {
       transparent 32%
     ),
     radial-gradient(
-      circle at 70% 75%,
-      color-mix(in oklab, var(--sun) 70%, transparent) 0 6%,
-      transparent 40%
+      circle at 72% 72%,
+      rgb(74 222 128 / 0.75) 0 6%,
+      transparent 38%
     ),
-    radial-gradient(circle at 50% 50%, #4a4a4d 0%, #1c1c1e 55%, #101012 100%);
+    radial-gradient(
+      circle at 30% 78%,
+      rgb(56 189 248 / 0.7) 0 8%,
+      transparent 42%
+    ),
+    radial-gradient(circle at 50% 50%, #3a3d42 0%, #16181b 55%, #0b0c0e 100%);
   box-shadow:
     inset -10px -14px 30px rgb(0 0 0 / 0.45),
     inset 8px 10px 24px rgb(255 255 255 / 0.12),
-    0 20px 60px -10px color-mix(in oklab, var(--sun) 55%, transparent);
+    0 20px 60px -10px rgb(56 189 248 / 0.5);
 }
 
 @keyframes orb-breathe {
@@ -575,9 +589,9 @@ body {
 @utility text-brand-gradient {
   background-image: linear-gradient(
     120deg,
-    var(--primary) 0%,
-    #ffb27d 45%,
-    var(--primary) 100%
+    var(--brand-a) 0%,
+    var(--brand-b) 50%,
+    var(--brand-a) 100%
   );
   background-size: 200% 200%;
   -webkit-background-clip: text;
@@ -586,12 +600,7 @@ body {
 }
 
 @utility bg-brand-gradient {
-  background-image: linear-gradient(
-    135deg,
-    #ff7a3d,
-    var(--primary) 55%,
-    #c2410c
-  );
+  background-image: linear-gradient(135deg, #38bdf8, #0ea5e9 45%, #22c55e);
 }
 
 @utility shadow-glow {
@@ -651,8 +660,8 @@ body {
  */
 @utility wave-text {
   background-image:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200' preserveAspectRatio='none'%3E%3Cpath d='M0 100 C 25 88 75 88 100 100 S 175 112 200 100 V200 H0 Z' fill='%23ff5a1f'/%3E%3C/svg%3E"),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 200' preserveAspectRatio='none'%3E%3Cpath d='M0 96 C 40 84 110 84 150 96 S 260 108 300 96 V200 H0 Z' fill='%23ffb27d' fill-opacity='0.55'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200' preserveAspectRatio='none'%3E%3Cpath d='M0 100 C 25 88 75 88 100 100 S 175 112 200 100 V200 H0 Z' fill='%2338bdf8'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 200' preserveAspectRatio='none'%3E%3Cpath d='M0 96 C 40 84 110 84 150 96 S 260 108 300 96 V200 H0 Z' fill='%234ade80' fill-opacity='0.55'/%3E%3C/svg%3E"),
     linear-gradient(
       var(--wave-base, var(--foreground)),
       var(--wave-base, var(--foreground))
@@ -708,5 +717,194 @@ body {
   .animate-letter-bob {
     animation: letter-bob 3s ease-in-out infinite;
     animation-delay: calc(var(--i, 0) * -0.28s);
+  }
+}
+
+/* ---- Icon micro-motion --------------------------------------------------
+ * Every custom icon carries a memory node. When its interactive parent is
+ * hovered or focused, the node swells a little, like a pulse along an edge.
+ */
+.algo-icon .algo-node {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :where(a, button, [role='button'], .group):hover > .algo-icon .algo-node,
+  :where(a, button, [role='button'], .group):hover .algo-icon .algo-node,
+  :where(a, button):focus-visible .algo-icon .algo-node {
+    transform: scale(1.35);
+  }
+}
+
+/* ---- Double bezel -------------------------------------------------------
+ * A machined outer tray with a hairline, holding an inner core with its own
+ * top highlight. Radii stay squarish and concentric.
+ */
+@utility bezel {
+  border-radius: 10px;
+  padding: 4px;
+  background: color-mix(in oklab, var(--foreground) 4%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in oklab, var(--foreground) 7%, transparent);
+}
+
+@utility bezel-core {
+  border-radius: 7px;
+  background: var(--card);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.7),
+    0 1px 2px rgb(11 12 14 / 0.05),
+    0 12px 26px -18px rgb(11 12 14 / 0.25);
+
+  .dark & {
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.06),
+      0 14px 30px -18px rgb(0 0 0 / 0.8);
+  }
+}
+
+/* Pointer spotlight: set --mx/--my (px) on the element; a soft sky/green
+ * light follows the cursor across its surface. */
+@utility spotlight {
+  position: relative;
+  isolation: isolate;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: var(--spot, 0);
+    background: radial-gradient(
+      420px circle at var(--mx, 50%) var(--my, 50%),
+      color-mix(in oklab, var(--brand-a) 22%, transparent),
+      color-mix(in oklab, var(--brand-b) 10%, transparent) 40%,
+      transparent 70%
+    );
+    transition: opacity 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+}
+
+/* Mesh gradient card: sky and green light pooled in deep ink. */
+@utility mesh-card {
+  color: #f4f1ea;
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgb(56 189 248 / 0.55), transparent 55%),
+    radial-gradient(
+      90% 80% at 100% 100%,
+      rgb(34 197 94 / 0.5),
+      transparent 60%
+    ),
+    radial-gradient(
+      60% 60% at 80% 10%,
+      rgb(125 211 252 / 0.25),
+      transparent 70%
+    ),
+    #07090b;
+}
+
+/* ---- Shimmer text -------------------------------------------------------
+ * A band of light sweeps across the glyphs, the way an assistant signals
+ * that it is working.
+ */
+@utility shimmer-text {
+  background-image: linear-gradient(
+    100deg,
+    currentColor 0%,
+    currentColor 40%,
+    var(--shimmer, var(--brand-a)) 50%,
+    currentColor 60%,
+    currentColor 100%
+  );
+  background-size: 250% 100%;
+  background-position: 100% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+@keyframes shimmer-sweep {
+  to {
+    background-position: -150% 0;
+  }
+}
+
+/* ---- Thinking orbs ------------------------------------------------------ */
+@keyframes orb-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes orb-pulse {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(0.7);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.15);
+    opacity: 1;
+  }
+}
+
+/* ---- Pop-in, page entry ---------------------------------------- */
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes aurora-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(4%, -6%, 0) scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .shimmer-text {
+    animation: shimmer-sweep 2.6s cubic-bezier(0.45, 0.05, 0.25, 1) infinite;
+  }
+  .thinking-orbit {
+    animation: orb-orbit 2.4s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+  }
+  .thinking-core {
+    animation: orb-pulse 1.8s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+  }
+  .animate-pop {
+    animation: pop-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+    animation-delay: calc(var(--i, 0) * 12ms);
+  }
+  .animate-page {
+    animation: page-enter 0.7s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  }
+  .animate-aurora {
+    animation: aurora-drift 14s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
   }
 }

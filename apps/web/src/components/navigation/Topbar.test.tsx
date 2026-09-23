@@ -34,4 +34,18 @@ describe('landing topbar', () => {
     expect(markup).toContain('Get started')
     expect(markup).not.toContain('Log in')
   })
+
+  it('shows the Dashboard button when signed in', () => {
+    const markup = renderToStaticMarkup(
+      <AuthContext.Provider value={{ ...authValue, status: 'authenticated' }}>
+        <MemoryRouter initialEntries={['/']}>
+          <Topbar />
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    )
+
+    expect(markup).toContain('Dashboard')
+    expect(markup).toContain('href="/dashboard"')
+    expect(markup).not.toContain('Get started')
+  })
 })

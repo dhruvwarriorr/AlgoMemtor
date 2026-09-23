@@ -1,4 +1,4 @@
-import { CloudOff } from 'lucide-react'
+import { CloudOff } from '@/components/icons/algo-icons'
 
 import { Button } from '@/components/ui/button'
 

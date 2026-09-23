@@ -24,11 +24,11 @@ function LogoMark({ className }: { className?: string }) {
           <path
             className="logo-wave-slow"
             d={wave}
-            fill="#ffb27d"
-            fillOpacity="0.45"
+            fill="#4ade80"
+            fillOpacity="0.5"
           />
         </g>
-        <path className="logo-wave" d={wave} fill="#ff5a1f" />
+        <path className="logo-wave" d={wave} fill="#38bdf8" />
         <g transform="translate(8.1 8.1) scale(0.825)">
           <path
             d="M4.5 20 12 4l7.5 16"
@@ -37,7 +37,7 @@ function LogoMark({ className }: { className?: string }) {
             strokeLinejoin="round"
             strokeWidth="2.6"
           />
-          <circle cx="12" cy="14.2" fill="var(--sun)" r="2.4" />
+          <circle cx="12" cy="14.2" fill="#22c55e" r="2.4" />
         </g>
       </svg>
     </span>

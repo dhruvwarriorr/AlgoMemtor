@@ -13,8 +13,8 @@ const buttonVariants = cva(
         default:
           'bg-ink text-ink-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.12),0_6px_16px_-8px_rgb(16_16_18/0.5)] hover:bg-[color-mix(in_oklab,var(--ink),var(--primary)_20%)]',
         ink: 'bg-ink text-ink-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.12),0_8px_18px_-10px_rgb(16_16_18/0.55)] hover:bg-[color-mix(in_oklab,var(--ink),var(--primary)_20%)]',
-        // Loud accent pill — solid orange, reserved for rare "this is the
-        // one thing to click" moments.
+        // Loud accent — solid sky blue, reserved for rare "this is the one
+        // thing to click" moments.
         accent:
           'bg-primary text-primary-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.25),0_6px_16px_-8px_color-mix(in_oklab,var(--primary)_80%,transparent)] hover:bg-[color-mix(in_oklab,var(--primary),black_10%)]',
         // Quiet pill — thin border, near-white fill, the Browserbase

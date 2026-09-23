@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, Loader2, PlugZap, Trash2 } from 'lucide-react'
+import {
+  CheckCircle2,
+  Loader2,
+  PlugZap,
+  Trash2,
+} from '@/components/icons/algo-icons'
 
 import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'

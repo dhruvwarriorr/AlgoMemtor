@@ -13,8 +13,8 @@ import {
   ShieldCheck,
   Sun,
   UserRound,
-  type LucideIcon,
-} from 'lucide-react'
+  type IconComponent,
+} from '@/components/icons/algo-icons'
 
 import type { Theme } from '@/app/theme-context'
 import { useTheme } from '@/app/useTheme'
@@ -41,7 +41,7 @@ const sections: ReadonlyArray<{
   id: SectionId
   label: string
   hint: string
-  icon: LucideIcon
+  icon: IconComponent
 }> = [
   {
     id: 'profile',
@@ -117,7 +117,7 @@ function SettingRow({
 const themeOptions: ReadonlyArray<{
   value: Theme
   label: string
-  icon: LucideIcon
+  icon: IconComponent
 }> = [
   { value: 'system', label: 'System preference', icon: Monitor },
   { value: 'light', label: 'Light', icon: Sun },
@@ -156,10 +156,10 @@ function ThemePreview({ theme }: { theme: Theme }) {
       <div
         className={cn(
           'flex flex-1 flex-col gap-1 rounded-md p-1.5',
-          mode === 'light' ? 'bg-[#f6f4ee]' : 'bg-[#0d0d0f]',
+          mode === 'light' ? 'bg-[#f6f4ee]' : 'bg-[#0a0a0b]',
         )}
       >
-        <span className="h-2 w-1/2 rounded-md bg-[#ff4d12]" />
+        <span className="h-2 w-1/2 rounded-md bg-[#0ea5e9]" />
         <div className="flex flex-1 gap-1">
           <span
             className={cn(

@@ -15,8 +15,8 @@ import {
   Target,
   Trophy,
   UserRound,
-  type LucideIcon,
-} from 'lucide-react'
+  type IconComponent,
+} from '@/components/icons/algo-icons'
 
 import { providerLabels } from '@/features/platform/components/provider-labels'
 import { useAnalytics } from '@/features/platform/hooks'
@@ -162,7 +162,7 @@ export function CoachStatStrip({
 
 const sourceMeta: Record<
   CoachEvidenceReference['source'],
-  { label: string; icon: LucideIcon }
+  { label: string; icon: IconComponent }
 > = {
   profile: { label: 'Linked profiles', icon: UserRound },
   analytics: { label: 'Analytics', icon: BarChart3 },

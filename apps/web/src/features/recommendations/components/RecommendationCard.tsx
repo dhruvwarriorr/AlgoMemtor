@@ -6,7 +6,7 @@ import type {
   ProviderKey,
 } from '@algomemtor/shared-contracts'
 
-import { Lightbulb } from 'lucide-react'
+import { Lightbulb } from '@/components/icons/algo-icons'
 
 import { ProviderLogo } from '@/components/brand/ProviderLogo'
 import { Button } from '@/components/ui/button'

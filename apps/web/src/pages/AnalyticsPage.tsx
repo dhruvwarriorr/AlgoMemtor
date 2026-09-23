@@ -10,7 +10,7 @@ import {
   Sparkles,
   Swords,
   Target,
-} from 'lucide-react'
+} from '@/components/icons/algo-icons'
 
 import PageContainer from '@/components/layout/PageContainer'
 import PageHeader from '@/components/layout/PageHeader'
@@ -255,7 +255,7 @@ function AnalyticsPage() {
       />
 
       {/* All-time headline */}
-      <section className="animate-rise relative overflow-hidden rounded-xl p-5 text-white [background:linear-gradient(135deg,#1c1c1e,#101012_55%,#3a1405)] sm:p-7">
+      <section className="animate-rise relative overflow-hidden rounded-xl p-5 text-white mesh-card sm:p-7">
         <span
           aria-hidden="true"
           className="absolute -top-24 -right-16 size-72 rounded-full bg-primary/40 blur-3xl"

@@ -1,4 +1,4 @@
-import { ArrowUpRight } from 'lucide-react'
+import { ArrowUpRight } from '@/components/icons/algo-icons'
 import { motion, useReducedMotion } from 'motion/react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 
@@ -26,6 +26,18 @@ function Brand({ iconOnly = false }: { iconOnly?: boolean }) {
   )
 }
 
+// Landing action: a beige island with the arrow nested in its own chip.
+const landingActionClass =
+  'group h-12 gap-3 rounded-lg bg-[#f4f1ea] py-1.5 pr-1.5 pl-5 text-base text-[#0b0c0e] shadow-[0_18px_40px_-18px_rgb(56_189_248/0.55)] hover:bg-white sm:h-14 sm:pl-6'
+
+function LandingArrow() {
+  return (
+    <span className="grid size-9 place-items-center rounded-md bg-[#0b0c0e] text-[#f4f1ea] transition-transform duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:scale-105 sm:size-11 [--icon-node:#4ade80]">
+      <ArrowUpRight aria-hidden="true" className="size-4" />
+    </span>
+  )
+}
+
 function AuthActions({
   compact = false,
   showLogin = true,
@@ -43,12 +55,12 @@ function AuthActions({
       <Link
         className={cn(
           buttonVariants({ variant: 'default', size }),
-          landing && 'h-12 rounded-xl px-5 text-base sm:h-14 sm:px-6',
+          landing && landingActionClass,
         )}
         to="/dashboard"
       >
         Dashboard
-        <ArrowUpRight aria-hidden="true" />
+        {landing ? <LandingArrow /> : <ArrowUpRight aria-hidden="true" />}
       </Link>
     )
   }
@@ -70,12 +82,12 @@ function AuthActions({
       <NavLink
         className={cn(
           buttonVariants({ variant: 'default', size }),
-          landing && 'h-12 rounded-xl px-5 text-base sm:h-14 sm:px-6',
+          landing && landingActionClass,
         )}
         to="/login"
       >
         Get started
-        <ArrowUpRight aria-hidden="true" />
+        {landing ? <LandingArrow /> : <ArrowUpRight aria-hidden="true" />}
       </NavLink>
     </>
   )

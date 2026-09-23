@@ -1,5 +1,11 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { LogOut, Monitor, Moon, Pencil, Sun } from 'lucide-react'
+import {
+  LogOut,
+  Monitor,
+  Moon,
+  Pencil,
+  Sun,
+} from '@/components/icons/algo-icons'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 
 import type { Theme } from '@/app/theme-context'

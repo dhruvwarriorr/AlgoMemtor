@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { X } from 'lucide-react'
+import { X } from '@/components/icons/algo-icons'
 
 import { Button } from '@/components/ui/button'
 

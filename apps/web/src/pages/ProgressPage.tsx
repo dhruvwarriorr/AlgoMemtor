@@ -8,7 +8,7 @@ import {
   Send,
   Target,
   Trophy,
-} from 'lucide-react'
+} from '@/components/icons/algo-icons'
 import {
   Area,
   AreaChart,
@@ -60,9 +60,9 @@ const axisTick = { fill: 'var(--muted-foreground)', fontSize: 11 }
 
 // A distinct, theme-friendly palette for categorical charts.
 const palette = [
-  '#ff4d12',
+  '#0ea5e9',
+  '#22c55e',
   '#2d6cdf',
-  '#1f9d5c',
   '#f2b84b',
   '#8b5cf6',
   '#e0484f',
@@ -150,9 +150,7 @@ function Kpi({
     <div
       className={cn(
         'animate-rise min-w-0 rounded-xl p-4',
-        accent
-          ? 'text-white [background:linear-gradient(155deg,#ff7a3d,#ff4d12_45%,#9a2e0b)]'
-          : 'border border-border bg-card',
+        accent ? 'text-white mesh-card' : 'border border-border bg-card',
       )}
     >
       <dt
@@ -211,12 +209,12 @@ function DailyPractice({ analytics }: { analytics: Analytics }) {
             >
               <defs>
                 <linearGradient id="solved-fill" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0%" stopColor="#ff4d12" stopOpacity={0.45} />
-                  <stop offset="100%" stopColor="#ff4d12" stopOpacity={0} />
+                  <stop offset="0%" stopColor="#0ea5e9" stopOpacity={0.45} />
+                  <stop offset="100%" stopColor="#0ea5e9" stopOpacity={0} />
                 </linearGradient>
                 <linearGradient id="attempted-fill" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0%" stopColor="#2d6cdf" stopOpacity={0.22} />
-                  <stop offset="100%" stopColor="#2d6cdf" stopOpacity={0} />
+                  <stop offset="0%" stopColor="#22c55e" stopOpacity={0.22} />
+                  <stop offset="100%" stopColor="#22c55e" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid
@@ -236,7 +234,7 @@ function DailyPractice({ analytics }: { analytics: Analytics }) {
                 dataKey="attempted"
                 fill="url(#attempted-fill)"
                 name="Attempted"
-                stroke="#2d6cdf"
+                stroke="#22c55e"
                 strokeWidth={1.5}
                 type="monotone"
               />
@@ -244,7 +242,7 @@ function DailyPractice({ analytics }: { analytics: Analytics }) {
                 dataKey="solved"
                 fill="url(#solved-fill)"
                 name="Newly solved"
-                stroke="#ff4d12"
+                stroke="#0ea5e9"
                 strokeWidth={2.2}
                 type="monotone"
               />
@@ -411,7 +409,7 @@ const verdictMeta = [
   { key: 'wrongAnswer', label: 'Wrong answer', color: '#e0484f' },
   { key: 'timeLimit', label: 'Time limit', color: '#f2b84b' },
   { key: 'memoryLimit', label: 'Memory limit', color: '#8b5cf6' },
-  { key: 'runtimeError', label: 'Runtime error', color: '#ff4d12' },
+  { key: 'runtimeError', label: 'Runtime error', color: '#ec4899' },
   { key: 'compileError', label: 'Compile error', color: '#14a3a3' },
   { key: 'other', label: 'Other', color: '#6c7a90' },
 ] as const
@@ -564,7 +562,7 @@ function DifficultyProfile({
               <Bar dataKey="solved" radius={[6, 6, 0, 0]}>
                 {bands.map((band, index) => (
                   <Cell
-                    fill={`color-mix(in oklab, #ff4d12 ${45 + Math.round((index / Math.max(1, bands.length - 1)) * 55)}%, #2d6cdf)`}
+                    fill={`color-mix(in oklab, #22c55e ${45 + Math.round((index / Math.max(1, bands.length - 1)) * 55)}%, #0ea5e9)`}
                     key={band.label}
                   />
                 ))}
@@ -600,17 +598,17 @@ function WeekdayRhythm({ breakdown }: { breakdown: Breakdown | undefined }) {
               />
               <Radar
                 dataKey="submissions"
-                fill="#2d6cdf"
+                fill="#22c55e"
                 fillOpacity={0.18}
                 name="Submissions"
-                stroke="#2d6cdf"
+                stroke="#22c55e"
               />
               <Radar
                 dataKey="solved"
-                fill="#ff4d12"
+                fill="#0ea5e9"
                 fillOpacity={0.35}
                 name="Solved"
-                stroke="#ff4d12"
+                stroke="#0ea5e9"
               />
               <Tooltip contentStyle={tooltipStyle} />
             </RadarChart>
@@ -690,7 +688,7 @@ function TimeOfDay({
                         background:
                           count === 0
                             ? 'var(--muted)'
-                            : `color-mix(in oklab, #ff4d12 ${25 + Math.round((count / max) * 75)}%, transparent)`,
+                            : `color-mix(in oklab, #0ea5e9 ${25 + Math.round((count / max) * 75)}%, transparent)`,
                       }}
                       tabIndex={0}
                     />

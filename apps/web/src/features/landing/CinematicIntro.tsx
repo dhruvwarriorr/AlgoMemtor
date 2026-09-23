@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { XCircle } from 'lucide-react'
+import { XCircle } from '@/components/icons/algo-icons'
 
 // Opening sequence: a spotlight lands on a failed verdict, the
 // lights cut out, then the coach answers it. Skippable at any point.
@@ -115,7 +115,7 @@ export function CinematicIntro({ onComplete }: { onComplete: () => void }) {
                   <span>Submission · Problem C</span>
                   <span>Attempt 4</span>
                 </div>
-                <p className="mt-4 flex items-center gap-2 font-mono text-lg font-semibold text-[#c2410c]">
+                <p className="mt-4 flex items-center gap-2 font-mono text-lg font-semibold text-[#dc2626]">
                   <XCircle aria-hidden="true" className="size-5" />
                   Wrong answer on test 7
                 </p>
@@ -154,7 +154,7 @@ export function CinematicIntro({ onComplete }: { onComplete: () => void }) {
           >
             <span
               aria-hidden="true"
-              className="coach-orb mb-8 size-20 shadow-[0_0_90px_rgba(255,106,53,0.6)]"
+              className="coach-orb mb-8 size-20 shadow-[0_0_90px_rgba(56,189,248,0.6)]"
             />
             <p className="text-4xl font-thin tracking-[0.2em] text-white/90 uppercase sm:text-6xl">
               Unless…

@@ -42,9 +42,9 @@ const providerColors: Record<ProviderKey, string> = {
 }
 
 const palette = [
-  '#ff4d12',
+  '#0ea5e9',
+  '#22c55e',
   '#2d6cdf',
-  '#1f9d5c',
   '#f2b84b',
   '#8b5cf6',
   '#e0484f',
@@ -380,8 +380,8 @@ export function MonthlyVolume({
             >
               <defs>
                 <linearGradient id="monthly-solved" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0%" stopColor="#ff7a3d" />
-                  <stop offset="100%" stopColor="#c2380b" />
+                  <stop offset="0%" stopColor="#38bdf8" />
+                  <stop offset="100%" stopColor="#16a34a" />
                 </linearGradient>
               </defs>
               <CartesianGrid
@@ -592,7 +592,7 @@ const verdictMeta = [
   { key: 'wrongAnswer', label: 'Wrong answer', color: '#e0484f' },
   { key: 'timeLimit', label: 'Time limit', color: '#f2b84b' },
   { key: 'memoryLimit', label: 'Memory limit', color: '#8b5cf6' },
-  { key: 'runtimeError', label: 'Runtime error', color: '#ff4d12' },
+  { key: 'runtimeError', label: 'Runtime error', color: '#ec4899' },
   { key: 'compileError', label: 'Compile error', color: '#14a3a3' },
   { key: 'other', label: 'Other', color: '#6c7a90' },
 ] as const

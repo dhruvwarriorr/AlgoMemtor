@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react'
 import type { LearnerProblemStatus } from '@algomemtor/shared-contracts'
-import { Bookmark, BookmarkCheck } from 'lucide-react'
+import { Bookmark, BookmarkCheck } from '@/components/icons/algo-icons'
 
 import { useNotification } from '@/app/useNotification'
 import { Button } from '@/components/ui/button'
