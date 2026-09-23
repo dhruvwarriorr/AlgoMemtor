@@ -16,6 +16,7 @@ const authValue: AuthContextValue = {
   clearSessionMessage: () => undefined,
   signIn: () => Promise.resolve(),
   signUp: () => Promise.resolve(null),
+  signInWithGoogle: () => Promise.resolve(),
   signOut: () => Promise.resolve(),
 }
 

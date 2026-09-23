@@ -12,6 +12,9 @@ export type AuthContextValue = {
   clearSessionMessage: () => void
   signIn: (email: string, password: string) => Promise<void>
   signUp: (email: string, password: string) => Promise<Session | null>
+  // Redirects to Google; the session is restored when Supabase returns the
+  // browser to the dashboard.
+  signInWithGoogle: () => Promise<void>
   signOut: () => Promise<void>
 }
 

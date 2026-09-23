@@ -117,6 +117,21 @@ export function AuthProvider({ children }: PropsWithChildren) {
     return data.session
   }, [])
 
+  // Google sign-in creates the account on first use, so it serves both
+  // login and signup.
+  const signInWithGoogle = useCallback(async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: authRedirectUrl },
+    })
+
+    if (error) {
+      throw error
+    }
+
+    setSessionMessage(null)
+  }, [])
+
   const signOut = useCallback(async () => {
     setSessionMessage(null)
     const { error } = await supabase.auth.signOut()
@@ -135,9 +150,18 @@ export function AuthProvider({ children }: PropsWithChildren) {
       clearSessionMessage,
       signIn,
       signUp,
+      signInWithGoogle,
       signOut,
     }),
-    [authState, clearSessionMessage, sessionMessage, signIn, signOut, signUp],
+    [
+      authState,
+      clearSessionMessage,
+      sessionMessage,
+      signIn,
+      signInWithGoogle,
+      signOut,
+      signUp,
+    ],
   )
 
   return <AuthContext value={value}>{children}</AuthContext>

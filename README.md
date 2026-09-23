@@ -415,6 +415,18 @@ During local-only development, the Site URL can be `http://localhost:5173`.
 `VITE_SITE_URL` must use the matching frontend origin in each environment. The
 signup confirmation flow explicitly redirects to its `/dashboard` path.
 
+To enable **Continue with Google** (login and signup):
+
+1. In **Google Cloud Console → APIs & Services → Credentials**, create an
+   OAuth client ID of type **Web application** and add
+   `<SUPABASE_URL>/auth/v1/callback` as an authorized redirect URI.
+2. In **Supabase Dashboard → Authentication → Sign In / Providers → Google**,
+   enable Google and paste the client ID and client secret.
+
+Google returns to the same allowlisted `/dashboard` redirect URL, so no new
+environment variables are needed. The client secret stays in Supabase and
+never goes in a `VITE_*` variable.
+
 Only a Supabase publishable key belongs in the Vite environment. Secret and
 service-role keys must remain server-side and are not required for JWT
 verification.
