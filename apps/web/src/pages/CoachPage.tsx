@@ -1005,7 +1005,7 @@ function CoachPage() {
                   className="coach-orb animate-orb mt-10 size-20 sm:size-24"
                 />
                 <p
-                  className="animate-rise mt-6 text-center font-heading text-3xl font-bold tracking-[-0.035em] text-foreground sm:text-[2.6rem]"
+                  className="animate-rise mt-6 text-center font-heading text-3xl font-bold tracking-[-0.01em] text-foreground sm:text-[2.6rem]"
                   style={{ '--i': 1 } as CSSProperties}
                 >
                   Hi, {identity.name}! How can I{' '}

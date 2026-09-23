@@ -125,7 +125,7 @@ function LoginPage() {
         />
         <BrandShowcase />
         <div className="relative">
-          <p className="max-w-md font-heading text-3xl leading-[1.05] font-bold tracking-[-0.035em] sm:text-5xl">
+          <p className="max-w-md font-heading text-3xl leading-[1.05] font-bold tracking-[-0.01em] sm:text-5xl">
             Your coach remembers where you left off.
           </p>
           <p className="mt-4 max-w-sm text-[#101012]/75 dark:text-[#f4f1ea]/75">

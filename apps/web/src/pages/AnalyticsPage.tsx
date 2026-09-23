@@ -96,7 +96,7 @@ function Headline({
         </span>
         {label}
       </p>
-      <p className="mt-3 truncate font-heading text-[1.75rem] leading-none font-bold tracking-[-0.03em] tabular-nums">
+      <p className="mt-3 truncate font-heading text-[1.75rem] leading-none font-bold tracking-[-0.01em] tabular-nums">
         {value}
       </p>
       <p className="mt-1.5 truncate text-xs text-muted-foreground">{detail}</p>
@@ -268,7 +268,7 @@ function AnalyticsPage() {
                 ? 'All platforms, all time'
                 : `${providerLabels[provider]}, all time`}
             </p>
-            <p className="mt-2 font-heading text-6xl leading-none font-bold tracking-[-0.04em] tabular-nums sm:text-7xl">
+            <p className="mt-2 font-heading text-6xl leading-none font-bold tracking-[-0.01em] tabular-nums sm:text-7xl">
               {analytics.solvedTotal.toLocaleString()}
             </p>
             <p className="mt-2 text-white/70">

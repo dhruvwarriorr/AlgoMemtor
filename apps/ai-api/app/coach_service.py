@@ -16,8 +16,8 @@ from uuid import UUID
 from xml.etree import ElementTree
 from zipfile import BadZipFile, ZipFile
 
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -42,6 +42,7 @@ from .core_client import live_refresh_available, request_live_refresh
 from .knowledge_base import retrieve_knowledge
 from .knowledge_query import build_knowledge_query
 from .knowledge_repository import KnowledgeRepository
+from .llm import chat_model
 from .memory_model import GeminiMemoryEmbedder, MemoryEmbeddingError
 from .pedagogy import (
     bloom_prompt,
@@ -358,21 +359,31 @@ class AgentToolServices(Protocol):
     ) -> dict[str, Any]: ...
 
 
+def coach_chat_model(settings: AiSettings, *, fast: bool = False) -> BaseChatModel:
+    """The coach's chat model; `fast` is the quick fallback after a timeout."""
+    # One retry for transient errors on the main model; quota rejections are
+    # surfaced instead of waiting out long retry-after windows.
+    return chat_model(
+        settings,
+        provider=settings.effective_coach_provider,
+        model=settings.effective_coach_model,
+        temperature=0.6,
+        thinking_level="low" if fast else settings.coach_thinking_level,
+        max_tokens=settings.effective_coach_max_output_tokens,
+        timeout=(
+            min(settings.llm_timeout_seconds, 60)
+            if fast
+            else settings.llm_timeout_seconds
+        ),
+        max_retries=0 if fast else 1,
+    )
+
+
 class GeminiCoachModel:
     def __init__(
         self, settings: AiSettings, services: AgentToolServices | None = None
     ) -> None:
-        model = ChatGoogleGenerativeAI(
-            model=settings.effective_coach_model,
-            api_key=settings.llm_api_key,
-            temperature=0.6,
-            thinking_level=settings.coach_thinking_level,
-            max_tokens=settings.coach_max_output_tokens,
-            timeout=settings.llm_timeout_seconds,
-            # One retry for transient errors; quota rejections are surfaced
-            # instead of waiting out long retry-after windows.
-            max_retries=1,
-        )
+        model = coach_chat_model(settings)
         self.settings = settings
         self.services = services
         self.throttle = ModelRequestThrottle(settings.coach_model_requests_per_minute)
@@ -383,14 +394,8 @@ class GeminiCoachModel:
             include_raw=True,
         )
         # Used after the agent runs out of time, so it must answer quickly.
-        self.fast_structured_model = ChatGoogleGenerativeAI(
-            model=settings.effective_coach_model,
-            api_key=settings.llm_api_key,
-            temperature=0.6,
-            thinking_level="low",
-            max_tokens=settings.coach_max_output_tokens,
-            timeout=min(settings.llm_timeout_seconds, 60),
-            max_retries=0,
+        self.fast_structured_model = coach_chat_model(
+            settings, fast=True
         ).with_structured_output(
             CoachModelOutput,
             method="function_calling",
@@ -752,7 +757,7 @@ class CoachService:
     def get_model(self) -> CoachModel:
         if self.model is not None:
             return self.model
-        if not self.settings.llm_api_key:
+        if not self.settings.coach_api_key:
             raise CoachNotConfiguredError
         self.model = GeminiCoachModel(self.settings, services=self)
         return self.model

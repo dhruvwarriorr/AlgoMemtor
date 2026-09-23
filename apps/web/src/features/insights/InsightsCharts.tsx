@@ -202,7 +202,7 @@ export function YearCalendar({
 }: {
   solvedOverTime: Record<string, number>
 }) {
-  const { weeks, months, total, max } = useMemo(() => {
+  const { weeks, months, total, thresholds } = useMemo(() => {
     const today = new Date()
     const end = new Date(
       Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()),
@@ -213,7 +213,7 @@ export function YearCalendar({
     const columns: Array<Array<{ date: string; count: number } | null>> = []
     const monthMarks: Array<{ index: number; label: string }> = []
     let sum = 0
-    let peak = 0
+    const activeCounts: number[] = []
     for (let column = 0; column < 53; column += 1) {
       const cells: Array<{ date: string; count: number } | null> = []
       for (let row = 0; row < 7; row += 1) {
@@ -225,7 +225,7 @@ export function YearCalendar({
         const key = date.toISOString().slice(0, 10)
         const count = solvedOverTime[key] ?? 0
         sum += count
-        peak = Math.max(peak, count)
+        if (count > 0) activeCounts.push(count)
         cells.push({ date: key, count })
         if (row === 0 && date.getUTCDate() <= 7) {
           monthMarks.push({
@@ -239,13 +239,26 @@ export function YearCalendar({
       }
       columns.push(cells)
     }
-    return { weeks: columns, months: monthMarks, total: sum, max: peak }
+    // Shades split the active days into quartiles (as GitHub does), so one
+    // exceptional day does not wash every other day out to the lightest
+    // shade.
+    activeCounts.sort((left, right) => left - right)
+    const quantile = (fraction: number) =>
+      activeCounts[Math.floor((activeCounts.length - 1) * fraction)] ?? 0
+    return {
+      weeks: columns,
+      months: monthMarks,
+      total: sum,
+      thresholds: [quantile(0.25), quantile(0.5), quantile(0.75)],
+    }
   }, [solvedOverTime])
 
   const wrapperRef = useRef<HTMLDivElement | null>(null)
   const [tip, setTip] = useState<CellTip | null>(null)
   const level = (count: number) =>
-    count === 0 ? 0 : Math.min(4, Math.ceil((count / Math.max(1, max)) * 4))
+    count === 0
+      ? 0
+      : 1 + thresholds.filter((threshold) => count > threshold).length
   const levelClass = [
     'bg-muted',
     'bg-primary/25',

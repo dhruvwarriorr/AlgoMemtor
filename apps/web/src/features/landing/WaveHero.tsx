@@ -95,7 +95,7 @@ export function WaveHero({ status }: { status: AuthStatus }) {
         <div className="sticky top-0 flex h-dvh w-full items-center justify-center overflow-hidden">
           <motion.div
             aria-hidden="true"
-            className="flex font-heading text-[14vw] leading-none font-extrabold tracking-[-0.04em] uppercase select-none"
+            className="flex font-heading text-[14vw] leading-none font-extrabold tracking-[-0.01em] uppercase select-none"
             ref={wordRef}
             style={
               reduceMotion
@@ -151,7 +151,7 @@ export function WaveHero({ status }: { status: AuthStatus }) {
             </span>
           </p>
 
-          <h1 className="text-5xl leading-[1.05] font-bold tracking-[-0.05em] text-white sm:text-7xl lg:text-8xl">
+          <h1 className="text-5xl leading-[1.05] font-bold tracking-[-0.01em] text-white sm:text-7xl lg:text-8xl">
             One coach.
             <br />
             <span className="text-brand-gradient">Every platform.</span>

@@ -2,9 +2,9 @@ import json
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import ValidationError
 
+from .llm import generation_model
 from .memory_models import MemoryProcessRequest, ReflectionGenerationOutput
 from .settings import AiSettings
 
@@ -53,11 +53,9 @@ class MemoryGenerationModel(Protocol):
 
 class GeminiMemoryGenerationModel:
     def __init__(self, settings: AiSettings) -> None:
-        model = ChatGoogleGenerativeAI(
-            model=settings.llm_model,
-            api_key=settings.llm_api_key,
+        model = generation_model(
+            settings,
             temperature=0.2,
-            thinking_level="low",
             max_tokens=settings.llm_max_output_tokens,
             timeout=settings.llm_timeout_seconds,
             max_retries=0,

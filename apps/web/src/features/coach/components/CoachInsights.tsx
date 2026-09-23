@@ -78,7 +78,7 @@ function Stat({
         {icon}
         {label}
       </p>
-      <p className="mt-1.5 truncate font-heading text-2xl leading-none font-bold tracking-[-0.03em] text-foreground">
+      <p className="mt-1.5 truncate font-heading text-2xl leading-none font-bold tracking-[-0.01em] text-foreground">
         {value}
       </p>
       {detail ? (
@@ -279,7 +279,7 @@ export function CoachContextRail({
           <Gauge aria-hidden="true" className="size-3.5" />
           {signals.rating ? `${signals.rating.provider} rating` : 'Rating'}
         </p>
-        <p className="mt-2 font-heading text-4xl leading-none font-bold tracking-[-0.04em]">
+        <p className="mt-2 font-heading text-4xl leading-none font-bold tracking-[-0.01em]">
           {signals.rating?.value ?? (signals.loading ? '…' : '—')}
         </p>
         <p className="mt-2 text-xs opacity-70">

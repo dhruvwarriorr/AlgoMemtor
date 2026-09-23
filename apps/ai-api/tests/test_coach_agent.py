@@ -522,3 +522,60 @@ def test_coach_model_and_prices_can_be_overridden() -> None:
         "2.50",
     ]
     assert settings().effective_coach_model == "gemini-3.5-flash-lite"
+
+
+def test_coach_can_run_on_groq_while_other_calls_stay_on_gemini() -> None:
+    from app.coach_service import coach_chat_model
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    from langchain_groq import ChatGroq
+
+    groq = settings(
+        coach_llm_provider="groq",
+        coach_llm_model="qwen/qwen3.8-27b",
+        groq_api_key="gsk-test",
+    )
+    assert groq.coach_api_key == "gsk-test"
+    assert groq.llm_api_key == "test-key"
+    # Groq caps completions at 16,384 tokens.
+    assert groq.effective_coach_max_output_tokens == 16_384
+    model = coach_chat_model(groq)
+    assert isinstance(model, ChatGroq)
+    assert model.model_name == "qwen/qwen3.8-27b"
+    assert model.reasoning_format == "parsed"
+
+    gemini = settings()
+    assert gemini.coach_api_key == "test-key"
+    assert isinstance(coach_chat_model(gemini, fast=True), ChatGoogleGenerativeAI)
+
+
+def test_groq_coach_without_a_groq_key_is_not_configured() -> None:
+    from app.coach_service import CoachNotConfiguredError, CoachService
+
+    service = CoachService(
+        settings(coach_llm_provider="groq", coach_llm_model="qwen/qwen3.8-27b")
+    )
+    with pytest.raises(CoachNotConfiguredError):
+        service.get_model()
+
+
+def test_llm_provider_moves_generation_and_coach_to_groq() -> None:
+    from app.llm import generation_model
+    from langchain_groq import ChatGroq
+
+    groq = settings(
+        llm_provider="groq",
+        llm_model="qwen/qwen3.8-27b",
+        groq_api_key="gsk-test",
+        coach_llm_provider="",
+    )
+    # Blank COACH_LLM_PROVIDER follows LLM_PROVIDER.
+    assert groq.effective_coach_provider == "groq"
+    assert groq.generation_api_key == "gsk-test"
+    # The Gemini key still serves embeddings and web grounding.
+    assert groq.llm_api_key == "test-key"
+    model = generation_model(
+        groq, temperature=0.2, max_tokens=50_000, timeout=10, max_retries=0
+    )
+    assert isinstance(model, ChatGroq)
+    assert model.max_tokens == 16_384
+    assert model.reasoning_effort == "low"

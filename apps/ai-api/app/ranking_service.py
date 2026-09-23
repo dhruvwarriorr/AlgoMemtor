@@ -9,12 +9,12 @@ from time import perf_counter
 from typing import Any, Protocol
 from uuid import UUID
 
-from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from .knowledge_base import retrieve_knowledge
 from .knowledge_repository import KnowledgeRepository
+from .llm import generation_model
 from .memory_models import MemoryRetrievalResponse, StoredMemory
 from .ranking_audit import (
     NullRankingAuditRepository,
@@ -109,11 +109,9 @@ class RankingNotConfiguredError(RuntimeError):
 
 class GeminiRankingModel:
     def __init__(self, settings: AiSettings) -> None:
-        model = ChatGoogleGenerativeAI(
-            model=settings.llm_model,
-            api_key=settings.llm_api_key,
+        model = generation_model(
+            settings,
             temperature=0.3,
-            thinking_level="low",
             max_tokens=settings.llm_max_output_tokens,
             timeout=settings.llm_timeout_seconds,
             max_retries=2,
@@ -188,7 +186,7 @@ class RankingService:
     def get_model(self) -> RankingModel:
         if self.model is not None:
             return self.model
-        if not self.settings.llm_api_key:
+        if not self.settings.generation_api_key:
             raise RankingNotConfiguredError
         self.model = GeminiRankingModel(self.settings)
         return self.model

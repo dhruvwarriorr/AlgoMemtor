@@ -172,7 +172,7 @@ function Kpi({
         </span>
         {label}
       </dt>
-      <dd className="mt-3 truncate font-heading text-[1.9rem] leading-none font-bold tracking-[-0.03em] tabular-nums">
+      <dd className="mt-3 truncate font-heading text-[1.9rem] leading-none font-bold tracking-[-0.01em] tabular-nums">
         {value}
       </dd>
       <p

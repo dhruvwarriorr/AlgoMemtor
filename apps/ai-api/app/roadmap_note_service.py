@@ -3,8 +3,7 @@ from __future__ import annotations
 import json
 from typing import Protocol
 
-from langchain_google_genai import ChatGoogleGenerativeAI
-
+from .llm import generation_model
 from .ranking_models import is_safe_reason
 from .roadmap_note_models import (
     RoadmapNoteClassification,
@@ -57,11 +56,9 @@ class RoadmapNoteModel(Protocol):
 
 class GeminiRoadmapNoteModel:
     def __init__(self, settings: AiSettings) -> None:
-        model = ChatGoogleGenerativeAI(
-            model=settings.llm_model,
-            api_key=settings.llm_api_key,
+        model = generation_model(
+            settings,
             temperature=0.1,
-            thinking_level="low",
             max_tokens=512,
             timeout=min(settings.llm_timeout_seconds, 20),
             max_retries=2,
@@ -72,9 +69,7 @@ class GeminiRoadmapNoteModel:
             include_raw=True,
         )
 
-    async def classify(
-        self, request: RoadmapNoteRequest
-    ) -> RoadmapNoteClassification:
+    async def classify(self, request: RoadmapNoteRequest) -> RoadmapNoteClassification:
         payload = {
             "topics": [topic.model_dump(exclude_none=True) for topic in request.topics],
             "note": request.note,
@@ -103,7 +98,7 @@ class RoadmapNoteService:
     def get_model(self) -> RoadmapNoteModel:
         if self.model is not None:
             return self.model
-        if not self.settings.llm_api_key:
+        if not self.settings.generation_api_key:
             raise RoadmapNoteNotConfiguredError
         self.model = GeminiRoadmapNoteModel(self.settings)
         return self.model

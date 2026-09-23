@@ -5,7 +5,7 @@ function Wordmark({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        'wave-text font-heading font-bold tracking-[-0.03em] [--wave-level:46%]',
+        'wave-text font-heading font-bold tracking-[-0.01em] [--wave-level:46%]',
         className,
       )}
     >

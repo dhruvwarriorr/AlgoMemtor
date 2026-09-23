@@ -16,7 +16,7 @@ function NotFoundPage() {
           aria-hidden="true"
           className="cloud animate-drift -right-24 bottom-6 w-[28rem] [--drift:-40px]"
         />
-        <p className="font-heading text-[7rem] leading-none font-bold tracking-[-0.06em] opacity-90 sm:text-[10rem]">
+        <p className="font-heading text-[7rem] leading-none font-bold tracking-[-0.01em] opacity-90 sm:text-[10rem]">
           404
         </p>
         <h1 className="mt-4 break-words text-3xl sm:text-4xl">

@@ -5,6 +5,8 @@ from typing import Literal
 from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+LlmProvider = Literal["gemini", "groq"]
+
 
 class AiSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -18,6 +20,12 @@ class AiSettings(BaseSettings):
     # Time the tool-using coach agent may spend before a faster, single-call
     # answer is used instead. Must leave room within the response timeout.
     coach_agent_timeout_seconds: float = Field(default=75, gt=0, le=240)
+    # Text generation (ranking, memory, roadmap notes, and the coach unless
+    # COACH_LLM_PROVIDER overrides it). "groq" uses GROQ_API_KEY and a Groq
+    # LLM_MODEL such as qwen/qwen3.8-27b. Embeddings and web grounding always
+    # use Gemini with LLM_API_KEY.
+    llm_provider: LlmProvider = "gemini"
+    # The Gemini key; also used for embeddings and web grounding.
     llm_api_key: str = ""
     llm_model: str = "gemini-3.5-flash-lite"
     llm_timeout_seconds: float = Field(default=90, gt=0, le=120)
@@ -36,6 +44,12 @@ class AiSettings(BaseSettings):
     # and memory stay on LLM_MODEL). Blank means LLM_MODEL. Prices apply to
     # the coach model and fall back to the LLM_* prices when unset.
     coach_llm_model: str = ""
+    # Coach provider; blank follows LLM_PROVIDER. With "groq",
+    # COACH_LLM_MODEL (or LLM_MODEL) names a Groq model.
+    coach_llm_provider: LlmProvider | None = None
+    groq_api_key: str = ""
+    # Groq caps completions at 16,384 tokens for its reasoning models.
+    groq_max_completion_tokens: int = Field(default=16_384, ge=512, le=65_536)
     coach_input_price_per_million_usd: Decimal | None = Field(default=None, ge=0)
     coach_output_price_per_million_usd: Decimal | None = Field(default=None, ge=0)
     # Process-local cap on coach model requests per minute. 0 disables it.
@@ -69,6 +83,11 @@ class AiSettings(BaseSettings):
     coach_web_grounding_timeout_seconds: float = Field(default=20, ge=10, le=60)
     internal_rate_limit_per_minute: int = Field(default=120, ge=10, le=2_000)
 
+    @field_validator("coach_llm_provider", mode="before")
+    @classmethod
+    def blank_coach_provider_follows_llm_provider(cls, value: object) -> object:
+        return None if isinstance(value, str) and not value.strip() else value
+
     @field_validator(
         "llm_model",
         "llm_pricing_version",
@@ -99,6 +118,29 @@ class AiSettings(BaseSettings):
     @property
     def effective_coach_model(self) -> str:
         return self.coach_llm_model.strip() or self.llm_model
+
+    @property
+    def effective_coach_provider(self) -> LlmProvider:
+        return self.coach_llm_provider or self.llm_provider
+
+    @property
+    def generation_api_key(self) -> str:
+        """Key for ranking, memory, and roadmap-note generation."""
+        return self.groq_api_key if self.llm_provider == "groq" else self.llm_api_key
+
+    @property
+    def coach_api_key(self) -> str:
+        return (
+            self.groq_api_key
+            if self.effective_coach_provider == "groq"
+            else self.llm_api_key
+        )
+
+    @property
+    def effective_coach_max_output_tokens(self) -> int:
+        if self.effective_coach_provider == "groq":
+            return min(self.coach_max_output_tokens, self.groq_max_completion_tokens)
+        return self.coach_max_output_tokens
 
     @property
     def effective_coach_prices(self) -> tuple[Decimal, Decimal]:

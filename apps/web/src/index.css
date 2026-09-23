@@ -1,9 +1,8 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
-@import '@fontsource-variable/geist';
+@import '@fontsource-variable/space-grotesk';
 @import '@fontsource-variable/geist-mono';
-@import '@fontsource-variable/bricolage-grotesque';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -181,9 +180,11 @@ body {
 }
 
 @theme inline {
-  --font-heading: 'Bricolage Grotesque Variable', 'Geist Variable', sans-serif;
-  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-heading: 'Space Grotesk Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Space Grotesk Variable', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
+  /* Keep tight tracking close to neutral for Space Grotesk. */
+  --tracking-tight: -0.005em;
   --color-ink: var(--ink);
   --color-ink-foreground: var(--ink-foreground);
   --color-sky: var(--sky);
@@ -247,7 +248,7 @@ body {
   }
   html {
     @apply font-sans;
-    font-size: 17px;
+    font-size: 15px;
     min-width: 320px;
     min-height: 100%;
   }
@@ -259,7 +260,7 @@ body {
   h2,
   h3 {
     font-family: var(--font-heading);
-    letter-spacing: -0.025em;
+    letter-spacing: 0;
     text-wrap: balance;
   }
   h2,
@@ -268,7 +269,7 @@ body {
   }
   h1 {
     font-weight: 700;
-    letter-spacing: -0.035em;
+    letter-spacing: 0;
   }
   ::selection {
     background: color-mix(in oklab, var(--sun) 65%, transparent);

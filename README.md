@@ -147,8 +147,12 @@ configured provider snapshots, applies deterministic filtering rules, and sends
 at most 40 unique metadata candidates to FastAPI. The browser never calls FastAPI. The
 core service calls `POST /internal/recommendations/rank` with the shared
 `X-Internal-Service-Token` only when its AI client is configured. FastAPI uses
-`langchain-google-genai` and the configured Gemini model with Pydantic structured
-output. It returns up to ten allowlisted provider IDs, scores, concise reasons,
+the configured text model with Pydantic structured output: Gemini by default,
+or Groq when `LLM_PROVIDER=groq` (for example `LLM_MODEL=qwen/qwen3.8-27b` with
+`GROQ_API_KEY`). `LLM_PROVIDER` covers ranking, memory generation, roadmap
+notes, and the coach (`COACH_LLM_PROVIDER` can override it for the coach).
+Embeddings and coach web grounding always use Gemini, so `LLM_API_KEY` stays
+required. It returns up to ten allowlisted provider IDs, scores, concise reasons,
 fallback state, measured latency, optional token usage, estimated cost, and an
 optional audit ID. Express validates the response again and resolves canonical
 Codeforces URLs from its own provider snapshot.
@@ -166,7 +170,8 @@ optional, trimmed, capped at 500 characters, and not used by the deterministic
 fallback; structured profile choices remain authoritative.
 
 If `INTERNAL_SERVICE_TOKEN` is empty in core, the HTTP client is replaced by a
-local unavailable client. If FastAPI has no `LLM_API_KEY`, it returns a
+local unavailable client. If FastAPI has no key for its configured
+provider (`LLM_API_KEY` for Gemini, `GROQ_API_KEY` for Groq), it returns a
 `not_configured` fallback. Timeouts, provider errors, invalid model output,
 unavailable HTTP responses, invalid JSON, and invalid response schemas all keep
 the deterministic recommendation feed available. AI batches use

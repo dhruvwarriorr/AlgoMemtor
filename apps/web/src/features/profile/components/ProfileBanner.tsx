@@ -37,7 +37,7 @@ export function ProfileBanner({
       <div className="flex min-w-0 items-center gap-4 sm:gap-5">
         <UserAvatar className="size-16 text-2xl ring-4 ring-white/70 sm:size-20 sm:text-3xl dark:ring-white/10" />
         <div className="min-w-0">
-          <p className="truncate font-heading text-2xl font-bold tracking-[-0.03em] sm:text-3xl">
+          <p className="truncate font-heading text-2xl font-bold tracking-[-0.01em] sm:text-3xl">
             {identity.name}
           </p>
           <p className="truncate text-sm opacity-75">{email ?? 'Signed in'}</p>

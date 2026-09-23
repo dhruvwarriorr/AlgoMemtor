@@ -118,7 +118,7 @@ function KpiTile({
       <dd className="min-w-0">
         <span
           className={cn(
-            'block truncate font-heading leading-none font-bold tracking-[-0.04em]',
+            'block truncate font-heading leading-none font-bold tracking-[-0.01em]',
             tone === 'card'
               ? 'text-[1.85rem] text-foreground'
               : 'text-[2.4rem]',
@@ -393,7 +393,7 @@ function DashboardPage() {
             </p>
           ) : leadTopic ? (
             <>
-              <p className="mt-2 max-w-[70%] font-heading text-3xl leading-tight font-bold tracking-[-0.03em] xl:text-[1.7rem]">
+              <p className="mt-2 max-w-[70%] font-heading text-3xl leading-tight font-bold tracking-[-0.01em] xl:text-[1.7rem]">
                 {leadTopic.name}
               </p>
               <p className="mt-2 line-clamp-2 max-w-md text-sm opacity-70 [@media(max-height:760px)]:line-clamp-1">

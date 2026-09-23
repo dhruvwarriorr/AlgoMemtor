@@ -167,7 +167,7 @@ class MemoryService:
     def get_model(self) -> MemoryGenerationModel:
         if self.model is not None:
             return self.model
-        if not self.settings.llm_api_key:
+        if not self.settings.generation_api_key:
             raise MemoryNotConfiguredError
         self.model = GeminiMemoryGenerationModel(self.settings)
         return self.model

@@ -101,7 +101,7 @@ export function RatingTrendCard({
           </h2>
           {latest ? (
             <div className="mt-1 flex items-baseline gap-3">
-              <p className="font-heading text-4xl leading-none font-bold tracking-[-0.04em] text-foreground">
+              <p className="font-heading text-4xl leading-none font-bold tracking-[-0.01em] text-foreground">
                 {latest.rating}
               </p>
               <span
