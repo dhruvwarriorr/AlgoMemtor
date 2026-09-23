@@ -185,7 +185,9 @@ def verdict_group(verdict: object, accepted: object = None) -> str:
     return "other"
 
 
-def tool_declarations(*, knowledge: bool, web: bool) -> list[ToolDeclaration]:
+def tool_declarations(
+    *, knowledge: bool, web: bool, refresh: bool = False
+) -> list[ToolDeclaration]:
     common_filters = {
         "provider": {
             "type": "string",
@@ -364,6 +366,30 @@ def tool_declarations(*, knowledge: bool, web: bool) -> list[ToolDeclaration]:
                 },
             }
         )
+    if refresh:
+        declarations.append(
+            {
+                "name": "refresh_platform_data",
+                "description": (
+                    "Fetch the learner's newest data from one platform right now "
+                    "(latest submissions and updated totals). Use only when "
+                    "activityDigest and the query tools lack what the question "
+                    "needs, or when the learner asks about something very recent "
+                    "(today, just now, their last submission). At most once per "
+                    "platform per turn."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "provider": {
+                            "type": "string",
+                            "enum": ["codeforces", "codechef", "leetcode", "cses"],
+                        }
+                    },
+                    "required": ["provider"],
+                },
+            }
+        )
     if web:
         declarations.append(
             {
@@ -391,11 +417,14 @@ class WorkspaceTools:
         knowledge_search: Callable[[str], Awaitable[list[dict[str, Any]]]]
         | None = None,
         web_search: Callable[[str], Awaitable[dict[str, Any]]] | None = None,
+        platform_refresh: Callable[[str], Awaitable[dict[str, Any]]] | None = None,
         now: datetime | None = None,
     ) -> None:
         self.workspace = workspace or {}
         self.knowledge_search = knowledge_search
         self.web_search = web_search
+        self.platform_refresh = platform_refresh
+        self.refreshed: set[str] = set()
         self.now = now or datetime.now(UTC)
 
     async def execute(self, name: str, args: object) -> dict[str, Any]:
@@ -414,6 +443,14 @@ class WorkspaceTools:
         try:
             if name in handlers:
                 return handlers[name](arguments)
+            if name == "refresh_platform_data" and self.platform_refresh is not None:
+                provider = arguments.get("provider")
+                if provider not in {"codeforces", "codechef", "leetcode", "cses"}:
+                    return {"error": "Choose one linked platform."}
+                if provider in self.refreshed:
+                    return {"error": "This platform was already refreshed this turn."}
+                self.refreshed.add(provider)
+                return await self.platform_refresh(provider)
             query = arguments.get("query")
             if not isinstance(query, str) or not query.strip():
                 return {"error": "A non-empty query is required."}

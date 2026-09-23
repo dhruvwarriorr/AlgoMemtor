@@ -160,6 +160,8 @@ export function progressBreakdown(input: {
   newlySolved: readonly { key: string; day: string }[]
   attemptedProblemIds: readonly string[]
   submissions: readonly ProviderSubmission[]
+  // Every linked platform is listed, including ones idle in the window.
+  linkedProviders?: readonly string[]
   problems: ReadonlyMap<
     string,
     { normalizedDifficulty?: string | undefined; providerDifficulty?: unknown }
@@ -198,6 +200,7 @@ export function progressBreakdown(input: {
   const weekdayIndex = (day: string) =>
     (new Date(`${day}T12:00:00.000Z`).getUTCDay() + 6) % 7
 
+  for (const provider of input.linkedProviders ?? []) providerEntry(provider)
   for (const key of input.attemptedProblemIds) {
     providerEntry(providerOf(key)).attempted += 1
   }

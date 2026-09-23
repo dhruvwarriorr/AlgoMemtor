@@ -1,13 +1,16 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import {
   LinkProviderAccountRequestSchema,
   type LinkableProvider,
   type ProviderAccount,
 } from '@algomemtor/shared-contracts'
 import {
+  Check,
+  Copy,
   ExternalLink,
   MoreHorizontal,
   RefreshCw,
+  ShieldCheck,
   Trash2,
   Unplug,
 } from 'lucide-react'
@@ -28,6 +31,7 @@ import {
   useDisconnectProviderAccount,
   useLinkProviderAccount,
   useProviderAccounts,
+  useProviderVerification,
 } from '../hooks/useProviderAccounts'
 
 const providers: readonly {
@@ -38,6 +42,7 @@ const providers: readonly {
   { provider: 'codeforces', label: 'Codeforces', example: 'tourist' },
   { provider: 'codechef', label: 'CodeChef', example: 'your_username' },
   { provider: 'leetcode', label: 'LeetCode', example: 'your-username' },
+  { provider: 'cses', label: 'CSES', example: '' },
 ]
 
 const inputClassName =
@@ -61,6 +66,140 @@ function solvedLabel(account: ProviderAccount) {
   if (stats.status === 'not_synced') return null
   if (stats.status === 'unavailable') return null
   return `${stats.complete ? '' : '≥'}${stats.solvedCount.toLocaleString()} solved`
+}
+
+const verificationSteps: Record<LinkableProvider, string> = {
+  codeforces:
+    'Add it to your first name, last name, or organization in Codeforces Settings → Social, then save.',
+  codechef:
+    'Add it to your name on your CodeChef profile (Edit profile), then save.',
+  leetcode:
+    'Add it to your Summary or Name in LeetCode profile settings, then save.',
+  // CSES links only through the browser connector, which verifies itself.
+  cses: '',
+}
+
+function ProviderVerification({
+  account,
+  label,
+  provider,
+}: {
+  account: ProviderAccount
+  label: string
+  provider: LinkableProvider
+}) {
+  const { notify } = useNotification()
+  const { start, check } = useProviderVerification()
+  const [copied, setCopied] = useState(false)
+  // Ticks so the countdown stays current and an expired code is hidden.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
+  const challenge = account.verificationChallenge
+  const minutesLeft =
+    challenge === undefined
+      ? 0
+      : Math.ceil((new Date(challenge.expiresAt).getTime() - now) / 60000)
+  const open = challenge !== undefined && minutesLeft > 0
+  const error = start.error ?? check.error
+
+  async function handleStart() {
+    check.reset()
+    try {
+      await start.mutateAsync(provider)
+    } catch {
+      // Error rendered below.
+    }
+  }
+
+  async function handleCheck() {
+    try {
+      await check.mutateAsync(provider)
+      notify({
+        title: `${label} handle verified`,
+        description: 'You can remove the code from your profile now.',
+        tone: 'success',
+      })
+    } catch {
+      // Error rendered below.
+    }
+  }
+
+  async function handleCopy(code: string) {
+    try {
+      await navigator.clipboard.writeText(code)
+      setCopied(true)
+    } catch {
+      setCopied(false)
+    }
+  }
+
+  if (!open) {
+    return (
+      <div className="flex min-w-0 flex-col gap-1">
+        <button
+          className="self-start text-xs font-medium text-primary underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+          disabled={start.isPending}
+          onClick={() => void handleStart()}
+          type="button"
+        >
+          {start.isPending ? 'Preparing code…' : 'Verify ownership'}
+        </button>
+        {error ? (
+          <p className="text-xs text-destructive" role="alert">
+            {providerAccountErrorMessage(error)}
+          </p>
+        ) : null}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex min-w-0 flex-col gap-2 rounded-md border border-border bg-muted/40 p-3">
+      <p className="text-xs text-muted-foreground">
+        Prove this handle is yours with a one-time code.{' '}
+        {verificationSteps[provider]}
+      </p>
+      <div className="flex min-w-0 items-center gap-2">
+        <code className="min-w-0 rounded bg-background px-2 py-1 font-mono text-sm tracking-wide text-foreground">
+          {challenge.code}
+        </code>
+        <button
+          aria-label={copied ? 'Code copied' : 'Copy verification code'}
+          className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => void handleCopy(challenge.code)}
+          type="button"
+        >
+          {copied ? (
+            <Check className="size-3.5" />
+          ) : (
+            <Copy className="size-3.5" />
+          )}
+        </button>
+      </div>
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <span className="text-xs text-muted-foreground">
+          Expires in {minutesLeft} min
+        </span>
+        <Button
+          disabled={check.isPending}
+          onClick={() => void handleCheck()}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          {check.isPending ? 'Checking…' : 'Check now'}
+        </Button>
+      </div>
+      {error ? (
+        <p aria-live="polite" className="text-xs text-destructive" role="alert">
+          {providerAccountErrorMessage(error)}
+        </p>
+      ) : null}
+    </div>
+  )
 }
 
 function LinkedProviderCard({
@@ -151,9 +290,16 @@ function LinkedProviderCard({
       <div className="flex min-w-0 items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <h3 className="font-semibold text-foreground">{label}</h3>
-          <span className="inline-flex items-center rounded-md bg-go-soft px-2.5 py-0.5 text-xs font-medium text-go-foreground">
-            Connected
-          </span>
+          {account.verification === 'verified' ? (
+            <span className="inline-flex items-center gap-1 rounded-md bg-go-soft px-2.5 py-0.5 text-xs font-medium text-go-foreground">
+              <ShieldCheck aria-hidden="true" className="size-3.5" />
+              Verified
+            </span>
+          ) : (
+            <span className="inline-flex items-center rounded-md bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+              Connected
+            </span>
+          )}
         </div>
         <div className="relative">
           <button
@@ -210,6 +356,14 @@ function LinkedProviderCard({
 
       <p className="text-sm text-muted-foreground">{account.handle}</p>
 
+      {account.verification === 'verified' ? null : (
+        <ProviderVerification
+          account={account}
+          label={label}
+          provider={provider}
+        />
+      )}
+
       <div className="flex min-w-0 items-center justify-between gap-2">
         <div className="min-w-0">
           {solved !== null ? (
@@ -229,20 +383,29 @@ function LinkedProviderCard({
             <p className="text-xs text-muted-foreground">Synced {lastSynced}</p>
           ) : null}
         </div>
-        <Button
-          disabled={
-            isBusy || initialSyncPending || account.syncEnabled === false
-          }
-          onClick={() => void handleSync()}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          <RefreshCw
-            className={`mr-1.5 size-3.5 ${providerSync.isPending || initialSyncPending ? 'animate-spin' : ''}`}
-          />
-          {providerSync.isPending || initialSyncPending ? 'Syncing…' : 'Sync'}
-        </Button>
+        {provider === 'cses' || account.connectorSyncedAt !== undefined ? (
+          <span className="text-right text-xs text-muted-foreground">
+            Synced by the browser connector
+            {account.connectorSyncedAt === undefined
+              ? null
+              : ` · ${formatRelativeTime(account.connectorSyncedAt)}`}
+          </span>
+        ) : (
+          <Button
+            disabled={
+              isBusy || initialSyncPending || account.syncEnabled === false
+            }
+            onClick={() => void handleSync()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <RefreshCw
+              className={`mr-1.5 size-3.5 ${providerSync.isPending || initialSyncPending ? 'animate-spin' : ''}`}
+            />
+            {providerSync.isPending || initialSyncPending ? 'Syncing…' : 'Sync'}
+          </Button>
+        )}
       </div>
 
       {hasError ? (
@@ -397,11 +560,26 @@ export function ProviderAccountLinks({ idPrefix }: { idPrefix: string }) {
         />
       ) : (
         <>
-          <div className="grid min-w-0 gap-3 lg:grid-cols-3">
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
             {providers.map(({ example, label, provider }) => {
               const account = accountsQuery.data.data.find(
                 (candidate) => candidate.provider === provider,
               )
+
+              if (account === undefined && provider === 'cses') {
+                return (
+                  <article
+                    className="flex min-w-0 flex-col gap-2 rounded-lg border border-dashed border-border bg-background p-4"
+                    key={provider}
+                  >
+                    <h3 className="font-semibold text-foreground">{label}</h3>
+                    <p className="text-sm text-muted-foreground">
+                      CSES shows your progress only when you are signed in.
+                      Connect it with the browser connector below.
+                    </p>
+                  </article>
+                )
+              }
 
               return account ? (
                 <LinkedProviderCard

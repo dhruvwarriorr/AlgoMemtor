@@ -29,6 +29,24 @@ export type ProviderActivityDataFetchResult = {
   contestParticipations: ContestParticipation[]
   complete: boolean
   fetchedAt: Date
+  // Opaque resume point for the next fetch. It must never let a later fetch
+  // skip unstored submissions: it either marks the whole history as stored,
+  // or records where an unfinished backfill of older history continues.
+  cursor?: string
+  // Set when history is still being backfilled in parts: run a short
+  // continuation after this delay instead of waiting for the next hourly sync.
+  continueAfterMs?: number
+}
+
+export type ProviderActivityFetchOptions = {
+  cursor?: string
+  // A continuation run: only advance the history backfill.
+  backfillOnly?: boolean
+}
+
+export type ProviderProblemTags = {
+  providerTags: string[]
+  topics: string[]
 }
 
 export type ProviderPublicStatsFetchResult = {
@@ -59,7 +77,15 @@ export interface ProviderActivityDataFetcher {
   fetchActivityData(
     handle: PublicProviderHandle,
     signal?: AbortSignal,
+    options?: ProviderActivityFetchOptions,
   ): Promise<ProviderActivityDataFetchResult>
+  // Look up public tags for already-stored solved problems. `null` means the
+  // lookup succeeded but found no usable tags; an ID that is absent was not
+  // looked up (for example, after a rate limit) and should be tried again.
+  fetchProblemTags?(
+    externalIds: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<Map<string, ProviderProblemTags | null>>
 }
 
 export interface ProviderVerifiedActivityFetcher {

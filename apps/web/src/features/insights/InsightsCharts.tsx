@@ -131,7 +131,7 @@ export function AccountCards({
 }) {
   if (accounts.length === 0) return null
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+    <div className="grid gap-3 sm:grid-cols-2">
       {accounts.map((account) => (
         <article
           className="animate-rise relative overflow-hidden rounded-xl border border-border bg-card p-4"

@@ -5,6 +5,7 @@ requires-python = ">=3.14"
 dependencies = [
     "alembic>=1.18.5",
     "fastapi[standard]>=0.141.1",
+    "httpx>=0.28.1",
     "langchain-google-genai>=4.4.0",
     "langchain-postgres>=0.0.17",
     "pgvector>=0.2.5,<0.4",

@@ -245,4 +245,20 @@ describe('progressBreakdown', () => {
     expect(result.hours[9]).toBe(2)
     expect(result.hours[21]).toBe(1)
   })
+  it('lists every linked platform, including ones idle in the window', () => {
+    const result = progressBreakdown({
+      dates: ['2026-09-21'],
+      newlySolved: [{ key: 'codeforces:1A', day: '2026-09-21' }],
+      attemptedProblemIds: ['codeforces:1A'],
+      submissions: [],
+      linkedProviders: ['codeforces', 'cses'],
+      problems: new Map(),
+      localDate: (date) => date.toISOString().slice(0, 10),
+      localHour: (date) => date.getUTCHours(),
+    })
+    expect(result.providers).toEqual([
+      { provider: 'codeforces', solved: 1, attempted: 1, submissions: 0 },
+      { provider: 'cses', solved: 0, attempted: 0, submissions: 0 },
+    ])
+  })
 })

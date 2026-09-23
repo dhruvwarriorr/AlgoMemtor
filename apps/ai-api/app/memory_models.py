@@ -44,6 +44,7 @@ EvidenceType = Literal[
     "hint_ladder_outcome",
     "contest_performance",
     "frustration",
+    "provider_activity",
 ]
 MemoryFallbackReason = Literal[
     "not_configured",
@@ -70,7 +71,7 @@ PerceivedDifficulty = Literal[
 ]
 FeedbackKind = Literal["useful", "not_useful", "too_easy", "about_right", "too_hard"]
 ProblemStatus = Literal["unsolved", "attempted", "solved"]
-Provider = Literal["codeforces", "codechef", "leetcode"]
+Provider = Literal["codeforces", "codechef", "leetcode", "cses"]
 Topic = Annotated[
     str, Field(min_length=1, max_length=64, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 ]

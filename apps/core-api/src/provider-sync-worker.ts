@@ -18,6 +18,11 @@ import { ProviderAccountStatsService } from './services/provider-account-stats-s
 import { ProviderProfileService } from './services/provider-profile-service.js'
 import { ProviderSyncWorker } from './services/provider-sync-worker.js'
 import { RequestGate } from './utils/request-gate.js'
+import { structuredLogger } from './utils/structured-logger.js'
+import { LearnerActivityService } from './services/learner-activity-service.js'
+import { PrismaLearnerActivityRepository } from './repositories/learner-activity-repository.js'
+import { PrismaExternalProblemCacheRepository } from './repositories/external-problem-cache-repository.js'
+import { PrismaProgressRepository } from './repositories/progress-repository.js'
 
 const providerConfig = readUnifiedProviderConfig()
 const prisma = createPrismaClient(readDatabaseConfig())
@@ -103,7 +108,18 @@ const profileService = new ProviderProfileService({
       : []),
   ],
 })
+const activityService = new LearnerActivityService({
+  repository: new PrismaLearnerActivityRepository(prisma),
+  accountRepository,
+  dataRepository,
+  profileRepository,
+  syncRepository,
+  problemMetadataCache: new PrismaExternalProblemCacheRepository(prisma),
+  progressRepository: new PrismaProgressRepository(prisma),
+  logger: structuredLogger,
+})
 const worker = new ProviderSyncWorker({
+  activityService,
   repository: syncRepository,
   providerAccountRepository: accountRepository,
   statsService,

@@ -1,5 +1,10 @@
 import {
   ApiErrorResponseSchema,
+  ConnectorTokensResponseSchema,
+  CreateConnectorTokenRequestSchema,
+  CreateConnectorTokenResponseSchema,
+  RevokeConnectorTokenResponseSchema,
+  type ConnectorToken,
   DisconnectProviderAccountResponseSchema,
   ExternalContestSchema,
   ExternalContestsQuerySchema,
@@ -69,6 +74,10 @@ const profileUrl = (provider: LinkableProvider, handle: string) => {
     return `https://www.codechef.com/users/${encodedHandle}`
   }
 
+  if (provider === 'cses') {
+    return `https://cses.fi/user/${encodedHandle}`
+  }
+
   return `https://leetcode.com/u/${encodedHandle}/`
 }
 
@@ -76,12 +85,14 @@ const mockSolvedCounts: Record<LinkableProvider, number> = {
   codeforces: 245,
   codechef: 118,
   leetcode: 176,
+  cses: 142,
 }
 
 const mockStatsSources = {
   codeforces: 'codeforces_api',
   codechef: 'codechef_public_profile_html',
   leetcode: 'leetcode_website_graphql',
+  cses: 'browser_connector',
 } as const
 
 const providersResponse = ProvidersResponseSchema.parse({
@@ -241,10 +252,12 @@ const mockContests = () => {
   ]
 }
 
+let mockConnectorTokens: ConnectorToken[] = []
+
 const mockSyncJobs = new Map<LinkableProvider, string>()
 
 const providerOptionsIndex = (provider: LinkableProvider) =>
-  ({ codeforces: 701, codechef: 702, leetcode: 703 })[provider]
+  ({ codeforces: 701, codechef: 702, leetcode: 703, cses: 704 })[provider]
 
 const recommendationItemId = (index: number) =>
   `00000000-0000-4000-8000-${String(index + 100).padStart(12, '0')}`
@@ -388,7 +401,9 @@ export const handlers: RequestHandler[] = [
       handle: accountResult.data.handle,
       profileUrl: profileUrl(providerResult.data, accountResult.data.handle),
       consentScope: 'store_public_profile_reference',
-      verification: 'not_verified',
+      ...(preserveStats && existing.verification === 'verified'
+        ? { verification: 'verified', verifiedAt: existing.verifiedAt }
+        : { verification: 'not_verified' }),
       verifiedActivity: preserveStats
         ? existing.verifiedActivity
         : { enabled: false, status: 'not_enabled' },
@@ -420,6 +435,130 @@ export const handlers: RequestHandler[] = [
       ProviderAccountResponseSchema.parse({ data: account }),
     )
   }),
+  http.get('/api/connector/tokens', () =>
+    HttpResponse.json(
+      ConnectorTokensResponseSchema.parse({ data: mockConnectorTokens }),
+    ),
+  ),
+
+  http.post('/api/connector/tokens', async ({ request }) => {
+    const body = CreateConnectorTokenRequestSchema.safeParse(
+      await request.json(),
+    )
+    if (!body.success) {
+      return HttpResponse.json(
+        createApiError(
+          'INVALID_CONNECTOR_TOKEN_REQUEST',
+          'Give the connector a short name.',
+          body.error.issues,
+        ),
+        { status: 400 },
+      )
+    }
+    const token = {
+      id: crypto.randomUUID(),
+      label: body.data.label,
+      createdAt: new Date().toISOString(),
+    }
+    mockConnectorTokens = [token, ...mockConnectorTokens]
+    return HttpResponse.json(
+      CreateConnectorTokenResponseSchema.parse({
+        data: { token, secret: `amc_${'M'.repeat(43)}` },
+      }),
+      { status: 201 },
+    )
+  }),
+
+  http.delete('/api/connector/tokens/:id', ({ params }) => {
+    const id = String(params.id)
+    mockConnectorTokens = mockConnectorTokens.filter((token) => token.id !== id)
+    return HttpResponse.json(
+      RevokeConnectorTokenResponseSchema.parse({ data: { id } }),
+    )
+  }),
+
+  // Mock mode treats every ownership check as successful after a code has
+  // been issued, so the full verification flow can be exercised offline.
+  http.post('/api/provider-accounts/:provider/verification', ({ params }) => {
+    const existing = providerAccounts.find(
+      ({ provider }) => provider === params.provider,
+    )
+    if (existing === undefined) {
+      return HttpResponse.json(
+        createApiError(
+          'PROVIDER_ACCOUNT_NOT_LINKED',
+          'Link this provider account before verifying it.',
+          [],
+        ),
+        { status: 404 },
+      )
+    }
+    const account =
+      existing.verification === 'verified'
+        ? existing
+        : ProviderAccountSchema.parse({
+            ...existing,
+            verificationChallenge: {
+              code: 'AM-MOCK2345',
+              expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+            },
+            updatedAt: new Date().toISOString(),
+          })
+    providerAccounts = providerAccounts.map((candidate) =>
+      candidate.provider === account.provider ? account : candidate,
+    )
+    return HttpResponse.json(
+      ProviderAccountResponseSchema.parse({ data: account }),
+    )
+  }),
+
+  http.post(
+    '/api/provider-accounts/:provider/verification/check',
+    ({ params }) => {
+      const existing = providerAccounts.find(
+        ({ provider }) => provider === params.provider,
+      )
+      if (existing === undefined) {
+        return HttpResponse.json(
+          createApiError(
+            'PROVIDER_ACCOUNT_NOT_LINKED',
+            'Link this provider account before verifying it.',
+            [],
+          ),
+          { status: 404 },
+        )
+      }
+      if (
+        existing.verification === 'not_verified' &&
+        existing.verificationChallenge === undefined
+      ) {
+        return HttpResponse.json(
+          createApiError(
+            'PROVIDER_VERIFICATION_EXPIRED',
+            'This verification code has expired. Start again to get a new code.',
+            [],
+          ),
+          { status: 409 },
+        )
+      }
+      const now = new Date().toISOString()
+      const rest = { ...existing }
+      delete rest.verificationChallenge
+      const account = ProviderAccountSchema.parse({
+        ...rest,
+        verification: 'verified',
+        verifiedAt: existing.verifiedAt ?? now,
+        updatedAt: now,
+      })
+      providerAccounts = providerAccounts.map((candidate) =>
+        candidate.provider === account.provider ? account : candidate,
+      )
+      return HttpResponse.json(
+        ProviderAccountResponseSchema.parse({ data: account }),
+      )
+    },
+  ),
+
   http.delete('/api/provider-accounts/:provider', ({ params }) => {
     const providerResult = LinkableProviderSchema.safeParse(params.provider)
 

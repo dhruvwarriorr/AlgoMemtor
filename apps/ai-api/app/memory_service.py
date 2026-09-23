@@ -95,6 +95,7 @@ AUTO_MEMORY_EVIDENCE_TYPES = {
     "hint_ladder_outcome",
     "contest_performance",
     "frustration",
+    "provider_activity",
 }
 MEMORY_GENERATION_INVALID_ERRORS = (TypeError, ValueError, MemoryEmbeddingError)
 
@@ -720,7 +721,7 @@ class MemoryService:
                                 limit=bounded_limit,
                                 confidence_threshold=self.settings.memory_min_confidence,
                             )
-                        except (OSError, RuntimeError, ValueError):
+                        except OSError, RuntimeError, ValueError:
                             keyword_items = []
                     if items or keyword_items:
                         combined = _dedupe_memories(

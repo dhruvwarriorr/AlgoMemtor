@@ -11,6 +11,13 @@ class AiSettings(BaseSettings):
 
     database_url: str | None = None
     internal_service_token: str = ""
+    # Base URL of the core API, used by the coach to request a live refresh of
+    # a learner's platform data. Blank disables the refresh tool.
+    core_api_url: str = ""
+    coach_live_refresh_timeout_seconds: float = Field(default=30, gt=0, le=60)
+    # Time the tool-using coach agent may spend before a faster, single-call
+    # answer is used instead. Must leave room within the response timeout.
+    coach_agent_timeout_seconds: float = Field(default=75, gt=0, le=240)
     llm_api_key: str = ""
     llm_model: str = "gemini-3.5-flash-lite"
     llm_timeout_seconds: float = Field(default=90, gt=0, le=120)

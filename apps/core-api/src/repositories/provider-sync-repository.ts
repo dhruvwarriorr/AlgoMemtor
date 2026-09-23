@@ -168,14 +168,12 @@ export class InMemoryProviderSyncRepository implements ProviderSyncRepository {
       idempotencyKey: input.idempotencyKey,
     }
     this.jobs.set(job.id, job)
-    this.states.set(
-      stateKey(input.userId, input.provider, input.providerAccountId),
-      {
-        ...defaultState(input.provider),
-        status: 'queued',
-        nextRunAt: job.runAfter,
-      },
-    )
+    const key = stateKey(input.userId, input.provider, input.providerAccountId)
+    this.states.set(key, {
+      ...(this.states.get(key) ?? defaultState(input.provider)),
+      status: 'queued',
+      nextRunAt: job.runAfter,
+    })
     return { job, accepted: true }
   }
 

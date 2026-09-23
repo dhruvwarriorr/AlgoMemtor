@@ -98,6 +98,28 @@ export function syncProviderActivity(provider: LinkableProvider) {
   )
 }
 
+export function startProviderVerification(provider: LinkableProvider) {
+  return requestJson<ProviderAccountResponse>(
+    `/api/provider-accounts/${encodeURIComponent(provider)}/verification`,
+    {
+      authentication: 'required',
+      method: 'POST',
+      schema: ProviderAccountResponseSchema,
+    },
+  )
+}
+
+export function checkProviderVerification(provider: LinkableProvider) {
+  return requestJson<ProviderAccountResponse>(
+    `/api/provider-accounts/${encodeURIComponent(provider)}/verification/check`,
+    {
+      authentication: 'required',
+      method: 'POST',
+      schema: ProviderAccountResponseSchema,
+    },
+  )
+}
+
 export function providerAccountErrorMessage(error: unknown) {
   if (error instanceof Error && error.message.trim()) {
     return error.message

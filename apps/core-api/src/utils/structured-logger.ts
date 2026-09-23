@@ -28,6 +28,8 @@ const permittedFields = new Set([
   'unsupportedProblemCount',
   'attempt',
   'errorCode',
+  'errorName',
+  'dbCode',
   'retryable',
   'stale',
   'model',
@@ -40,6 +42,9 @@ const permittedFields = new Set([
   'inputTokens',
   'outputTokens',
   'estimatedCostUsd',
+  // Browser-connector sync outcomes; the detail is text the extension writes.
+  'status',
+  'detail',
 ])
 
 const sanitizeFields = (fields: SafeLogFields = {}) =>

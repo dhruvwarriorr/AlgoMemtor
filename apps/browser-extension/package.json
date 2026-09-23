@@ -1,0 +1,17 @@
+{
+  "name": "@algomemtor/browser-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AlgoMemtor browser connector: syncs your own signed-in LeetCode and CSES history.",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.2",
+    "vitest": "^4.1.10"
+  },
+  "license": "MIT"
+}

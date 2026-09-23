@@ -7,7 +7,19 @@ export const LinkableProviderSchema = z.enum([
   'codeforces',
   'codechef',
   'leetcode',
+  'cses',
 ])
+
+// Providers whose accounts link only through the browser connector, because
+// they publish no public per-user data a server could read.
+export const ConnectorOnlyProviderSchema = z.enum(['cses'])
+
+export type ConnectorOnlyProvider = z.infer<typeof ConnectorOnlyProviderSchema>
+
+export const isConnectorOnlyProvider = (
+  provider: string,
+): provider is ConnectorOnlyProvider =>
+  ConnectorOnlyProviderSchema.safeParse(provider).success
 
 export type LinkableProvider = z.infer<typeof LinkableProviderSchema>
 
@@ -44,6 +56,7 @@ export const ProviderPublicStatsSourceSchema = z.enum([
   'codeforces_api',
   'codechef_public_profile_html',
   'leetcode_website_graphql',
+  'browser_connector',
 ])
 
 export type ProviderPublicStatsSource = z.infer<
@@ -212,8 +225,38 @@ const canonicalProfileUrl = (
     return `https://www.codechef.com/users/${encodedHandle}`
   }
 
+  if (provider === 'cses') {
+    return `https://cses.fi/user/${encodedHandle}`
+  }
+
   return `https://leetcode.com/u/${encodedHandle}/`
 }
+
+export const ProviderAccountVerificationStatusSchema = z.enum([
+  'not_verified',
+  'verified',
+])
+
+export type ProviderAccountVerificationStatus = z.infer<
+  typeof ProviderAccountVerificationStatusSchema
+>
+
+// A one-time code the learner places in a public profile field to prove the
+// handle is theirs. It is shown only to the owning learner.
+export const ProviderVerificationCodeSchema = z
+  .string()
+  .regex(/^AM-[A-Z2-9]{8}$/, 'Invalid verification code.')
+
+export const ProviderVerificationChallengeSchema = z
+  .object({
+    code: ProviderVerificationCodeSchema,
+    expiresAt: z.iso.datetime({ offset: true }),
+  })
+  .strict()
+
+export type ProviderVerificationChallenge = z.infer<
+  typeof ProviderVerificationChallengeSchema
+>
 
 export const ProviderAccountSchema = z
   .object({
@@ -221,7 +264,11 @@ export const ProviderAccountSchema = z
     handle: PublicProviderHandleSchema,
     profileUrl: z.url(),
     consentScope: ProviderAccountConsentScopeSchema,
-    verification: z.literal('not_verified'),
+    verification: ProviderAccountVerificationStatusSchema,
+    verifiedAt: z.iso.datetime({ offset: true }).optional(),
+    verificationChallenge: ProviderVerificationChallengeSchema.optional(),
+    // When the learner's browser connector last uploaded this account's data.
+    connectorSyncedAt: z.iso.datetime({ offset: true }).optional(),
     activityAccess: ProviderAccountActivityAccessSchema,
     verifiedActivity: ProviderVerifiedActivitySchema,
     syncEnabled: z.boolean().optional(),
@@ -242,9 +289,28 @@ export const ProviderAccountSchema = z
         provider,
         publicStats,
         publicStatsConsentAt,
+        verification,
+        verificationChallenge,
+        verifiedAt,
       },
       context,
     ) => {
+      if ((verification === 'verified') !== (verifiedAt !== undefined)) {
+        context.addIssue({
+          code: 'custom',
+          message: 'A verified account requires its verification time.',
+          path: ['verifiedAt'],
+        })
+      }
+
+      if (verification === 'verified' && verificationChallenge !== undefined) {
+        context.addIssue({
+          code: 'custom',
+          message: 'A verified account has no open verification challenge.',
+          path: ['verificationChallenge'],
+        })
+      }
+
       if (profileUrl !== canonicalProfileUrl(provider, handle)) {
         context.addIssue({
           code: 'custom',
@@ -260,6 +326,7 @@ export const ProviderAccountSchema = z
         codeforces: 'codeforces_api',
         codechef: 'codechef_public_profile_html',
         leetcode: 'leetcode_website_graphql',
+        cses: 'browser_connector',
       }
 
       if (

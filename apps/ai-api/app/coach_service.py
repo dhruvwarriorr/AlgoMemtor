@@ -38,6 +38,7 @@ from .coach_models import (
 )
 from .coach_output import coach_output_json_schema, coerce_coach_output
 from .coach_tools import WorkspaceTools, prefetch_plan, tool_declarations
+from .core_client import live_refresh_available, request_live_refresh
 from .knowledge_base import retrieve_knowledge
 from .knowledge_query import build_knowledge_query
 from .knowledge_repository import KnowledgeRepository
@@ -68,14 +69,28 @@ complete solved history, submissions, contests, rating changes, roadmap, goals,
 and approved memories are available through the supplied context and tools.
 
 ## How to answer
-- Answer the learner's actual question first, directly and specifically. Never
-  reply with a generic coach introduction.
-- Personal questions (counts, ratings, contests, weak topics, progress, "what
-  did I solve"): check `profileDigest` and call the data tools before stating
-  numbers. Never guess or round learner statistics you have not looked up.
-  Quote concrete evidence (problem titles, ratings, dates, contest names).
-- Provider history can be partial (public recent windows). When a number could
-  be incomplete, say so briefly instead of claiming a complete history.
+- Open with the substance of the answer to this question: the diagnosis, the
+  idea, the fix, or the plan. Never open with a greeting, praise for the
+  question, a restatement of the question, or a recap of the learner's ratings,
+  totals, or profile. Vary how replies start; `coachingGuidance` lists recent
+  openings you must not reuse or paraphrase.
+- Personalize through evidence, not recitation. Use a learner number only where
+  it changes the advice, and prefer the specific one (for example, "8 of your 11
+  failed dp submissions were wrong answers") over headline ratings.
+- Where to find learner facts, in order: `activityDigest` (the stored summary of
+  every synced submission: totals, verdict mix, failure patterns, topic
+  strengths and weaknesses, difficulty, activity, recent solves, open
+  attempts), then `memories`, then the query tools for detailed rows. Call
+  `refresh_platform_data` only when those lack what the question needs or the
+  learner asks about something very recent. Never guess or round learner
+  statistics you have not looked up.
+- Tie advice to this learner's measured patterns: if wrong answers dominate,
+  address testing and edge cases; if time limits do, complexity; point to their
+  open attempts and weak topics by name; pitch difficulty from their recent
+  solved ratings.
+- Provider history can be partial (for example, LeetCode without the browser
+  connector). `activityDigest.providers[].historyComplete` says which; when a
+  number could be incomplete, say so briefly.
 - Concept and technique questions: explain the core idea, why it works
   (invariant or proof sketch), time/space complexity, common pitfalls and edge
   cases, and when to use it. Add a clean, compilable code example when useful,
@@ -134,7 +149,7 @@ You can call read-only tools over this learner's data, the curated knowledge bas
 and (when available) a de-identified public web search. Plan briefly, call the
 tools you need (several in one step when independent), then call
 `submit_answer` exactly once with the final answer. Do not call tools for things
-already present in the context. Never put the learner's handle, name, rating or
+already present in the context, especially `activityDigest`. Never put the learner's handle, name, rating or
 other private details in a web_search query. When you are done, you must call
 `submit_answer`; plain text replies are discarded.
 """
@@ -291,6 +306,21 @@ def _human_message(
     )
 
 
+def recent_openings(recent_turns: list[dict[str, Any]], limit: int = 5) -> list[str]:
+    """First sentence of the coach's latest replies, to avoid repeating them."""
+    openings: list[str] = []
+    for turn in reversed(recent_turns):
+        if turn.get("role") != "assistant":
+            continue
+        text = re.sub(r"[#*_`>]+", " ", str(turn.get("content", ""))).strip()
+        first = re.split(r"(?<=[.!?:])\s|\n", text, maxsplit=1)[0].strip()
+        if first:
+            openings.append(" ".join(first.split())[:120])
+        if len(openings) >= limit:
+            break
+    return openings
+
+
 def _guidance_prompt(request: CoachRequest) -> str:
     guidance = request.context.get("coachingGuidance")
     return str(guidance.get("prompt", "")) if isinstance(guidance, dict) else ""
@@ -323,6 +353,10 @@ class AgentToolServices(Protocol):
         self, query: str, workspace: dict[str, object] | None
     ) -> dict[str, Any]: ...
 
+    async def agent_refresh_platform(
+        self, learner_id: UUID, provider: str
+    ) -> dict[str, Any]: ...
+
 
 class GeminiCoachModel:
     def __init__(
@@ -348,6 +382,20 @@ class GeminiCoachModel:
             method="function_calling",
             include_raw=True,
         )
+        # Used after the agent runs out of time, so it must answer quickly.
+        self.fast_structured_model = ChatGoogleGenerativeAI(
+            model=settings.effective_coach_model,
+            api_key=settings.llm_api_key,
+            temperature=0.6,
+            thinking_level="low",
+            max_tokens=settings.coach_max_output_tokens,
+            timeout=min(settings.llm_timeout_seconds, 60),
+            max_retries=0,
+        ).with_structured_output(
+            CoachModelOutput,
+            method="function_calling",
+            include_raw=True,
+        )
 
     async def respond(self, request: CoachRequest) -> CoachModelResult:
         base_model = getattr(self, "base_model", None)
@@ -361,9 +409,15 @@ class GeminiCoachModel:
             and request.workspace
         ):
             try:
-                return await self._respond_with_tools(request)
-            except asyncio.CancelledError, TimeoutError:
+                async with asyncio.timeout(settings.coach_agent_timeout_seconds):
+                    return await self._respond_with_tools(request)
+            except asyncio.CancelledError:
                 raise
+            except TimeoutError:
+                # A slow multi-step agent turn still gets an answer: one
+                # structured call with light reasoning over the same context.
+                logger.warning("coach_agent_timed_out_falling_back")
+                return await self._respond_structured(request, fast=True)
             except Exception as error:
                 # A quota rejection would only repeat on the fallback call and
                 # burn more of the learner's budget; surface it instead.
@@ -381,9 +435,16 @@ class GeminiCoachModel:
         if throttle is not None:
             await throttle.acquire()
 
-    async def _respond_structured(self, request: CoachRequest) -> CoachModelResult:
+    async def _respond_structured(
+        self, request: CoachRequest, *, fast: bool = False
+    ) -> CoachModelResult:
         await self._acquire_slot()
-        result: dict[str, Any] = await self.structured_model.ainvoke(
+        model = (
+            getattr(self, "fast_structured_model", None) or self.structured_model
+            if fast
+            else self.structured_model
+        )
+        result: dict[str, Any] = await model.ainvoke(
             [
                 ("system", SYSTEM_PROMPT + "\n" + _guidance_prompt(request)),
                 _human_message(request),
@@ -476,10 +537,22 @@ class GeminiCoachModel:
             services is not None and self.settings.coach_knowledge_rag_enabled
         )
         has_web = services is not None and self.settings.coach_web_grounding_enabled
+        has_refresh = (
+            services is not None
+            and getattr(services, "agent_refresh_platform", None) is not None
+            and live_refresh_available(self.settings)
+        )
+
+        async def refresh_platform(provider: str) -> dict[str, Any]:
+            if services is None:
+                return {"error": "Live platform refresh is unavailable."}
+            return await services.agent_refresh_platform(request.learnerId, provider)
+
         toolbox = WorkspaceTools(
             request.workspace,
             knowledge_search=knowledge_search if has_knowledge else None,
             web_search=web_search if has_web else None,
+            platform_refresh=refresh_platform if has_refresh else None,
         )
         final_tool = {
             "name": FINAL_TOOL,
@@ -487,7 +560,7 @@ class GeminiCoachModel:
             "parameters": coach_output_json_schema(),
         }
         declarations = (
-            tool_declarations(knowledge=has_knowledge, web=has_web)
+            tool_declarations(knowledge=has_knowledge, web=has_web, refresh=has_refresh)
             if request.workspace
             else [
                 item
@@ -699,6 +772,12 @@ class CoachService:
             for chunk in chunks[:5]
         ]
 
+    async def agent_refresh_platform(
+        self, learner_id: UUID, provider: str
+    ) -> dict[str, Any]:
+        """Fetch a learner's newest data from one platform via the core API."""
+        return await request_live_refresh(self.settings, learner_id, provider)
+
     async def agent_web_search(
         self, query: str, workspace: dict[str, object] | None
     ) -> dict[str, Any]:
@@ -841,6 +920,7 @@ class CoachService:
                         "frustration": round(frustration, 3),
                         "bloomLevel": bloom_level,
                         "mistakePatterns": list(mistake_patterns),
+                        "avoidOpenings": recent_openings(recent_turns),
                         "prompt": (
                             teaching_prompt(teaching_style, frustration)
                             if is_problem_solution
@@ -851,6 +931,13 @@ class CoachService:
                         + (
                             "\n" + mistake_prompt(mistake_patterns)
                             if is_problem_solution
+                            else ""
+                        )
+                        + (
+                            "\nDo not start this reply like any of these recent "
+                            "replies, or a paraphrase of them: "
+                            + " | ".join(recent_openings(recent_turns))
+                            if recent_openings(recent_turns)
                             else ""
                         ),
                     },

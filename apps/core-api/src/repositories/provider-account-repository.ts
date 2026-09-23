@@ -5,6 +5,7 @@ import {
   ProviderAccountActivityAccessSchema,
   ProviderAccountConsentScopeSchema,
   ProviderPublicStatsErrorCodeSchema,
+  ProviderAccountVerificationStatusSchema,
   ProviderPublicStatsSourceSchema,
   ProviderVerifiedActivityErrorCodeSchema,
   ProviderVerifiedActivityStatusSchema,
@@ -12,6 +13,7 @@ import {
   type LinkableProvider,
   type ProviderAccountActivityAccess,
   type ProviderAccountConsentScope,
+  type ProviderAccountVerificationStatus,
   type ProviderPublicStatsErrorCode,
   type ProviderPublicStatsSource,
   type PublicProviderHandle,
@@ -67,7 +69,10 @@ export type ProviderAccountRecord = {
   provider: LinkableProvider
   externalHandle: PublicProviderHandle
   consentScope: ProviderAccountConsentScope
-  verificationStatus: 'not_verified'
+  verificationStatus: ProviderAccountVerificationStatus
+  verifiedAt: Date | null
+  verificationChallenge: ProviderVerificationChallengeRecord | null
+  connectorSyncedAt: Date | null
   activityAccess: ProviderAccountActivityAccess
   publicStatsConsentAt: Date | null
   solvedCount: number | null
@@ -82,6 +87,11 @@ export type ProviderAccountRecord = {
   updatedAt: Date
   syncEnabled: boolean
   disconnectedAt: Date | null
+}
+
+export type ProviderVerificationChallengeRecord = {
+  code: string
+  expiresAt: Date
 }
 
 export type ProviderPublicStatsSuccess = {
@@ -170,6 +180,34 @@ export interface ProviderAccountRepository {
     externalId: string,
     actionId: string,
   ): Promise<void>
+  // Replace any open ownership challenge on the active account for
+  // `expectedHandle`. Returns null when that account is not linked.
+  startVerification(
+    authUserId: string,
+    provider: LinkableProvider,
+    expectedHandle: PublicProviderHandle,
+    challenge: ProviderVerificationChallengeRecord,
+  ): Promise<ProviderAccountRecord | null>
+  // Mark the account verified if `code` is its open, unexpired challenge.
+  // Returns null when the challenge no longer matches.
+  completeVerification(
+    authUserId: string,
+    provider: LinkableProvider,
+    expectedHandle: PublicProviderHandle,
+    code: string,
+    verifiedAt: Date,
+  ): Promise<ProviderAccountRecord | null>
+  // Mark the active account verified because the learner's own signed-in
+  // provider session (the browser connector) reported this handle.
+  markVerified(
+    authUserId: string,
+    provider: LinkableProvider,
+    expectedHandle: PublicProviderHandle,
+    verifiedAt: Date,
+    // False when the connector only confirmed the handle and the server, not
+    // the connector, syncs the data.
+    recordConnectorSync?: boolean,
+  ): Promise<ProviderAccountRecord | null>
   deleteByAuthUserId(
     authUserId: string,
     provider: LinkableProvider,
@@ -335,7 +373,19 @@ export class InMemoryProviderAccountRepository implements ProviderAccountReposit
       provider,
       externalHandle: handle,
       consentScope,
-      verificationStatus: 'not_verified',
+      // Proof of ownership belongs to the handle, so relinking the same
+      // handle keeps it while a new handle starts unverified.
+      verificationStatus:
+        preserveStats && current !== undefined
+          ? current.verificationStatus
+          : 'not_verified',
+      verifiedAt:
+        preserveStats && current !== undefined ? current.verifiedAt : null,
+      verificationChallenge: null,
+      connectorSyncedAt:
+        preserveStats && current !== undefined
+          ? current.connectorSyncedAt
+          : null,
       syncEnabled: true,
       disconnectedAt: null,
       ...(preserveStats && current !== undefined
@@ -628,6 +678,92 @@ export class InMemoryProviderAccountRepository implements ProviderAccountReposit
     return record
   }
 
+  async startVerification(
+    authUserId: string,
+    provider: LinkableProvider,
+    expectedHandle: PublicProviderHandle,
+    challenge: ProviderVerificationChallengeRecord,
+  ) {
+    const records = this.recordsByAuthUserId.get(authUserId)
+    const existing = records?.get(provider)
+    if (
+      records === undefined ||
+      existing === undefined ||
+      !existing.syncEnabled ||
+      existing.externalHandle !== expectedHandle
+    ) {
+      return null
+    }
+    const record = {
+      ...existing,
+      verificationChallenge: { ...challenge },
+      updatedAt: this.now(),
+    }
+    records.set(provider, record)
+    return record
+  }
+
+  async completeVerification(
+    authUserId: string,
+    provider: LinkableProvider,
+    expectedHandle: PublicProviderHandle,
+    code: string,
+    verifiedAt: Date,
+  ) {
+    const records = this.recordsByAuthUserId.get(authUserId)
+    const existing = records?.get(provider)
+    if (
+      records === undefined ||
+      existing === undefined ||
+      !existing.syncEnabled ||
+      existing.externalHandle !== expectedHandle ||
+      existing.verificationChallenge?.code !== code ||
+      existing.verificationChallenge.expiresAt <= verifiedAt
+    ) {
+      return null
+    }
+    const record: ProviderAccountRecord = {
+      ...existing,
+      verificationStatus: 'verified',
+      verifiedAt,
+      verificationChallenge: null,
+      updatedAt: verifiedAt,
+    }
+    records.set(provider, record)
+    return record
+  }
+
+  async markVerified(
+    authUserId: string,
+    provider: LinkableProvider,
+    expectedHandle: PublicProviderHandle,
+    verifiedAt: Date,
+    recordConnectorSync = true,
+  ) {
+    const records = this.recordsByAuthUserId.get(authUserId)
+    const existing = records?.get(provider)
+    if (
+      records === undefined ||
+      existing === undefined ||
+      !existing.syncEnabled ||
+      existing.externalHandle !== expectedHandle
+    ) {
+      return null
+    }
+    const record: ProviderAccountRecord = {
+      ...existing,
+      verificationStatus: 'verified',
+      verifiedAt: existing.verifiedAt ?? verifiedAt,
+      verificationChallenge: null,
+      connectorSyncedAt: recordConnectorSync
+        ? verifiedAt
+        : existing.connectorSyncedAt,
+      updatedAt: verifiedAt,
+    }
+    records.set(provider, record)
+    return record
+  }
+
   async deleteByAuthUserId(authUserId: string, provider: LinkableProvider) {
     const records = this.recordsByAuthUserId.get(authUserId)
     const active = records?.get(provider)
@@ -709,6 +845,10 @@ const recordFromDatabase = (record: {
   externalHandle: string
   consentScope: string
   verificationStatus: string
+  verificationCode: string | null
+  verificationExpiresAt: Date | null
+  verifiedAt: Date | null
+  connectorSyncedAt: Date | null
   activityAccess: string
   publicStatsConsentAt: Date | null
   solvedCount: number | null
@@ -731,7 +871,10 @@ const recordFromDatabase = (record: {
   syncEnabled: boolean
   disconnectedAt: Date | null
 }): ProviderAccountRecord => {
-  if (record.verificationStatus !== 'not_verified') {
+  const verificationStatus = ProviderAccountVerificationStatusSchema.parse(
+    record.verificationStatus,
+  )
+  if ((verificationStatus === 'verified') !== (record.verifiedAt !== null)) {
     throw new Error('Provider account record has an unsupported access state.')
   }
 
@@ -740,7 +883,18 @@ const recordFromDatabase = (record: {
     provider: LinkableProviderSchema.parse(record.provider),
     externalHandle: PublicProviderHandleSchema.parse(record.externalHandle),
     consentScope: ProviderAccountConsentScopeSchema.parse(record.consentScope),
-    verificationStatus: record.verificationStatus,
+    verificationStatus,
+    verifiedAt: record.verifiedAt,
+    connectorSyncedAt: record.connectorSyncedAt,
+    verificationChallenge:
+      verificationStatus === 'not_verified' &&
+      record.verificationCode !== null &&
+      record.verificationExpiresAt !== null
+        ? {
+            code: record.verificationCode,
+            expiresAt: record.verificationExpiresAt,
+          }
+        : null,
     activityAccess: ProviderAccountActivityAccessSchema.parse(
       record.activityAccess,
     ),
@@ -912,7 +1066,8 @@ export class PrismaProviderAccountRepository implements ProviderAccountRepositor
                 sameHandle.publicStatsConsentAt ?? new Date(),
               syncEnabled: true,
               disconnectedAt: null,
-              verificationStatus: 'not_verified',
+              verificationCode: null,
+              verificationExpiresAt: null,
             },
           })
         }
@@ -1246,6 +1401,104 @@ export class PrismaProviderAccountRepository implements ProviderAccountRepositor
       },
       data: { progressActionId: actionId },
     })
+  }
+
+  async startVerification(
+    authUserId: string,
+    provider: LinkableProvider,
+    expectedHandle: PublicProviderHandle,
+    challenge: ProviderVerificationChallengeRecord,
+  ) {
+    const user = await this.prisma.coreUser.findUnique({
+      where: { authUserId },
+      select: { id: true },
+    })
+    if (user === null) return null
+    const updated = await this.prisma.providerAccount.updateMany({
+      where: {
+        userId: user.id,
+        provider,
+        externalHandle: expectedHandle,
+        syncEnabled: true,
+      },
+      data: {
+        verificationCode: challenge.code,
+        verificationExpiresAt: challenge.expiresAt,
+      },
+    })
+    if (updated.count === 0) return null
+    return this.findByAuthUserIdAndProvider(authUserId, provider)
+  }
+
+  async completeVerification(
+    authUserId: string,
+    provider: LinkableProvider,
+    expectedHandle: PublicProviderHandle,
+    code: string,
+    verifiedAt: Date,
+  ) {
+    const user = await this.prisma.coreUser.findUnique({
+      where: { authUserId },
+      select: { id: true },
+    })
+    if (user === null) return null
+    // The code and expiry are part of the update filter, so a challenge that
+    // was replaced or expired between check and write cannot verify.
+    const updated = await this.prisma.providerAccount.updateMany({
+      where: {
+        userId: user.id,
+        provider,
+        externalHandle: expectedHandle,
+        syncEnabled: true,
+        verificationCode: code,
+        verificationExpiresAt: { gt: verifiedAt },
+      },
+      data: {
+        verificationStatus: 'verified',
+        verifiedAt,
+        verificationCode: null,
+        verificationExpiresAt: null,
+      },
+    })
+    if (updated.count === 0) return null
+    return this.findByAuthUserIdAndProvider(authUserId, provider)
+  }
+
+  async markVerified(
+    authUserId: string,
+    provider: LinkableProvider,
+    expectedHandle: PublicProviderHandle,
+    verifiedAt: Date,
+    recordConnectorSync = true,
+  ) {
+    const user = await this.prisma.coreUser.findUnique({
+      where: { authUserId },
+      select: { id: true },
+    })
+    if (user === null) return null
+    const where = {
+      userId: user.id,
+      provider,
+      externalHandle: expectedHandle,
+      syncEnabled: true,
+    }
+    await this.prisma.providerAccount.updateMany({
+      where: { ...where, verificationStatus: 'not_verified' },
+      data: {
+        verificationStatus: 'verified',
+        verifiedAt,
+        verificationCode: null,
+        verificationExpiresAt: null,
+      },
+    })
+    if (recordConnectorSync) {
+      await this.prisma.providerAccount.updateMany({
+        where,
+        data: { connectorSyncedAt: verifiedAt },
+      })
+    }
+    const record = await this.findByAuthUserIdAndProvider(authUserId, provider)
+    return record?.externalHandle === expectedHandle ? record : null
   }
 
   async deleteByAuthUserId(authUserId: string, provider: LinkableProvider) {

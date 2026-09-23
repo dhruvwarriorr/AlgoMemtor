@@ -13,6 +13,15 @@ import {
 
 import { Prisma, type PrismaClient } from '../generated/prisma/client.js'
 
+export type SolvedProblemTags = {
+  providerTags: string[]
+  topics: string[]
+}
+
+// A problem the provider published without tags is looked up again only after
+// this interval, so it cannot block enrichment of the rest of the backlog.
+const TAG_RECHECK_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000
+
 export interface ProviderDataRepository {
   saveSubmissions(
     authUserId: string,
@@ -50,8 +59,40 @@ export interface ProviderDataRepository {
     authUserId: string,
     provider?: ProviderKey,
   ): Promise<ContestParticipation[]>
+  // Solved problems on one linked account that still have no tags and were
+  // not looked up recently, most recent solves first.
+  listUntaggedSolvedIds(
+    authUserId: string,
+    providerAccountId: string,
+    limit: number,
+    now?: Date,
+  ): Promise<string[]>
+  // Record a tag lookup. Every listed ID counts as checked; an entry with
+  // tags also replaces the stored tags.
+  saveSolvedTags(
+    authUserId: string,
+    providerAccountId: string,
+    checkedIds: readonly string[],
+    tags: ReadonlyMap<string, SolvedProblemTags>,
+    now?: Date,
+  ): Promise<void>
+  // Remove public-feed rows (event IDs starting `recent:`) that describe the
+  // same submission as a connector row, matched by problem and time.
+  deleteSupersededPublicSubmissions(
+    authUserId: string,
+    providerAccountId: string,
+    submissions: readonly { externalId: string; occurredAt: string }[],
+  ): Promise<void>
+  countSolvedProblems(
+    authUserId: string,
+    providerAccountId: string,
+  ): Promise<number>
   deleteByAuthUserId(authUserId: string, provider: ProviderKey): Promise<void>
 }
+
+// Public LeetCode submissions carry no submission ID, so their event IDs are
+// synthesized; a connector row for the same submission replaces them.
+const PUBLIC_FEED_EVENT_PREFIX = 'recent:'
 
 type DatabaseProvenance = {
   extractionStrategy: string
@@ -88,6 +129,9 @@ const submissionFromRecord = (record: {
   language: string | null
   occurredAt: Date | null
   isAccepted: boolean
+  runtimeMs: number | null
+  memoryKb: number | null
+  passedTestCount: number | null
   completeness: string
   extractionStrategy: string
   sourceUrl: string
@@ -108,6 +152,11 @@ const submissionFromRecord = (record: {
       ? {}
       : { occurredAt: record.occurredAt.toISOString() }),
     isAccepted: record.isAccepted,
+    ...(record.runtimeMs === null ? {} : { runtimeMs: record.runtimeMs }),
+    ...(record.memoryKb === null ? {} : { memoryKb: record.memoryKb }),
+    ...(record.passedTestCount === null
+      ? {}
+      : { passedTestCount: record.passedTestCount }),
     completeness: record.completeness,
     provenance: provenance(
       record,
@@ -252,11 +301,52 @@ const participationFromRecord = (record: {
 const parseProvider = (provider?: ProviderKey) =>
   provider === undefined ? undefined : ProviderKeySchema.parse(provider)
 
+// Merge a newly fetched observation into a stored one. A later sync may see
+// only a recent window of submissions, so it must not replace the earliest
+// accepted time or erase tags that an earlier lookup found.
+const mergeSolvedProblem = (
+  existing: ProviderSolvedProblem,
+  incoming: ProviderSolvedProblem,
+): ProviderSolvedProblem => {
+  const keepExistingSolve =
+    existing.occurredAt !== null &&
+    (incoming.occurredAt === null || existing.occurredAt <= incoming.occurredAt)
+  const {
+    sourceSubmissionId: _incomingSubmission,
+    providerTags: _incomingTags,
+    topics: _incomingTopics,
+    ...rest
+  } = incoming
+  const sourceSubmissionId = keepExistingSolve
+    ? (existing.sourceSubmissionId ?? incoming.sourceSubmissionId)
+    : (incoming.sourceSubmissionId ?? existing.sourceSubmissionId)
+  const providerTags =
+    (incoming.providerTags ?? []).length > 0
+      ? incoming.providerTags
+      : existing.providerTags
+  const topics =
+    (incoming.topics ?? []).length > 0 ? incoming.topics : existing.topics
+  return {
+    ...rest,
+    occurredAt: keepExistingSolve ? existing.occurredAt : incoming.occurredAt,
+    firstObservedAt:
+      existing.firstObservedAt < incoming.firstObservedAt
+        ? existing.firstObservedAt
+        : incoming.firstObservedAt,
+    ...(sourceSubmissionId === undefined ? {} : { sourceSubmissionId }),
+    ...(providerTags === undefined || providerTags.length === 0
+      ? {}
+      : { providerTags }),
+    ...(topics === undefined || topics.length === 0 ? {} : { topics }),
+  }
+}
+
 export class InMemoryProviderDataRepository implements ProviderDataRepository {
   private readonly submissions = new Map<string, ProviderSubmission>()
   private readonly solvedProblems = new Map<string, ProviderSolvedProblem>()
   private readonly ratingChanges = new Map<string, ProviderRatingChange>()
   private readonly participations = new Map<string, ContestParticipation>()
+  private readonly tagsCheckedAt = new Map<string, Date>()
 
   async saveSubmissions(
     _authUserId: string,
@@ -265,11 +355,52 @@ export class InMemoryProviderDataRepository implements ProviderDataRepository {
   ) {
     for (const value of values) {
       const parsed = ProviderSubmissionSchema.parse(value)
+      const prefix = `${_authUserId}:${_providerAccountId}:`
+      if (
+        parsed.eventId.startsWith(PUBLIC_FEED_EVENT_PREFIX) &&
+        [...this.submissions.entries()].some(
+          ([key, stored]) =>
+            key.startsWith(prefix) &&
+            stored.provenance.extractionStrategy ===
+              'authenticated_connector' &&
+            stored.externalId === parsed.externalId &&
+            stored.occurredAt === parsed.occurredAt,
+        )
+      ) {
+        continue
+      }
       this.submissions.set(
-        `${_authUserId}:${_providerAccountId}:${parsed.provider}:${parsed.eventId}`,
+        `${prefix}${parsed.provider}:${parsed.eventId}`,
         parsed,
       )
     }
+  }
+
+  async deleteSupersededPublicSubmissions(
+    authUserId: string,
+    providerAccountId: string,
+    submissions: readonly { externalId: string; occurredAt: string }[],
+  ) {
+    const prefix = `${authUserId}:${providerAccountId}:`
+    const keys = new Set(
+      submissions.map((item) => `${item.externalId}@${item.occurredAt}`),
+    )
+    for (const [key, stored] of this.submissions) {
+      if (
+        key.startsWith(prefix) &&
+        stored.eventId.startsWith(PUBLIC_FEED_EVENT_PREFIX) &&
+        keys.has(`${stored.externalId}@${stored.occurredAt ?? ''}`)
+      ) {
+        this.submissions.delete(key)
+      }
+    }
+  }
+
+  async countSolvedProblems(authUserId: string, providerAccountId: string) {
+    const prefix = `${authUserId}:${providerAccountId}:`
+    return [...this.solvedProblems.keys()].filter((key) =>
+      key.startsWith(prefix),
+    ).length
   }
 
   async saveSolvedProblems(
@@ -283,15 +414,57 @@ export class InMemoryProviderDataRepository implements ProviderDataRepository {
       const existing = this.solvedProblems.get(key)
       this.solvedProblems.set(
         key,
-        existing === undefined
-          ? parsed
-          : {
-              ...parsed,
-              firstObservedAt:
-                existing.firstObservedAt < parsed.firstObservedAt
-                  ? existing.firstObservedAt
-                  : parsed.firstObservedAt,
-            },
+        existing === undefined ? parsed : mergeSolvedProblem(existing, parsed),
+      )
+    }
+  }
+
+  async listUntaggedSolvedIds(
+    authUserId: string,
+    providerAccountId: string,
+    limit: number,
+    now = new Date(),
+  ) {
+    const prefix = `${authUserId}:${providerAccountId}:`
+    return [...this.solvedProblems.entries()]
+      .filter(([key, value]) => {
+        if (!key.startsWith(prefix) || (value.providerTags ?? []).length > 0)
+          return false
+        const checkedAt = this.tagsCheckedAt.get(key)
+        return (
+          checkedAt === undefined ||
+          now.getTime() - checkedAt.getTime() >= TAG_RECHECK_INTERVAL_MS
+        )
+      })
+      .map(([, value]) => value)
+      .sort((left, right) =>
+        (right.occurredAt ?? '').localeCompare(left.occurredAt ?? ''),
+      )
+      .slice(0, Math.max(0, limit))
+      .map((value) => value.externalId)
+  }
+
+  async saveSolvedTags(
+    authUserId: string,
+    providerAccountId: string,
+    checkedIds: readonly string[],
+    tags: ReadonlyMap<string, SolvedProblemTags>,
+    now = new Date(),
+  ) {
+    const prefix = `${authUserId}:${providerAccountId}:`
+    for (const [key, value] of this.solvedProblems) {
+      if (!key.startsWith(prefix) || !checkedIds.includes(value.externalId))
+        continue
+      this.tagsCheckedAt.set(key, now)
+      const found = tags.get(value.externalId)
+      if (found === undefined || found.providerTags.length === 0) continue
+      this.solvedProblems.set(
+        key,
+        ProviderSolvedProblemSchema.parse({
+          ...value,
+          providerTags: found.providerTags,
+          ...(found.topics.length === 0 ? {} : { topics: found.topics }),
+        }),
       )
     }
   }
@@ -410,6 +583,21 @@ export class PrismaProviderDataRepository implements ProviderDataRepository {
     await this.prisma.$transaction(async (transaction) => {
       for (const value of values) {
         const parsed = ProviderSubmissionSchema.parse(value)
+        if (
+          parsed.eventId.startsWith(PUBLIC_FEED_EVENT_PREFIX) &&
+          parsed.occurredAt !== undefined &&
+          (await transaction.providerSubmission.findFirst({
+            where: {
+              providerAccountId,
+              externalId: parsed.externalId,
+              occurredAt: new Date(parsed.occurredAt),
+              extractionStrategy: 'authenticated_connector',
+            },
+            select: { id: true },
+          })) !== null
+        ) {
+          continue
+        }
         await transaction.providerSubmission.upsert({
           where: {
             providerAccountId_providerEventId: {
@@ -429,6 +617,9 @@ export class PrismaProviderDataRepository implements ProviderDataRepository {
             language: parsed.language ?? null,
             occurredAt: parsed.occurredAt ? new Date(parsed.occurredAt) : null,
             isAccepted: parsed.isAccepted,
+            runtimeMs: parsed.runtimeMs ?? null,
+            memoryKb: parsed.memoryKb ?? null,
+            passedTestCount: parsed.passedTestCount ?? null,
             completeness: parsed.completeness,
             extractionStrategy: parsed.provenance.extractionStrategy,
             sourceUrl: parsed.provenance.sourceUrl,
@@ -436,10 +627,16 @@ export class PrismaProviderDataRepository implements ProviderDataRepository {
             fetchedAt: new Date(parsed.provenance.fetchedAt),
           },
           update: {
+            ...(parsed.problemTitle === undefined
+              ? {}
+              : { problemTitle: parsed.problemTitle }),
             verdict: parsed.verdict,
             language: parsed.language ?? null,
             occurredAt: parsed.occurredAt ? new Date(parsed.occurredAt) : null,
             isAccepted: parsed.isAccepted,
+            runtimeMs: parsed.runtimeMs ?? null,
+            memoryKb: parsed.memoryKb ?? null,
+            passedTestCount: parsed.passedTestCount ?? null,
             completeness: parsed.completeness,
             extractionStrategy: parsed.provenance.extractionStrategy,
             sourceUrl: parsed.provenance.sourceUrl,
@@ -460,44 +657,108 @@ export class PrismaProviderDataRepository implements ProviderDataRepository {
     if (userId === null) return
     await this.prisma.$transaction(async (transaction) => {
       for (const value of values) {
-        const parsed = ProviderSolvedProblemSchema.parse(value)
-        const occurredAt = parsed.occurredAt
-          ? new Date(parsed.occurredAt)
-          : null
-        await transaction.providerSolvedObservation.upsert({
-          where: {
-            providerAccountId_externalId: {
+        const incoming = ProviderSolvedProblemSchema.parse(value)
+        const key = {
+          providerAccountId_externalId: {
+            providerAccountId,
+            externalId: incoming.externalId,
+          },
+        }
+        const stored = await transaction.providerSolvedObservation.findUnique({
+          where: key,
+        })
+        const parsed =
+          stored === null
+            ? incoming
+            : mergeSolvedProblem(solvedFromRecord(stored), incoming)
+        const fields = {
+          providerEventId: parsed.sourceSubmissionId ?? null,
+          canonicalUrl: parsed.canonicalUrl,
+          providerTags: parsed.providerTags ?? [],
+          normalizedTopics: parsed.topics ?? [],
+          occurredAt: parsed.occurredAt ? new Date(parsed.occurredAt) : null,
+          lastObservedAt: new Date(parsed.lastObservedAt),
+          completeness: parsed.completeness,
+          extractionStrategy: parsed.provenance.extractionStrategy,
+          sourceUrl: parsed.provenance.sourceUrl,
+          schemaVersion: parsed.provenance.schemaVersion,
+        }
+        if (stored === null) {
+          await transaction.providerSolvedObservation.create({
+            data: {
+              ...fields,
+              userId,
               providerAccountId,
+              provider: parsed.provider,
               externalId: parsed.externalId,
+              firstObservedAt: new Date(parsed.firstObservedAt),
+            },
+          })
+        } else {
+          await transaction.providerSolvedObservation.update({
+            where: key,
+            data: fields,
+          })
+        }
+      }
+    })
+  }
+
+  async listUntaggedSolvedIds(
+    authUserId: string,
+    providerAccountId: string,
+    limit: number,
+    now = new Date(),
+  ) {
+    const userId = await this.userId(authUserId)
+    if (userId === null || limit <= 0) return []
+    const records = await this.prisma.providerSolvedObservation.findMany({
+      where: {
+        userId,
+        providerAccountId,
+        providerTags: { isEmpty: true },
+        OR: [
+          { tagsCheckedAt: null },
+          {
+            tagsCheckedAt: {
+              lt: new Date(now.getTime() - TAG_RECHECK_INTERVAL_MS),
             },
           },
-          create: {
-            userId,
-            providerAccountId,
-            provider: parsed.provider,
-            externalId: parsed.externalId,
-            providerEventId: parsed.sourceSubmissionId ?? null,
-            canonicalUrl: parsed.canonicalUrl,
-            providerTags: parsed.providerTags ?? [],
-            normalizedTopics: parsed.topics ?? [],
-            occurredAt,
-            firstObservedAt: new Date(parsed.firstObservedAt),
-            lastObservedAt: new Date(parsed.lastObservedAt),
-            completeness: parsed.completeness,
-            extractionStrategy: parsed.provenance.extractionStrategy,
-            sourceUrl: parsed.provenance.sourceUrl,
-            schemaVersion: parsed.provenance.schemaVersion,
-          },
-          update: {
-            providerEventId: parsed.sourceSubmissionId ?? null,
-            occurredAt,
-            providerTags: parsed.providerTags ?? [],
-            normalizedTopics: parsed.topics ?? [],
-            lastObservedAt: new Date(parsed.lastObservedAt),
-            completeness: parsed.completeness,
-            extractionStrategy: parsed.provenance.extractionStrategy,
-            sourceUrl: parsed.provenance.sourceUrl,
-            schemaVersion: parsed.provenance.schemaVersion,
+        ],
+      },
+      orderBy: [{ occurredAt: { sort: 'desc', nulls: 'last' } }],
+      take: limit,
+      select: { externalId: true },
+    })
+    return records.map((record) => record.externalId)
+  }
+
+  async saveSolvedTags(
+    authUserId: string,
+    providerAccountId: string,
+    checkedIds: readonly string[],
+    tags: ReadonlyMap<string, SolvedProblemTags>,
+    now = new Date(),
+  ) {
+    const userId = await this.userId(authUserId)
+    if (userId === null || checkedIds.length === 0) return
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.providerSolvedObservation.updateMany({
+        where: {
+          userId,
+          providerAccountId,
+          externalId: { in: [...checkedIds] },
+        },
+        data: { tagsCheckedAt: now },
+      })
+      for (const [externalId, found] of tags) {
+        if (!checkedIds.includes(externalId) || found.providerTags.length === 0)
+          continue
+        await transaction.providerSolvedObservation.updateMany({
+          where: { userId, providerAccountId, externalId },
+          data: {
+            providerTags: found.providerTags,
+            normalizedTopics: found.topics,
           },
         })
       }
@@ -608,6 +869,34 @@ export class PrismaProviderDataRepository implements ProviderDataRepository {
           },
         })
       }
+    })
+  }
+
+  async deleteSupersededPublicSubmissions(
+    authUserId: string,
+    providerAccountId: string,
+    submissions: readonly { externalId: string; occurredAt: string }[],
+  ) {
+    const userId = await this.userId(authUserId)
+    if (userId === null || submissions.length === 0) return
+    await this.prisma.providerSubmission.deleteMany({
+      where: {
+        userId,
+        providerAccountId,
+        providerEventId: { startsWith: PUBLIC_FEED_EVENT_PREFIX },
+        OR: submissions.map((item) => ({
+          externalId: item.externalId,
+          occurredAt: new Date(item.occurredAt),
+        })),
+      },
+    })
+  }
+
+  async countSolvedProblems(authUserId: string, providerAccountId: string) {
+    const userId = await this.userId(authUserId)
+    if (userId === null) return 0
+    return this.prisma.providerSolvedObservation.count({
+      where: { userId, providerAccountId },
     })
   }
 

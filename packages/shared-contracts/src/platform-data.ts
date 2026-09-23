@@ -24,6 +24,8 @@ export const ExtractionStrategySchema = z.enum([
   'embedded_json',
   'sanitized_html',
   'stale_cache',
+  // Read by the learner's own browser connector from their signed-in session.
+  'authenticated_connector',
 ])
 export type ExtractionStrategy = z.infer<typeof ExtractionStrategySchema>
 
@@ -90,6 +92,11 @@ export const ProviderSubmissionSchema = z
     language: optionalStringSchema,
     occurredAt: z.iso.datetime().optional(),
     isAccepted: z.boolean(),
+    // Judge measurements when the provider reports them. `passedTestCount`
+    // locates a failure (for example, wrong answer after 4 passing tests).
+    runtimeMs: z.number().int().nonnegative().optional(),
+    memoryKb: z.number().int().nonnegative().optional(),
+    passedTestCount: z.number().int().nonnegative().optional(),
     completeness: CompletenessSchema,
     provenance: ProviderProvenanceSchema,
   })

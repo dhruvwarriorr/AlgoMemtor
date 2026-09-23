@@ -22,6 +22,7 @@ import {
 import {
   type ProviderActivityDataFetchResult,
   type ProviderActivityDataFetcher,
+  type ProviderProblemTags,
 } from './provider-public-stats.js'
 
 const RecentSubmissionSchema = z.object({
@@ -134,7 +135,8 @@ export class LeetCodeActivityFetcher implements ProviderActivityDataFetcher {
     this.endpoint = new URL(options.endpoint ?? 'https://leetcode.com/graphql')
     this.timeoutMs = options.timeoutMs ?? 8000
     this.maxAttempts = options.maxAttempts ?? 2
-    this.recentLimit = Math.min(Math.max(options.recentLimit ?? 100, 1), 200)
+    // The public feed returns at most the 20 newest submissions.
+    this.recentLimit = Math.min(Math.max(options.recentLimit ?? 20, 1), 20)
     this.requestGate =
       options.requestGate ?? new RequestGate({ minIntervalMs: 1000 })
     this.fetchImpl = options.fetchImpl ?? fetch
@@ -193,29 +195,35 @@ export class LeetCodeActivityFetcher implements ProviderActivityDataFetcher {
         slugs.filter((slug) => /^[a-z0-9-]+$/i.test(slug)).slice(0, 50),
       ),
     ]
-    if (uniqueSlugs.length === 0) {
-      return new Map<string, z.infer<typeof QuestionDetailSchema>>()
-    }
+    // `null` marks a question LeetCode resolved to nothing (removed or
+    // restricted); an absent slug was not looked up.
+    const details = new Map<
+      string,
+      z.infer<typeof QuestionDetailSchema> | null
+    >()
+    if (uniqueSlugs.length === 0) return details
     try {
       const body = await this.request(
         questionDetailsQuery(uniqueSlugs),
         {},
         signal,
       )
+      // GraphQL reports a missing or restricted question as an error beside
+      // the other questions' data, so keep every alias that did resolve.
       const envelope = QuestionDetailsEnvelopeSchema.safeParse(body)
-      if (!envelope.success || envelope.data.errors?.length) {
-        return new Map<string, z.infer<typeof QuestionDetailSchema>>()
-      }
-      const details = new Map<string, z.infer<typeof QuestionDetailSchema>>()
+      if (!envelope.success || envelope.data.data === undefined) return details
       for (const [index, slug] of uniqueSlugs.entries()) {
-        const parsed = QuestionDetailSchema.safeParse(
-          envelope.data.data?.[`q${index}`],
-        )
+        const value = envelope.data.data[`q${index}`]
+        if (value === null) {
+          details.set(slug, null)
+          continue
+        }
+        const parsed = QuestionDetailSchema.safeParse(value)
         if (parsed.success) details.set(slug, parsed.data)
       }
       return details
     } catch {
-      return new Map<string, z.infer<typeof QuestionDetailSchema>>()
+      return details
     }
   }
 
@@ -235,8 +243,6 @@ export class LeetCodeActivityFetcher implements ProviderActivityDataFetcher {
         topics?: string[]
       }
     >()
-    let complete = true
-    let invalid = 0
 
     const recentBody = await this.request(
       recentSubmissionsQuery,
@@ -255,7 +261,6 @@ export class LeetCodeActivityFetcher implements ProviderActivityDataFetcher {
         'LeetCode did not return public submissions for this handle.',
       )
     }
-    if (recent.length >= this.recentLimit) complete = false
 
     const parsedRecent = recent.flatMap((raw) => {
       const parsed = RecentSubmissionSchema.safeParse(raw)
@@ -264,7 +269,6 @@ export class LeetCodeActivityFetcher implements ProviderActivityDataFetcher {
         parsed.data.titleSlug === undefined ||
         parsed.data.titleSlug === null
       ) {
-        invalid += 1
         return []
       }
       return [parsed.data]
@@ -279,14 +283,10 @@ export class LeetCodeActivityFetcher implements ProviderActivityDataFetcher {
     for (const [index, parsed] of parsedRecent.entries()) {
       if (parsed.titleSlug === undefined || parsed.titleSlug === null) continue
       const occurredAt = timestampToDate(parsed.timestamp)
-      if (
-        parsed.timestamp !== undefined &&
-        parsed.timestamp !== null &&
-        occurredAt === null
-      )
-        invalid += 1
       const details = detailsBySlug.get(parsed.titleSlug)
-      const externalId = details?.questionId ?? parsed.titleSlug
+      // The slug is always present, so it stays the identity whether or not
+      // the detail lookup succeeded on this sync.
+      const externalId = parsed.titleSlug
       const eventId = `recent:${parsed.titleSlug}:${parsed.timestamp ?? index}`
       const canonicalUrl = problemUrl(parsed.titleSlug)
       const verdict = parsed.statusDisplay?.trim() || 'UNKNOWN'
@@ -384,13 +384,9 @@ export class LeetCodeActivityFetcher implements ProviderActivityDataFetcher {
       )
       const contestEnvelope =
         ContestHistoryEnvelopeSchema.safeParse(contestBody)
-      if (!contestEnvelope.success || contestEnvelope.data.errors?.length) {
-        complete = false
-      } else {
+      if (contestEnvelope.success && !contestEnvelope.data.errors?.length) {
         const history = contestEnvelope.data.data?.userContestRankingHistory
-        if (history === null || history === undefined) {
-          complete = false
-        } else {
+        if (history !== null && history !== undefined) {
           const entries = history.flatMap((raw) => {
             const parsed = ContestHistorySchema.safeParse(raw)
             return parsed.success &&
@@ -467,7 +463,7 @@ export class LeetCodeActivityFetcher implements ProviderActivityDataFetcher {
         }
       }
     } catch {
-      complete = false
+      // Contest history is optional; the activity result is partial anyway.
     }
 
     return {
@@ -475,8 +471,36 @@ export class LeetCodeActivityFetcher implements ProviderActivityDataFetcher {
       solvedProblems,
       ratingChanges,
       contestParticipations,
-      complete: complete && invalid === 0,
+      // The public feed only exposes the newest submissions, never the whole
+      // history, so this result is always partial.
+      complete: false,
       fetchedAt,
     }
+  }
+
+  async fetchProblemTags(externalIds: readonly string[], signal?: AbortSignal) {
+    const tags = new Map<string, ProviderProblemTags | null>()
+    const slugs = [...new Set(externalIds)].filter((slug) =>
+      /^[a-z0-9-]+$/i.test(slug),
+    )
+    for (let start = 0; start < slugs.length; start += 50) {
+      const details = await this.questionDetails(
+        slugs.slice(start, start + 50),
+        signal,
+      )
+      for (const [slug, detail] of details) {
+        const topicTags = detail?.topicTags ?? []
+        tags.set(
+          slug,
+          topicTags.length === 0
+            ? null
+            : {
+                providerTags: topicTags.map((tag) => tag.name),
+                topics: topicTags.map((tag) => tag.slug),
+              },
+        )
+      }
+    }
+    return tags
   }
 }

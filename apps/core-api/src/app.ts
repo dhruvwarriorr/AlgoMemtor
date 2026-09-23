@@ -1,4 +1,4 @@
-import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
+import { createHash, randomInt, randomUUID, timingSafeEqual } from 'node:crypto'
 
 import {
   ApiErrorResponseSchema,
@@ -16,6 +16,20 @@ import {
   LearnerMemoriesResponseSchema,
   LearnerMemoryActionSchema,
   LearnerMemorySchema,
+  ConnectorIngestRequestSchema,
+  ConnectorClaimRequestSchema,
+  ConnectorClaimResponseSchema,
+  ConnectorIngestResponseSchema,
+  ConnectorReportRequestSchema,
+  ConnectorSecretSchema,
+  ConnectorSessionResponseSchema,
+  ConnectorTokenSchema,
+  ConnectorTokensResponseSchema,
+  CreateConnectorTokenRequestSchema,
+  CreateConnectorTokenResponseSchema,
+  RevokeConnectorTokenResponseSchema,
+  isConnectorOnlyProvider,
+  LearnerActivityDigestResponseSchema,
   LinkableProviderSchema,
   ProviderKeySchema,
   LinkProviderAccountRequestSchema,
@@ -129,7 +143,32 @@ import { CodeChefProfileFetcher } from './integrations/provider-accounts/codeche
 import { CodeforcesProfileFetcher } from './integrations/provider-accounts/codeforces-profile.js'
 import { LeetCodeProfileFetcher } from './integrations/provider-accounts/leetcode-profile.js'
 import {
+  ConnectorTokenLimitError,
+  InMemoryConnectorTokenRepository,
+  type ConnectorTokenRepository,
+} from './repositories/connector-token-repository.js'
+import {
+  InMemoryLearnerActivityRepository,
+  type LearnerActivityRepository,
+} from './repositories/learner-activity-repository.js'
+import { LearnerActivityService } from './services/learner-activity-service.js'
+import { CoachLiveRefreshService } from './services/coach-live-refresh-service.js'
+import { CodeChefActivityFetcher } from './integrations/provider-accounts/codechef-activity.js'
+import { LeetCodeActivityFetcher } from './integrations/provider-accounts/leetcode-activity.js'
+import {
+  ConnectorAccountMismatchError,
+  ConnectorAccountUnavailableError,
+  ConnectorService,
+} from './services/connector-service.js'
+import {
+  CodeChefOwnershipChecker,
+  CodeforcesOwnershipChecker,
+  LeetCodeOwnershipChecker,
+  type ProviderOwnershipChecker,
+} from './integrations/provider-accounts/provider-ownership.js'
+import {
   ProviderPublicStatsError,
+  type ProviderActivityDataFetcher,
   type ProviderProfileFetcher,
   type ProviderVerifiedActivityFetcher,
   type ProviderPublicStatsFetcher,
@@ -248,6 +287,11 @@ export type CreateAppOptions = {
   providerPublicStatsFetchers?: readonly ProviderPublicStatsFetcher[]
   providerProfileFetchers?: readonly ProviderProfileFetcher[]
   providerVerifiedActivityFetchers?: readonly ProviderVerifiedActivityFetcher[]
+  providerOwnershipCheckers?: readonly ProviderOwnershipChecker[]
+  connectorTokenRepository?: ConnectorTokenRepository
+  learnerActivityRepository?: LearnerActivityRepository
+  // Fetchers the coach's live refresh uses for a learner's newest data.
+  providerActivityFetchers?: readonly ProviderActivityDataFetcher[]
   providerActivityMinRefreshIntervalMs?: number
   problemProvider?: ProblemProvider
   problemProviders?: readonly ProblemProvider[]
@@ -370,6 +414,10 @@ const respondWithCoachError = (error: unknown, response: Response) => {
   }
   return false
 }
+
+// CSES accounts link only through the browser connector; routes that make the
+// server read a provider profile reject it as an unsupported provider.
+const ServerFetchedProviderSchema = LinkableProviderSchema.exclude(['cses'])
 
 const createApiError = (
   code: string,
@@ -506,6 +554,69 @@ const defaultProviderPublicStatsFetchers = () => {
       : []),
   ]
 }
+
+const defaultProviderOwnershipCheckers =
+  (): readonly ProviderOwnershipChecker[] => {
+    const config = readUnifiedProviderConfig()
+    return [
+      ...(config.enabled.codeforces && config.codeforces.profileEnabled
+        ? [new CodeforcesOwnershipChecker()]
+        : []),
+      ...(config.enabled.codechef && config.codechef.profileEnabled
+        ? [new CodeChefOwnershipChecker()]
+        : []),
+      ...(config.enabled.leetcode && config.leetcode.profileEnabled
+        ? [new LeetCodeOwnershipChecker()]
+        : []),
+    ]
+  }
+
+// Unambiguous characters only (no 0/O or 1/I), so a code copied by hand into
+// a profile field still matches.
+const VERIFICATION_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+const VERIFICATION_TTL_MS = 30 * 60 * 1000
+
+const createVerificationCode = () =>
+  `AM-${Array.from(
+    { length: 8 },
+    () => VERIFICATION_ALPHABET[randomInt(VERIFICATION_ALPHABET.length)],
+  ).join('')}`
+
+// Small budgets: a live refresh should answer within a coaching turn.
+const defaultProviderActivityFetchers =
+  (): readonly ProviderActivityDataFetcher[] => {
+    const config = readUnifiedProviderConfig()
+    return [
+      ...(config.enabled.codeforces && config.codeforces.activityEnabled
+        ? [
+            new CodeforcesPublicStatsFetcher({
+              baseUrl: config.codeforces.baseUrl,
+              timeoutMs: config.codeforces.timeoutMs,
+              maxAttempts: 1,
+            }),
+          ]
+        : []),
+      ...(config.enabled.codechef && config.codechef.activityEnabled
+        ? [
+            new CodeChefActivityFetcher({
+              baseUrl: `${config.codechef.baseUrl.replace(/\/+$/, '')}/users/`,
+              timeoutMs: config.codechef.timeoutMs,
+              maxAttempts: 1,
+              maxPages: 3,
+            }),
+          ]
+        : []),
+      ...(config.enabled.leetcode && config.leetcode.activityEnabled
+        ? [
+            new LeetCodeActivityFetcher({
+              endpoint: config.leetcode.baseUrl,
+              timeoutMs: config.leetcode.timeoutMs,
+              maxAttempts: 1,
+            }),
+          ]
+        : []),
+    ]
+  }
 
 const defaultProviderVerifiedActivityFetchers = () => {
   const config = readUnifiedProviderConfig()
@@ -665,10 +776,57 @@ export const createApp = (options: CreateAppOptions = {}) => {
   const providerDataRepository =
     options.providerDataRepository ?? new InMemoryProviderDataRepository()
   const problemMetadataCache = options.problemMetadataCache
+  const connectorService = new ConnectorService({
+    accountRepository: providerAccountRepository,
+    dataRepository: providerDataRepository,
+    tokenRepository:
+      options.connectorTokenRepository ??
+      new InMemoryConnectorTokenRepository(),
+    ...(problemMetadataCache === undefined ? {} : { problemMetadataCache }),
+    logger,
+  })
   const problemActionRepository =
     options.problemActionRepository ?? new InMemoryProblemActionRepository()
   const progressRepository =
     options.progressRepository ?? new InMemoryProgressRepository()
+  const learnerActivityService = new LearnerActivityService({
+    repository:
+      options.learnerActivityRepository ??
+      new InMemoryLearnerActivityRepository(),
+    accountRepository: providerAccountRepository,
+    dataRepository: providerDataRepository,
+    profileRepository: providerProfileRepository,
+    syncRepository: providerSyncRepository,
+    ...(problemMetadataCache === undefined ? {} : { problemMetadataCache }),
+    progressRepository,
+    logger,
+  })
+  const coachLiveRefresh = new CoachLiveRefreshService({
+    accountRepository: providerAccountRepository,
+    dataRepository: providerDataRepository,
+    syncRepository: providerSyncRepository,
+    activityFetchers:
+      options.providerActivityFetchers ?? defaultProviderActivityFetchers(),
+    refreshDigest: async (authUserId) =>
+      (await learnerActivityService.refresh(authUserId)).digest,
+    logger,
+  })
+  // New or removed provider data changes the summary the coach reads first;
+  // a failure here must not fail the request that stored the data.
+  const refreshLearnerActivity = async (authUserId: string) => {
+    try {
+      await learnerActivityService.refresh(authUserId)
+    } catch (error) {
+      logger.warn('learner_activity_refresh_failed', {
+        errorCode:
+          error instanceof Error &&
+          'code' in error &&
+          typeof error.code === 'string'
+            ? error.code
+            : 'LEARNER_ACTIVITY_REFRESH_FAILED',
+      })
+    }
+  }
   const bookmarkRepository =
     options.bookmarkRepository ?? new InMemoryBookmarkRepository()
   const avatarRepository =
@@ -693,6 +851,8 @@ export const createApp = (options: CreateAppOptions = {}) => {
   })
   const providerPublicStatsFetchers =
     options.providerPublicStatsFetchers ?? defaultProviderPublicStatsFetchers()
+  const providerOwnershipCheckers =
+    options.providerOwnershipCheckers ?? defaultProviderOwnershipCheckers()
   const providerAccountStatsService = new ProviderAccountStatsService({
     repository: providerAccountRepository,
     fetchers: providerPublicStatsFetchers,
@@ -766,6 +926,13 @@ export const createApp = (options: CreateAppOptions = {}) => {
     aiRoadmapNoteClient,
     logger,
     memoryGenerationEnabled: process.env.MEMORY_GENERATION_ENABLED !== 'false',
+    activityDigest: async (authUserId) => {
+      const accounts =
+        await providerAccountRepository.findAllByAuthUserId(authUserId)
+      return accounts.length === 0
+        ? null
+        : learnerActivityService.get(authUserId)
+    },
   })
   const internalServiceToken =
     options.internalServiceToken ??
@@ -1080,6 +1247,23 @@ export const createApp = (options: CreateAppOptions = {}) => {
   const app = express()
 
   app.use(helmet())
+  // The browser connector calls these token-authenticated routes from its
+  // extension origin (chrome-extension:// or moz-extension://). They accept
+  // only a connector token, never cookies or a Supabase session.
+  app.use(
+    [
+      '/api/connector/session',
+      '/api/connector/ingest',
+      '/api/connector/report',
+      '/api/connector/claim',
+    ],
+    cors({
+      origin: /^(chrome-extension|moz-extension):\/\/[a-z0-9-]+$/i,
+      methods: ['GET', 'POST'],
+      allowedHeaders: ['authorization', 'content-type'],
+      credentials: false,
+    }),
+  )
   app.use(
     cors({
       origin:
@@ -1125,7 +1309,26 @@ export const createApp = (options: CreateAppOptions = {}) => {
     next()
   })
 
-  app.use('/api', requireAuthenticated, async (request, response, next) => {
+  // Connector upload routes authenticate with a connector token instead of a
+  // Supabase session (see `requireConnector`).
+  const connectorTokenPaths = new Set([
+    '/connector/session',
+    '/connector/ingest',
+    '/connector/report',
+    '/connector/claim',
+  ])
+  app.use('/api', (request, response, next) => {
+    if (connectorTokenPaths.has(request.path)) {
+      next()
+      return
+    }
+    requireAuthenticated(request, response, next)
+  })
+  app.use('/api', async (request, response, next) => {
+    if (connectorTokenPaths.has(request.path)) {
+      next()
+      return
+    }
     if (request.path === '/me/data' || request.path === '/me/data/status') {
       next()
       return
@@ -1155,6 +1358,47 @@ export const createApp = (options: CreateAppOptions = {}) => {
       providers: providers.map((item) => item.getHealth()),
     })
   })
+
+  // Called by the AI service's coach when stored data is not enough to answer.
+  app.post(
+    '/internal/coach/live-refresh',
+    requireInternalService,
+    async (request, response) => {
+      const input = z
+        .object({ learnerId: z.uuid(), provider: LinkableProviderSchema })
+        .strict()
+        .safeParse(request.body ?? {})
+      if (!input.success) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'INVALID_COACH_LIVE_REFRESH',
+              'The coach live refresh request is invalid.',
+            ),
+          )
+        return
+      }
+      if (await progressRepository.hasPendingDeletion?.(input.data.learnerId)) {
+        response
+          .status(409)
+          .json(
+            createApiError(
+              'LEARNER_DATA_DELETION_PENDING',
+              'Learner data is temporarily hidden while deletion finishes.',
+              { retryable: true },
+            ),
+          )
+        return
+      }
+      response.json({
+        data: await coachLiveRefresh.refresh(
+          input.data.learnerId,
+          input.data.provider,
+        ),
+      })
+    },
+  )
 
   app.post(
     '/internal/coach/check-ins/refresh',
@@ -1210,22 +1454,28 @@ export const createApp = (options: CreateAppOptions = {}) => {
 
   // Learner profile picture. The browser uploads a small, already-resized
   // image; the server re-checks the size and the real file signature.
-  app.get('/api/me/avatar', requireAuthenticated, async (_request, response) => {
-    const avatar = await avatarRepository.findByAuthUserId(
-      authenticatedSubject(response),
-    )
-    if (avatar === null) {
-      response
-        .status(404)
-        .json(createApiError('AVATAR_NOT_FOUND', 'No profile picture is set.'))
-      return
-    }
-    response.setHeader('Content-Type', avatar.mimeType)
-    response.setHeader('Cache-Control', 'private, no-cache')
-    response.setHeader('X-Content-Type-Options', 'nosniff')
-    response.setHeader('Last-Modified', avatar.updatedAt.toUTCString())
-    response.send(avatar.data)
-  })
+  app.get(
+    '/api/me/avatar',
+    requireAuthenticated,
+    async (_request, response) => {
+      const avatar = await avatarRepository.findByAuthUserId(
+        authenticatedSubject(response),
+      )
+      if (avatar === null) {
+        response
+          .status(404)
+          .json(
+            createApiError('AVATAR_NOT_FOUND', 'No profile picture is set.'),
+          )
+        return
+      }
+      response.setHeader('Content-Type', avatar.mimeType)
+      response.setHeader('Cache-Control', 'private, no-cache')
+      response.setHeader('X-Content-Type-Options', 'nosniff')
+      response.setHeader('Last-Modified', avatar.updatedAt.toUTCString())
+      response.send(avatar.data)
+    },
+  )
 
   app.put(
     '/api/me/avatar',
@@ -1365,12 +1615,24 @@ export const createApp = (options: CreateAppOptions = {}) => {
     '/api/provider-accounts/:provider',
     requireAuthenticated,
     async (request, response) => {
-      const providerResult = LinkableProviderSchema.safeParse(
+      const providerResult = ServerFetchedProviderSchema.safeParse(
         request.params.provider,
       )
       const accountResult = LinkProviderAccountRequestSchema.safeParse(
         request.body,
       )
+
+      if (isConnectorOnlyProvider(String(request.params.provider))) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'CONNECTOR_ONLY_PROVIDER',
+              'Connect this provider with the AlgoMemtor browser connector.',
+            ),
+          )
+        return
+      }
 
       if (!providerResult.success) {
         response
@@ -1445,6 +1707,547 @@ export const createApp = (options: CreateAppOptions = {}) => {
     },
   )
 
+  app.post(
+    '/api/provider-accounts/:provider/verification',
+    requireAuthenticated,
+    async (request, response) => {
+      const providerResult = ServerFetchedProviderSchema.safeParse(
+        request.params.provider,
+      )
+      if (!providerResult.success) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'UNSUPPORTED_LINK_PROVIDER',
+              'That provider cannot be verified.',
+            ),
+          )
+        return
+      }
+      const authUserId = authenticatedSubject(response)
+      const account =
+        await providerAccountRepository.findByAuthUserIdAndProvider(
+          authUserId,
+          providerResult.data,
+        )
+      if (account === null) {
+        response
+          .status(404)
+          .json(
+            createApiError(
+              'PROVIDER_ACCOUNT_NOT_LINKED',
+              'Link this provider account before verifying it.',
+            ),
+          )
+        return
+      }
+      if (account.verificationStatus === 'verified') {
+        response.json(
+          ProviderAccountResponseSchema.parse({
+            data: serializeProviderAccount(account),
+          }),
+        )
+        return
+      }
+      const updated = await providerAccountRepository.startVerification(
+        authUserId,
+        providerResult.data,
+        account.externalHandle,
+        {
+          code: createVerificationCode(),
+          expiresAt: new Date(Date.now() + VERIFICATION_TTL_MS),
+        },
+      )
+      if (updated === null) {
+        response
+          .status(409)
+          .json(
+            createApiError(
+              'PROVIDER_ACCOUNT_CHANGED',
+              'The linked handle changed. Refresh and try again.',
+            ),
+          )
+        return
+      }
+      response.json(
+        ProviderAccountResponseSchema.parse({
+          data: serializeProviderAccount(updated),
+        }),
+      )
+    },
+  )
+
+  app.post(
+    '/api/provider-accounts/:provider/verification/check',
+    requireAuthenticated,
+    async (request, response) => {
+      const providerResult = ServerFetchedProviderSchema.safeParse(
+        request.params.provider,
+      )
+      if (!providerResult.success) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'UNSUPPORTED_LINK_PROVIDER',
+              'That provider cannot be verified.',
+            ),
+          )
+        return
+      }
+      const provider = providerResult.data
+      const authUserId = authenticatedSubject(response)
+      const account =
+        await providerAccountRepository.findByAuthUserIdAndProvider(
+          authUserId,
+          provider,
+        )
+      if (account === null) {
+        response
+          .status(404)
+          .json(
+            createApiError(
+              'PROVIDER_ACCOUNT_NOT_LINKED',
+              'Link this provider account before verifying it.',
+            ),
+          )
+        return
+      }
+      if (account.verificationStatus === 'verified') {
+        response.json(
+          ProviderAccountResponseSchema.parse({
+            data: serializeProviderAccount(account),
+          }),
+        )
+        return
+      }
+      const challenge = account.verificationChallenge
+      const now = new Date()
+      if (challenge === null || challenge.expiresAt <= now) {
+        response
+          .status(409)
+          .json(
+            createApiError(
+              'PROVIDER_VERIFICATION_EXPIRED',
+              'This verification code has expired. Start again to get a new code.',
+            ),
+          )
+        return
+      }
+      const checker = providerOwnershipCheckers.find(
+        (candidate) => candidate.provider === provider,
+      )
+      if (checker === undefined) {
+        response
+          .status(503)
+          .json(
+            createApiError(
+              'PROVIDER_VERIFICATION_UNAVAILABLE',
+              'Ownership verification is not available for this provider.',
+              { retryable: false },
+            ),
+          )
+        return
+      }
+      let found: boolean
+      try {
+        found = await checker.profileContainsCode(
+          account.externalHandle,
+          challenge.code,
+        )
+      } catch (error) {
+        logger.warn('provider_verification_check_failed', {
+          provider,
+          errorCode:
+            error instanceof ProviderError
+              ? error.code
+              : 'PROVIDER_UNAVAILABLE',
+        })
+        response
+          .status(503)
+          .json(
+            createApiError(
+              'PROVIDER_VERIFICATION_UNAVAILABLE',
+              'The provider profile could not be read right now. Try again in a minute.',
+              { retryable: true },
+            ),
+          )
+        return
+      }
+      logger.info('provider_verification_checked', { provider, found })
+      if (!found) {
+        response
+          .status(422)
+          .json(
+            createApiError(
+              'PROVIDER_VERIFICATION_CODE_NOT_FOUND',
+              'The code is not on your public profile yet. Save the profile change, wait a minute, then check again.',
+              { retryable: true },
+            ),
+          )
+        return
+      }
+      const verified = await providerAccountRepository.completeVerification(
+        authUserId,
+        provider,
+        account.externalHandle,
+        challenge.code,
+        now,
+      )
+      if (verified === null) {
+        response
+          .status(409)
+          .json(
+            createApiError(
+              'PROVIDER_VERIFICATION_EXPIRED',
+              'This verification code has expired. Start again to get a new code.',
+            ),
+          )
+        return
+      }
+      response.json(
+        ProviderAccountResponseSchema.parse({
+          data: serializeProviderAccount(verified),
+        }),
+      )
+    },
+  )
+
+  app.get(
+    '/api/me/activity-digest',
+    requireAuthenticated,
+    async (_request, response) => {
+      const authUserId = authenticatedSubject(response)
+      const accounts =
+        await providerAccountRepository.findAllByAuthUserId(authUserId)
+      response.json(
+        LearnerActivityDigestResponseSchema.parse({
+          data:
+            accounts.length === 0
+              ? null
+              : await learnerActivityService.get(authUserId),
+        }),
+      )
+    },
+  )
+
+  const serializeConnectorToken = (token: {
+    id: string
+    label: string
+    createdAt: Date
+    lastUsedAt: Date | null
+  }) =>
+    ConnectorTokenSchema.parse({
+      id: token.id,
+      label: token.label,
+      createdAt: token.createdAt.toISOString(),
+      ...(token.lastUsedAt === null
+        ? {}
+        : { lastUsedAt: token.lastUsedAt.toISOString() }),
+    })
+
+  app.get(
+    '/api/connector/tokens',
+    requireAuthenticated,
+    async (_request, response) => {
+      const tokens = await connectorService.listTokens(
+        authenticatedSubject(response),
+      )
+      response.json(
+        ConnectorTokensResponseSchema.parse({
+          data: tokens.map(serializeConnectorToken),
+        }),
+      )
+    },
+  )
+
+  app.post(
+    '/api/connector/tokens',
+    requireAuthenticated,
+    async (request, response) => {
+      const body = CreateConnectorTokenRequestSchema.safeParse(request.body)
+      if (!body.success) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'INVALID_CONNECTOR_TOKEN_REQUEST',
+              'Give the connector a short name.',
+              { details: body.error.issues },
+            ),
+          )
+        return
+      }
+      try {
+        const { token, secret } = await connectorService.createToken(
+          authenticatedSubject(response),
+          body.data.label,
+        )
+        response.status(201).json(
+          CreateConnectorTokenResponseSchema.parse({
+            data: { token: serializeConnectorToken(token), secret },
+          }),
+        )
+      } catch (error) {
+        if (error instanceof ConnectorTokenLimitError) {
+          response.status(409).json(createApiError(error.code, error.message))
+          return
+        }
+        throw error
+      }
+    },
+  )
+
+  app.delete(
+    '/api/connector/tokens/:id',
+    requireAuthenticated,
+    async (request, response) => {
+      const id = String(request.params.id)
+      const revoked =
+        /^[0-9a-f-]{36}$/i.test(id) &&
+        (await connectorService.revokeToken(authenticatedSubject(response), id))
+      if (!revoked) {
+        response
+          .status(404)
+          .json(
+            createApiError(
+              'CONNECTOR_TOKEN_NOT_FOUND',
+              'That connector is not active.',
+            ),
+          )
+        return
+      }
+      response.json(RevokeConnectorTokenResponseSchema.parse({ data: { id } }))
+    },
+  )
+
+  // Browser-connector routes authenticate with a connector token instead of a
+  // Supabase session. The token can only read its own link state and upload.
+  const requireConnector: express.RequestHandler = (
+    request,
+    response,
+    next,
+  ) => {
+    const header = request.get('authorization') ?? ''
+    const secret = ConnectorSecretSchema.safeParse(
+      /^Bearer\s+(\S+)$/i.exec(header)?.[1],
+    )
+    const reject = () => {
+      response
+        .status(401)
+        .set('WWW-Authenticate', 'Bearer')
+        .json(
+          createApiError(
+            'CONNECTOR_UNAUTHORIZED',
+            'This connector is not paired or was revoked. Pair it again from your AlgoMemtor profile.',
+          ),
+        )
+    }
+    if (!secret.success) {
+      reject()
+      return
+    }
+    connectorService.authenticate(secret.data).then(
+      async (token) => {
+        if (token === null) {
+          reject()
+          return
+        }
+        if (
+          (await progressRepository.hasPendingDeletion?.(token.authUserId)) ===
+          true
+        ) {
+          response
+            .status(409)
+            .json(
+              createApiError(
+                'LEARNER_DATA_DELETION_PENDING',
+                'Learner data is temporarily hidden while deletion finishes.',
+                { retryable: true },
+              ),
+            )
+          return
+        }
+        response.locals.connectorToken = token
+        next()
+      },
+      (error: unknown) => {
+        next(error)
+      },
+    )
+  }
+
+  const connectorToken = (response: express.Response) => {
+    const token: unknown = response.locals.connectorToken
+    if (
+      typeof token !== 'object' ||
+      token === null ||
+      !('authUserId' in token) ||
+      typeof token.authUserId !== 'string' ||
+      !('label' in token) ||
+      typeof token.label !== 'string'
+    ) {
+      throw new Error('Connector authentication did not run.')
+    }
+    return { authUserId: token.authUserId, label: token.label }
+  }
+
+  app.get(
+    '/api/connector/session',
+    requireConnector,
+    async (_request, response) => {
+      const token = connectorToken(response)
+      response.json(
+        ConnectorSessionResponseSchema.parse({
+          data: {
+            tokenLabel: token.label,
+            accounts: await connectorService.linkedAccounts(token.authUserId),
+          },
+        }),
+      )
+    },
+  )
+
+  app.post(
+    '/api/connector/claim',
+    requireConnector,
+    async (request, response) => {
+      const body = ConnectorClaimRequestSchema.safeParse(request.body)
+      if (!body.success) {
+        response
+          .status(400)
+          .json(
+            createApiError('INVALID_CONNECTOR_CLAIM', 'The claim is invalid.'),
+          )
+        return
+      }
+      const authUserId = connectorToken(response).authUserId
+      try {
+        const { account, newlyLinked } = await connectorService.claim(
+          authUserId,
+          body.data,
+        )
+        let syncQueued = true
+        if (newlyLinked) {
+          await providerSyncService.requestInitialSync(
+            authUserId,
+            body.data.provider,
+          )
+        } else {
+          if (account.publicStatsConsentAt === null) {
+            await providerAccountRepository.grantPublicStatsConsent(
+              authUserId,
+              body.data.provider,
+              account.externalHandle,
+              new Date(),
+            )
+          }
+          const sync = await providerSyncService.requestManualSync(
+            authUserId,
+            body.data.provider,
+          )
+          syncQueued = sync.data.accepted
+        }
+        response.json(
+          ConnectorClaimResponseSchema.parse({
+            data: {
+              provider: body.data.provider,
+              handle: account.externalHandle,
+              verified: account.verificationStatus === 'verified',
+              syncQueued,
+            },
+          }),
+        )
+      } catch (error) {
+        if (
+          error instanceof ConnectorAccountMismatchError ||
+          error instanceof ConnectorAccountUnavailableError
+        ) {
+          response.status(409).json(createApiError(error.code, error.message))
+          return
+        }
+        if (error instanceof ProviderAccountHandleClaimedError) {
+          response
+            .status(409)
+            .json(
+              createApiError(
+                'PROVIDER_HANDLE_ALREADY_LINKED',
+                'That account is already linked to another AlgoMemtor learner.',
+              ),
+            )
+          return
+        }
+        throw error
+      }
+    },
+  )
+
+  app.post('/api/connector/report', requireConnector, (request, response) => {
+    const body = ConnectorReportRequestSchema.safeParse(request.body)
+    if (!body.success) {
+      response
+        .status(400)
+        .json(
+          createApiError('INVALID_CONNECTOR_REPORT', 'The report is invalid.'),
+        )
+      return
+    }
+    const log = body.data.status === 'synced' ? logger.info : logger.warn
+    log.call(logger, 'connector_sync_reported', {
+      provider: body.data.provider,
+      status: body.data.status,
+      detail: body.data.message.replace(/[^\w .,:;()/'-]/g, '').slice(0, 300),
+    })
+    response.status(204).end()
+  })
+
+  app.post(
+    '/api/connector/ingest',
+    requireConnector,
+    async (request, response) => {
+      const body = ConnectorIngestRequestSchema.safeParse(request.body)
+      if (!body.success) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'INVALID_CONNECTOR_UPLOAD',
+              'The connector upload is invalid.',
+              { details: body.error.issues.slice(0, 20) },
+            ),
+          )
+        return
+      }
+      try {
+        const authUserId = connectorToken(response).authUserId
+        const result = await connectorService.ingest(authUserId, body.data)
+        await refreshLearnerActivity(authUserId)
+        response.json(ConnectorIngestResponseSchema.parse({ data: result }))
+      } catch (error) {
+        if (
+          error instanceof ConnectorAccountMismatchError ||
+          error instanceof ConnectorAccountUnavailableError
+        ) {
+          response.status(409).json(createApiError(error.code, error.message))
+          return
+        }
+        if (error instanceof ProviderAccountHandleClaimedError) {
+          response
+            .status(409)
+            .json(
+              createApiError(
+                'PROVIDER_HANDLE_ALREADY_LINKED',
+                'That account is already linked to another AlgoMemtor learner.',
+              ),
+            )
+          return
+        }
+        throw error
+      }
+    },
+  )
+
   app.delete(
     '/api/provider-accounts/:provider',
     requireAuthenticated,
@@ -1488,7 +2291,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
     '/api/provider-accounts/:provider/sync',
     requireAuthenticated,
     async (request, response) => {
-      const providerResult = LinkableProviderSchema.safeParse(
+      const providerResult = ServerFetchedProviderSchema.safeParse(
         request.params.provider,
       )
       if (!providerResult.success) {
@@ -1633,6 +2436,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
           externalId,
         )
       }
+      await refreshLearnerActivity(authUserId)
       response.status(204).send()
     },
   )
@@ -1641,7 +2445,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
     '/api/provider-accounts/:provider/profile/refresh',
     requireAuthenticated,
     async (request, response) => {
-      const providerResult = LinkableProviderSchema.safeParse(
+      const providerResult = ServerFetchedProviderSchema.safeParse(
         request.params.provider,
       )
       if (!providerResult.success) {
@@ -1689,7 +2493,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
     '/api/provider-accounts/:provider/public-stats/refresh',
     requireAuthenticated,
     async (request, response) => {
-      const providerResult = LinkableProviderSchema.safeParse(
+      const providerResult = ServerFetchedProviderSchema.safeParse(
         request.params.provider,
       )
       const consentResult = RefreshProviderPublicStatsRequestSchema.safeParse(
@@ -1797,7 +2601,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
     '/api/provider-accounts/:provider/activity-consent',
     requireAuthenticated,
     async (request, response) => {
-      const providerResult = LinkableProviderSchema.safeParse(
+      const providerResult = ServerFetchedProviderSchema.safeParse(
         request.params.provider,
       )
       const consentResult = SetProviderActivityConsentRequestSchema.safeParse(
@@ -1865,7 +2669,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
     '/api/provider-accounts/:provider/activity-sync',
     requireAuthenticated,
     async (request, response) => {
-      const providerResult = LinkableProviderSchema.safeParse(
+      const providerResult = ServerFetchedProviderSchema.safeParse(
         request.params.provider,
       )
       if (!providerResult.success || providerResult.data !== 'codeforces') {
@@ -3538,7 +4342,9 @@ export const createApp = (options: CreateAppOptions = {}) => {
       leetcode:
         profileProviders.find((item) => item.provider === 'leetcode')
           ?.solvedCount ?? 0,
-      cses: 0,
+      cses:
+        profileProviders.find((item) => item.provider === 'cses')
+          ?.solvedCount ?? 0,
     }
     const solvedByDifficulty = { easy: 0, medium: 0, hard: 0 }
     const solvedOverTime: Record<string, number> = {}
@@ -3677,6 +4483,30 @@ export const createApp = (options: CreateAppOptions = {}) => {
         languageCounts[language] = (languageCounts[language] ?? 0) + count
       }
     }
+    // Platforms without profile language totals (LeetCode and CSES via the
+    // browser connector) count the language of each accepted problem.
+    const snapshotLanguageProviders = new Set(
+      profileSnapshots
+        .filter((snapshot) => Object.keys(snapshot.languageCounts).length > 0)
+        .map((snapshot) => snapshot.provider),
+    )
+    const acceptedLanguage = new Map<string, string>()
+    for (const submission of submissions) {
+      if (
+        !submission.isAccepted ||
+        submission.language === undefined ||
+        snapshotLanguageProviders.has(submission.provider)
+      ) {
+        continue
+      }
+      acceptedLanguage.set(
+        `${submission.provider}:${submission.externalId}`,
+        submission.language,
+      )
+    }
+    for (const language of acceptedLanguage.values()) {
+      languageCounts[language] = (languageCounts[language] ?? 0) + 1
+    }
     const acceptedSubmissions = submissions.filter(
       (item) => item.isAccepted,
     ).length
@@ -3720,10 +4550,18 @@ export const createApp = (options: CreateAppOptions = {}) => {
       timezone: learnerProfile?.timezone ?? 'UTC',
       now: new Date(),
       profiles: profileSnapshots,
+      otherAccounts: profileProviders.map((item) => ({
+        provider: item.provider,
+        handle: item.handle,
+        ...(item.solvedCount === undefined
+          ? {}
+          : { solvedCount: item.solvedCount }),
+      })),
       submissions,
       solved: uniqueSolvedReferences
         .filter(
-          (reference) => provider === undefined || reference.provider === provider,
+          (reference) =>
+            provider === undefined || reference.provider === provider,
         )
         .map((reference) => {
           const solvedAt = solvedAtByKey.get(
@@ -3960,9 +4798,14 @@ export const createApp = (options: CreateAppOptions = {}) => {
         externalId === undefined ||
         !recommendationExternalIdSchema.safeParse(externalId).success
       ) {
-        response.status(400).json(
-          createApiError('INVALID_RECOMMENDATION_ITEM', 'The problem identity is invalid.'),
-        )
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'INVALID_RECOMMENDATION_ITEM',
+              'The problem identity is invalid.',
+            ),
+          )
         return
       }
       try {
@@ -3976,9 +4819,11 @@ export const createApp = (options: CreateAppOptions = {}) => {
       } catch (error) {
         if (respondWithProviderError(error, response)) return
         if (error instanceof RecommendationNotFoundError) {
-          response.status(404).json(
-            createApiError('RECOMMENDATION_ITEM_NOT_FOUND', error.message),
-          )
+          response
+            .status(404)
+            .json(
+              createApiError('RECOMMENDATION_ITEM_NOT_FOUND', error.message),
+            )
           return
         }
         throw error
@@ -4109,6 +4954,15 @@ export const createApp = (options: CreateAppOptions = {}) => {
         requestId: response.locals.requestId as string,
         httpStatus: invalidJson ? 400 : 500,
         errorCode: invalidJson ? 'INVALID_JSON' : 'INTERNAL_SERVER_ERROR',
+        // The error class and a database error code (e.g. P2002) are safe
+        // to log; the message and stack are dropped by the logger.
+        errorName: error instanceof Error ? error.name : typeof error,
+        dbCode:
+          error instanceof Error &&
+          'code' in error &&
+          typeof error.code === 'string'
+            ? error.code
+            : undefined,
         errorMessage: error instanceof Error ? error.message : String(error),
         errorStack: error instanceof Error ? error.stack : undefined,
       })

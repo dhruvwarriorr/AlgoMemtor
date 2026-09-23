@@ -464,7 +464,7 @@ export class ProgressService {
   }
 
   async analytics(authUserId: string, days = 30) {
-    const [actions, timers, timezone, submissions, solvedProblems] =
+    const [actions, timers, timezone, submissions, solvedProblems, accounts] =
       await Promise.all([
         this.options.actionRepository.listByAuthUserId(authUserId),
         this.options.progressRepository.listTimerSessions(authUserId),
@@ -472,6 +472,9 @@ export class ProgressService {
         this.options.providerDataRepository?.listSubmissions(authUserId) ?? [],
         this.options.providerDataRepository?.listSolvedProblems(authUserId) ??
           [],
+        this.options.providerAccountRepository?.findAllByAuthUserId(
+          authUserId,
+        ) ?? [],
       ])
     let providerResult: ProblemProviderSearchResult = {
       problems: [],
@@ -567,6 +570,7 @@ export class ProgressService {
       newlySolved: window.newlySolved,
       attemptedProblemIds: window.attemptedProblemIds,
       submissions,
+      linkedProviders: accounts.map((account) => account.provider),
       problems: problemByIdentity,
       localDate: (date) => dateKey(date, timezone),
       localHour: (date) => localHour(date, timezone),

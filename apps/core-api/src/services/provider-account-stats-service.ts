@@ -23,6 +23,7 @@ const expectedSourceByProvider: Record<
 > = {
   codeforces: 'codeforces_api',
   codechef: 'codechef_public_profile_html',
+  cses: 'browser_connector',
   leetcode: 'leetcode_website_graphql',
 }
 

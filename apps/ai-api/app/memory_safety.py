@@ -136,6 +136,8 @@ def valid_automatic_memory(
         "recommendation_feedback",
         "profile_preference",
         "bookmark",
+        # Measured submission history synced from the learner's platforms.
+        "provider_activity",
     }:
         return False
     return (

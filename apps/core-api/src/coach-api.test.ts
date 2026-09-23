@@ -816,6 +816,15 @@ describe('coach API', () => {
     expect(response.status).toBe(200)
     expect(JSON.stringify(captured)).not.toContain('canonicalUrl')
     expect(JSON.stringify(captured)).not.toContain('https://codeforces.com')
+    // The model context stays compact: no chart-only or duplicated data, and
+    // roadmap suggestions are referenced by ID instead of full records.
+    const context = captured?.context as Record<string, unknown> | undefined
+    expect(context).not.toHaveProperty('analytics')
+    expect(context).not.toHaveProperty('activityTrends')
+    const topics = (context?.roadmap as { topics: object[] } | undefined)
+      ?.topics
+    expect(topics?.every((topic) => !('suggestions' in topic))).toBe(true)
+    expect(topics?.every((topic) => 'suggestionIds' in topic)).toBe(true)
   })
 
   it('honors a learner topic exclusion in roadmap, rich content, and AI output', async () => {

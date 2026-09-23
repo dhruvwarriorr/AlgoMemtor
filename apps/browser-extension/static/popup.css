@@ -1,0 +1,155 @@
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #16181d;
+  --muted: #5d6470;
+  --border: #d9dde3;
+  --accent: #d9480f;
+  --accent-fg: #ffffff;
+  --ok: #2b8a3e;
+  --warn: #b35c00;
+  --error: #c92a2a;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15171b;
+    --fg: #eceef2;
+    --muted: #9aa1ad;
+    --border: #2c3038;
+    --accent: #ff7a3d;
+    --accent-fg: #15171b;
+    --ok: #69db7c;
+    --warn: #ffb45e;
+    --error: #ff8787;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  width: 360px;
+  margin: 0;
+  padding: 16px;
+  background: var(--bg);
+  color: var(--fg);
+  font:
+    13px/1.45 system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+}
+h1 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+h2 {
+  margin: 16px 0 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.muted {
+  margin: 0;
+  color: var(--muted);
+}
+label {
+  display: block;
+  margin: 8px 0 4px;
+  font-weight: 600;
+}
+input[type='url'],
+input[type='password'],
+select {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+button {
+  padding: 7px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+button.secondary {
+  background: transparent;
+  color: var(--fg);
+  border-color: var(--border);
+}
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.providers {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.providers li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.providers label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+.status {
+  margin: 4px 0 0 24px;
+  color: var(--muted);
+}
+.status.synced {
+  color: var(--ok);
+}
+.status.rate_limited,
+.status.signed_out {
+  color: var(--warn);
+}
+.status.error,
+.status.unpaired {
+  color: var(--error);
+}
+#message {
+  min-height: 18px;
+  margin: 12px 0 0;
+}
+label.inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 400;
+}
+.warn {
+  margin: 0;
+  color: var(--warn);
+}
+details {
+  margin-top: 16px;
+  color: var(--muted);
+}
+summary {
+  cursor: pointer;
+}
+section[hidden] {
+  display: none;
+}

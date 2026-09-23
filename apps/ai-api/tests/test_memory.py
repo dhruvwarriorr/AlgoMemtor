@@ -1098,3 +1098,41 @@ def test_process_model_rejects_extra_fields_and_requires_idempotency_key() -> No
         MemoryProcessRequest.model_validate(
             {key: value for key, value in base.items() if key != "idempotencyKey"}
         )
+
+
+@pytest.mark.asyncio
+async def test_synced_provider_activity_becomes_memory_evidence() -> None:
+    output = ReflectionGenerationOutput(
+        summary="Synced history shows frequent wrong answers in dynamic programming.",
+        keySignals=["60% of failures are wrong answers, mostly in dp."],
+        memories=[
+            GeneratedMemory(
+                category="mistake_pattern",
+                statement="Wrong answers dominate failed submissions, mostly in dp.",
+                structuredValue={"topic": "dp"},
+                confidence=0.85,
+            ),
+        ],
+    )
+    model = FakeModel(output)
+    repository = FakeMemoryRepository()
+    service = service_for(repository, model=model, embedder=FakeEmbedder())
+
+    response = await service.process(
+        process_request(
+            evidenceType="provider_activity",
+            note=(
+                "Synced coding-platform activity (measured, not self-reported). "
+                "Most common failure: wrong answer (60% of failures, often in dp)."
+            ),
+            perceivedDifficulty=None,
+            topic=None,
+            problemProvider="cses",
+            problemExternalId="1068",
+        )
+    )
+
+    assert response.fallback is False
+    assert response.memoryIds
+    assert model.payloads
+    assert "provider_activity" in json.dumps(model.payloads[0])

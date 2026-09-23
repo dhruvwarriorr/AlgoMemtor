@@ -129,4 +129,21 @@ describe('buildAnalyticsInsights', () => {
     ])
     expect(insights.firstActivityAt).toBe('2025-12-01T10:00:00.000Z')
   })
+  it('lists linked accounts without a profile, such as CSES', () => {
+    const insights = buildAnalyticsInsights({
+      timezone: 'UTC',
+      now: new Date('2026-09-23T12:00:00.000Z'),
+      profiles: [],
+      otherAccounts: [{ provider: 'cses', handle: '356257', solvedCount: 83 }],
+      submissions: [],
+      solved: [],
+      ratingChanges: [],
+      participations: [],
+      metadata: new Map(),
+      normalizeTopic: (topic) => topic,
+    })
+    expect(insights.accounts).toEqual([
+      { provider: 'cses', handle: '356257', solvedCount: 83, contests: 0 },
+    ])
+  })
 })

@@ -23,6 +23,7 @@ import { ProviderLogo } from '@/components/brand/ProviderLogo'
 import { useUserIdentity } from '@/features/auth/user-identity'
 import PageContainer from '@/components/layout/PageContainer'
 import PageHeader from '@/components/layout/PageHeader'
+import { SyncPlatformsButton } from '@/features/connector/SyncPlatformsButton'
 import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { useCoachRoadmap, useSetCoachTopicStatus } from '@/features/coach/hooks'
@@ -285,7 +286,12 @@ function DashboardPage() {
   return (
     <PageContainer className="gap-6 xl:min-h-(--app-panel-height) xl:flex-none xl:py-7">
       <PageHeader
-        action={<AskCoachBar />}
+        action={
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <SyncPlatformsButton compact />
+            <AskCoachBar />
+          </div>
+        }
         className="sm:items-center"
         description={description}
         title={title}

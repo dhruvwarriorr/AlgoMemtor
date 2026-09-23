@@ -17,6 +17,10 @@ export function providerProfileUrl(provider: LinkableProvider, handle: string) {
     return `https://www.codechef.com/users/${encodedHandle}`
   }
 
+  if (provider === 'cses') {
+    return `https://cses.fi/user/${encodedHandle}`
+  }
+
   return `https://leetcode.com/u/${encodedHandle}/`
 }
 
@@ -71,6 +75,20 @@ export function serializeProviderAccount(
     profileUrl: providerProfileUrl(record.provider, record.externalHandle),
     consentScope: record.consentScope,
     verification: record.verificationStatus,
+    ...(record.verifiedAt === null
+      ? {}
+      : { verifiedAt: record.verifiedAt.toISOString() }),
+    ...(record.connectorSyncedAt === null
+      ? {}
+      : { connectorSyncedAt: record.connectorSyncedAt.toISOString() }),
+    ...(record.verificationChallenge === null
+      ? {}
+      : {
+          verificationChallenge: {
+            code: record.verificationChallenge.code,
+            expiresAt: record.verificationChallenge.expiresAt.toISOString(),
+          },
+        }),
     activityAccess: record.activityAccess,
     verifiedActivity: {
       enabled: record.verifiedActivity.enabled,

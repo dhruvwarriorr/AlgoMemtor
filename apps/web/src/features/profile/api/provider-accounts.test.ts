@@ -11,11 +11,13 @@ vi.mock('@/features/auth/authenticated-fetch', () => ({
 import { ApiClientError } from '@/features/discovery/api/client'
 
 import {
+  checkProviderVerification,
   disconnectProviderAccount,
   fetchProviderAccounts,
   linkProviderAccount,
   refreshProviderPublicStats,
   setProviderActivityConsent,
+  startProviderVerification,
   syncProviderActivity,
 } from './provider-accounts'
 
@@ -175,5 +177,56 @@ describe('provider account API', () => {
       expect(error).toBeInstanceOf(ApiClientError)
       expect(error).toMatchObject({ code: 'INVALID_RESPONSE' })
     }
+  })
+
+  it('starts and checks handle ownership verification', async () => {
+    const challenged = {
+      ...account,
+      verificationChallenge: {
+        code: 'AM-ABCD2345',
+        expiresAt: '2026-08-27T12:30:00.000Z',
+      },
+    }
+    const verified = {
+      ...account,
+      verification: 'verified' as const,
+      verifiedAt: '2026-08-27T12:05:00.000Z',
+    }
+    authenticatedFetchMock
+      .mockResolvedValueOnce(Response.json({ data: challenged }))
+      .mockResolvedValueOnce(Response.json({ data: verified }))
+
+    await expect(startProviderVerification('codeforces')).resolves.toEqual({
+      data: challenged,
+    })
+    await expect(checkProviderVerification('codeforces')).resolves.toEqual({
+      data: verified,
+    })
+    expect(authenticatedFetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/api/provider-accounts/codeforces/verification',
+      '/api/provider-accounts/codeforces/verification/check',
+    ])
+  })
+
+  it('surfaces the server message when the code is not on the profile', async () => {
+    authenticatedFetchMock.mockResolvedValue(
+      Response.json(
+        {
+          error: {
+            code: 'PROVIDER_VERIFICATION_CODE_NOT_FOUND',
+            message: 'The code is not on your public profile yet.',
+            retryable: true,
+          },
+        },
+        { status: 422 },
+      ),
+    )
+
+    await expect(checkProviderVerification('codeforces')).rejects.toMatchObject(
+      {
+        code: 'PROVIDER_VERIFICATION_CODE_NOT_FOUND',
+        message: 'The code is not on your public profile yet.',
+      },
+    )
   })
 })

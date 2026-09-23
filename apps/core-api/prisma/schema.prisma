@@ -14,6 +14,9 @@ model CoreUser {
   createdAt              DateTime                    @default(now()) @map("created_at") @db.Timestamptz(3)
   learnerProfile         LearnerProfile?
   providerAccounts       ProviderAccount[]
+  connectorTokens        ConnectorToken[]
+  activityDigest         LearnerActivityDigest?
+  activityChanges        LearnerActivityChange[]
   bookmarks              Bookmark[]
   recommendationBatches  RecommendationBatch[]
   problemActions         ProblemAction[]
@@ -46,6 +49,51 @@ model CoreUser {
 
 // A learner-uploaded profile picture, resized client-side to a small WebP,
 // JPEG or PNG. Deleted with the user.
+// The learner's synced-activity summary, recomputed after each sync. The
+// coach reads it first; `source_hash` skips recomputation when nothing changed.
+model LearnerActivityDigest {
+  userId     String   @id @map("user_id") @db.Uuid
+  version    String   @db.VarChar(32)
+  digest     Json
+  sourceHash String   @map("source_hash") @db.Char(64)
+  computedAt DateTime @map("computed_at") @db.Timestamptz(3)
+  user       CoreUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("learner_activity_digests")
+  @@schema("core")
+}
+
+// A short note describing what changed between two digests. It is the memory
+// evidence sent to the AI service, which turns it into learner memories.
+model LearnerActivityChange {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  note      String   @db.VarChar(1000)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  user      CoreUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("learner_activity_changes")
+  @@schema("core")
+}
+
+// Pairing tokens for the learner's browser connector. Only a SHA-256 hash of
+// the secret is stored; the secret itself is shown once, at creation.
+model ConnectorToken {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  label      String    @db.VarChar(64)
+  tokenHash  String    @unique @map("token_hash") @db.Char(64)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(3)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(3)
+  user       CoreUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@map("connector_tokens")
+  @@schema("core")
+}
+
 model UserAvatar {
   userId    String   @id @map("user_id") @db.Uuid
   mimeType  String   @map("mime_type")
@@ -78,6 +126,10 @@ model ProviderAccount {
   externalHandle               String                      @map("external_handle") @db.VarChar(64)
   consentScope                 String                      @map("consent_scope") @db.VarChar(64)
   verificationStatus           String                      @default("not_verified") @map("verification_status") @db.VarChar(32)
+  verificationCode             String?                     @map("verification_code") @db.VarChar(16)
+  verificationExpiresAt        DateTime?                   @map("verification_expires_at") @db.Timestamptz(3)
+  verifiedAt                   DateTime?                   @map("verified_at") @db.Timestamptz(3)
+  connectorSyncedAt            DateTime?                   @map("connector_synced_at") @db.Timestamptz(3)
   activityAccess               String                      @default("not_enabled") @map("activity_access") @db.VarChar(32)
   publicStatsConsentAt         DateTime?                   @map("public_stats_consent_at") @db.Timestamptz(3)
   solvedCount                  Int?                        @map("solved_count")
@@ -289,6 +341,9 @@ model ProviderSubmission {
   language           String?         @db.VarChar(128)
   occurredAt         DateTime?       @map("occurred_at") @db.Timestamptz(3)
   isAccepted         Boolean         @map("is_accepted")
+  runtimeMs          Int?            @map("runtime_ms")
+  memoryKb           Int?            @map("memory_kb")
+  passedTestCount    Int?            @map("passed_test_count")
   completeness       String          @db.VarChar(16)
   extractionStrategy String          @map("extraction_strategy") @db.VarChar(32)
   sourceUrl          String          @map("source_url") @db.VarChar(2048)
@@ -316,6 +371,7 @@ model ProviderSolvedObservation {
   canonicalUrl       String          @map("canonical_url") @db.VarChar(2048)
   providerTags       String[]        @default([]) @map("provider_tags")
   normalizedTopics   String[]        @default([]) @map("normalized_topics")
+  tagsCheckedAt      DateTime?       @map("tags_checked_at") @db.Timestamptz(3)
   occurredAt         DateTime?       @map("occurred_at") @db.Timestamptz(3)
   firstObservedAt    DateTime        @default(now()) @map("first_observed_at") @db.Timestamptz(3)
   lastObservedAt     DateTime        @default(now()) @map("last_observed_at") @db.Timestamptz(3)

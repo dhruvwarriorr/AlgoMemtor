@@ -78,6 +78,13 @@ export function buildAnalyticsInsights(input: {
   timezone: string
   now: Date
   profiles: readonly ProviderProfile[]
+  // Linked accounts with no profile snapshot (CSES has no public profile);
+  // listed from their synced solved count.
+  otherAccounts?: readonly {
+    provider: ProviderKey
+    handle: string
+    solvedCount?: number
+  }[]
   submissions: readonly ProviderSubmission[]
   solved: readonly SolvedReference[]
   ratingChanges: readonly ProviderRatingChange[]
@@ -95,7 +102,27 @@ export function buildAnalyticsInsights(input: {
     )
 
   // Accounts: rating, peak and contest record per linked platform.
-  const accounts = input.profiles.slice(0, 8).map((profile) => {
+  const syncedSolved = new Map(
+    (input.otherAccounts ?? []).flatMap((account) =>
+      account.solvedCount === undefined
+        ? []
+        : [[account.provider, account.solvedCount] as const],
+    ),
+  )
+  const profiled = new Set(input.profiles.map((profile) => profile.provider))
+  const otherAccounts = (input.otherAccounts ?? [])
+    .filter((account) => !profiled.has(account.provider))
+    .map((account) => ({
+      provider: account.provider,
+      handle: account.handle.slice(0, 120),
+      ...(account.solvedCount === undefined
+        ? {}
+        : { solvedCount: account.solvedCount }),
+      contests: input.participations.filter(
+        (item) => item.provider === account.provider,
+      ).length,
+    }))
+  const profileAccounts = input.profiles.slice(0, 8).map((profile) => {
     const ratings = input.ratingChanges.filter(
       (change) => change.provider === profile.provider,
     )
@@ -120,13 +147,18 @@ export function buildAnalyticsInsights(input: {
       ...(profile.globalRank === undefined
         ? {}
         : { globalRank: profile.globalRank }),
-      ...(profile.solvedCount === undefined
+      ...((profile.solvedCount ?? syncedSolved.get(profile.provider)) ===
+      undefined
         ? {}
-        : { solvedCount: profile.solvedCount }),
+        : {
+            solvedCount:
+              profile.solvedCount ?? syncedSolved.get(profile.provider),
+          }),
       contests: Math.max(contests.length, ratings.length),
       ...(ranks.length === 0 ? {} : { bestContestRank: Math.min(...ranks) }),
     }
   })
+  const accounts = [...profileAccounts, ...otherAccounts].slice(0, 8)
 
   // Verdicts, punch card, and monthly submissions.
   const verdicts = {

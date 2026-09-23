@@ -8,11 +8,13 @@ import type {
 import { useAuth } from '@/features/auth/useAuth'
 
 import {
+  checkProviderVerification,
   disconnectProviderAccount,
   fetchProviderAccounts,
   linkProviderAccount,
   refreshProviderPublicStats,
   setProviderActivityConsent,
+  startProviderVerification,
   syncProviderActivity,
 } from '../api/provider-accounts'
 
@@ -160,4 +162,32 @@ export function useDisconnectProviderAccount() {
       )
     },
   })
+}
+
+// Start or check ownership verification; both return the updated account.
+export function useProviderVerification() {
+  const queryClient = useQueryClient()
+  const { user } = useAuth()
+  const onSuccess = (response: {
+    data: ProviderAccountsResponse['data'][number]
+  }) => {
+    if (!user) return
+    queryClient.setQueryData<ProviderAccountsResponse>(
+      providerAccountsQueryKey(user.id),
+      (current) => replaceProviderAccount(current, response.data),
+    )
+  }
+
+  return {
+    start: useMutation({
+      mutationFn: (provider: LinkableProvider) =>
+        startProviderVerification(provider),
+      onSuccess,
+    }),
+    check: useMutation({
+      mutationFn: (provider: LinkableProvider) =>
+        checkProviderVerification(provider),
+      onSuccess,
+    }),
+  }
 }

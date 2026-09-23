@@ -27,6 +27,7 @@ import {
   type ProviderVerifiedActivityFetchResult,
   type ProviderActivityDataFetchResult,
   type ProviderActivityDataFetcher,
+  type ProviderActivityFetchOptions,
   type ProviderPublicStatsFetcher,
 } from './provider-public-stats.js'
 
@@ -34,13 +35,24 @@ const CodeforcesSubmissionSchema = z.object({
   id: z.number().int().positive().optional(),
   creationTimeSeconds: z.number().int().positive().optional(),
   verdict: z.string().max(64).optional(),
+  programmingLanguage: z.string().trim().max(128).optional(),
+  passedTestCount: z.number().int().nonnegative().optional(),
+  timeConsumedMillis: z.number().int().nonnegative().optional(),
+  memoryConsumedBytes: z.number().int().nonnegative().optional(),
   problem: z.object({
     contestId: z.number().int().positive().optional(),
     problemsetName: z.string().trim().min(1).max(128).optional(),
     index: z.string().trim().min(1).max(32),
+    name: z.string().trim().max(512).optional(),
     tags: z.array(z.string().trim().max(128)).max(64).optional(),
   }),
 })
+
+// Submissions requested when a stored cursor exists. If the newest window does
+// not reach back to the cursor, the full history is fetched instead.
+const INCREMENTAL_WINDOW = 200
+
+const SubmissionIdSchema = z.object({ id: z.number().int().positive() })
 
 const CodeforcesUserStatusEnvelopeSchema = z.union([
   z.object({ status: z.literal('OK'), result: z.array(z.unknown()) }),
@@ -122,11 +134,15 @@ export class CodeforcesPublicStatsFetcher
     }
   }
 
-  private async fetchStatus(handle: string, signal?: AbortSignal) {
+  private async fetchStatus(
+    handle: string,
+    signal?: AbortSignal,
+    count = this.maxSubmissions,
+  ) {
     let lastError: ProviderPublicStatsError | undefined
     for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
       try {
-        return await this.fetchStatusOnce(handle, signal)
+        return await this.fetchStatusOnce(handle, signal, count)
       } catch (error) {
         if (!(error instanceof ProviderPublicStatsError)) throw error
         lastError = error
@@ -179,11 +195,15 @@ export class CodeforcesPublicStatsFetcher
     throw lastError ?? invalidProviderResponse(this.provider)
   }
 
-  private async fetchStatusOnce(handle: string, signal?: AbortSignal) {
+  private async fetchStatusOnce(
+    handle: string,
+    signal: AbortSignal | undefined,
+    count: number,
+  ) {
     const endpoint = new URL(this.endpoint)
     endpoint.searchParams.set('handle', handle)
     endpoint.searchParams.set('from', '1')
-    endpoint.searchParams.set('count', String(this.maxSubmissions))
+    endpoint.searchParams.set('count', String(count))
 
     await waitForProviderRequest(this.provider, this.requestGate, signal)
 
@@ -337,13 +357,40 @@ export class CodeforcesPublicStatsFetcher
   async fetchActivityData(
     handle: string,
     signal?: AbortSignal,
+    options?: ProviderActivityFetchOptions,
   ): Promise<ProviderActivityDataFetchResult> {
-    const { result } = await this.fetchStatus(handle, signal)
+    const cursor =
+      options?.cursor !== undefined && /^\d+$/.test(options.cursor)
+        ? Number(options.cursor)
+        : undefined
+    let result: unknown[] | undefined
+    let requested = this.maxSubmissions
+    if (cursor !== undefined && INCREMENTAL_WINDOW < this.maxSubmissions) {
+      const window = (
+        await this.fetchStatus(handle, signal, INCREMENTAL_WINDOW)
+      ).result
+      const reachesCursor =
+        window.length < INCREMENTAL_WINDOW ||
+        window.some((raw) => {
+          const row = SubmissionIdSchema.safeParse(raw)
+          return row.success && row.data.id <= cursor
+        })
+      if (reachesCursor) {
+        result = window
+        requested = INCREMENTAL_WINDOW
+      }
+    }
+    result ??= (await this.fetchStatus(handle, signal)).result
+    // A window that reached the cursor overlaps history already stored after
+    // an earlier complete fetch, so together they cover everything.
+    const windowCoversHistory = requested < this.maxSubmissions
     const fetchedAt = this.now()
     const sourceUrl = new URL(this.endpoint)
     sourceUrl.searchParams.set('handle', handle)
     sourceUrl.searchParams.set('from', '1')
-    sourceUrl.searchParams.set('count', String(this.maxSubmissions))
+    sourceUrl.searchParams.set('count', String(requested))
+    const historyComplete = windowCoversHistory || result.length < requested
+    let highestId = cursor
     const submissions: ProviderSubmission[] = []
     const solvedByProblem = new Map<
       string,
@@ -388,31 +435,46 @@ export class CodeforcesPublicStatsFetcher
           ? `${externalId}:${parsed.data.creationTimeSeconds ?? 'unknown'}:${parsed.data.verdict ?? 'unknown'}`
           : String(parsed.data.id)
       const verdict = parsed.data.verdict?.trim() || 'UNKNOWN'
+      if (
+        parsed.data.id !== undefined &&
+        (highestId === undefined || parsed.data.id > highestId)
+      ) {
+        highestId = parsed.data.id
+      }
+      const title = parsed.data.problem.name
+      const language = parsed.data.programmingLanguage
+      const memoryBytes = parsed.data.memoryConsumedBytes
       const submission = ProviderSubmissionSchema.parse({
         provider: this.provider,
         externalId,
         eventId,
+        ...(title ? { problemTitle: title } : {}),
         canonicalUrl,
         verdict,
+        ...(language ? { language } : {}),
         ...(validOccurredAt === null
           ? {}
           : { occurredAt: validOccurredAt.toISOString() }),
         isAccepted: verdict === 'OK',
-        completeness:
-          result.length < this.maxSubmissions && invalid === 0
-            ? 'complete'
-            : 'partial',
+        ...(parsed.data.timeConsumedMillis === undefined
+          ? {}
+          : { runtimeMs: parsed.data.timeConsumedMillis }),
+        ...(memoryBytes === undefined
+          ? {}
+          : { memoryKb: Math.round(memoryBytes / 1024) }),
+        ...(parsed.data.passedTestCount === undefined
+          ? {}
+          : { passedTestCount: parsed.data.passedTestCount }),
+        completeness: historyComplete && invalid === 0 ? 'complete' : 'partial',
         provenance: {
           provider: this.provider,
           providerId: eventId,
           canonicalUrl,
           sourceUrl: sourceUrl.toString(),
           extractionStrategy: 'official_json',
-          schemaVersion: 'codeforces-user-status-v2',
+          schemaVersion: 'codeforces-user-status-v3',
           completeness:
-            result.length < this.maxSubmissions && invalid === 0
-              ? 'complete'
-              : 'partial',
+            historyComplete && invalid === 0 ? 'complete' : 'partial',
           fetchedAt: fetchedAt.toISOString(),
           stale: false,
         },
@@ -470,9 +532,7 @@ export class CodeforcesPublicStatsFetcher
             : { providerTags: value.providerTags }),
           ...(value.topics.length === 0 ? {} : { topics: value.topics }),
           completeness:
-            result.length < this.maxSubmissions && invalid === 0
-              ? 'complete'
-              : 'partial',
+            historyComplete && invalid === 0 ? 'complete' : 'partial',
           provenance: {
             provider: this.provider,
             providerId: externalId,
@@ -481,9 +541,7 @@ export class CodeforcesPublicStatsFetcher
             extractionStrategy: 'official_json',
             schemaVersion: 'codeforces-solved-observation-v1',
             completeness:
-              result.length < this.maxSubmissions && invalid === 0
-                ? 'complete'
-                : 'partial',
+              historyComplete && invalid === 0 ? 'complete' : 'partial',
             fetchedAt: fetchedAt.toISOString(),
             stale: false,
           },
@@ -517,8 +575,11 @@ export class CodeforcesPublicStatsFetcher
       solvedProblems,
       ratingChanges,
       contestParticipations,
-      complete: result.length < this.maxSubmissions && invalid === 0,
+      complete: historyComplete && invalid === 0,
       fetchedAt,
+      ...(historyComplete && invalid === 0 && highestId !== undefined
+        ? { cursor: String(highestId) }
+        : {}),
     }
   }
 

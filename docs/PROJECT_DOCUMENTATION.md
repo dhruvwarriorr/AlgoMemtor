@@ -210,8 +210,9 @@ into this document or a handoff note.
 - an embedded Monaco editor or code runner;
 - Judge0 or internal judging;
 - learner source-code, drafts, tests, or submission storage;
-- collecting provider passwords, bearer cookies, CSRF tokens, or private API
-  responses;
+- collecting provider passwords, bearer cookies, or CSRF tokens, or sending raw
+  private API responses to the server (the browser connector in section 9.5
+  sends only normalized records of the learner's own history);
 - CAPTCHA solving, proxy rotation to evade controls, fingerprint spoofing, or
   browser automation intended to defeat a block;
 - fabricating solved problems from an aggregate total;
@@ -561,7 +562,8 @@ The contracts include:
 - `ProviderProfile` — handle, solved count, acceptance rate, rank, rating,
   languages, aggregate topics, badges, calendar, completeness, provenance.
 - `ProviderSubmission` — provider problem, event ID, verdict, language,
-  timestamp, acceptance, completeness, provenance.
+  timestamp, acceptance, optional runtime/memory/passed-test judge details,
+  completeness, provenance.
 - `ProviderSolvedProblem` — concrete provider problem, occurrence timestamps,
   source event, provider tags, normalized topics, completeness, provenance.
 - `ProviderRatingChange` — contest, old/new rating, delta, percentile,
@@ -625,6 +627,12 @@ provider errors.
   exhausted.
 - Only concrete accepted submissions with valid provider IDs and timestamps
   become provider activity evidence.
+- Each stored submission keeps the problem title, programming language,
+  runtime, memory, and passed-test count that `user.status` reports.
+- After one complete fetch, the sync state stores the highest submission ID as
+  a cursor. Later syncs request only the newest 200 submissions; if that window
+  does not reach the cursor, the full history is fetched again. The linked-
+  account solved-count refresh still reads the full list.
 
 ### 9.2 CodeChef
 
@@ -638,15 +646,38 @@ provider errors.
 #### Recent activity and tags
 
 The activity adapter parses recent rows, including problem code, contest code,
-title, result, language, timestamp, and public solution ID when present. For up
-to the configured enrichment limit of accepted rows, it requests the public
-contest problem record and preserves both `computed_tags` and `user_tags`.
-Those values become `providerTags`; slugified values become normalized `topics`.
+title, result, language, timestamp, and public solution ID when present. It
+reads the whole public `/recent/user` feed (about a dozen rows per page, pages
+`0..max_page`, newest first) in parts. CodeChef rate-limits after roughly ten
+quick requests, so each run reads at most 8 pages:
 
-The first public recent page is bounded and is returned as partial. A failed
-problem-detail request preserves the accepted observation without inventing a
-tag. A challenge page, login wall, or persistent block opens the capability
-circuit breaker and preserves the last valid cache.
+1. Page 0, then newer pages until reaching the newest stored solution ID.
+2. The backfill, oldest first: from `max_page` toward newer pages, until it
+   meets the pages step 1 read.
+
+The cursor records progress:
+
+- `<highestSolutionId>` — the whole history is stored; later syncs only catch
+  up.
+- `v2:<highestSolutionId>:<maxPage>:<next>` — the backfill is unfinished and
+  resumes at page `next`, counted when the feed's `max_page` was `maxPage`. New
+  submissions push old pages down by about the change in `max_page`; the next
+  run reads one page further back, so shifts cause re-reads, never gaps. Any
+  other cursor value restarts the backfill.
+
+An unfinished run returns `continueAfterMs` (2 minutes, or 5 after a failed or
+rate-limited page), and the worker queues a `backfill_continuation` job (see
+section 11) instead of waiting for the next hourly sync.
+
+Tags come from a separate lookup of `/api/contests/PRACTICE/problems/<code>`
+for stored solves that have none (see tag enrichment in section 11). Both
+`computed_tags` and `user_tags` are read, but values containing digits or
+underscores (contest codes such as `start255`, setter handles such as
+`name_adm`) and difficulty labels such as `cakewalk` are dropped. Unknown tags
+stay unknown rather than becoming topics. A failed lookup preserves the
+accepted observation without inventing a tag. A challenge page, login wall, or
+persistent block opens the capability circuit breaker and preserves the last
+valid cache.
 
 ### 9.3 LeetCode
 
@@ -669,30 +700,194 @@ provider's tag names and counts remain unchanged.
 
 #### Recent activity and tags
 
-The activity adapter requests a bounded recent submission list, identifies
+The activity adapter requests the public recent submission list, identifies
 accepted rows, then batches public `question(titleSlug)` lookups. Each accepted
 observation stores all returned `topicTags` names in `providerTags` and slugs in
-`topics`. The recent list is explicitly partial; it is not an all-time solved
-list.
+`topics`. LeetCode returns at most the 20 newest public submissions regardless
+of the requested limit, so every result is partial; it is not an all-time
+solved list. Activity rows are keyed by title slug, which is always present,
+so a failed detail lookup cannot create a second row for the same problem under
+its numeric ID. GraphQL errors for one question (removed or restricted) no
+longer discard the other questions in the batch, and solves still lacking tags
+are retried by tag enrichment.
 
 Authenticated operations such as `userProgressQuestionList`, session-cookie
 handling, CSRF handling, private data, and premium content are not implemented.
 
 ### 9.4 CSES
 
-CSES is currently a catalog-only provider.
+The CSES catalog is public. A learner's CSES progress is visible only when
+signed in, so CSES accounts link through the browser connector (section 9.5);
+routes that make the server read a provider profile reject CSES.
 
 - Source: public `https://cses.fi/problemset/` HTML.
 - Parser: task sections and `/problemset/task/<id>` links.
 - Output: task ID, title, canonical URL, section-derived tags/topics,
   completeness, freshness, and provenance.
 - Cache: the normal catalog cache and provider request gate.
-- Unsupported currently: linked accounts, solved status, submissions, ratings,
-  contests, and authenticated task history.
+- Through the connector: solved status per task, submissions per task
+  (time and accepted or not), and the account's solved total.
+- Unsupported: ratings, contests, and per-submission language or runtime
+  (these need one request per submission).
 
-CSES has no documented public developer API in this implementation. A future
-user-controlled local connector or validated import can add account history
-without sending raw credentials to AlgoMemtor.
+### 9.5 Browser connector (LeetCode and CSES)
+
+LeetCode shows only the 20 newest submissions publicly, and CSES shows
+progress only to its signed-in owner. The browser connector
+(`apps/browser-extension`, Manifest V3) reads the learner's own history in the
+learner's own signed-in browser and uploads normalized records. One source
+builds for Chrome-family browsers (service worker) and Firefox-family browsers
+such as Zen (event page, Gecko ID `connector@algomemtor.app`, Firefox 128+);
+`npm run build:extension` writes both, zips them, and copies the zips to
+`apps/web/public/extension/` for download. Deployment and store publishing are
+in `apps/browser-extension/README.md`.
+
+Pairing and authentication:
+
+- Installing the extension opens Settings → Linked platforms
+  (`/settings#platforms`) on the AlgoMemtor site. Its Browser connector card
+  detects the extension through a content script that
+  runs only on the site's origin (messages must come from the same window and
+  origin), creates a connector token labelled `<browser> extension`
+  (revoking an older one with the same label), and hands the secret to the
+  extension, which verifies it with `/api/connector/session` and starts the
+  first sync. No token is copied by hand. The card lists connected browsers,
+  each of which can be disconnected (its token revoked).
+- A token is `amc_` + 43 base64url characters, at most five active. The
+  server stores only its SHA-256 hash (`core.connector_tokens`) and records
+  last use. Revoking it stops uploads.
+- The extension sends it as `Authorization: Bearer amc_…` to
+  `GET /api/connector/session` and `POST /api/connector/ingest`. These two
+  routes skip Supabase authentication and accept only connector tokens; a
+  connector token cannot call any other route. Pending learner-data deletion
+  blocks uploads.
+
+What the extension reads (GET requests only, with the browser's own session):
+
+| Provider | Request | Used for |
+| -------- | ------- | -------- |
+| LeetCode | `/api/problems/all/` | Signed-in username and every problem marked solved |
+| LeetCode | `/api/submissions/?offset&limit=20&lastkey` | Full submission history: verdict, language, time, runtime, memory, passed tests |
+| CSES | `/problemset/` | Signed-in user ID, each task's status and section |
+| CSES | `/problemset/task/<id>/` | The learner's submissions for that task (time, accepted or not) |
+
+Provider requests run inside a tab on the provider's site
+(`scripting.executeScript` in the page's main world), reusing an open tab or
+opening a background tab that is closed after the run. There they are
+same-site requests, so the browser attaches the session cookie that it
+withholds from a background request; LeetCode's signed-in GraphQL POSTs also
+carry its CSRF token from the page. LeetCode always reads this way; CSES tries
+a direct request first. If `/api/problems/all/` does not name the user, the
+username comes from GraphQL `userStatus`, and if the REST submission list is
+unavailable, pages come from GraphQL `questionSubmissionList`. Errors name the
+failing request and HTTP status in the popup.
+
+The extension drops everything else it receives, including source code, and
+never reads cookies itself. CSES times are read as Helsinki local time.
+
+Codeforces and CodeChef data is public and synced by the server, so for them
+the extension only reads the signed-in handle (Codeforces: the header profile
+link beside the logout link; CodeChef: `Drupal.settings.username`) and calls
+`POST /api/connector/claim`. That links the handle if it is not linked (and
+queues the initial sync), marks it verified, and otherwise requests a manual
+server sync subject to the usual 15-minute cooldown. These accounts are not
+marked as synced by the connector.
+
+Requests first go directly from the extension with the browser's cookies; if
+that reads as signed out, they run from a dedicated background tab the
+extension opens on an ordinary page of the provider (LeetCode and CSES
+problemset pages, which change views without reloading; the Codeforces and
+CodeChef home pages), retry once on a fresh tab, and close it afterwards.
+Browsers do not run extension scripts in plain-text documents, so the tab is
+never a text file. The
+extension's own tabs are the only ones it touches. Each platform's outcome,
+with the real error text when one fails, is shown in the popup and sent to
+`POST /api/connector/report`, which logs it as `connector_sync_reported`.
+
+Verification through the connector rests on the learner's own extension
+reporting the signed-in handle; a modified client could claim a handle it
+does not control, but the first learner to link a handle keeps it and the
+profile-code check (section 14) remains the stronger proof.
+
+The website's **Sync platforms** button (Settings → Linked platforms and the
+Dashboard header) asks the extension, through the pairing content script, to
+run the same sync as the popup's Sync now, and shows the result when it
+finishes. Manual syncs from either place are limited to one per 15 minutes
+(the extension stores the time; the website reads it to show when the next
+sync is available). Without a connected extension, the button requests the
+server's manual sync for the linked public platforms, which has the same
+15-minute cooldown.
+
+The extension waits until a tab it opened has loaded a page on the
+provider's own origin before scripting it; a new tab briefly reports a loaded
+`about:blank`, which the extension has no permission to script.
+
+The extension syncs when paired, whenever it starts (turned on, browser
+start) unless it ran in the last 10 minutes, and on its interval. After each
+run it shows a browser notification summarizing each platform (can be turned
+off in the popup).
+
+Fetching in parts: each run reads at most 25 LeetCode pages or 20 CSES tasks,
+1.5 seconds apart. LeetCode first catches up from the newest submission until
+it reaches the newest uploaded one, then continues the full-history backfill
+from the saved offset; new submissions shift offsets, which only re-reads rows.
+CSES reads tasks in ID order, earliest first, and re-reads a task only when its
+status changes. Resume points move only after the server accepts the upload,
+so a failed upload or rate limit causes re-reads, never gaps. Unfinished
+history schedules the next run in 2 minutes (5 after a rate limit); otherwise
+the extension runs on the learner's interval (hourly by default).
+
+Server handling (`ConnectorService`):
+
+- `ConnectorIngestRequestSchema` is strict: an unknown field such as `code` is
+  rejected, identifiers must be LeetCode slugs or CSES task IDs, and the server
+  builds every canonical URL itself.
+- The signed-in handle must match the linked handle; if none is linked, the
+  upload links it. Either way the account is marked `verified`, because the
+  upload came from the owner's signed-in session.
+- Rows are stored with `extraction_strategy = 'authenticated_connector'`, so
+  connector evidence stays distinguishable from public and manual evidence.
+  Submission event IDs are `lc:<id>` or `cses:<id>`.
+- LeetCode public-feed rows (`recent:` event IDs, no real submission ID) that
+  match a connector row by problem and time are deleted, and later public
+  syncs skip them.
+- CSES solved tasks take tags from the cached catalog or, failing that, from
+  their problemset section (`cses`, section slug). CSES solved totals are set
+  from the connector (`stats_source = 'browser_connector'`).
+
+#### Decision: browser connector for signed-in history (2026-09-23)
+
+- **Context:** the learner asked for complete history, including data only the
+  signed-in owner can see. LeetCode and CSES offer no OAuth or API keys.
+- **Chosen:** a learner-installed extension that reads the learner's own data
+  in their browser and uploads normalized records with a revocable token.
+- **Alternatives rejected:** storing session cookies on the server (full
+  account access at rest, expiring sessions, likely terms violations, easily
+  blocked); server-side password login (worse on every count, plus CAPTCHA and
+  single sign-on).
+- **Consequences:** syncs run only while the browser runs; provider page or
+  API changes can break parsing (the extension reports errors per provider);
+  AlgoMemtor never holds provider credentials; connector tokens are new
+  secrets that must stay revocable and hashed.
+- **Review triggers:** a provider offering an official API or OAuth, a
+  provider objecting to this access, or any need to store data beyond
+  normalized submission metadata.
+
+#### Decision: LeetCode access despite robots.txt (2026-09-23)
+
+- **Context:** LeetCode's robots.txt disallows `/api/`, `/graphql`, and
+  `/submissions` for every user agent. The server's LeetCode sync (catalog,
+  public profile, recent submissions) and the browser connector's LeetCode
+  reads use those paths, and LeetCode's terms restrict automated access.
+- **Chosen by the project owner:** keep hourly server syncs and hourly
+  connector syncs as they are.
+- **Alternatives considered:** reading LeetCode only when the learner clicks
+  Sync (no scheduled or server polling), or removing LeetCode sync entirely.
+- **Consequences:** the most complete LeetCode data, with the risk that
+  LeetCode blocks the access or objects to it; the risk grows with the number
+  of deployed users.
+- **Review triggers:** before a public deployment, on any LeetCode objection
+  or block, or when LeetCode offers an official API.
 
 ### Provider source failure policy
 
@@ -737,8 +932,9 @@ claiming that aggregate totals identify particular solved problems.
   its public question record are captured.
 - For a fetched Codeforces accepted submission, public `problem.tags` are
   captured when returned by `user.status`.
-- For a fetched CodeChef accepted problem, both public tag arrays are captured
-  when the problem endpoint returns them.
+- For a stored CodeChef accepted problem, both public tag arrays are captured
+  when the problem endpoint returns them, minus contest codes, setter handles,
+  and difficulty labels.
 - No provider currently exposes a complete public lifetime mapping from every
   solved question to its tags without an approved authenticated connector or
   import.
@@ -767,6 +963,17 @@ Default policy:
 - global catalogs refreshed every six hours;
 - upcoming contests refreshed every 15 minutes;
 - detailed problem content refreshed lazily with a 30-day TTL;
+- a job lease of 10 minutes, so a first sync that pages through a whole public
+  history is not reclaimed mid-run;
+- a history backfill cut short by a rate limit or per-run budget continues in a
+  `backfill_continuation` job after the fetcher's `continueAfterMs`. That job
+  skips the stats and profile requests and passes `backfillOnly` so the
+  fetcher spends its requests on history. A continuation that made no
+  progress queues no further continuation; the hourly sync takes over;
+- after each successful job the learner activity digest is recomputed
+  (section 15);
+- up to 40 stored solves without tags are looked up per sync (tag enrichment);
+  a problem the provider publishes without tags is rechecked after 7 days;
 - one active request stream per unofficial source;
 - at least one second between CodeChef/LeetCode/CSES requests;
 - Codeforces gate preserved at 2.1 seconds;
@@ -785,6 +992,13 @@ queued -> leased -> running -> succeeded
 Each job has an idempotency key, attempts, run-after timestamp, optional cursor,
 lease owner, lease expiration, and last error code. Source health is tracked at
 capability level so a CodeChef activity failure does not disable its catalog.
+
+The activity cursor is stored on the account's sync state and carried through
+every state write. An adapter returns a new cursor only in a form that cannot
+skip unstored submissions; when a fetch fails, the previous cursor is kept, so
+the next fetch still stops at the same stored submission. A stored solve is
+merged, not replaced: the earliest accepted time and its submission ID are
+kept, and tags from an earlier lookup survive a later fetch that has none.
 
 ### Manual sync flow
 
@@ -830,8 +1044,18 @@ The browser uses the central authenticated fetch client.
 | `POST`   | `/api/provider-accounts/:provider/public-stats/refresh` | Refresh aggregate public totals           |
 | `PUT`    | `/api/provider-accounts/:provider/activity-consent`     | Enable/revoke activity consent            |
 | `POST`   | `/api/provider-accounts/:provider/activity-sync`        | Queue activity synchronization            |
+| `POST`   | `/api/provider-accounts/:provider/verification`         | Issue a 30-minute ownership code          |
+| `POST`   | `/api/provider-accounts/:provider/verification/check`   | Verify the code on the public profile     |
+| `GET`    | `/api/me/activity-digest`                               | Stored synced-activity summary            |
+| `GET`    | `/api/connector/tokens`                                 | List active browser-connector tokens      |
+| `POST`   | `/api/connector/tokens`                                 | Create a token (secret returned once)     |
+| `DELETE` | `/api/connector/tokens/:id`                             | Revoke a token                            |
+| `GET`    | `/api/connector/session`                                | Connector token: pairing check            |
+| `POST`   | `/api/connector/ingest`                                 | Connector token: upload normalized history |
 
-CSES is rejected by account routes because it is not a linkable provider.
+CSES links only through the browser connector; routes that make the server
+read a provider profile (link, sync, refresh, activity, verification) reject
+it with `400`.
 
 ### Catalog and activity
 
@@ -931,9 +1155,11 @@ Prisma owns the `core` schema. Important tables include:
 - `core.external_contests` — contest catalog and provenance.
 - `core.provider_profile_snapshots` — profile totals, languages, aggregate
   topics, badges, calendar, and fetched timestamps.
-- `core.provider_submissions` — normalized bounded submission rows.
+- `core.provider_submissions` — normalized submission rows, with optional
+  `runtime_ms`, `memory_kb`, and `passed_test_count` judge details.
 - `core.provider_solved_observations` — concrete solved problems, including
-  `provider_tags` and `normalized_topics` arrays.
+  `provider_tags` and `normalized_topics` arrays, and `tags_checked_at` for
+  the last tag lookup.
 - `core.provider_rating_changes` — rating progression.
 - `core.contest_participations` — contest evidence.
 - `core.provider_verified_activity` — minimal Codeforces evidence rows where
@@ -943,6 +1169,11 @@ Prisma owns the `core` schema. Important tables include:
 
 - `core.provider_sync_states` — capability-level cursor/freshness/error state.
 - `core.provider_sync_jobs` — queued work, leases, retries, and idempotency.
+- `core.connector_tokens` — browser-connector pairing tokens (SHA-256 hash,
+  label, last use, revocation).
+- `core.learner_activity_digests` and `core.learner_activity_changes` — the
+  stored activity digest per learner and the change notes sent as memory
+  evidence.
 - `core.normalized_topics` — seeded shared topic vocabulary.
 - `core.bookmarks` — learner-owned saved problems.
 - `core.problem_actions` — impressions, dismissals, feedback, status; legacy
@@ -976,6 +1207,8 @@ The current working tree includes migrations for:
 - `core.coach_messages.rich_content` — validated `coach-rich-v2` response
   snapshots for charts, metrics, timelines, comparison tables, source
   citations, and trusted problem lists.
+- submission judge details (`runtime_ms`, `memory_kb`, `passed_test_count`) and
+  `provider_solved_observations.tags_checked_at`.
 
 Alembic owns the AI-only tables:
 
@@ -1014,9 +1247,24 @@ wrong-audience, wrong-role, missing-subject, and invalid-signature tokens return
 
 ### Provider linking
 
-Linking a provider records a public handle and explicit consent. It does not
-verify account ownership. One active identity per learner/provider is used while
-disconnected identities and history can remain archived.
+Linking a provider records a public handle and explicit consent. One active
+identity per learner/provider is used while disconnected identities and history
+can remain archived.
+
+Ownership verification is separate and optional. The learner requests a
+one-time code (`AM-` plus eight unambiguous characters, valid for 30 minutes),
+places it in a public profile field, and asks the server to check:
+
+- Codeforces — first name, last name, or organization from `user.info`;
+- CodeChef — anywhere on the public profile page (for example, the name);
+- LeetCode — `profile.realName` or `profile.aboutMe` from public GraphQL.
+
+The server reads only that public profile; no password, cookie, or token is
+requested. On a match the account becomes `verified` with `verified_at`, and
+the code is cleared; the learner can then remove it from their profile. The
+code and expiry are part of the database update filter, so a replaced or
+expired code cannot verify. Relinking the same handle keeps verification, and
+a different handle starts unverified.
 
 Disconnecting stops synchronization. History remains until explicit provider
 history deletion or full learner deletion.
@@ -1295,6 +1543,69 @@ AI failure is non-fatal. Deterministic ranking remains available for:
 - model errors; and
 - audit persistence failures.
 
+### Learner activity digest and memory from synced data
+
+`LearnerActivityService` computes `learner-activity-v1` (shared contract
+`LearnerActivityDigestSchema`) from every stored submission, solve, contest,
+and rating, plus catalog titles, ratings, and topics. It holds:
+
+- totals: solved, attempted but unsolved, submissions, acceptance rate,
+  first-try rate, and submissions per solve;
+- per linked account: counts, rating, whether the stored history is complete,
+  and whether it came through the browser connector;
+- the verdict mix and failure patterns (each failure verdict's share and the
+  topics where it happens);
+- topic strengths (most solved) and weaknesses (topics whose failure rate is
+  above the learner's own average, weighted by volume);
+- solved-rating medians and maximum per provider, activity windows and streak,
+  recent contests, languages, the ten latest solves, and ten open attempts.
+
+It is recomputed after every successful sync job, connector upload, and
+provider-history deletion, and stored in `core.learner_activity_digests`. A
+SHA-256 hash of its content, excluding time windows, skips saves when nothing
+changed. `GET /api/me/activity-digest` returns it.
+
+When the content changes, `describeActivityChange` writes a short factual note
+(for example, new solves with titles and topics, a burst of failures, newly
+weak or strong topics, contest results) to `core.learner_activity_changes`
+and queues a `memory_generation` outbox job with evidence type
+`provider_activity`. The first digest produces a baseline note. The memory
+worker sends the note only under the current AI consent policy, as for other
+evidence. FastAPI accepts `provider_activity` as automatic-memory evidence and
+the memory prompt turns it into at most three durable memories (topic
+strengths or weaknesses, mistake patterns, difficulty calibration, contest
+performance, pace, milestones). Notes never include handles, IDs, or URLs.
+
+### Coach context, live refresh, and answer quality
+
+- **Compact context.** The coach's model context carries the stored activity
+  digest (`activityDigest`) instead of the per-request profile digest, and
+  omits chart-only or duplicated data: analytics, activity-trend points, and
+  per-provider topic counts. Recent rows are capped (8 submissions, 8 solves,
+  5 timers, 10 dismissals). Roadmap topics carry their assessment, reason,
+  evidence counts, and suggestion IDs; the suggested problems' titles are in
+  `availablePresentationProblems`. Server-built charts still use the full
+  snapshot.
+- **Memory first, then live data.** The prompt orders learner facts as
+  `activityDigest`, then memories, then query tools. The
+  `refresh_platform_data` tool (enabled when `CORE_API_URL` and
+  `INTERNAL_SERVICE_TOKEN` are set) calls `POST /internal/coach/live-refresh`.
+  `CoachLiveRefreshService` fetches the newest data from Codeforces, CodeChef,
+  or LeetCode within 25 seconds, stores it, refreshes the digest, and returns
+  the ten latest submissions with updated totals. Each learner and provider
+  refreshes at most once per 3 minutes, and at most once per provider per
+  turn; a refresh never moves the sync cursor. CSES reports its last connector
+  upload instead.
+- **Answers that start with the answer.** The prompt forbids greetings,
+  praise, restating the question, and opening with a recap of ratings or
+  totals, and asks for learner numbers only where they change the advice.
+  `coachingGuidance.avoidOpenings` lists the first sentence of the coach's last
+  five replies, which it must not reuse or paraphrase.
+- **Fewer "unavailable" turns.** The tool-using agent has
+  `COACH_AGENT_TIMEOUT_SECONDS` (75 by default). When it runs out, one
+  structured call with low reasoning effort answers from the same context
+  instead of failing the turn.
+
 ### AI audit and memory
 
 AI audit rows contain model/version, fallback state, latency, optional token and
@@ -1444,6 +1755,10 @@ AI_RANKING_VERSION=ai-gemini-rag-v2
 COACH_VERSION=coach-gemini-rag-v2
 CONSENT_POLICY_VERSION=personalized-coaching-rag-v2
 INTERNAL_SERVICE_TOKEN=
+# Coach live platform refresh (blank URL disables it) and agent time budget
+CORE_API_URL=http://localhost:3001
+COACH_LIVE_REFRESH_TIMEOUT_SECONDS=30
+COACH_AGENT_TIMEOUT_SECONDS=75
 EMBEDDING_MODEL=gemini-embedding-001
 EMBEDDING_DIMENSIONS=768
 EMBEDDING_TIMEOUT_SECONDS=4
@@ -1682,16 +1997,23 @@ destructive reset against a shared database.
 
 ### Current limitations
 
-1. CodeChef and LeetCode concrete solved activity is bounded by public recent
-   windows; it is not a complete lifetime history.
+1. LeetCode concrete solved activity is bounded by the 20-submission public
+   feed; it is not a complete lifetime history. CodeChef reads the whole public
+   feed, but a first backfill can take several hourly syncs because of rate
+   limits.
 2. LeetCode profile aggregate tags have counts but not a historical
    question-to-tag mapping.
-3. CodeChef tag enrichment is limited to the accepted rows observed in the
-   recent page and successful detail requests.
-4. CSES supports catalog metadata only.
+3. CodeChef tags depend on the public problem record; problems published
+   without algorithm tags stay untagged.
+4. CSES and full LeetCode history require the browser connector, which syncs
+   only while the learner's browser runs, and its parsers must track provider
+   page changes. The CSES submission parser and Helsinki time handling have
+   not been checked against a live signed-in account.
 5. Provider terms, robots policies, response schemas, and anti-bot behavior can
    change; capabilities need ongoing review and kill switches.
-6. Public handles are not ownership verification.
+6. A linked handle is unverified until its owner completes the ownership-code
+   check; a verified owner cannot yet reclaim a handle that another learner
+   linked first.
 7. Live provider, production Supabase, deployment, and 1,000-identity load
    evidence are environment-dependent and must not be claimed from local tests.
 8. Full problem content remains capability- and permission-dependent; premium

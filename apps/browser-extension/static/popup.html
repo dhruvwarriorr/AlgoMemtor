@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>AlgoMemtor Connector</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <h1>AlgoMemtor Connector</h1>
+      <p class="muted">
+        Syncs your LeetCode, CSES, Codeforces, and CodeChef accounts. Passwords,
+        cookies, and your code never leave this browser.
+      </p>
+    </header>
+
+    <section id="access" hidden>
+      <p class="warn">
+        The browser has not allowed this extension to read your coding platforms
+        and AlgoMemtor yet.
+      </p>
+      <div class="row">
+        <button type="button" id="grant">Grant access</button>
+      </div>
+    </section>
+
+    <section aria-labelledby="connection-title">
+      <h2 id="connection-title">Connection</h2>
+      <p id="paired-as" class="muted" role="status"></p>
+      <div class="row">
+        <button type="button" id="connect">Connect with AlgoMemtor</button>
+        <button type="button" id="unpair" class="secondary">Disconnect</button>
+      </div>
+    </section>
+
+    <section aria-labelledby="providers-title">
+      <h2 id="providers-title">Platforms</h2>
+      <ul id="providers" class="providers"></ul>
+      <label for="interval">Sync every</label>
+      <select id="interval">
+        <option value="30">30 minutes</option>
+        <option value="60">hour</option>
+        <option value="120">2 hours</option>
+        <option value="360">6 hours</option>
+        <option value="1440">day</option>
+      </select>
+      <label class="inline" for="notify">
+        <input id="notify" type="checkbox" /> Notify me when a sync finishes
+      </label>
+      <div class="row">
+        <button type="button" id="sync-now">Sync now</button>
+      </div>
+    </section>
+
+    <p id="message" role="status" aria-live="polite"></p>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

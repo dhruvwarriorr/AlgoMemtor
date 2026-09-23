@@ -25,6 +25,7 @@ import {
 } from '@algomemtor/shared-contracts'
 import type {
   ExternalProblemSummary,
+  LearnerActivityDigest,
   LearnerProblemStatus,
   ProviderKey,
   ProviderSubmission,
@@ -776,12 +777,35 @@ const redactCoachContextText = (content: string, maxLength: number) =>
     .slice(0, maxLength)
     .trim()
 
+// The model context stays small: the stored activity digest carries the
+// learner's measured history, detailed rows are fetched through agent tools,
+// and heavy fields used only for server-built charts are left out. A large
+// context was the main cause of slow, generic, and timed-out coach turns.
 const coachContextForAi = ({
   workspace: _workspace,
   practiceProblems: _practiceProblems,
+  analytics: _analytics,
+  profileDigest,
+  providerProfiles,
+  recentSubmissions,
+  recentSolved,
+  recentTimers,
+  dismissedProblems,
+  activityTrends,
   ...context
 }: CoachContextSnapshot) => ({
   ...context,
+  // Fall back to the per-request digest until a stored one exists.
+  ...(context.activityDigest === undefined && profileDigest !== undefined
+    ? { profileDigest }
+    : {}),
+  providerProfiles: providerProfiles.map(
+    ({ topicCounts: _topicCounts, ...profile }) => profile,
+  ),
+  recentSubmissions: recentSubmissions.slice(0, 8),
+  recentSolved: recentSolved.slice(0, 8),
+  recentTimers: recentTimers.slice(0, 5),
+  dismissedProblems: dismissedProblems.slice(0, 10),
   availablePresentationDatasets: [
     {
       id: 'learner-summary',
@@ -800,7 +824,7 @@ const coachContextForAi = ({
           },
         ]
       : []),
-    ...(context.activityTrends.length > 0
+    ...(activityTrends.length > 0
       ? [
           {
             id: 'practice-trend-30d',
@@ -864,20 +888,39 @@ const coachContextForAi = ({
       .map((memory) => memory.statement),
   ].slice(0, 12),
   // Canonical links are owned by Express and rendered only after the learner
-  // receives a validated response.  The model needs a trusted problem
-  // identity and metadata, not a URL it could repeat or transform.
+  // receives a validated response. The model gets each topic's assessment and
+  // the IDs of its trusted suggestions; `availablePresentationProblems` holds
+  // their titles.
   roadmap: {
-    ...context.roadmap,
+    dataCompleteness: context.roadmap.dataCompleteness,
+    staleProviders: context.roadmap.staleProviders,
+    generatedAt: context.roadmap.generatedAt,
     topics: context.roadmap.topics.map((topic) => ({
-      ...topic,
-      suggestions: topic.suggestions.map((suggestion) => {
-        const {
-          canonicalUrl: _canonicalUrl,
-          sourceUrl: _sourceUrl,
-          ...problem
-        } = suggestion.problem
-        return { ...suggestion, problem }
-      }),
+      topic: topic.topic,
+      name: topic.name,
+      lane: topic.lane,
+      ...(topic.manualStatus === undefined
+        ? {}
+        : { manualStatus: topic.manualStatus }),
+      assessment: topic.assessment,
+      score: Math.round(topic.score * 100) / 100,
+      confidence: Math.round(topic.confidence * 100) / 100,
+      reason: topic.reason,
+      evidence: {
+        solved: topic.evidence.solvedProblems,
+        attempted: topic.evidence.attemptedProblems,
+        submissions: topic.evidence.totalSubmissions,
+        accepted: topic.evidence.acceptedSubmissions,
+        ...(topic.evidence.lastEvidenceAt === undefined
+          ? {}
+          : { lastEvidenceAt: topic.evidence.lastEvidenceAt }),
+      },
+      ...(topic.prerequisites.length === 0
+        ? {}
+        : { prerequisites: topic.prerequisites }),
+      suggestionIds: topic.suggestions.map((suggestion) =>
+        identity(suggestion.problem.provider, suggestion.problem.externalId),
+      ),
     })),
   },
 })
@@ -1115,6 +1158,8 @@ export type CoachContextSnapshot = {
   // trusted practice problems are queried through agent tools and never
   // spread into the prompt context.
   profileDigest?: CoachProfileDigest
+  // Stored summary of all synced platform activity, refreshed after syncs.
+  activityDigest?: LearnerActivityDigest
   workspace?: CoachWorkspace
   practiceProblems?: Map<string, ExternalProblemSummary>
 }
@@ -1637,6 +1682,8 @@ export type CoachServiceOptions = {
   aiRoadmapNoteClient: AiRoadmapNoteClient
   logger: StructuredLogger
   memoryGenerationEnabled?: boolean
+  // The stored synced-activity summary: the coach's first source of facts.
+  activityDigest?: (authUserId: string) => Promise<LearnerActivityDigest | null>
   now?: () => Date
 }
 
@@ -3192,6 +3239,8 @@ export class CoachService {
     query?: string,
   ): Promise<CoachContextSnapshot> {
     let contextDataFailed = false
+    const activityDigest =
+      (await this.options.activityDigest?.(userId).catch(() => null)) ?? null
     const safeList = <T>(value: Promise<T[]>) =>
       value.catch(() => {
         contextDataFailed = true
@@ -3596,6 +3645,7 @@ export class CoachService {
         contextDataFailed && roadmap.dataCompleteness === 'complete'
           ? 'partial'
           : roadmap.dataCompleteness,
+      ...(activityDigest === null ? {} : { activityDigest }),
       ...(workspaceResult === undefined
         ? {}
         : {

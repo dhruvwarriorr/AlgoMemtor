@@ -27,6 +27,8 @@ import { IdentityEditor } from '@/features/profile/components/IdentityEditor'
 import { LearnerProfileForm } from '@/features/profile/components/LearnerProfileForm'
 import { ProfileBanner } from '@/features/profile/components/ProfileBanner'
 import { ProviderAccountLinks } from '@/features/profile/components/ProviderAccountLinks'
+import { BrowserConnectorCard } from '@/features/profile/components/BrowserConnectorCard'
+import { SyncPlatformsButton } from '@/features/connector/SyncPlatformsButton'
 import {
   useLearnerProfile,
   useSaveLearnerProfile,
@@ -407,8 +409,10 @@ function SettingPage() {
                 description="Link public handles so your coach can read verified solves, ratings and contest history."
                 title="Linked platforms"
               />
-              <div className="pt-8">
+              <div className="flex flex-col gap-6 pt-8">
+                <SyncPlatformsButton />
                 <ProviderAccountLinks idPrefix="settings" />
+                <BrowserConnectorCard idPrefix="settings" />
               </div>
             </>
           ) : null}

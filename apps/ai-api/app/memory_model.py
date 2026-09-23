@@ -24,7 +24,12 @@ conversation_summary, learning_milestone, bloom_level, or
 spaced_repetition_state. For coach_conversation evidence, extract at most two
 durable facts explicitly stated by the learner; prefer user_instruction,
 learning_goal, explanation_preference, coding_style, mistake_pattern, or
-conversation_summary and ignore ordinary question content. Set confidence below
+conversation_summary and ignore ordinary question content. For
+provider_activity evidence (measured statistics synced from the learner's
+coding platforms), extract at most three durable patterns such as
+topic_strength, topic_weakness, mistake_pattern, difficulty_calibration,
+contest_performance, learning_pace, or learning_milestone; state the measured
+numbers, and use high confidence only when the counts are substantial. Set confidence below
 the automatic threshold when the evidence is weak, one-off, ambiguous, or only
 an outbound click. Never claim a solve, identity, contact detail, provider
 verification, or other private fact.
