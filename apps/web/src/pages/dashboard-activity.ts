@@ -10,6 +10,12 @@ export function isAcceptedSubmission(event: ProviderActivityEvent) {
   )
 }
 
+// Recent activity shows solutions only: submissions and solves. Contest
+// participations and rating changes live in the contest log.
+export function isSolutionEvent(event: ProviderActivityEvent) {
+  return event.eventType === 'submission' || event.eventType === 'solved'
+}
+
 export function dashboardActivity(
   events: readonly ProviderActivityEvent[],
   limit = 6,
@@ -25,6 +31,7 @@ export function dashboardActivity(
   )
   const seen = new Set<string>()
   return events
+    .filter(isSolutionEvent)
     .filter((event) => event.occurredAt !== null)
     .filter((event) => {
       if (

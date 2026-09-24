@@ -1,5 +1,6 @@
 import { useState } from 'react'
 
+import { OrbLoader } from '@/components/motion/OrbLoader'
 import { EmptyState } from '@/components/states/EmptyState'
 import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
@@ -163,8 +164,9 @@ function RecommendationsPage() {
     content = (
       <div className="min-w-0 space-y-4">
         <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
-          {feed.items.map((item) => (
+          {feed.items.map((item, index) => (
             <RecommendationCard
+              index={index}
               isDismissPending={
                 dismissMutation.isPending &&
                 dismissMutation.variables === item.id
@@ -236,9 +238,9 @@ function RecommendationsPage() {
           </p>
         </div>
         {dismissalsQuery.isPending ? (
-          <p className="text-sm text-muted-foreground" role="status">
-            Loading dismissed problems…
-          </p>
+          <div className="py-2" role="status">
+            <OrbLoader label="Loading dismissed problems…" />
+          </div>
         ) : dismissalsQuery.isError ? (
           <ErrorState
             message="Dismissed recommendations could not be loaded."

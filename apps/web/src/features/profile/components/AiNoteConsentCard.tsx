@@ -1,5 +1,6 @@
 import { useId, useState } from 'react'
 
+import { OrbLoader } from '@/components/motion/OrbLoader'
 import { Button } from '@/components/ui/button'
 import { useNotification } from '@/app/useNotification'
 
@@ -102,9 +103,9 @@ export function AiNoteConsentCard({
       </div>
 
       {consentQuery.isPending ? (
-        <p className="mt-4 text-sm text-muted-foreground" role="status">
-          Loading your personalized AI coaching choice…
-        </p>
+        <div className="mt-4" role="status">
+          <OrbLoader label="Loading your coaching choice…" />
+        </div>
       ) : consentQuery.isError ? (
         <div
           className="mt-4 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"

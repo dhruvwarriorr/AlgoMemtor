@@ -5,7 +5,7 @@ import {
   Moon,
   Pencil,
   Sun,
-} from '@/components/icons/algo-icons'
+} from '@/components/icons/algo-icons-line'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 
 import type { Theme } from '@/app/theme-context'

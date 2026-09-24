@@ -8,6 +8,7 @@ import type { ProviderKey } from '@algomemtor/shared-contracts'
 import {
   ArrowRight,
   ArrowUpRight,
+  BarChart3,
   CheckCheck,
   CalendarCheck,
   Flame,
@@ -16,13 +17,19 @@ import {
   Sparkles,
   Trophy,
   X,
+  type IconComponent,
 } from '@/components/icons/algo-icons'
 import { motion, useReducedMotion } from 'motion/react'
 import { Link, useNavigate } from 'react-router-dom'
 
+import { OrbLoader } from '@/components/motion/OrbLoader'
 import { ProviderLogo } from '@/components/brand/ProviderLogo'
 import { AnimatedItem } from '@/components/motion/AnimatedItem'
 import { CountUp } from '@/components/motion/CountUp'
+import {
+  GradientCard,
+  type GradientTone,
+} from '@/components/motion/GradientCard'
 import { RadialProgress } from '@/components/motion/RadialProgress'
 import { ThinkingOrbs } from '@/components/motion/ThinkingOrbs'
 import { TiltCard } from '@/components/motion/TiltCard'
@@ -48,7 +55,7 @@ import { cn } from '@/lib/utils'
 import { dashboardActivity, isAcceptedSubmission } from './dashboard-activity'
 
 const tileClass =
-  'flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-5 transition-[box-shadow,border-color] duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] hover:border-[color-mix(in_oklab,var(--primary)_28%,var(--border))] hover:shadow-lift'
+  'card-lift flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-5 hover:border-[color-mix(in_oklab,var(--primary)_28%,var(--border))]'
 
 const tileTitleClass =
   'flex items-center justify-between gap-3 text-sm font-medium text-muted-foreground'
@@ -70,7 +77,7 @@ function greeting(date = new Date()) {
   return 'Good evening'
 }
 
-type KpiTone = 'card' | 'mesh' | 'ink'
+type KpiTone = 'card' | 'mesh' | 'ink' | 'gradient'
 
 // One headline number: label and icon chip on top, a large count below, and
 // an optional visual (sparkline, week dots, ring) beside it. Tiles lean
@@ -84,6 +91,7 @@ function KpiTile({
   icon,
   aside,
   tone = 'card',
+  gradient,
   index,
 }: {
   label: string
@@ -94,32 +102,28 @@ function KpiTile({
   icon: ReactNode
   aside?: ReactNode
   tone?: KpiTone
+  gradient?: { tone: GradientTone; decoration: IconComponent }
   index: number
 }) {
   const display = value ?? String(count ?? 0)
+  const surface = gradient === undefined ? tone : 'gradient'
+  const layout =
+    'animate-rise flex h-full min-h-[9.25rem] min-w-0 flex-col justify-between gap-4 overflow-hidden rounded-xl p-4'
 
-  return (
-    <li className="min-w-0">
-      <TiltCard
-        className={cn(
-          'animate-rise flex h-full min-h-[9.25rem] min-w-0 flex-col justify-between gap-4 overflow-hidden rounded-xl p-4',
-          tone === 'mesh' && 'mesh-card',
-          tone === 'ink' && 'bg-ink text-ink-foreground',
-          tone === 'card' && 'bezel-core ring-1 ring-border',
-        )}
-        max={5}
-        style={stagger(index)}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <p
-            className={cn(
-              'min-w-0 text-sm leading-tight font-medium',
-              tone === 'card' && 'text-muted-foreground',
-              tone !== 'card' && 'opacity-75',
-            )}
-          >
-            {label}
-          </p>
+  const body = (
+    <>
+      <div className="flex items-start justify-between gap-3">
+        <p
+          className={cn(
+            'min-w-0 text-sm leading-tight font-medium',
+            surface === 'card' && 'text-muted-foreground',
+            surface !== 'card' && 'opacity-75',
+          )}
+        >
+          {label}
+        </p>
+        {/* Gradient tiles show their icon large in the background. */}
+        {surface === 'gradient' ? null : (
           <span
             aria-hidden="true"
             className={cn(
@@ -128,41 +132,69 @@ function KpiTile({
                 'bg-white/12 text-white ring-1 ring-white/20 [--icon-node:#4ade80]',
               tone === 'ink' &&
                 'bg-[color-mix(in_oklab,var(--ink-foreground)_12%,transparent)] text-sky [--icon-node:var(--go)]',
-              tone === 'card' &&
+              surface === 'card' &&
                 'bg-accent text-accent-foreground [--icon-node:var(--go)]',
             )}
           >
             {icon}
           </span>
-        </div>
-        <div className="min-w-0">
-          <div className="flex min-w-0 items-end justify-between gap-3">
-            <p
-              className={cn(
-                'min-w-0 truncate font-heading leading-none font-bold tracking-[-0.02em]',
-                count === undefined ? 'text-[1.7rem]' : 'text-[2.4rem]',
-              )}
-              title={display}
-            >
-              {count === undefined ? value : <CountUp value={count} />}
-              {unit ? (
-                <span className="ml-1.5 text-base font-semibold tracking-normal opacity-70">
-                  {unit}
-                </span>
-              ) : null}
-            </p>
-            {aside}
-          </div>
+        )}
+      </div>
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-end justify-between gap-3">
           <p
             className={cn(
-              'mt-1.5 truncate text-sm',
-              tone === 'card' ? 'text-muted-foreground' : 'opacity-70',
+              'min-w-0 truncate font-heading leading-none font-bold tracking-[-0.02em]',
+              count === undefined ? 'text-[1.7rem]' : 'text-[2.4rem]',
             )}
+            title={display}
           >
-            {detail}
+            {count === undefined ? value : <CountUp value={count} />}
+            {unit ? (
+              <span className="ml-1.5 text-base font-semibold tracking-normal opacity-70">
+                {unit}
+              </span>
+            ) : null}
           </p>
+          {aside}
         </div>
-      </TiltCard>
+        <p
+          className={cn(
+            'mt-1.5 truncate text-sm',
+            surface === 'card' ? 'text-muted-foreground' : 'opacity-70',
+          )}
+        >
+          {detail}
+        </p>
+      </div>
+    </>
+  )
+
+  return (
+    <li className="min-w-0">
+      {gradient === undefined ? (
+        <TiltCard
+          className={cn(
+            layout,
+            tone === 'mesh' && 'mesh-card',
+            tone === 'ink' && 'bg-ink text-ink-foreground',
+            tone === 'card' && 'bezel-core ring-1 ring-border',
+          )}
+          max={5}
+          style={stagger(index)}
+        >
+          {body}
+        </TiltCard>
+      ) : (
+        <GradientCard
+          className={layout}
+          icon={gradient.decoration}
+          style={stagger(index)}
+          tone={gradient.tone}
+        >
+          {body}
+        </GradientCard>
+      )}
     </li>
   )
 }
@@ -415,6 +447,7 @@ function DashboardPage() {
                 <Link2 />
               )
             }
+            gradient={{ tone: 'sky', decoration: BarChart3 }}
             index={3}
             label="Top platform"
             value={topPlatform ? providerLabels[topPlatform[0]] : 'None yet'}
@@ -423,6 +456,7 @@ function DashboardPage() {
             detail={
               topTopic ? `${topTopic.solved} in 30 days` : 'No solves yet'
             }
+            gradient={{ tone: 'green', decoration: Shapes }}
             icon={<Shapes />}
             index={4}
             label="Top topic"
@@ -438,6 +472,7 @@ function DashboardPage() {
             }
             count={activeDays}
             detail={`of the last ${analytics.window.days} days`}
+            gradient={{ tone: 'sand', decoration: CalendarCheck }}
             icon={<CalendarCheck />}
             index={5}
             label="Active days"
@@ -445,6 +480,7 @@ function DashboardPage() {
           <KpiTile
             count={recentContests.length}
             detail="Last 30 days"
+            gradient={{ tone: 'sky', decoration: Trophy }}
             icon={<Trophy />}
             index={6}
             label="Contests"
@@ -470,7 +506,7 @@ function DashboardPage() {
 
         <section
           aria-labelledby="coach-focus-heading"
-          className="mesh-card animate-rise relative isolate flex min-h-64 min-w-0 flex-col overflow-hidden rounded-xl p-6 xl:col-span-3 xl:min-h-0 xl:p-5"
+          className="card-lift mesh-card animate-rise relative isolate flex min-h-64 min-w-0 flex-col overflow-hidden rounded-xl p-6 xl:col-span-3 xl:min-h-0 xl:p-5"
           style={stagger(5)}
         >
           <span
@@ -635,9 +671,9 @@ function DashboardPage() {
               Recent activity is temporarily unavailable.
             </p>
           ) : activityQuery.isPending ? (
-            <p className="mt-4 text-sm text-muted-foreground" role="status">
-              Loading recent activity…
-            </p>
+            <div className="mt-4 flex justify-center" role="status">
+              <OrbLoader label="Loading recent activity…" />
+            </div>
           ) : recentEvents.length === 0 ? (
             <p className="mt-4 text-sm text-muted-foreground">
               No dated activity yet. Sync a platform or record progress to start

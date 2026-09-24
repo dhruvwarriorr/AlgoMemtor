@@ -1,5 +1,7 @@
 import { useEffect, useState, type PropsWithChildren } from 'react'
 
+import { OrbLoader } from '@/components/motion/OrbLoader'
+
 const shouldEnableMocks =
   import.meta.env.DEV && import.meta.env.VITE_USE_MOCKS === 'true'
 
@@ -40,9 +42,9 @@ export function DevelopmentMocks({ children }: PropsWithChildren) {
 
   if (!isReady) {
     return (
-      <p className="p-4" role="status">
-        Starting development services…
-      </p>
+      <div className="grid min-h-svh place-items-center p-4" role="status">
+        <OrbLoader label="Starting development services…" />
+      </div>
     )
   }
 

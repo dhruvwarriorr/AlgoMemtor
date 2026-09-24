@@ -5,6 +5,7 @@ import type {
   RecommendationUsefulness,
   ProviderKey,
 } from '@algomemtor/shared-contracts'
+import type { CSSProperties } from 'react'
 
 import { Lightbulb } from '@/components/icons/algo-icons'
 
@@ -19,6 +20,7 @@ import { useRecommendationImpression } from '../hooks/useRecommendationImpressio
 
 type RecommendationCardProps = {
   item: RecommendationItem
+  index?: number
   isFeedbackPending: boolean
   isDismissPending: boolean
   onFeedback: (input: {
@@ -61,13 +63,13 @@ const providerLabels: Record<ProviderKey, string> = {
 
 export function RecommendationCard({
   item,
+  index = 0,
   isDismissPending,
   isFeedbackPending,
   onDismiss,
   onFeedback,
 }: RecommendationCardProps) {
   const { problem } = item
-  const visibleTags = problem.providerTags.slice(0, 4)
   const cardRef = useRecommendationImpression({
     externalId: problem.externalId,
     provider: problem.provider,
@@ -76,8 +78,9 @@ export function RecommendationCard({
 
   return (
     <article
-      className="flex min-w-0 flex-col gap-5 rounded-xl border border-border bg-card p-5 transition-colors duration-300 hover:border-[color-mix(in_oklab,var(--primary)_30%,var(--border))] sm:p-6"
+      className="card-enter card-lift flex min-w-0 flex-col gap-5 rounded-xl border border-border bg-card p-5 hover:border-[color-mix(in_oklab,var(--primary)_30%,var(--border))] sm:p-6"
       ref={cardRef}
+      style={{ '--card-index': Math.min(index, 3) } as CSSProperties}
     >
       <header className="space-y-3">
         <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
@@ -163,22 +166,6 @@ export function RecommendationCard({
             ))}
           </ul>
         </div>
-
-        {visibleTags.length > 0 ? (
-          <div>
-            <p className="mb-2 text-xs text-muted-foreground">Provider tags</p>
-            <ul aria-label="Provider tags" className="flex flex-wrap gap-1.5">
-              {visibleTags.map((tag) => (
-                <li
-                  className="rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground"
-                  key={tag}
-                >
-                  {tag}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
       </div>
 
       <div className="space-y-3 rounded-2xl bg-muted/60 p-4">

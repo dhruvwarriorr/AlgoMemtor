@@ -5,7 +5,7 @@ import type {
   ProviderKey,
 } from '@algomemtor/shared-contracts'
 
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 
 import { useNotification } from '@/app/useNotification'
 import { ProviderLogo } from '@/components/brand/ProviderLogo'
@@ -50,9 +50,10 @@ const difficultyTone: Record<NormalizedDifficulty, string> = {
 
 type ProblemCardProps = {
   problem: ExternalProblemSummary
+  index?: number
 }
 
-export function ProblemCard({ problem }: ProblemCardProps) {
+export function ProblemCard({ problem, index = 0 }: ProblemCardProps) {
   const { notify } = useNotification()
   const dismissProblem = useDismissProblem()
   const [dismissed, setDismissed] = useState(false)
@@ -87,7 +88,10 @@ export function ProblemCard({ problem }: ProblemCardProps) {
   }
 
   return (
-    <article className="group/card flex min-w-0 flex-col gap-5 rounded-xl border border-border bg-card p-5 transition-[border-color,transform] duration-300 hover:border-[color-mix(in_oklab,var(--primary)_30%,var(--border))] sm:p-6">
+    <article
+      className="card-enter card-lift group/card flex min-w-0 flex-col gap-5 rounded-xl border border-border bg-card p-5 hover:border-[color-mix(in_oklab,var(--primary)_30%,var(--border))] sm:p-6"
+      style={{ '--card-index': Math.min(index, 3) } as CSSProperties}
+    >
       <header className="min-w-0 space-y-3">
         <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
           <span className="inline-flex items-center gap-1.5 rounded-md bg-secondary py-1 pr-2.5 pl-1.5 font-medium text-secondary-foreground">

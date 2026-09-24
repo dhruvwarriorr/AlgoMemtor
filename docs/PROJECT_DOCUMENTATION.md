@@ -1733,6 +1733,19 @@ The application keeps the established dark, compact, responsive visual system.
 New provider filters and pages extend existing patterns rather than replacing
 the navigation or interaction model.
 
+- **Icons.** `components/icons/algo-icons.tsx` is the solid AlgoMemtor set used
+  everywhere except the top navigation bar and its account menu, which keep the
+  line set in `algo-icons-line.tsx`. Solid glyphs cut detail out of the fill
+  with a mask and carry an accent "memory node" coloured by `--icon-node`.
+- **Motion primitives** (`components/motion/`): `GradientCard` (selected Dashboard
+  KPI cards and every top card on Progress and Insights), `RadialRings`
+  (Progress platforms), `RadarChart` (dashboard topic mix), `OrbLoader`/`ThinkingOrb` (loading screens), and `AiLoader` (coach
+  working state). All respect `prefers-reduced-motion`.
+- **Notifications** are dark glass cards with a tone glow, a solid badge, and a
+  countdown bar for the four-second auto-dismiss.
+- **Recent activity** on the dashboard and Insights lists submissions and solves
+  only; contests and rating changes appear in the contest log.
+
 ---
 
 ## 17. Configuration

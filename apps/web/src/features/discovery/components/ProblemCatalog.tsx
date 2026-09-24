@@ -21,8 +21,9 @@ export function ProblemCatalog({ isFetching, problems }: ProblemCatalogProps) {
       ) : null}
 
       <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-        {problems.map((problem) => (
+        {problems.map((problem, index) => (
           <ProblemCard
+            index={index}
             key={`${problem.provider}:${problem.externalId}`}
             problem={problem}
           />

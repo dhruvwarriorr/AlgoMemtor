@@ -8,22 +8,43 @@ import {
 } from 'react'
 
 import { X } from '@/components/icons/algo-icons'
+import { AnimatedList } from '@/components/ui/animated-list'
 
+import { NotificationGlyph } from './NotificationGlyph'
 import {
   NotificationContext,
   type NotificationInput,
 } from './notification-context'
 import {
   appendNotification,
+  NOTIFICATION_DURATION_MS,
   removeNotification,
   scheduleNotificationExpiry,
   type Notification,
 } from './notification-utils'
 
-const toneClasses = {
-  info: 'border-border bg-popover text-popover-foreground',
-  success: 'border-go/40 bg-go-soft text-go-foreground',
-  error: 'border-destructive/40 bg-danger-soft text-danger-foreground',
+// Dark glass cards in every theme: a coloured glow behind the badge, a tinted
+// right edge, and a bar that counts down to auto-dismiss.
+const toneStyles = {
+  info: {
+    glow: 'rgb(56 189 248 / 0.5)',
+    edge: 'rgb(56 189 248 / 0.28)',
+    badge: 'bg-[#38bdf8] text-[#03121c] shadow-[0_0_24px_rgb(56_189_248/0.55)]',
+    bar: 'bg-[#38bdf8]',
+  },
+  success: {
+    glow: 'rgb(74 222 128 / 0.45)',
+    edge: 'rgb(34 197 94 / 0.3)',
+    badge: 'bg-[#4ade80] text-[#052e14] shadow-[0_0_24px_rgb(74_222_128/0.5)]',
+    bar: 'bg-[#4ade80]',
+  },
+  error: {
+    glow: 'rgb(244 63 94 / 0.45)',
+    edge: 'rgb(225 29 72 / 0.3)',
+    badge:
+      'bg-[#fb7185] text-[#3b0613] shadow-[0_0_24px_rgb(251_113_133/0.55)]',
+    bar: 'bg-[#fb7185]',
+  },
 } as const
 
 export function NotificationProvider({ children }: PropsWithChildren) {
@@ -97,39 +118,69 @@ export function NotificationProvider({ children }: PropsWithChildren) {
   return (
     <NotificationContext value={value}>
       {children}
-      <div
+      <AnimatedList
         aria-live="polite"
-        className="fixed right-4 bottom-4 left-4 z-50 flex w-auto max-w-sm flex-col gap-2 sm:left-auto sm:w-full"
+        className="pointer-events-none fixed right-4 bottom-4 left-4 z-50 w-auto max-w-sm sm:left-auto sm:w-full"
       >
-        {notifications.map((notification) => (
-          <div
-            className={`rounded-2xl border p-4 shadow-lift animate-in fade-in-0 slide-in-from-bottom-2 duration-300 motion-reduce:animate-none ${
-              toneClasses[notification.tone ?? 'info']
-            }`}
-            key={notification.id}
-            role={notification.tone === 'error' ? 'alert' : 'status'}
-          >
-            <div className="flex min-w-0 items-start justify-between gap-4">
-              <div className="min-w-0">
-                <p className="break-words font-medium">{notification.title}</p>
-                {notification.description ? (
-                  <p className="mt-1 break-words text-sm opacity-80">
-                    {notification.description}
+        {notifications.map((notification) => {
+          const tone = notification.tone ?? 'info'
+          const style = toneStyles[tone]
+          return (
+            <div
+              className="pointer-events-auto relative isolate overflow-hidden rounded-xl border border-white/10 bg-[#15171b]/95 py-4 pr-11 pl-4 text-[#f4f1ea] shadow-[0_24px_60px_-24px_rgb(0_0_0/0.85)] backdrop-blur-xl"
+              key={notification.id}
+              role={tone === 'error' ? 'alert' : 'status'}
+            >
+              <span
+                aria-hidden="true"
+                className="absolute top-1/2 -left-8 -z-10 size-32 -translate-y-1/2 rounded-full blur-2xl"
+                style={{ background: style.glow }}
+              />
+              <span
+                aria-hidden="true"
+                className="absolute inset-y-0 right-0 -z-10 w-1/2"
+                style={{
+                  background: `linear-gradient(90deg, transparent, ${style.edge})`,
+                }}
+              />
+              <div className="flex min-w-0 items-start gap-3.5">
+                <span
+                  className={`grid size-10 shrink-0 place-items-center rounded-full ${style.badge}`}
+                >
+                  <NotificationGlyph tone={tone} />
+                </span>
+                <div className="min-w-0 flex-1 pt-0.5">
+                  <p className="break-words text-[0.95rem] font-semibold">
+                    {notification.title}
                   </p>
-                ) : null}
+                  {notification.description ? (
+                    <p className="mt-1 break-words text-sm leading-relaxed text-[#f4f1ea]/65">
+                      {notification.description}
+                    </p>
+                  ) : null}
+                </div>
               </div>
               <button
                 aria-label="Dismiss notification"
-                className="grid size-7 shrink-0 place-items-center rounded-md opacity-70 transition hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10"
+                className="absolute top-2.5 right-2.5 grid size-7 place-items-center rounded-md text-[#f4f1ea]/55 transition-colors hover:bg-white/10 hover:text-[#f4f1ea] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#38bdf8]"
                 onClick={() => remove(notification.id)}
                 type="button"
               >
                 <X aria-hidden="true" className="size-4" />
               </button>
+              <span
+                aria-hidden="true"
+                className="absolute inset-x-0 bottom-0 h-[3px] bg-white/8"
+              >
+                <span
+                  className={`notification-timer block h-full origin-left ${style.bar}`}
+                  style={{ animationDuration: `${NOTIFICATION_DURATION_MS}ms` }}
+                />
+              </span>
             </div>
-          </div>
-        ))}
-      </div>
+          )
+        })}
+      </AnimatedList>
     </NotificationContext>
   )
 }

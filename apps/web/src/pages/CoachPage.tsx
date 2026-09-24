@@ -43,7 +43,7 @@ import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { useUserIdentity } from '@/features/auth/user-identity'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
-import { ThinkingOrbs } from '@/components/motion/ThinkingOrbs'
+import { AiLoader, type AiLoaderStep } from '@/components/motion/AiLoader'
 import { useNotification } from '@/app/useNotification'
 import { useAiConsent } from '@/features/profile/hooks/useLearnerSettings'
 import {
@@ -173,6 +173,11 @@ const attachmentExtensions: Record<string, CoachAttachmentType> = {
   webm: 'video/webm',
 }
 
+const coachWorkingSteps: readonly AiLoaderStep[] = [
+  { label: 'Thinking', indicator: 'dots' },
+  { label: 'Reading your solves and verdicts', indicator: 'bar' },
+  { label: 'Checking your roadmap and memory', indicator: 'grid' },
+]
 function attachmentMimeType(file: File): CoachAttachmentType | null {
   if (Object.hasOwn(coachAttachmentTypes, file.type)) {
     return file.type as CoachAttachmentType
@@ -249,7 +254,7 @@ function TopicCard({
   dismissPending: boolean
 }) {
   return (
-    <article className="min-w-0 rounded-lg border border-border bg-card p-4">
+    <article className="card-lift min-w-0 rounded-lg border border-border bg-card p-4">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="break-words font-semibold text-foreground">
@@ -1291,13 +1296,17 @@ function CoachPage() {
                     <div aria-hidden="true" ref={messageEndRef} />
                     {sendMessage.isPending ? (
                       <div
-                        className="flex items-center gap-3 text-sm text-muted-foreground"
+                        className="flex items-start gap-3 text-sm text-muted-foreground"
                         role="status"
                       >
-                        <ThinkingOrbs />
-                        <span className="shimmer-text">
-                          Checking your profile, history and roadmap…
+                        <span className="sr-only">
+                          Your coach is checking your profile, history and
+                          roadmap.
                         </span>
+                        <AiLoader
+                          steps={coachWorkingSteps}
+                          title="Your coach is working"
+                        />
                         <Button
                           className="ml-auto"
                           onClick={() => sendAbortController.current?.abort()}

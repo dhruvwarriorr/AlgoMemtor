@@ -3,6 +3,7 @@ import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 
 import PageContainer from '@/components/layout/PageContainer'
+import { OrbLoader } from '@/components/motion/OrbLoader'
 import { ErrorState } from '@/components/states/ErrorState'
 import { useAuth } from '@/features/auth/useAuth'
 import {
@@ -70,9 +71,9 @@ function ProtectedRoute() {
   if (status === 'loading') {
     return (
       <PageContainer className="items-center justify-center text-center">
-        <p className="text-sm text-muted-foreground" role="status">
-          Restoring your session…
-        </p>
+        <div role="status">
+          <OrbLoader label="Restoring your session…" />
+        </div>
       </PageContainer>
     )
   }
@@ -99,9 +100,9 @@ function ProtectedRoute() {
     if (profileQuery.isPending) {
       return (
         <PageContainer className="items-center justify-center text-center">
-          <p className="text-sm text-muted-foreground" role="status">
-            Loading your learner profile…
-          </p>
+          <div role="status">
+            <OrbLoader label="Loading your learner profile…" />
+          </div>
         </PageContainer>
       )
     }

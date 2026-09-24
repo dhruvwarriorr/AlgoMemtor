@@ -1,4 +1,4 @@
-import { ArrowUpRight } from '@/components/icons/algo-icons'
+import { ArrowUpRight } from '@/components/icons/algo-icons-line'
 import { motion, useReducedMotion } from 'motion/react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
 

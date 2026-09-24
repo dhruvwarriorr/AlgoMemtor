@@ -28,6 +28,15 @@ describe('dashboardActivity', () => {
     expect(result.map((item) => item.id)).toEqual(['accepted', 'failed'])
   })
 
+  it('leaves contests and rating changes out of recent activity', () => {
+    const result = dashboardActivity([
+      event('contest', 'contest'),
+      event('rating', 'rating_change'),
+      event('failed', 'submission', 'WRONG_ANSWER'),
+    ])
+    expect(result.map((item) => item.id)).toEqual(['failed'])
+  })
+
   it('omits undated events', () => {
     expect(
       dashboardActivity([{ ...event('unknown', 'solved'), occurredAt: null }]),

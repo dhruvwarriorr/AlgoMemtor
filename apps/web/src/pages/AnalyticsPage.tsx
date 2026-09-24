@@ -10,7 +10,13 @@ import {
   Sparkles,
   Swords,
   Target,
+  type IconComponent,
 } from '@/components/icons/algo-icons'
+import {
+  GradientCard,
+  type GradientTone,
+} from '@/components/motion/GradientCard'
+import { ProviderLogo } from '@/components/brand/ProviderLogo'
 
 import PageContainer from '@/components/layout/PageContainer'
 import PageHeader from '@/components/layout/PageHeader'
@@ -34,7 +40,11 @@ import {
 } from '@/features/platform/contest-history'
 import { ProviderFilter } from '@/features/platform/components/ProviderFilter'
 import { providerLabels } from '@/features/platform/components/provider-labels'
-import { useAnalytics } from '@/features/platform/hooks'
+import { useActivity, useAnalytics } from '@/features/platform/hooks'
+import {
+  dashboardActivity,
+  isAcceptedSubmission,
+} from '@/pages/dashboard-activity'
 import { cn } from '@/lib/utils'
 
 const title = 'Insights'
@@ -76,17 +86,36 @@ function Headline({
   value,
   detail,
   className,
+  gradient,
 }: {
   icon: ReactNode
   label: string
   value: string
   detail: string
   className?: string
+  gradient?: { tone: GradientTone; decoration: IconComponent }
 }) {
+  if (gradient !== undefined) {
+    return (
+      <GradientCard
+        className={cn('animate-rise min-w-0 p-4', className)}
+        icon={gradient.decoration}
+        tone={gradient.tone}
+      >
+        <p className="flex items-center gap-2 text-sm font-medium opacity-75">
+          {label}
+        </p>
+        <p className="mt-3 truncate font-heading text-[1.75rem] leading-none font-bold tracking-[-0.01em] tabular-nums">
+          {value}
+        </p>
+        <p className="mt-1.5 truncate text-xs opacity-70">{detail}</p>
+      </GradientCard>
+    )
+  }
   return (
     <div
       className={cn(
-        'animate-rise min-w-0 rounded-xl border border-border bg-card p-4',
+        'card-lift animate-rise min-w-0 rounded-xl border border-border bg-card p-4',
         className,
       )}
     >
@@ -180,6 +209,94 @@ function ContestLog({ entries }: { entries: ContestHistoryEntry[] }) {
   )
 }
 
+type ActivityEvent = NonNullable<
+  ReturnType<typeof useActivity>['data']
+>['data'][number]
+
+function verdictLabel(event: ActivityEvent) {
+  if (event.eventType === 'solved') {
+    return event.source === 'manual' ? 'Marked solved' : 'Solved'
+  }
+  if (isAcceptedSubmission(event)) return 'Accepted'
+  if (event.verdict === undefined) return 'Submitted'
+  const text = event.verdict.replaceAll('_', ' ').toLowerCase()
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+// Submitted solutions only, in the same table style as the contest log.
+function ActivityLog({ events }: { events: readonly ActivityEvent[] }) {
+  return (
+    <section className="animate-rise min-w-0 rounded-xl border border-border bg-card p-4 sm:p-5">
+      <h3 className="text-lg font-semibold">Recent activity</h3>
+      <p className="mt-0.5 text-sm text-muted-foreground">
+        Your latest submissions and solves with verdict and language.
+      </p>
+      {events.length === 0 ? (
+        <p className="mt-4 text-sm text-muted-foreground">
+          No dated submissions yet. Sync a platform to fill this log.
+        </p>
+      ) : (
+        <div className="mt-4 max-h-96 overflow-y-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="sticky top-0 bg-card text-xs text-muted-foreground">
+              <tr>
+                <th className="py-2 font-medium">Problem</th>
+                <th className="py-2 font-medium">Date</th>
+                <th className="py-2 font-medium">Language</th>
+                <th className="py-2 text-right font-medium">Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              {events.map((event) => {
+                const solved =
+                  event.eventType === 'solved' || isAcceptedSubmission(event)
+                const name = event.title ?? event.externalId ?? 'Problem'
+                return (
+                  <tr className="border-t border-border/70" key={event.id}>
+                    <td className="max-w-72 py-2 pr-3">
+                      <p className="flex min-w-0 items-center gap-2">
+                        <ProviderLogo
+                          className="size-4 shrink-0"
+                          provider={event.provider}
+                        />
+                        <span className="truncate font-medium" title={name}>
+                          {name}
+                        </span>
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {providerLabels[event.provider]}
+                        {event.externalId ? ` · ${event.externalId}` : ''}
+                      </p>
+                    </td>
+                    <td className="py-2 pr-3 whitespace-nowrap text-muted-foreground">
+                      {event.occurredAt ? formatDate(event.occurredAt) : '—'}
+                    </td>
+                    <td className="max-w-28 truncate py-2 pr-3 text-muted-foreground">
+                      {event.language ?? '—'}
+                    </td>
+                    <td className="py-2 text-right">
+                      <span
+                        className={cn(
+                          'inline-flex rounded-md px-2 py-0.5 text-xs font-semibold whitespace-nowrap',
+                          solved
+                            ? 'bg-go-soft text-go-foreground'
+                            : 'bg-danger-soft text-danger-foreground',
+                        )}
+                      >
+                        {verdictLabel(event)}
+                      </span>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  )
+}
+
 function AnalyticsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const providerResult = LinkableProviderSchema.safeParse(
@@ -187,6 +304,11 @@ function AnalyticsPage() {
   )
   const provider = providerResult.success ? providerResult.data : undefined
   const analyticsQuery = useAnalytics(provider)
+  const activityQuery = useActivity(provider)
+  const recentSolutions = useMemo(
+    () => dashboardActivity(activityQuery.data?.data ?? [], 60),
+    [activityQuery.data?.data],
+  )
   const analytics = analyticsQuery.data
   const stats = useMemo(
     () => dayStats(analytics?.solvedOverTime ?? {}),
@@ -307,12 +429,14 @@ function AnalyticsPage() {
         <Headline
           detail="Days with at least one solve"
           icon={<CalendarDays aria-hidden="true" className="size-4" />}
+          gradient={{ tone: 'green', decoration: CalendarDays }}
           label="Active days"
           value={stats.activeDays.toLocaleString()}
         />
         <Headline
           detail="Consecutive solve days, all time"
           icon={<Flame aria-hidden="true" className="size-4" />}
+          gradient={{ tone: 'sand', decoration: Flame }}
           label="Longest streak"
           value={`${stats.longest}d`}
         />
@@ -321,6 +445,7 @@ function AnalyticsPage() {
             stats.busiest ? formatDate(`${stats.busiest[0]}T12:00:00Z`) : '—'
           }
           icon={<CheckCheck aria-hidden="true" className="size-4" />}
+          gradient={{ tone: 'sky', decoration: CheckCheck }}
           label="Best day"
           value={stats.busiest ? `${stats.busiest[1]} solves` : '—'}
         />
@@ -329,12 +454,14 @@ function AnalyticsPage() {
             peakAccount ? providerLabels[peakAccount.provider] : 'No ratings'
           }
           icon={<Crown aria-hidden="true" className="size-4" />}
+          gradient={{ tone: 'green', decoration: Crown }}
           label="Peak rating"
           value={peak > 0 ? String(Math.round(peak)) : '—'}
         />
         <Headline
           detail={`${analytics.solvedByDifficulty.hard.toLocaleString()} hard problems`}
           icon={<Gauge aria-hidden="true" className="size-4" />}
+          gradient={{ tone: 'sand', decoration: Gauge }}
           label="Hardest solve"
           value={
             insights?.hardestSolved[0]
@@ -345,6 +472,7 @@ function AnalyticsPage() {
         <Headline
           detail={`${Object.keys(analytics.topicCounts).length} topics touched`}
           icon={<Target aria-hidden="true" className="size-4" />}
+          gradient={{ tone: 'sky', decoration: Target }}
           label="Top topic"
           value={(
             Object.entries(analytics.topicCounts).sort(
@@ -394,7 +522,15 @@ function AnalyticsPage() {
         </section>
       </div>
 
-      <ContestLog entries={contestHistory} />
+      <div
+        className={cn(
+          'grid min-w-0 gap-4',
+          contestHistory.length > 0 && 'xl:grid-cols-2',
+        )}
+      >
+        <ContestLog entries={contestHistory} />
+        <ActivityLog events={recentSolutions} />
+      </div>
 
       <p className="text-xs text-muted-foreground">
         Totals are provider-reported and are not deduplicated across platforms.

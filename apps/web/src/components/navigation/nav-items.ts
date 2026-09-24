@@ -11,7 +11,7 @@ import {
   Trophy,
   UserRound,
   type IconComponent,
-} from '@/components/icons/algo-icons'
+} from '@/components/icons/algo-icons-line'
 
 export type AppNavItem = {
   label: string

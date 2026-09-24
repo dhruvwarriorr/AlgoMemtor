@@ -1,5 +1,4 @@
 import { Fragment, useRef, useState, type ReactNode } from 'react'
-import type { ProviderKey } from '@algomemtor/shared-contracts'
 import {
   Activity,
   CalendarCheck,
@@ -23,8 +22,6 @@ import {
   PolarRadiusAxis,
   Radar,
   RadarChart,
-  RadialBar,
-  RadialBarChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -33,6 +30,12 @@ import {
 import { Link } from 'react-router-dom'
 
 import { ProviderLogo } from '@/components/brand/ProviderLogo'
+import type { IconComponent } from '@/components/icons/algo-icons'
+import {
+  GradientCard,
+  type GradientTone,
+} from '@/components/motion/GradientCard'
+import { RadialRings } from '@/components/motion/RadialRings'
 import PageContainer from '@/components/layout/PageContainer'
 import { CellTooltip } from '@/components/ui/cell-tooltip'
 import PageHeader from '@/components/layout/PageHeader'
@@ -69,13 +72,6 @@ const palette = [
   '#14a3a3',
   '#6c7a90',
 ]
-
-const providerColors: Record<ProviderKey, string> = {
-  codeforces: '#2d6cdf',
-  codechef: '#8b5a2b',
-  leetcode: '#f2a31b',
-  cses: '#6c7a90',
-}
 
 function shortDate(date: string) {
   return new Intl.DateTimeFormat(undefined, {
@@ -139,13 +135,32 @@ function Kpi({
   value,
   detail,
   accent,
+  gradient,
 }: {
   icon: ReactNode
   label: string
   value: string
   detail: string
   accent?: boolean
+  gradient?: { tone: GradientTone; decoration: IconComponent }
 }) {
+  if (gradient !== undefined) {
+    return (
+      <GradientCard
+        className="animate-rise min-w-0 p-4"
+        icon={gradient.decoration}
+        tone={gradient.tone}
+      >
+        <dt className="flex items-center gap-2 text-sm font-medium opacity-75">
+          {label}
+        </dt>
+        <dd className="mt-3 truncate font-heading text-[1.9rem] leading-none font-bold tracking-[-0.01em] tabular-nums">
+          {value}
+        </dd>
+        <p className="mt-1.5 truncate text-xs opacity-70">{detail}</p>
+      </GradientCard>
+    )
+  }
   return (
     <div
       className={cn(
@@ -256,19 +271,18 @@ function DailyPractice({ analytics }: { analytics: Analytics }) {
   )
 }
 
-// Radial bars: solved per platform, with a detail list.
+const ringColors = ['#0ea5e9', '#22c55e', '#0369a1', '#86efac']
+
+// Concentric radial rings: solved per platform, with a detail list.
 function PlatformBreakdown({
   breakdown,
 }: {
   breakdown: Breakdown | undefined
 }) {
-  const providers = breakdown?.providers ?? []
+  const providers = [...(breakdown?.providers ?? [])].sort(
+    (left, right) => right.solved - left.solved,
+  )
   const total = providers.reduce((sum, item) => sum + item.solved, 0)
-  const data = providers.map((item) => ({
-    name: providerLabels[item.provider],
-    value: item.solved,
-    fill: providerColors[item.provider],
-  }))
   return (
     <Card
       className="lg:col-span-4"
@@ -279,39 +293,34 @@ function PlatformBreakdown({
         <Empty>Link a platform to see where you practice.</Empty>
       ) : (
         <div className="flex flex-1 flex-col gap-3">
-          <div className="relative h-40">
-            <ResponsiveContainer height="100%" width="100%">
-              <RadialBarChart
-                barSize={11}
-                data={data}
-                endAngle={-270}
-                innerRadius="38%"
-                outerRadius="100%"
-                startAngle={90}
-              >
-                <RadialBar
-                  background={{ fill: 'var(--muted)' }}
-                  cornerRadius={6}
-                  dataKey="value"
-                />
-                <Tooltip contentStyle={tooltipStyle} />
-              </RadialBarChart>
-            </ResponsiveContainer>
-            <div className="pointer-events-none absolute inset-0 grid place-items-center">
-              <div className="text-center">
-                <p className="font-heading text-2xl leading-none font-bold">
-                  {total}
-                </p>
-                <p className="text-[0.7rem] text-muted-foreground">solved</p>
-              </div>
-            </div>
-          </div>
+          <RadialRings
+            className="mx-auto h-60 w-60"
+            data={providers.map((item, index) => ({
+              key: item.provider,
+              label: providerLabels[item.provider],
+              value: item.solved,
+              color: ringColors[index % ringColors.length] ?? '#0ea5e9',
+            }))}
+            label={`Newly solved by platform: ${providers
+              .map((item) => `${providerLabels[item.provider]} ${item.solved}`)
+              .join(', ')}`}
+            total={total}
+            totalLabel="solved"
+          />
           <ul className="flex flex-col gap-1.5">
             {providers.map((item) => (
               <li
                 className="flex items-center gap-2.5 rounded-lg border border-border px-3 py-2 text-sm"
                 key={item.provider}
               >
+                <span
+                  aria-hidden="true"
+                  className="size-2.5 shrink-0 rounded-full"
+                  style={{
+                    background:
+                      ringColors[providers.indexOf(item) % ringColors.length],
+                  }}
+                />
                 <ProviderLogo className="size-5" provider={item.provider} />
                 <span className="min-w-0 flex-1 truncate font-medium">
                   {providerLabels[item.provider]}
@@ -727,30 +736,35 @@ function AnalyticsSection({ analytics }: { analytics: Analytics }) {
               : 'Solve today to start one'
           }
           icon={<Flame aria-hidden="true" className="size-4" />}
+          gradient={{ tone: 'sand', decoration: Flame }}
           label="Current streak"
           value={`${analytics.currentStreak}d`}
         />
         <Kpi
           detail="Best run of solve days"
           icon={<Trophy aria-hidden="true" className="size-4" />}
+          gradient={{ tone: 'sky', decoration: Trophy }}
           label="Longest streak"
           value={`${analytics.longestStreak}d`}
         />
         <Kpi
           detail={`of the last ${analytics.window.days} days`}
           icon={<CalendarCheck aria-hidden="true" className="size-4" />}
+          gradient={{ tone: 'green', decoration: CalendarCheck }}
           label="Active days"
           value={String(activeDays)}
         />
         <Kpi
           detail={`${analytics.window.attempted} problems attempted`}
           icon={<Send aria-hidden="true" className="size-4" />}
+          gradient={{ tone: 'sand', decoration: Send }}
           label="Submissions"
           value={String(submissions)}
         />
         <Kpi
           detail={`${accepted} accepted`}
           icon={<Target aria-hidden="true" className="size-4" />}
+          gradient={{ tone: 'sky', decoration: Target }}
           label="Acceptance"
           value={
             submissions === 0
