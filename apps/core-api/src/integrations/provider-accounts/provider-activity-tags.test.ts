@@ -7,6 +7,10 @@ import {
 import { CodeforcesPublicStatsFetcher } from './codeforces-public-stats.js'
 import { LeetCodeActivityFetcher } from './leetcode-activity.js'
 import { RequestGate } from '../../utils/request-gate.js'
+import {
+  calculateStreaks,
+  progressWindow,
+} from '../../services/progress-window.js'
 
 const response = (body: string, contentType: string, status = 200) =>
   new Response(body, { status, headers: { 'content-type': contentType } })
@@ -51,6 +55,79 @@ const codeChefFetcher = (pages: string[][], detail?: unknown) => {
 }
 
 describe('CodeChef public activity', () => {
+  it('recovers profile-listed contest solves when the recent feed lags', async () => {
+    const contestEnd = 1_790_181_902
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const url = new URL(String(input))
+      if (url.pathname.startsWith('/users/')) {
+        return response(
+          `<html><script>var all_rating = [{"code":"START257B","name":"Starters 257 (Rated)","rating":"1806","end_date":"2026-09-23 22:15:02"}];</script>
+          <section class='problems-solved'><h3>Contests (1) </h3>
+          <div class='content'><h5>Starters 257 (Rated)</h5><p><span><span>Fumigation</span>, <span>Smoothen</span>, <span>Lit Up</span>, <span>Fall Prevention</span>, <span>Unknown Problem</span></span></p></div>
+          <h3>Total Problems Solved: 4</h3></section></html>`,
+          'text/html',
+        )
+      }
+      if (url.pathname === '/recent/user') {
+        return response(
+          JSON.stringify({
+            max_page: 0,
+            content: `<table>${codeChefRow('OLD', 100, '08:00 PM 16/09/26', 'accepted')}</table>`,
+          }),
+          'text/html',
+        )
+      }
+      if (url.pathname === '/api/contests/START257B') {
+        return response(
+          JSON.stringify({
+            code: 'START257B',
+            time: { start: contestEnd - 7200, end: contestEnd },
+            problems: {
+              FUMI: { code: 'FUMI', name: 'Fumigation' },
+              MKSMT: { code: 'MKSMT', name: 'Smoothen' },
+              LITUP: { code: 'LITUP', name: 'Lit Up' },
+              FALLPR: { code: 'FALLPR', name: 'Fall Prevention' },
+            },
+          }),
+          'application/json',
+        )
+      }
+      return response('{}', 'application/json', 404)
+    })
+    const fetcher = new CodeChefActivityFetcher({
+      baseUrl: 'https://mock.codechef.test/users/',
+      fetchImpl: fetchMock,
+      maxAttempts: 1,
+      requestGate: noWaitGate(),
+    })
+
+    const result = await fetcher.fetchActivityData('learner')
+
+    expect(result.submissions).toHaveLength(1)
+    expect(result.solvedProblems).toHaveLength(5)
+    expect(result.solvedProblems.map((item) => item.externalId)).toEqual(
+      expect.arrayContaining(['FUMI', 'MKSMT', 'LITUP', 'FALLPR']),
+    )
+    for (const code of ['FUMI', 'MKSMT', 'LITUP', 'FALLPR']) {
+      expect(
+        result.solvedProblems.find((item) => item.externalId === code),
+      ).toMatchObject({
+        canonicalUrl: `https://www.codechef.com/problems/${code}`,
+        occurredAt: new Date(contestEnd * 1000).toISOString(),
+        completeness: 'partial',
+      })
+    }
+    const window = progressWindow(
+      [],
+      result.submissions,
+      result.solvedProblems,
+      ['2026-09-23', '2026-09-24'],
+      (date) => date.toISOString().slice(0, 10),
+    )
+    expect(window.trend[0]?.solved).toBe(4)
+    expect(calculateStreaks(window.solvedDays, '2026-09-24').current).toBe(1)
+  })
+
   it('reads every recent-activity page and returns a resume cursor', async () => {
     const { fetcher, requestedPages } = codeChefFetcher([
       [codeChefRow('FLOW', 30, '08:00 PM 09/09/26', 'accepted')],

@@ -1,7 +1,6 @@
 import type { ProviderKey } from '@algomemtor/shared-contracts'
 import { siCodechef, siCodeforces, siLeetcode } from 'simple-icons'
 
-import csesLogo from '@/assets/cses-logo.png'
 import { cn } from '@/lib/utils'
 
 const simpleIcons = {
@@ -16,9 +15,8 @@ type ProviderLogoProps = {
   title?: string
 }
 
-// Official marks from Simple Icons. CSES is not in Simple Icons, so its
-// wordmark ships as an image, drawn a little wider than the square footprint
-// so the letters stay legible.
+// Official marks from Simple Icons. CSES is not in Simple Icons, so this
+// monochrome wordmark uses original paths inspired by its wide lettering.
 function ProviderLogo({ provider, className, title }: ProviderLogoProps) {
   if (provider === 'cses') {
     return (
@@ -31,12 +29,21 @@ function ProviderLogo({ provider, className, title }: ProviderLogoProps) {
         )}
         role={title ? 'img' : undefined}
       >
-        <img
-          alt=""
-          className="h-auto w-[140%] max-w-none object-contain drop-shadow-[0_0_0.6px_rgb(0_0_0/0.55)]"
-          draggable={false}
-          src={csesLogo}
-        />
+        <svg
+          aria-hidden="true"
+          className="h-auto w-[140%] max-w-none"
+          fill="none"
+          stroke="currentColor"
+          strokeLinecap="square"
+          strokeLinejoin="miter"
+          strokeWidth="4.5"
+          viewBox="0 0 96 32"
+        >
+          <path d="M22 5H11C6 5 4 9 4 16S6 27 11 27h11" />
+          <path d="M44 5H32c-5 0-7 2-7 6 0 3 2 5 6 6l7 2c4 1 6 3 6 5 0 3-2 5-7 5H25" />
+          <path d="M67 5H49v22h18M49 16h15" />
+          <path d="M91 5H79c-5 0-7 2-7 6 0 3 2 5 6 6l7 2c4 1 6 3 6 5 0 3-2 5-7 5H72" />
+        </svg>
       </span>
     )
   }

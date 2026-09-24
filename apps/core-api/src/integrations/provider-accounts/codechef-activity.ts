@@ -14,6 +14,7 @@ import {
 
 import { isCodeChefChallengePage } from './codechef-public-stats.js'
 import { ProviderPublicStatsError } from './provider-public-stats.js'
+import { providerHtmlToText } from '../providers/provider-html-sanitizer.js'
 import {
   fetchProviderJson,
   fetchProviderText,
@@ -29,6 +30,7 @@ import type {
 } from './provider-public-stats.js'
 
 const ratingEntrySchema = z.object({
+  code: z.string().trim().max(128).optional(),
   rating: z.union([z.number(), z.string()]).optional(),
   rating_change: z.union([z.number(), z.string()]).optional(),
   contest_code: z.string().trim().max(128).optional(),
@@ -53,6 +55,60 @@ const problemDetailSchema = z.object({
   computed_tags: z.array(z.string().trim().min(1).max(128)).optional(),
   user_tags: z.array(z.string().trim().min(1).max(128)).optional(),
 })
+
+const contestProblemSchema = z.object({
+  code: z.string().trim().min(1).max(64),
+  name: z.string().trim().min(1).max(512),
+})
+
+const contestDetailSchema = z.object({
+  code: z.string().trim().min(1).max(64),
+  time: z.object({
+    start: z.number().int().positive(),
+    end: z.number().int().positive(),
+  }),
+  problems: z.union([
+    z.array(contestProblemSchema),
+    z.record(z.string(), contestProblemSchema),
+  ]),
+})
+
+const CONTEST_PROFILE_LOOKUP_LIMIT = 2
+const safeContestCode = (value: string) => /^[A-Za-z0-9_+-]{1,64}$/.test(value)
+const safeProblemCode = (value: string) => /^[A-Za-z0-9_+-]{1,64}$/.test(value)
+const normalizedTitle = (value: string) =>
+  value.replaceAll(/\s+/g, ' ').trim().toLocaleLowerCase('en')
+
+// CodeChef's profile lists accepted contest problem names even when its
+// /recent/user feed has not published those submissions yet. The contest API
+// supplies the canonical problem codes; the profile alone cannot do that.
+const profileContestSolves = (html: string) => {
+  const section =
+    /<section\b[^>]*class=["'][^"']*problems-solved[^"']*["'][^>]*>([\s\S]*?)<\/section>/i.exec(
+      html,
+    )?.[1] ?? ''
+  const contests =
+    /<h3\b[^>]*>\s*Contests\s*\(\d+\)\s*<\/h3>([\s\S]*?)(?=<h3\b|$)/i.exec(
+      section,
+    )?.[1] ?? ''
+  const results: Array<{ name: string; titles: string[] }> = []
+  for (const block of contests.matchAll(
+    /<div\b[^>]*class=["'][^"']*\bcontent\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi,
+  )) {
+    const content = block[1] ?? ''
+    const name = providerHtmlToText(
+      /<h5\b[^>]*>([\s\S]*?)<\/h5>/i.exec(content)?.[1] ?? '',
+    )
+    const problems = /<p\b[^>]*>([\s\S]*?)<\/p>/i.exec(content)?.[1] ?? ''
+    const titles = [...problems.matchAll(/<span\b[^>]*>([^<]+)<\/span>/gi)]
+      .map((match) => providerHtmlToText(match[1] ?? ''))
+      .filter((title) => title.length > 0 && title.length <= 512)
+    if (name !== '' && name.length <= 512 && titles.length > 0) {
+      results.push({ name, titles })
+    }
+  }
+  return results
+}
 
 const numberFrom = (value: unknown) => {
   const parsed = typeof value === 'number' ? value : Number(value)
@@ -519,6 +575,101 @@ export class CodeChefActivityFetcher implements ProviderActivityDataFetcher {
         },
       })
     })
+
+    if (!backfillOnly) {
+      const newestRecentTime = recentRowsData.reduce(
+        (latest, row) => Math.max(latest, row.occurredAt?.getTime() ?? 0),
+        0,
+      )
+      const ratingContests = extractRatingEntries(html)
+        .flatMap((entry) => {
+          const code = entry.code ?? entry.contest_code
+          const date = ratingDate(entry)
+          return code !== undefined &&
+            safeContestCode(code) &&
+            date !== null &&
+            date.getTime() >= newestRecentTime
+            ? [{ code, date, name: entry.name ?? '' }]
+            : []
+        })
+        .sort((left, right) => right.date.getTime() - left.date.getTime())
+      const listedSolves = profileContestSolves(html)
+      let lookups = 0
+      for (const contest of ratingContests) {
+        if (lookups >= CONTEST_PROFILE_LOOKUP_LIMIT) break
+        const listed = listedSolves.find(
+          (item) =>
+            normalizedTitle(item.name) === normalizedTitle(contest.name),
+        )
+        if (listed === undefined) continue
+        lookups += 1
+        const detailUrl = new URL(
+          `/api/contests/${encodeURIComponent(contest.code)}`,
+          this.baseUrl,
+        )
+        try {
+          const body = await fetchProviderJson({
+            provider: this.provider,
+            url: detailUrl,
+            allowedHostname: 'www.codechef.com',
+            requestGate: this.requestGate,
+            fetchImpl: this.fetchImpl,
+            timeoutMs: this.timeoutMs,
+            maxAttempts: this.maxAttempts,
+            maxResponseBytes: 2_000_000,
+            ...(signal === undefined ? {} : { signal }),
+          } satisfies ProviderHttpRequest)
+          const parsed = contestDetailSchema.safeParse(body)
+          if (!parsed.success || parsed.data.code !== contest.code) continue
+          const { start, end } = parsed.data.time
+          if (end < start || end * 1000 > fetchedAt.getTime()) continue
+          const problems = Array.isArray(parsed.data.problems)
+            ? parsed.data.problems
+            : Object.values(parsed.data.problems)
+          const byTitle = new Map<string, string[]>()
+          for (const problem of problems) {
+            if (!safeProblemCode(problem.code)) continue
+            const title = normalizedTitle(problem.name)
+            byTitle.set(title, [...(byTitle.get(title) ?? []), problem.code])
+          }
+          for (const title of listed.titles) {
+            const matching = byTitle.get(normalizedTitle(title))
+            if (matching?.length !== 1) continue
+            const externalId = matching[0]
+            if (externalId === undefined) continue
+            const canonicalUrl = problemUrl(externalId)
+            solvedProblems.push(
+              ProviderSolvedProblemSchema.parse({
+                provider: this.provider,
+                externalId,
+                canonicalUrl,
+                // The public profile proves a contest solve, but does not
+                // publish its submission time. Use the contest end as the
+                // observed date until an exact submission becomes available.
+                occurredAt: new Date(end * 1000).toISOString(),
+                firstObservedAt: fetchedAt.toISOString(),
+                lastObservedAt: fetchedAt.toISOString(),
+                completeness: 'partial',
+                provenance: {
+                  provider: this.provider,
+                  providerId: `${contest.code}:${externalId}`,
+                  canonicalUrl,
+                  sourceUrl: profileUrl.toString(),
+                  extractionStrategy: 'sanitized_html',
+                  schemaVersion: 'codechef-profile-contest-solve-v1',
+                  completeness: 'partial',
+                  fetchedAt: fetchedAt.toISOString(),
+                  stale: false,
+                },
+              }),
+            )
+          }
+        } catch {
+          // The public recent feed remains usable when a contest lookup is
+          // unavailable; the next scheduled sync can try again.
+        }
+      }
+    }
 
     const ratingEntries = extractRatingEntries(html)
       .map((entry, index) => ({

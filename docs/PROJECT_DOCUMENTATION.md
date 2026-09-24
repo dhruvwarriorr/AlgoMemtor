@@ -674,7 +674,8 @@ provider errors.
 - public catalog and contest endpoints where available;
 - public profile HTML for aggregate profile statistics and embedded history;
 - public `/recent/user` response for recent submission rows; and
-- public contest problem JSON for problem tags.
+- public contest problem JSON for problem tags and validated contest problem
+  identities.
 
 #### Recent activity and tags
 
@@ -711,6 +712,18 @@ stay unknown rather than becoming topics. A failed lookup preserves the
 accepted observation without inventing a tag. A challenge page, login wall, or
 persistent block opens the capability circuit breaker and preserves the last
 valid cache.
+
+The public recent feed can omit newer contest submissions even when the public
+profile already lists those contest solves. On a normal sync, the activity
+adapter also checks up to two recent rated contests listed on the profile. It
+matches profile-listed solved titles to the contest's public problem JSON and
+stores only uniquely matched, validated problem codes. These are partial solved
+observations, not invented submission or verdict rows. The exact solve time is
+not available in this source, so the contest end is used as the observed time;
+an eventual exact recent-feed submission supersedes that estimate. If the
+profile and contest metadata cannot be matched, the adapter does not infer a
+solve. This additional path helps activity and streaks reflect newly listed
+CodeChef contest solves while retaining the recent feed's limitations.
 
 ### 9.3 LeetCode
 
