@@ -1,6 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import type { RecommendationFeedResponse } from '@algomemtor/shared-contracts'
+import type {
+  RecommendationFeedResponse,
+  RecommendationSteeringListResponse,
+} from '@algomemtor/shared-contracts'
 
 import { useAuth } from '@/features/auth/useAuth'
 
@@ -9,9 +12,12 @@ import {
   dismissProblem,
   fetchRecommendationDismissals,
   fetchRecommendations,
+  fetchRecommendationSteering,
   refreshRecommendations,
+  removeRecommendationSteering,
   restoreRecommendationDismissal,
   saveRecommendationFeedback,
+  saveRecommendationSteering,
 } from '../api/recommendations'
 
 export const recommendationsQueryKey = (authUserId: string) =>
@@ -19,6 +25,72 @@ export const recommendationsQueryKey = (authUserId: string) =>
 
 export const recommendationDismissalsQueryKey = (authUserId: string) =>
   ['recommendation-dismissals', authUserId] as const
+
+export const recommendationSteeringQueryKey = (authUserId: string) =>
+  ['recommendation-steering', authUserId] as const
+
+export function useRecommendationSteering() {
+  const { user } = useAuth()
+
+  return useQuery({
+    queryKey: recommendationSteeringQueryKey(user?.id ?? 'signed-out'),
+    queryFn: ({ signal }) => fetchRecommendationSteering({ signal }),
+    enabled: user !== null,
+  })
+}
+
+// Saving an instruction returns the regenerated feed, so the page swaps it
+// in directly instead of waiting on a second request.
+export function useSaveRecommendationSteering() {
+  const queryClient = useQueryClient()
+  const { user } = useAuth()
+
+  return useMutation({
+    mutationFn: saveRecommendationSteering,
+    onSuccess: (response) => {
+      if (user === null) return
+      queryClient.setQueryData(
+        recommendationsQueryKey(user.id),
+        response.data.feed,
+      )
+      queryClient.setQueryData<RecommendationSteeringListResponse>(
+        recommendationSteeringQueryKey(user.id),
+        (current) => ({
+          data: [
+            response.data.steering,
+            ...(current?.data ?? []).filter(
+              (item) => item.id !== response.data.steering.id,
+            ),
+          ],
+        }),
+      )
+      void queryClient.invalidateQueries({
+        queryKey: recommendationDismissalsQueryKey(user.id),
+      })
+      void queryClient.invalidateQueries({ queryKey: ['learner-memories'] })
+    },
+  })
+}
+
+export function useRemoveRecommendationSteering() {
+  const queryClient = useQueryClient()
+  const { user } = useAuth()
+
+  return useMutation({
+    mutationFn: removeRecommendationSteering,
+    onSuccess: async (response) => {
+      if (user === null) return
+      queryClient.setQueryData(
+        recommendationSteeringQueryKey(user.id),
+        response,
+      )
+      // The server regenerates the feed without the removed instruction.
+      await queryClient.invalidateQueries({
+        queryKey: recommendationsQueryKey(user.id),
+      })
+    },
+  })
+}
 
 export function useRecommendations() {
   const { user } = useAuth()
@@ -123,8 +195,13 @@ export function useDismissProblem() {
   const queryClient = useQueryClient()
   const { user } = useAuth()
   return useMutation({
-    mutationFn: ({ provider, externalId }: { provider: string; externalId: string }) =>
-      dismissProblem(provider, externalId),
+    mutationFn: ({
+      provider,
+      externalId,
+    }: {
+      provider: string
+      externalId: string
+    }) => dismissProblem(provider, externalId),
     onSuccess: () => {
       if (user === null) return
       // Non-blocking: see useDismissRecommendation for why these aren't awaited.
@@ -132,8 +209,12 @@ export function useDismissProblem() {
         queryKey: recommendationsQueryKey(user.id),
         refetchType: 'none',
       })
-      void queryClient.invalidateQueries({ queryKey: recommendationDismissalsQueryKey(user.id) })
-      void queryClient.invalidateQueries({ queryKey: ['coach', user.id, 'roadmap'] })
+      void queryClient.invalidateQueries({
+        queryKey: recommendationDismissalsQueryKey(user.id),
+      })
+      void queryClient.invalidateQueries({
+        queryKey: ['coach', user.id, 'roadmap'],
+      })
     },
   })
 }

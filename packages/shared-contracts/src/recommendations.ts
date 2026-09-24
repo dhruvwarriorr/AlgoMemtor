@@ -174,3 +174,97 @@ export const RecommendationRestorationResponseSchema = z
 export type RecommendationRestorationResponse = z.infer<
   typeof RecommendationRestorationResponseSchema
 >
+
+// A learner's plain-language instruction for their recommendations ("no
+// LeetCode", "more DP around 1600"). The text is kept as written; the
+// directives are what AlgoMemtor understood and enforces deterministically.
+const steeringTopicSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+
+export const RecommendationSteeringDirectivesSchema = z
+  .object({
+    onlyProviders: z.array(ProviderKeySchema).max(4),
+    preferProviders: z.array(ProviderKeySchema).max(4),
+    excludeProviders: z.array(ProviderKeySchema).max(4),
+    includeTopics: z.array(steeringTopicSchema).max(12),
+    onlyTopics: z.boolean(),
+    excludeTopics: z.array(steeringTopicSchema).max(24),
+    ratingRange: z
+      .object({
+        min: z.number().int().min(0).max(4_000),
+        max: z.number().int().min(0).max(4_000),
+      })
+      .strict()
+      .refine((range) => range.min <= range.max, {
+        message: 'The rating range minimum must not exceed its maximum.',
+      })
+      .optional(),
+    difficulty: z.enum(['easy', 'medium', 'hard']).optional(),
+    excludeProblems: z
+      .array(
+        z
+          .object({
+            provider: ProviderKeySchema,
+            externalId: nonEmptyStringSchema.max(128),
+            title: nonEmptyStringSchema.max(200),
+          })
+          .strict(),
+      )
+      .max(10),
+  })
+  .strict()
+
+export type RecommendationSteeringDirectives = z.infer<
+  typeof RecommendationSteeringDirectivesSchema
+>
+
+export const RecommendationSteeringSchema = z
+  .object({
+    id: identifierSchema,
+    text: nonEmptyStringSchema.max(500),
+    directives: RecommendationSteeringDirectivesSchema,
+    // Human-readable list of what was applied, e.g. "No LeetCode problems".
+    applied: z.array(nonEmptyStringSchema.max(160)).max(16),
+    savedToMemory: z.boolean(),
+    createdAt: z.iso.datetime(),
+  })
+  .strict()
+
+export type RecommendationSteering = z.infer<
+  typeof RecommendationSteeringSchema
+>
+
+export const SaveRecommendationSteeringRequestSchema = z
+  .object({ text: nonEmptyStringSchema.max(500) })
+  .strict()
+
+export type SaveRecommendationSteeringRequest = z.infer<
+  typeof SaveRecommendationSteeringRequestSchema
+>
+
+export const RecommendationSteeringListResponseSchema = z
+  .object({ data: z.array(RecommendationSteeringSchema).max(50) })
+  .strict()
+
+export type RecommendationSteeringListResponse = z.infer<
+  typeof RecommendationSteeringListResponseSchema
+>
+
+export const RecommendationSteeringResponseSchema = z
+  .object({
+    data: z
+      .object({
+        steering: RecommendationSteeringSchema,
+        feed: RecommendationFeedResponseSchema,
+      })
+      .strict(),
+  })
+  .strict()
+
+export type RecommendationSteeringResponse = z.infer<
+  typeof RecommendationSteeringResponseSchema
+>

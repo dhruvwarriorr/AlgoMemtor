@@ -1,6 +1,9 @@
 import { useMemo, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { LinkableProviderSchema } from '@algomemtor/shared-contracts'
+import {
+  LinkableProviderSchema,
+  programmingLanguageFamily,
+} from '@algomemtor/shared-contracts'
 import {
   CalendarDays,
   CheckCheck,
@@ -213,9 +216,11 @@ type ActivityEvent = NonNullable<
   ReturnType<typeof useActivity>['data']
 >['data'][number]
 
+// A provider-reported solve is an accepted solution, so it reads the same as
+// an accepted submission. Only a learner's own mark stays distinguishable.
 function verdictLabel(event: ActivityEvent) {
   if (event.eventType === 'solved') {
-    return event.source === 'manual' ? 'Marked solved' : 'Solved'
+    return event.source === 'manual' ? 'Marked solved' : 'Accepted'
   }
   if (isAcceptedSubmission(event)) return 'Accepted'
   if (event.verdict === undefined) return 'Submitted'
@@ -272,7 +277,9 @@ function ActivityLog({ events }: { events: readonly ActivityEvent[] }) {
                       {event.occurredAt ? formatDate(event.occurredAt) : '—'}
                     </td>
                     <td className="max-w-28 truncate py-2 pr-3 text-muted-foreground">
-                      {event.language ?? '—'}
+                      {event.language === undefined
+                        ? '—'
+                        : programmingLanguageFamily(event.language)}
                     </td>
                     <td className="py-2 text-right">
                       <span
@@ -482,9 +489,17 @@ function AnalyticsPage() {
         />
       </dl>
 
-      <AccountCards accounts={insights?.accounts ?? []} />
+      {/* A single-platform view already shows that account's rating, peak and
+          totals in the headline, so its account card would only repeat them. */}
+      {provider === undefined ? (
+        <AccountCards accounts={insights?.accounts ?? []} />
+      ) : null}
 
-      <YearCalendar solvedOverTime={analytics.solvedOverTime} />
+      <YearCalendar
+        firstActivityAt={firstActivity}
+        key={provider ?? 'all'}
+        solvedOverTime={analytics.solvedOverTime}
+      />
 
       <div className="grid min-w-0 gap-4 lg:grid-cols-12">
         <MonthlyVolume monthly={insights?.monthly ?? []} />

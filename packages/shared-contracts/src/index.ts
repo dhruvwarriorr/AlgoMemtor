@@ -182,6 +182,16 @@ export {
   RecommendationRestorationResponseSchema,
   RecommendationUsefulnessSchema,
   RecommendationFeedResponseSchema,
+  RecommendationSteeringDirectivesSchema,
+  RecommendationSteeringListResponseSchema,
+  RecommendationSteeringResponseSchema,
+  RecommendationSteeringSchema,
+  SaveRecommendationSteeringRequestSchema,
+  type RecommendationSteering,
+  type RecommendationSteeringDirectives,
+  type RecommendationSteeringListResponse,
+  type RecommendationSteeringResponse,
+  type SaveRecommendationSteeringRequest,
   type RecommendationBatch,
   type RecommendationDifficultyFeedback,
   type RecommendationDismissal,
@@ -433,3 +443,8 @@ export {
   type LearnerActivityDigestResponse,
   type VerdictGroup,
 } from './learner-activity.js'
+
+export {
+  languageFamilyCounts,
+  programmingLanguageFamily,
+} from './languages.js'

@@ -13,7 +13,6 @@ import {
   ArrowUp,
   Bell,
   BookOpen,
-  Check,
   Code2,
   Compass,
   CornerDownLeft,
@@ -65,12 +64,14 @@ import {
 } from '@/features/coach/hooks'
 import { AI_POLICY_VERSION } from '@/features/profile/components/AiNoteConsentCard'
 import { cn } from '@/lib/utils'
-import { CoachRichContent as CoachRichContentView } from '@/features/coach/components/CoachRichContent'
-import { CoachMessageContent } from '@/features/coach/components/CoachMessageContent'
+import { CoachAnswerPanel } from '@/features/coach/components/CoachAnswerPanel'
 import {
-  CoachContextRail,
-  CoachStatStrip,
-} from '@/features/coach/components/CoachInsights'
+  answerDetails,
+  answerDetailsSummary,
+  coachCodeBlockId,
+} from '@/features/coach/answer-details'
+import { CoachMessageContent } from '@/features/coach/components/CoachMessageContent'
+import { CoachStatStrip } from '@/features/coach/components/CoachInsights'
 import {
   useDismissProblem,
   useRecommendationDismissals,
@@ -465,16 +466,23 @@ function CoachPage() {
   const messageEndRef = useRef<HTMLDivElement | null>(null)
   const nearPageBottomRef = useRef(true)
   const [showJumpToLatest, setShowJumpToLatest] = useState(false)
+  // The answer whose problems, code and sources fill the side panel; null
+  // follows the latest answer.
+  const [selectedAnswerId, setSelectedAnswerId] = useState<string | null>(null)
+  const [highlightedCode, setHighlightedCode] = useState<number | null>(null)
+  const [detailsOpen, setDetailsOpen] = useState(false)
   const selectConversation = (conversationId: string | null) => {
     nearPageBottomRef.current = true
     setShowJumpToLatest(false)
     setIsDraft(false)
+    setSelectedAnswerId(null)
     setSelectedConversationId(conversationId)
   }
 
   function startNewChat() {
     nearPageBottomRef.current = true
     setShowJumpToLatest(false)
+    setSelectedAnswerId(null)
     setIsDraft(true)
     setView('chat')
     setContent('')
@@ -552,6 +560,7 @@ function CoachPage() {
     setContent('')
     setTransientContext('')
     setAttachmentFile(null)
+    setSelectedAnswerId(null)
     try {
       const attachmentType =
         attachmentFile === null ? null : attachmentMimeType(attachmentFile)
@@ -680,6 +689,49 @@ function CoachPage() {
     sendMessage.variables?.conversationId === activeConversationId
       ? sendMessage.variables.content
       : null
+  const assistantAnswers = messages.filter(
+    (message) => message.role === 'assistant' && message.fallback !== true,
+  )
+  const selectedAnswer =
+    (selectedAnswerId === null
+      ? undefined
+      : assistantAnswers.find((message) => message.id === selectedAnswerId)) ??
+    assistantAnswers.at(-1)
+  const selectedDetails = answerDetails(selectedAnswer)
+  const dismissedProblemKeys = new Set(
+    (dismissalsQuery.data?.data ?? []).map(
+      (item) => `${item.provider}:${item.externalId}`,
+    ),
+  )
+  function showAnswerDetails(messageId: string, codeIndex?: number) {
+    setSelectedAnswerId(messageId)
+    setHighlightedCode(codeIndex ?? null)
+    if (!window.matchMedia('(min-width: 80rem)').matches) setDetailsOpen(true)
+    if (codeIndex === undefined) return
+    window.setTimeout(() => {
+      document
+        .getElementById(coachCodeBlockId(messageId, codeIndex))
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 60)
+    window.setTimeout(() => setHighlightedCode(null), 2_400)
+  }
+  const answerPanelProps = {
+    message: selectedAnswer,
+    pending: sendMessage.isPending,
+    highlightedCode,
+    disabled: !consentEnabled || sendMessage.isPending,
+    dismissedProblemKeys,
+    confirmPending: confirmAction.isPending,
+    onDismissProblem: (provider: ProviderKey, externalId: string) =>
+      dismissProblem.mutate({ provider, externalId }),
+    onAsk: (question: string) => {
+      setDetailsOpen(false)
+      setContent(question)
+      void submitMessage(question)
+    },
+    onConfirmProposal: (proposalId: string) =>
+      void confirmAction.mutateAsync(proposalId),
+  }
   const showGreeting =
     pendingQuestion === null &&
     (!hasConversation ||
@@ -1010,6 +1062,17 @@ function CoachPage() {
             </h2>
           </div>
           <div className="flex shrink-0 items-center gap-1">
+            {view === 'chat' && !showGreeting && selectedDetails.hasContent ? (
+              <Button
+                className="xl:hidden"
+                onClick={() => setDetailsOpen(true)}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                <Sparkles aria-hidden="true" /> Details
+              </Button>
+            ) : null}
             <Link
               className={buttonVariants({ size: 'sm', variant: 'outline' })}
               to="/settings"
@@ -1197,83 +1260,37 @@ function CoachPage() {
                               <div className="text-[0.95rem] [&>div]:mt-1.5">
                                 <CoachMessageContent
                                   content={message.content}
+                                  onCodeBlock={(index) =>
+                                    showAnswerDetails(message.id, index)
+                                  }
                                   role="assistant"
                                 />
                               </div>
-                              {message.role === 'assistant' ? (
-                                <>
-                                  <EvidenceList evidence={message.evidence} />
-                                  {message.richContent ? (
-                                    <CoachRichContentView
-                                      content={message.richContent}
-                                      dismissedProblemKeys={
-                                        new Set(
-                                          (
-                                            dismissalsQuery.data?.data ?? []
-                                          ).map(
-                                            (item) =>
-                                              `${item.provider}:${item.externalId}`,
-                                          ),
-                                        )
-                                      }
-                                      onDismissProblem={(
-                                        provider,
-                                        externalId,
-                                      ) => {
-                                        dismissProblem.mutate({
-                                          provider,
-                                          externalId,
-                                        })
-                                      }}
-                                      onSuggestedQuestion={(question) => {
-                                        setContent(question)
-                                        void submitMessage(question)
-                                      }}
-                                    />
-                                  ) : null}
-                                  {message.proposals.length ? (
-                                    <div className="mt-4 space-y-2 border-t border-border pt-3">
-                                      <p className="text-xs font-medium text-muted-foreground">
-                                        Suggested actions
-                                      </p>
-                                      {message.proposals.map((proposal) => (
-                                        <div
-                                          className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-2xl border border-border p-3"
-                                          key={proposal.id}
-                                        >
-                                          <span className="min-w-0 text-sm text-foreground">
-                                            {proposal.label}
-                                            <span className="mt-1 block text-xs text-muted-foreground">
-                                              {proposal.reason}
-                                            </span>
-                                          </span>
-                                          <Button
-                                            disabled={
-                                              proposal.status !== 'proposed' ||
-                                              confirmAction.isPending
-                                            }
-                                            onClick={() =>
-                                              void confirmAction.mutateAsync(
-                                                proposal.id,
-                                              )
-                                            }
-                                            size="sm"
-                                            type="button"
-                                          >
-                                            {proposal.status === 'confirmed' ? (
-                                              <>
-                                                <Check aria-hidden="true" />{' '}
-                                                Confirmed
-                                              </>
-                                            ) : (
-                                              'Confirm'
-                                            )}
-                                          </Button>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  ) : null}
-                                </>
+                              {message.fallback !== true &&
+                              answerDetails(message).hasContent ? (
+                                <button
+                                  aria-pressed={
+                                    selectedAnswer?.id === message.id
+                                  }
+                                  className={cn(
+                                    'mt-3 inline-flex max-w-full items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                                    selectedAnswer?.id === message.id
+                                      ? 'border-[color-mix(in_oklab,var(--primary)_45%,var(--border))] text-foreground'
+                                      : 'border-border text-muted-foreground',
+                                  )}
+                                  onClick={() => showAnswerDetails(message.id)}
+                                  type="button"
+                                >
+                                  <Sparkles
+                                    aria-hidden="true"
+                                    className="size-3 shrink-0 text-primary"
+                                  />
+                                  <span className="truncate">
+                                    {answerDetailsSummary(
+                                      answerDetails(message),
+                                    )}
+                                  </span>
+                                </button>
                               ) : null}
                             </div>
                           </article>
@@ -1345,24 +1362,33 @@ function CoachPage() {
                   </div>
                 </div>
               </div>
-              <CoachContextRail
-                disabled={!consentEnabled || sendMessage.isPending}
-                evidence={
-                  messages
-                    .filter(
-                      (message) =>
-                        message.role === 'assistant' &&
-                        message.fallback !== true,
-                    )
-                    .at(-1)?.evidence ?? []
-                }
-                pending={sendMessage.isPending}
-                onAsk={(question) => {
-                  setContent(question)
-                  void submitMessage(question)
-                }}
-                roadmap={roadmap}
+              <CoachAnswerPanel
+                className="hidden xl:flex"
+                {...answerPanelProps}
               />
+              {detailsOpen ? (
+                <div
+                  aria-label="Answer details"
+                  aria-modal="true"
+                  className="fixed inset-0 z-40 xl:hidden"
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') setDetailsOpen(false)
+                  }}
+                  role="dialog"
+                >
+                  <button
+                    aria-label="Close answer details"
+                    className="absolute inset-0 bg-black/40"
+                    onClick={() => setDetailsOpen(false)}
+                    type="button"
+                  />
+                  <CoachAnswerPanel
+                    className="absolute inset-y-0 right-0 max-w-[calc(100vw-1.5rem)] bg-background shadow-2xl"
+                    onClose={() => setDetailsOpen(false)}
+                    {...answerPanelProps}
+                  />
+                </div>
+              ) : null}
             </div>
           )
         ) : null}

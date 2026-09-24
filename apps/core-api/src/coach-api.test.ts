@@ -881,6 +881,61 @@ describe('coach API', () => {
     expect(topics?.every((topic) => 'suggestionIds' in topic)).toBe(true)
   })
 
+  it('answers a greeting from a light context without learner data', async () => {
+    const progressRepository = new InMemoryProgressRepository()
+    await progressRepository.saveConsent(
+      userA,
+      true,
+      'personalized-coaching-rag-v2',
+    )
+    const requests: AiCoachRequest[] = []
+    const aiCoachClient: AiCoachClient = {
+      respond: vi.fn(async (request): Promise<AiCoachResult> => {
+        requests.push(request)
+        return {
+          answer: 'Hey! Good to see you. What are we working on today?',
+          evidence: [],
+          proposals: [],
+          presentation: {
+            datasetIds: [],
+            problemIds: [],
+            suggestedQuestions: ['What should I practice today?'],
+          },
+        }
+      }),
+    }
+    const baseUrl = startApp({ aiCoachClient, progressRepository })
+    const headers = {
+      ...authorization('user-a'),
+      'content-type': 'application/json',
+    }
+    const create = await fetch(`${baseUrl}/api/coach/conversations`, {
+      method: 'POST',
+      headers,
+      body: '{}',
+    })
+    const conversationId = (await create.json()).data.id as string
+    const response = await fetch(
+      `${baseUrl}/api/coach/conversations/${conversationId}/messages`,
+      { method: 'POST', headers, body: JSON.stringify({ content: 'hi lol' }) },
+    )
+
+    expect(response.status).toBe(200)
+    const body = CoachResponseSchema.parse(await response.json())
+    expect(body.message.content).toBe(
+      'Hey! Good to see you. What are we working on today?',
+    )
+    expect(body.message.richContent?.blocks).toEqual([])
+    expect(body.message.richContent?.suggestedQuestions).toEqual([
+      'What should I practice today?',
+    ])
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.workspace).toBeUndefined()
+    expect(requests[0]?.context).toMatchObject({ turnKind: 'smalltalk' })
+    expect(requests[0]?.context).not.toHaveProperty('activityDigest')
+    expect(requests[0]?.context).not.toHaveProperty('memories')
+  })
+
   it('honors a learner topic exclusion in roadmap, rich content, and AI output', async () => {
     const progressRepository = new InMemoryProgressRepository()
     await progressRepository.saveConsent(

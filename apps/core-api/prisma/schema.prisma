@@ -46,6 +46,7 @@ model CoreUser {
   coachPreferences       CoachPreferences?
   coachCheckIns          CoachCheckIn[]
   avatar                 UserAvatar?
+  recommendationSteering RecommendationSteering[]
 
   @@map("users")
   @@schema("core")
@@ -107,6 +108,25 @@ model UserAvatar {
   user      CoreUser @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_avatars")
+  @@schema("core")
+}
+
+// Plain-language instructions a learner gives for their recommendations,
+// with the directives AlgoMemtor parsed from them. Removed rows keep their
+// history (removed_at) but stop steering recommendations.
+model RecommendationSteering {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  text       String    @db.VarChar(500)
+  directives Json      @db.JsonB
+  applied    Json      @db.JsonB
+  memoryId   String?   @map("memory_id") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  removedAt  DateTime? @map("removed_at") @db.Timestamptz(3)
+  user       CoreUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, removedAt, createdAt])
+  @@map("recommendation_steering")
   @@schema("core")
 }
 

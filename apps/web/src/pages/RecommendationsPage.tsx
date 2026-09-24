@@ -19,6 +19,7 @@ import {
 } from '@/features/recommendations/hooks/useRecommendations'
 
 import { RecommendationCard } from '@/features/recommendations/components/RecommendationCard'
+import { RecommendationSteeringBar } from '@/features/recommendations/components/RecommendationSteeringBar'
 
 function RecommendationsPage() {
   const { notify } = useNotification()
@@ -199,6 +200,8 @@ function RecommendationsPage() {
         description="Review personalized problem recommendations and why they fit your learning goals."
         title="Recommendations"
       />
+
+      <RecommendationSteeringBar />
 
       {lastDismissed !== null ? (
         <div

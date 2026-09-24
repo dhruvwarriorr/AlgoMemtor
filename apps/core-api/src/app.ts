@@ -82,10 +82,20 @@ import {
   SendCoachMessageRequestSchema,
   ConfirmCoachActionRequestSchema,
   CoachResponseSchema,
+  languageFamilyCounts,
+  programmingLanguageFamily,
+  RecommendationSteeringListResponseSchema,
+  RecommendationSteeringResponseSchema,
+  SaveRecommendationSteeringRequestSchema,
+  type RecommendationFeedResponse,
+  type RecommendationSteering,
 } from '@algomemtor/shared-contracts'
 import type { ExternalProblemSummary } from '@algomemtor/shared-contracts'
 import cors from 'cors'
-import { buildAnalyticsInsights } from './services/analytics-insights.js'
+import {
+  buildAnalyticsInsights,
+  learnerDayKeyFormatter,
+} from './services/analytics-insights.js'
 import {
   AVATAR_MAX_BYTES,
   InMemoryAvatarRepository,
@@ -202,6 +212,11 @@ import {
   type RecommendationRepository,
 } from './repositories/recommendation-repository.js'
 import {
+  InMemoryRecommendationSteeringRepository,
+  type RecommendationSteeringRecord,
+  type RecommendationSteeringRepository,
+} from './repositories/recommendation-steering-repository.js'
+import {
   InMemoryProviderAccountRepository,
   ProviderAccountHandleClaimedError,
   type ProviderAccountRepository,
@@ -303,6 +318,7 @@ export type CreateAppOptions = {
   aiCoachClient?: AiCoachClient
   aiRoadmapNoteClient?: AiRoadmapNoteClient
   coachRepository?: CoachRepository
+  recommendationSteeringRepository?: RecommendationSteeringRepository
   internalServiceToken?: string
   webOrigin?: string
 }
@@ -847,6 +863,9 @@ export const createApp = (options: CreateAppOptions = {}) => {
     coachRepository,
     progressRepository,
     recommendationRepository,
+    steeringRepository:
+      options.recommendationSteeringRepository ??
+      new InMemoryRecommendationSteeringRepository(),
     logger,
     memoryGenerationEnabled: process.env.MEMORY_GENERATION_ENABLED !== 'false',
   })
@@ -1097,6 +1116,13 @@ export const createApp = (options: CreateAppOptions = {}) => {
       requestId,
       signal,
     )
+    return decorateRecommendationFeed(authUserId, feed)
+  }
+
+  const decorateRecommendationFeed = async (
+    authUserId: string,
+    feed: RecommendationFeedResponse,
+  ): Promise<RecommendationFeedResponse> => {
     if (!progressEnabled || feed.data === null) return feed
     const decoratedProblems = await decorateProblemsForLearner(
       authUserId,
@@ -4372,7 +4398,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
     const authUserId = authenticatedSubject(response)
     const [
       profile,
-      actions,
+      allActions,
       submissions,
       solvedProblems,
       ratingChanges,
@@ -4385,6 +4411,13 @@ export const createApp = (options: CreateAppOptions = {}) => {
       providerDataRepository.listRatingChanges(authUserId, provider),
       providerDataRepository.listContestParticipations(authUserId, provider),
     ])
+    // Learner actions (manual and provider-verified solves) are stored for
+    // every platform; a single-platform view must never count another
+    // platform's solves in its calendar, topics, or difficulty totals.
+    const actions =
+      provider === undefined
+        ? allActions
+        : allActions.filter((action) => action.provider === provider)
     const profileProviders =
       provider === undefined
         ? profile.providers
@@ -4504,12 +4537,18 @@ export const createApp = (options: CreateAppOptions = {}) => {
         topicCounts[topic] = (topicCounts[topic] ?? 0) + 1
       }
     }
+    // Days are the learner's calendar days: a UTC split breaks streaks for
+    // anyone solving late in the evening outside UTC.
+    const learnerProfile =
+      await learnerProfileRepository.findByAuthUserId(authUserId)
+    const learnerTimezone = learnerProfile?.timezone ?? 'UTC'
+    const dayKey = learnerDayKeyFormatter(learnerTimezone)
     const solvedDates = new Map<string, string>()
     for (const solved of solvedProblems) {
       if (solved.occurredAt !== null) {
         solvedDates.set(
           `${solved.provider}:${solved.externalId}`,
-          solved.occurredAt.slice(0, 10),
+          dayKey(new Date(solved.occurredAt)),
         )
       }
     }
@@ -4524,7 +4563,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
       if (!parsedProvider.success) continue
       const key = `${parsedProvider.data}:${action.externalId}`
       if (!solvedDates.has(key)) {
-        solvedDates.set(key, action.occurredAt.toISOString().slice(0, 10))
+        solvedDates.set(key, dayKey(action.occurredAt))
       }
     }
     for (const date of solvedDates.values()) {
@@ -4539,7 +4578,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
     }
     for (const providerProfile of profileSnapshots) {
       for (const [language, count] of Object.entries(
-        providerProfile.languageCounts,
+        languageFamilyCounts(providerProfile.languageCounts),
       )) {
         languageCounts[language] = (languageCounts[language] ?? 0) + count
       }
@@ -4566,7 +4605,8 @@ export const createApp = (options: CreateAppOptions = {}) => {
       )
     }
     for (const language of acceptedLanguage.values()) {
-      languageCounts[language] = (languageCounts[language] ?? 0) + 1
+      const family = programmingLanguageFamily(language)
+      languageCounts[family] = (languageCounts[family] ?? 0) + 1
     }
     const acceptedSubmissions = submissions.filter(
       (item) => item.isAccepted,
@@ -4605,10 +4645,8 @@ export const createApp = (options: CreateAppOptions = {}) => {
         solvedAtByKey.set(actionKey, action.occurredAt.toISOString())
       }
     }
-    const learnerProfile =
-      await learnerProfileRepository.findByAuthUserId(authUserId)
     const insights = buildAnalyticsInsights({
-      timezone: learnerProfile?.timezone ?? 'UTC',
+      timezone: learnerTimezone,
       now: new Date(),
       profiles: profileSnapshots,
       otherAccounts: profileProviders.map((item) => ({
@@ -4703,6 +4741,167 @@ export const createApp = (options: CreateAppOptions = {}) => {
       } finally {
         cancellation.detach()
       }
+    },
+  )
+
+  const steeringView = (
+    record: RecommendationSteeringRecord,
+  ): RecommendationSteering => ({
+    id: record.id,
+    text: record.text,
+    directives: record.directives,
+    applied: record.applied,
+    savedToMemory: record.memoryId !== undefined,
+    createdAt: record.createdAt.toISOString(),
+  })
+
+  app.get(
+    '/api/recommendations/steering',
+    requireAuthenticated,
+    async (_request, response) => {
+      const records = await recommendationService.listSteering(
+        authenticatedSubject(response),
+      )
+      response.json(
+        RecommendationSteeringListResponseSchema.parse({
+          data: records.map(steeringView),
+        }),
+      )
+    },
+  )
+
+  // A learner's plain-language instruction for their recommendations. It is
+  // parsed into enforced filters, remembered by the coach (with consent), and
+  // the feed is regenerated under it straight away.
+  app.post(
+    '/api/recommendations/steering',
+    requireAuthenticated,
+    async (request, response) => {
+      const input = SaveRecommendationSteeringRequestSchema.safeParse(
+        request.body,
+      )
+      if (!input.success) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'INVALID_RECOMMENDATION_INSTRUCTION',
+              'Describe what you want in 1 to 500 characters.',
+              { details: input.error.issues },
+            ),
+          )
+        return
+      }
+      const authUserId = authenticatedSubject(response)
+      const text = input.data.text.replace(/\s+/g, ' ').trim()
+      const cancellation = abortSignalForResponse(request, response)
+      try {
+        const { record, feed } = await recommendationService.addSteering(
+          authUserId,
+          text,
+          response.locals.requestId as string,
+          cancellation.signal,
+        )
+        let saved = record
+        const consent = await progressRepository.getConsent(authUserId)
+        const proposeMemory = aiMemoryClient.proposeMemory
+        if (
+          consent?.enabled === true &&
+          consent.policyVersion === COACH_POLICY_VERSION &&
+          proposeMemory !== undefined
+        ) {
+          try {
+            const proposed = await proposeMemory.call(
+              aiMemoryClient,
+              authUserId,
+              `recommendation-steering:${record.id}`,
+              {
+                statement:
+                  `Recommendation instruction from the learner: ${text}`.slice(
+                    0,
+                    500,
+                  ),
+                category: 'user_instruction',
+              },
+            )
+            if (proposed.memory !== undefined) {
+              await aiMemoryClient.actOnMemory(
+                authUserId,
+                proposed.memory.id,
+                'approve',
+              )
+              await recommendationService.recordSteeringMemory(
+                authUserId,
+                record.id,
+                proposed.memory.id,
+              )
+              saved = { ...record, memoryId: proposed.memory.id }
+            }
+          } catch {
+            // The instruction already steers recommendations; memory is an
+            // enhancement and reports its absence through savedToMemory.
+            logger.warn('recommendation_steering_memory_failed', {
+              errorCode: 'AI_MEMORY_UNAVAILABLE',
+            })
+          }
+        }
+        response.json(
+          RecommendationSteeringResponseSchema.parse({
+            data: {
+              steering: steeringView(saved),
+              feed: await decorateRecommendationFeed(authUserId, feed),
+            },
+          }),
+        )
+      } catch (error) {
+        if (!respondWithProviderError(error, response)) {
+          throw error
+        }
+      } finally {
+        cancellation.detach()
+      }
+    },
+  )
+
+  app.delete(
+    '/api/recommendations/steering/:steeringId',
+    requireAuthenticated,
+    async (request, response) => {
+      const authUserId = authenticatedSubject(response)
+      const removed = await recommendationService.removeSteering(
+        authUserId,
+        String(request.params.steeringId),
+      )
+      if (removed === null) {
+        response
+          .status(404)
+          .json(
+            createApiError(
+              'RECOMMENDATION_INSTRUCTION_NOT_FOUND',
+              'That recommendation instruction was not found.',
+            ),
+          )
+        return
+      }
+      if (removed.memoryId !== undefined) {
+        try {
+          await aiMemoryClient.actOnMemory(
+            authUserId,
+            removed.memoryId,
+            'archive',
+          )
+        } catch {
+          logger.warn('recommendation_steering_memory_archive_failed', {
+            errorCode: 'AI_MEMORY_UNAVAILABLE',
+          })
+        }
+      }
+      const records = await recommendationService.listSteering(authUserId)
+      response.json(
+        RecommendationSteeringListResponseSchema.parse({
+          data: records.map(steeringView),
+        }),
+      )
     },
   )
 

@@ -298,6 +298,14 @@ source, tests, and `git status` before relying on it.
   `refreshHint`. Production Dockerfiles, `deploy/`, and
   `docker-compose.prod.yml` exist; live deployment is still unverified.
 
+- 2026-09-24 (later): Recommendations accept plain-language instructions
+  (`/api/recommendations/steering`, `core.recommendation_steering`, saved to
+  learner memory with consent); the coach has a small-talk fast path, stricter
+  grounding rules, and an Answer details side panel; Insights provider filters
+  scope manual/verified solve actions; language breakdowns group compiler
+  builds by language; CSES is in provider filters; preset avatars and
+  self-reported current ratings were removed from Settings/onboarding.
+
 Important: this snapshot describes the working tree, which currently contains
 uncommitted Week 10 work. It is context, not permission to commit or rewrite it.
 

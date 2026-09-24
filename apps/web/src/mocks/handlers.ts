@@ -28,6 +28,8 @@ import {
   RecommendationDismissalResponseSchema,
   RecommendationDismissalsResponseSchema,
   RecommendationFeedbackInputSchema,
+  SaveRecommendationSteeringRequestSchema,
+  type RecommendationSteering,
   RecommendationFeedbackResponseSchema,
   RecommendationFeedResponseSchema,
   RecommendationRestorationResponseSchema,
@@ -62,6 +64,7 @@ const recommendationFeedback = new Map<
   }
 >()
 let recommendationGeneration = 0
+let mockSteering: RecommendationSteering[] = []
 
 const profileUrl = (provider: LinkableProvider, handle: string) => {
   const encodedHandle = encodeURIComponent(handle)
@@ -1093,6 +1096,67 @@ export const handlers: RequestHandler[] = [
     recommendationGeneration += 1
     return HttpResponse.json(recommendationResponse())
   }),
+  http.get('/api/recommendations/steering', async () => {
+    await delay(mockDelayMs)
+    return HttpResponse.json({ data: mockSteering })
+  }),
+  http.post('/api/recommendations/steering', async ({ request }) => {
+    const input = SaveRecommendationSteeringRequestSchema.safeParse(
+      await request.json().catch(() => null),
+    )
+    if (!input.success) {
+      return HttpResponse.json(
+        createApiError(
+          'INVALID_RECOMMENDATION_INSTRUCTION',
+          'Describe what you want in 1 to 500 characters.',
+          input.error.issues,
+        ),
+        { status: 400 },
+      )
+    }
+    await delay(mockDelayMs)
+    const steering = {
+      id: crypto.randomUUID(),
+      text: input.data.text,
+      directives: {
+        onlyProviders: [],
+        preferProviders: [],
+        excludeProviders: [],
+        includeTopics: [],
+        onlyTopics: false,
+        excludeTopics: [],
+        excludeProblems: [],
+      },
+      applied: [],
+      savedToMemory: false,
+      createdAt: new Date().toISOString(),
+    }
+    mockSteering = [steering, ...mockSteering]
+    recommendationGeneration += 1
+    return HttpResponse.json({
+      data: { steering, feed: recommendationResponse() },
+    })
+  }),
+  http.delete(
+    '/api/recommendations/steering/:steeringId',
+    async ({ params }) => {
+      await delay(mockDelayMs)
+      const id = String(params.steeringId)
+      if (!mockSteering.some((item) => item.id === id)) {
+        return HttpResponse.json(
+          createApiError(
+            'RECOMMENDATION_INSTRUCTION_NOT_FOUND',
+            'That recommendation instruction was not found.',
+            [],
+          ),
+          { status: 404 },
+        )
+      }
+      mockSteering = mockSteering.filter((item) => item.id !== id)
+      recommendationGeneration += 1
+      return HttpResponse.json({ data: mockSteering })
+    },
+  ),
   http.patch(
     '/api/recommendation-items/:itemId/feedback',
     async ({ params, request }) => {

@@ -36,7 +36,15 @@ import type { LearnerProfileRepository } from '../repositories/learner-profile-r
 import type { ProgressRepository } from '../repositories/progress-repository.js'
 import type { ProviderDataRepository } from '../repositories/provider-data-repository.js'
 import type { CoachRepository } from '../repositories/coach-repository.js'
+import type { RecommendationSteeringRepository } from '../repositories/recommendation-steering-repository.js'
 import type { StructuredLogger } from '../utils/structured-logger.js'
+import { canonicalCoachTopic } from './coach-service.js'
+import {
+  EMPTY_STEERING,
+  mergeSteering,
+  parseRecommendationSteering,
+  type MergedSteering,
+} from './recommendation-steering.js'
 import {
   DETERMINISTIC_RANKING_VERSION,
   deriveRankingProfile,
@@ -66,6 +74,7 @@ type RecommendationServiceOptions = {
   progressRepository?: ProgressRepository
   providerDataRepository: ProviderDataRepository
   coachRepository?: CoachRepository
+  steeringRepository?: RecommendationSteeringRepository
   memoryGenerationEnabled?: boolean
   now?: () => Date
 }
@@ -80,6 +89,46 @@ const identity = (provider: string, externalId: string) =>
   `${provider}:${externalId}`
 
 const FOCUS_TOPIC_LIMIT = 12
+
+const steeringDifficultyBands = {
+  easy: { min: 800, max: 1200 },
+  medium: { min: 1200, max: 1700 },
+  hard: { min: 1700, max: 2400 },
+} as const
+
+// Hard constraints the learner asked for. Provider and topic filters hold
+// even when the AI ranker is unavailable. A topic-only request falls back to
+// a strong focus when too few problems would remain.
+const applySteeringToCandidates = (
+  problems: readonly ExternalProblemSummary[],
+  steering: MergedSteering,
+) => {
+  const byProvider = problems.filter(
+    (problem) =>
+      !steering.excludeProviders.includes(problem.provider) &&
+      (steering.onlyProviders.length === 0 ||
+        steering.onlyProviders.includes(problem.provider)),
+  )
+  if (!steering.onlyTopics) return byProvider
+  const byTopic = byProvider.filter((problem) =>
+    [...problem.topics, ...problem.providerTags].some((topic) =>
+      steering.includeTopics.includes(canonicalCoachTopic(topic)),
+    ),
+  )
+  return byTopic.length >= RECOMMENDATION_BATCH_SIZE * 2 ? byTopic : byProvider
+}
+
+const steeringPreference = (
+  profilePreference: string | undefined,
+  steering: MergedSteering,
+) => {
+  const text = [profilePreference, ...steering.notes]
+    .filter((value): value is string => value !== undefined && value !== '')
+    .join('\n')
+    .trim()
+  if (text === '') return undefined
+  return text.length <= 500 ? text : text.slice(text.length - 500).trim()
+}
 
 const roundToHundred = (value: number) => Math.round(value / 100) * 100
 
@@ -530,6 +579,7 @@ export class RecommendationService {
       storedRoadmap,
       coachPreferences,
       ratingChanges,
+      steeringRecords,
     ] = await Promise.all([
       this.options.learnerProfileRepository.findByAuthUserId(authUserId),
       this.options.problemActionRepository.listByAuthUserId(authUserId),
@@ -541,24 +591,39 @@ export class RecommendationService {
       this.options.progressRepository?.latestRelevantChangeAt(authUserId),
       this.options.progressRepository?.getConsent(authUserId),
       this.options.coachRepository?.getTopicStatuses(authUserId),
-      this.options.coachRepository
-        ?.getRoadmap(authUserId)
-        .catch(() => null) ?? Promise.resolve(null),
+      this.options.coachRepository?.getRoadmap(authUserId).catch(() => null) ??
+        Promise.resolve(null),
       this.options.coachRepository
         ?.getPreferences(authUserId)
         .catch(() => undefined) ?? Promise.resolve(undefined),
       this.options.providerDataRepository
         .listRatingChanges(authUserId)
         .catch(() => []),
+      this.options.steeringRepository?.listActive(authUserId).catch(() => []) ??
+        Promise.resolve([]),
     ])
     const now = this.options.now?.() ?? new Date()
+    const steering =
+      steeringRecords.length === 0
+        ? EMPTY_STEERING
+        : mergeSteering(steeringRecords)
+    const snapshotForLearner: ProviderSnapshot = {
+      ...snapshot,
+      problems: applySteeringToCandidates(snapshot.problems, steering),
+    }
     const baseRankingProfile = deriveRankingProfile(profile)
     const skippedTopics = Object.entries(topicStatuses ?? {})
       .filter(([, status]) => status === 'skip_for_now')
       .map(([topic]) => topic)
+    // The learner's newest explicit instructions win over older profile
+    // text: a topic they asked for again is no longer excluded.
     const excludedTopics = [
-      ...new Set([...baseRankingProfile.excludedTopics, ...skippedTopics]),
-    ]
+      ...new Set([
+        ...baseRankingProfile.excludedTopics,
+        ...skippedTopics,
+        ...steering.excludeTopics,
+      ]),
+    ].filter((topic) => !steering.includeTopics.includes(topic))
     const profileRankingProfile = {
       ...baseRankingProfile,
       excludedTopics,
@@ -600,32 +665,72 @@ export class RecommendationService {
       profile?.topicPreference.mode === 'selected'
         ? profileRankingProfile.focusTopics
         : []
+    const steeredProviders =
+      steering.onlyProviders.length > 0
+        ? steering.onlyProviders
+        : steering.preferProviders.length > 0
+          ? steering.preferProviders
+          : profileRankingProfile.preferredProviders.filter(
+              (provider) => !steering.excludeProviders.includes(provider),
+            )
+    const steeredPreference = steeringPreference(
+      profileRankingProfile.recommendationPreference,
+      steering,
+    )
+    const steeredBand =
+      steering.ratingRange ??
+      (steering.difficulty === undefined
+        ? undefined
+        : steeringDifficultyBands[steering.difficulty])
     const rankingProfile = {
       ...profileRankingProfile,
+      preferredProviders: steeredProviders,
+      ...(steering.difficulty === undefined
+        ? {}
+        : { targetDifficulty: steering.difficulty }),
+      ...(steeredPreference === undefined
+        ? {}
+        : { recommendationPreference: steeredPreference }),
       focusTopics: [
         ...new Set([
+          ...steering.includeTopics,
           ...explicitFocus,
           ...signals.roadmapFocusTopics,
           ...signals.weakTopics,
-          ...(explicitFocus.length > 0 ? [] : profileRankingProfile.focusTopics),
+          ...(explicitFocus.length > 0
+            ? []
+            : profileRankingProfile.focusTopics),
           ...signals.underPracticedTopics,
         ]),
       ]
         .filter((topic) => !excludedTopics.includes(topic))
         .slice(0, FOCUS_TOPIC_LIMIT),
-      ratingBand: calibratedRatingBand(
-        profile,
-        profileRankingProfile.ratingBand,
-        signals.observedCodeforcesRating,
-      ),
+      ratingBand:
+        steeredBand ??
+        calibratedRatingBand(
+          profile,
+          profileRankingProfile.ratingBand,
+          signals.observedCodeforcesRating,
+        ),
     }
-    const criteria = criteriaFor(
+    const baseCriteria = criteriaFor(
       rankingProfile,
       profile,
       topicEvidence,
       evidenceConsented,
       this.providers.length === 1 ? this.providers[0]?.key : undefined,
     )
+    // Any change to the learner's instructions invalidates today's batch.
+    const criteria =
+      steeringRecords.length === 0
+        ? baseCriteria
+        : {
+            ...baseCriteria,
+            profileSignature: createHash('sha256')
+              .update(baseCriteria.profileSignature)
+              .update(JSON.stringify(steering))
+              .digest('hex'),
+          }
     const latestBatch = batches[0]
     const latestFeedback = feedback.reduce<Date | undefined>(
       (latest, item) =>
@@ -690,7 +795,7 @@ export class RecommendationService {
       snapshot.problems,
     )
     const shortlist = rankRecommendations({
-      candidates: snapshot.problems,
+      candidates: snapshotForLearner.problems,
       history,
       profile: rankingProfile,
       preferNewItems: forceRefresh || dailyRotation,
@@ -924,6 +1029,92 @@ export class RecommendationService {
     })
   }
 
+  async listSteering(authUserId: string) {
+    return (await this.options.steeringRepository?.listActive(authUserId)) ?? []
+  }
+
+  // Saves a learner's plain-language instruction, removes any current
+  // problems it names, and regenerates the feed under the new constraints.
+  async addSteering(
+    authUserId: string,
+    text: string,
+    requestId: string = randomUUID(),
+    signal?: AbortSignal,
+  ) {
+    const repository = this.options.steeringRepository
+    if (repository === undefined) {
+      throw new Error('Recommendation instructions are not configured.')
+    }
+    const [profile, batches, snapshot] = await Promise.all([
+      this.options.learnerProfileRepository.findByAuthUserId(authUserId),
+      this.options.recommendationRepository.listBatchesByAuthUserId(authUserId),
+      this.loadSnapshot(),
+    ])
+    const latest = batches[0]
+    const problemsById = new Map(
+      snapshot.problems.map((problem) => [
+        identity(problem.provider, problem.externalId),
+        problem,
+      ]),
+    )
+    const feedProblems =
+      latest?.items.flatMap((item) => {
+        const problem = problemsById.get(
+          identity(item.provider, item.externalId),
+        )
+        return problem === undefined
+          ? []
+          : [
+              {
+                provider: problem.provider,
+                externalId: problem.externalId,
+                title: problem.title,
+              },
+            ]
+      }) ?? []
+    const profileBand = deriveRankingProfile(profile).ratingBand
+    const currentBand =
+      latest?.requestCriteria.minRating !== undefined &&
+      latest.requestCriteria.maxRating !== undefined
+        ? {
+            min: latest.requestCriteria.minRating,
+            max: latest.requestCriteria.maxRating,
+          }
+        : profileBand
+    const parsed = parseRecommendationSteering(text, {
+      currentBand,
+      feedProblems,
+    })
+    const record = await repository.create(authUserId, {
+      text,
+      directives: parsed.directives,
+      applied: parsed.applied,
+    })
+    for (const problem of parsed.directives.excludeProblems) {
+      try {
+        await this.dismissProblem(
+          authUserId,
+          problem.provider,
+          problem.externalId,
+        )
+      } catch (error) {
+        if (!(error instanceof RecommendationNotFoundError)) throw error
+      }
+    }
+    const feed = await this.generate(authUserId, true, requestId, signal)
+    return { record, feed }
+  }
+
+  async removeSteering(authUserId: string, id: string) {
+    return (
+      (await this.options.steeringRepository?.remove(authUserId, id)) ?? null
+    )
+  }
+
+  async recordSteeringMemory(authUserId: string, id: string, memoryId: string) {
+    await this.options.steeringRepository?.setMemoryId(authUserId, id, memoryId)
+  }
+
   async dismissProblem(
     authUserId: string,
     provider: ProviderKey,
@@ -955,10 +1146,11 @@ export class RecommendationService {
         },
       })
     }
-    const recorded = await this.options.problemActionRepository.appendByAuthUserId(
-      authUserId,
-      { provider, externalId, actionType: 'dismissed' },
-    )
+    const recorded =
+      await this.options.problemActionRepository.appendByAuthUserId(
+        authUserId,
+        { provider, externalId, actionType: 'dismissed' },
+      )
     this.invalidateForLearner(authUserId)
     return RecommendationDismissalResponseSchema.parse({
       data: {

@@ -288,6 +288,8 @@ def test_knowledge_retrieval_and_web_router_are_bounded() -> None:
     assert should_ground_on_web("Recommend problems I should solve next", 8)
     assert not should_ground_on_web("Analyze my recent contests and progress", 8)
     assert not should_ground_on_web("Explain binary search", len(chunks))
+    assert not should_ground_on_web("What is my current rating right now?", 8)
+    assert should_ground_on_web("Search the web for Fenwick tree tutorials", 8)
     public_query = sanitized_public_query(
         "My handle is user@example.com; what is my latest rating?"
     )

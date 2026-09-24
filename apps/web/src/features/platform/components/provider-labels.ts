@@ -14,4 +14,9 @@ export const providerOptions: readonly LinkableProvider[] = [
   'codeforces',
   'codechef',
   'leetcode',
+  'cses',
 ]
+
+// CSES has a problem set but no contests.
+export const contestProviderOptions: readonly LinkableProvider[] =
+  providerOptions.filter((provider) => provider !== 'cses')

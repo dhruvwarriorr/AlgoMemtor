@@ -64,6 +64,7 @@ import type { CoachRepository } from '../repositories/coach-repository.js'
 import type { RecommendationRepository } from '../repositories/recommendation-repository.js'
 import type { StructuredLogger } from '../utils/structured-logger.js'
 import type { ProgressService } from './progress-service.js'
+import { isCoachSmallTalk } from './coach-intent.js'
 import {
   buildCoachWorkspace,
   type CoachProfileDigest,
@@ -1613,7 +1614,7 @@ const coachRichContentForContext = (
       type: 'problem_list',
       title: 'Problems picked for you',
       reason:
-        'Chosen by your coach from your roadmap and AlgoMemtor\'s validated catalog, excluding problems you already solved.',
+        "Chosen by your coach from your roadmap and AlgoMemtor's validated catalog, excluding problems you already solved.",
       problems: problemsToShow,
     })
   }
@@ -1680,6 +1681,25 @@ const safePublicCitation = (citation: CoachCitation) => {
     (citation.url !== undefined && isSafeCoachPublicUrl(citation.url))
   )
 }
+
+const MEMORY_RETRIEVAL_BUDGET_MS = 3_000
+
+// Rejects when `promise` has not settled within `ms`; the underlying request
+// still finishes (or times out) on its own.
+const withinBudget = <T>(promise: Promise<T>, ms: number) =>
+  new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Budget exceeded.')), ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error: unknown) => {
+        clearTimeout(timer)
+        reject(error instanceof Error ? error : new Error('Request failed.'))
+      },
+    )
+  })
 
 export type CoachServiceOptions = {
   repository: CoachRepository
@@ -2697,6 +2717,20 @@ export class CoachService {
       },
     )
     if (userMessage === null) throw new CoachConversationNotFoundError()
+    if (
+      transient === undefined &&
+      transientMedia === undefined &&
+      !omittedUserContext &&
+      isCoachSmallTalk(input.content)
+    ) {
+      return this.respondToSmallTalk(
+        userId,
+        conversationId,
+        conversation.messages,
+        userMessage,
+        input.content,
+      )
+    }
     const context = await this.buildContext(
       userId,
       conversationId,
@@ -2893,6 +2927,127 @@ export class CoachService {
       message: savedAssistant,
       roadmap: context.roadmap,
     })
+  }
+
+  // Greetings and thanks get one quick reply from a light context: the stored
+  // plan's focus names and the last few turns. No roadmap rebuild, provider
+  // history, memory retrieval, or data-backed claims.
+  private async respondToSmallTalk(
+    userId: string,
+    conversationId: string,
+    previousMessages: readonly CoachMessage[],
+    userMessage: CoachMessage,
+    question: string,
+  ): Promise<CoachResponse> {
+    const [profile, storedRoadmap] = await Promise.all([
+      this.options.learnerProfileRepository.findByAuthUserId(userId),
+      this.options.repository.getRoadmap(userId).catch(() => null),
+    ])
+    const roadmap =
+      storedRoadmap === null
+        ? await this.getRoadmap(userId)
+        : this.withRefreshHint(storedRoadmap)
+    const excludedTopics = [
+      ...new Set([
+        ...extractCoachTopicExclusions(
+          [profile?.recommendationPreference, profile?.additionalConsiderations]
+            .filter((value): value is string => value !== undefined)
+            .join('\n'),
+        ),
+        ...roadmap.topics
+          .filter((topic) => topic.manualStatus === 'skip_for_now')
+          .map((topic) => topic.topic),
+      ]),
+    ]
+    const recentTurns = previousMessages
+      .filter((message) => message.fallback !== true)
+      .slice(-4)
+      .map((message) => ({
+        role: message.role,
+        content: redactExcludedCoachTopics(
+          message.role === 'assistant'
+            ? redactCoachLinksAndSecrets(message.content).slice(0, 300)
+            : redactCoachContextText(message.content, 300),
+          excludedTopics,
+        ),
+      }))
+    const focusTopics = roadmap.topics
+      .filter(
+        (topic) =>
+          topic.lane === 'current_focus' &&
+          !excludedTopics.includes(canonicalTopic(topic.topic)),
+      )
+      .slice(0, 3)
+      .map((topic) => topic.name)
+    let result: AiCoachResult
+    try {
+      result = await this.options.aiCoachClient.respond({
+        requestId: randomUUID(),
+        learnerId: userId,
+        conversationId,
+        question,
+        context: {
+          turnKind: 'smalltalk',
+          excludedTopics,
+          focusTopics,
+          recentTurns,
+        },
+      })
+    } catch (error) {
+      this.options.logger.warn('coach_ai_unavailable', {
+        errorCode:
+          error instanceof AiCoachClientError
+            ? error.code
+            : 'AI_COACH_RESPONSE_REJECTED',
+      })
+      result = this.unavailableResponse(
+        error instanceof AiCoachClientError &&
+          error.code === 'AI_COACH_RATE_LIMITED',
+      )
+    }
+    const now = this.now().toISOString()
+    const answer = redactExcludedCoachTopics(
+      sanitizeAssistantAnswer(result.answer),
+      excludedTopics,
+    )
+    const message = CoachMessageSchema.parse({
+      id: randomUUID(),
+      role: 'assistant',
+      content: answer || 'Hi! How can I help with your practice today?',
+      evidence: [],
+      proposals: [],
+      ...(result.fallback
+        ? { fallback: true }
+        : {
+            richContent: CoachRichContentSchema.parse({
+              version: 'coach-rich-v2',
+              blocks: [],
+              citations: [],
+              suggestedQuestions: (
+                result.presentation?.suggestedQuestions ?? []
+              )
+                .map((item) => redactExcludedCoachTopics(item, excludedTopics))
+                .slice(0, 4),
+              generatedAt: now,
+              dataAsOf: roadmap.generatedAt,
+              completeness: roadmap.dataCompleteness,
+              stale: roadmap.dataCompleteness !== 'complete',
+            }),
+          }),
+      createdAt: now,
+    })
+    const savedAssistant = await this.options.repository.appendMessage(
+      userId,
+      conversationId,
+      message,
+    )
+    if (savedAssistant === null) throw new CoachConversationNotFoundError()
+    await this.options.repository.updateSummary(
+      userId,
+      conversationId,
+      this.summaryForConversation([...previousMessages, userMessage], message),
+    )
+    return CoachResponseSchema.parse({ message: savedAssistant, roadmap })
   }
 
   async confirmProposal(userId: string, proposalId: string) {
@@ -3143,8 +3298,7 @@ export class CoachService {
     // Links and secrets are redacted field by field. An unsafe fragment in
     // one evidence item or proposal drops only that item instead of turning
     // the entire turn into "Coach is unavailable".
-    const cleanText = (value: string) =>
-      omitGeneratedCodeAndProblemText(value)
+    const cleanText = (value: string) => omitGeneratedCodeAndProblemText(value)
     const safeEvidenceItems = redactedEvidence
       .map((item) => ({
         ...item,
@@ -3280,7 +3434,9 @@ export class CoachService {
         // confirmation is an owner-authenticated core-service transition.
         status: 'proposed' as const,
         label: cleanText(proposal.label).slice(0, 160) || 'Suggested action',
-        reason: cleanText(proposal.reason).slice(0, 500) || 'Suggested by your coach.',
+        reason:
+          cleanText(proposal.reason).slice(0, 500) ||
+          'Suggested by your coach.',
       })),
     }
   }
@@ -3291,8 +3447,12 @@ export class CoachService {
     query?: string,
   ): Promise<CoachContextSnapshot> {
     let contextDataFailed = false
-    const activityDigest =
-      (await this.options.activityDigest?.(userId).catch(() => null)) ?? null
+    const startedAt = Date.now()
+    // Started first and awaited with the rest: the digest read is independent
+    // of every other lookup below.
+    const activityDigestPromise =
+      this.options.activityDigest?.(userId).catch(() => null) ??
+      Promise.resolve(null)
     const safeList = <T>(value: Promise<T[]>) =>
       value.catch(() => {
         contextDataFailed = true
@@ -3351,20 +3511,28 @@ export class CoachService {
       (query === undefined ||
       this.options.aiMemoryClient.retrieveMemories === undefined
         ? this.options.aiMemoryClient.listMemories(userId)
-        : this.options.aiMemoryClient.retrieveMemories(
-            userId,
-            redactCoachContextText(query, 500),
-            5,
-          )
+        : // Semantic retrieval embeds the question with a remote model. When
+          // that is slow, the stored memory list keeps the turn moving.
+          withinBudget(
+            this.options.aiMemoryClient.retrieveMemories(
+              userId,
+              redactCoachContextText(query, 500),
+              5,
+            ),
+            MEMORY_RETRIEVAL_BUDGET_MS,
+          ).catch(() => this.options.aiMemoryClient.listMemories(userId))
       ).catch(() => {
         contextDataFailed = true
         return []
       }),
       this.options.repository.getConversation(userId, conversationId),
     ])
-    const catalogSettled = await Promise.allSettled(
-      this.options.providers.map((provider) => provider.search({})),
-    )
+    const [activityDigest, catalogSettled] = await Promise.all([
+      activityDigestPromise,
+      Promise.allSettled(
+        this.options.providers.map((provider) => provider.search({})),
+      ),
+    ])
     const excludedTopics = [
       ...new Set([
         ...extractCoachTopicExclusions(
@@ -3448,6 +3616,11 @@ export class CoachService {
       this.now(),
     )
     const momentum = coachMomentum(activityTrends)
+    this.options.logger.info('coach_context_built', {
+      durationMs: Date.now() - startedAt,
+      submissions: submissions.length,
+      solved: solved.length,
+    })
     const roadmapTransitions = roadmapRevisions
       .slice()
       .sort((left, right) => right.version - left.version)
@@ -3569,7 +3742,14 @@ export class CoachService {
         )
         .slice(0, 20)
         .map(
-          ({ provider, occurredAt, oldRating, newRating, delta, contestName }) => ({
+          ({
+            provider,
+            occurredAt,
+            oldRating,
+            newRating,
+            delta,
+            contestName,
+          }) => ({
             provider,
             ...(contestName === undefined ? {} : { contestName }),
             occurredAt,
@@ -4333,7 +4513,9 @@ export class CoachService {
           suggestion,
         ]),
       )
-      const suggestions = (manualStatus === 'skip_for_now' ? [] : selectedSuggestions).map(({ problem, band }) => {
+      const suggestions = (
+        manualStatus === 'skip_for_now' ? [] : selectedSuggestions
+      ).map(({ problem, band }) => {
         const id = stableUuid(
           `coach-suggestion:${definition.slug}:${problem.provider}:${problem.externalId}`,
         )

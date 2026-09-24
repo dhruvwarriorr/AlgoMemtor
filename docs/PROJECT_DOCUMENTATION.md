@@ -1485,6 +1485,34 @@ active instruction/preference memories and then adds query-relevant semantic and
 keyword matches. Consolidation remains explicit, owner-scoped, and
 confirmation-safe.
 
+**Turn routing, grounding, and latency.** Both Express (`coach-intent.ts`) and
+FastAPI (`coach_intent.py`) classify a turn before any heavy work. Short
+conversational messages (greetings, thanks, goodbyes, "who are you") take a
+small-talk path: Express sends only the stored plan's focus names and the last
+four turns with `turnKind: "smalltalk"`; FastAPI answers with one short,
+fast-model call (Groq when configured, otherwise Gemini) with no retrieval, web
+research, tools, or learner statistics, and falls back to a fixed reply if the
+model fails. Every other turn uses the full pipeline. The system prompt requires
+answers to match the question's scope and every learner-specific number or
+problem to be copied from supplied data or tool results; raw
+`provider:externalId` tokens are stripped from answer prose (outside code)
+because internal IDs differ from public numbers (LeetCode's internal 1007 is
+public problem 967). Deep reasoning (`COACH_THINKING_LEVEL`) is reserved for
+debugging, proofs, attached code, and plans; other agent turns use light
+reasoning. In hybrid mode, complex turns, attachments, and personal-data
+lookups route to Gemini; concept questions route to Groq, which generates plain
+Markdown with a `PROBLEM_IDS` / `FOLLOW_UPS` trailer instead of function
+calling (Groq tool calls ended long answers early). Express bounds semantic
+memory retrieval to 3 s and falls back to the stored memory list. Public web
+grounding no longer triggers on words such as "now" or "current" in personal
+questions.
+
+**Chat layout.** The main chat shows only the coach's prose; fenced code becomes
+a compact chip. The right-hand Answer details panel (a drawer below 1280 px)
+shows, for the selected answer, picked problems, code, web problem links,
+charts and data (only when requested), confirmation-gated actions, follow-up
+questions, and sources with the data-as-of time.
+
 **Roadmap refresh.** `GET /api/coach/roadmap` rebuilds the plan from stored
 evidence on every read and saves a new version only when its content changes.
 `POST /api/coach/roadmap/refresh` first runs the bounded live refresh (25 s per
@@ -2431,11 +2459,15 @@ AnalyticsPage
   -> useAnalytics(provider filter)
   -> GET /api/analytics
   -> profile snapshots + actions + submissions + solved rows + ratings + contests
+  -> with a provider filter, every source (including manual and
+     provider-verified solve actions) is scoped to that provider only
   -> provider solved totals are read from latest profile/account totals
   -> concrete solved references are deduplicated by provider and external ID
   -> metadata and solved-observation tags are joined
   -> providers with aggregate profile topic counts use those counts once
   -> remaining providers derive topic counts from concrete metadata
+  -> language counts are grouped by family (every C++ build is "C++",
+     PyPy/CPython are "Python", every Java version is "Java")
   -> response includes difficulty, languages, ratings, contests, freshness
   -> UnifiedAnalyticsSchema validates response
   -> UI renders distributions and partial/stale qualification
@@ -2456,6 +2488,32 @@ RecommendationsPage
   -> repository persists batch/items and metadata
   -> UI renders explanations and safe outbound links
 ```
+
+#### Recommendation instructions (steering)
+
+The Recommendations page has a "Shape your picks" bar where the learner types
+what they want ("no LeetCode, more DP around 1600", "these are too easy",
+"skip Sereja and Brackets").
+
+```text
+POST /api/recommendations/steering { text }
+  -> parseRecommendationSteering (deterministic, clause-aware negation)
+     -> onlyProviders / preferProviders / excludeProviders
+     -> includeTopics (+ onlyTopics) / excludeTopics
+     -> ratingRange (explicit, "around", relative "harder/easier") or difficulty
+     -> excludeProblems: titles from the current batch, recorded as dismissals
+  -> core.recommendation_steering row (text, directives, applied summary)
+  -> with AI consent: learner memory (user_instruction) proposed + approved
+  -> feed regenerated with forceRefresh and returned with the instruction
+GET /api/recommendations/steering        -> active instructions (newest first)
+DELETE /api/recommendations/steering/:id -> soft-remove, archive its memory
+```
+
+Active instructions merge oldest to newest (a newer instruction wins on the
+same provider, topic, or rating), are capped at 20, change the batch profile
+signature so today's batch is regenerated, and are enforced as hard candidate
+filters before optional AI ranking. Their text is also passed to AI ranking as
+bounded preference text. Full learner deletion cascades through `core.users`.
 
 ---
 

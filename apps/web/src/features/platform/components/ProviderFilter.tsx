@@ -6,9 +6,15 @@ type ProviderFilterProps = {
   id: string
   value?: LinkableProvider
   onChange: (provider: LinkableProvider | undefined) => void
+  options?: readonly LinkableProvider[]
 }
 
-export function ProviderFilter({ id, value, onChange }: ProviderFilterProps) {
+export function ProviderFilter({
+  id,
+  value,
+  onChange,
+  options = providerOptions,
+}: ProviderFilterProps) {
   return (
     <label className="min-w-40 space-y-1.5 text-sm font-medium text-foreground">
       Provider
@@ -22,7 +28,7 @@ export function ProviderFilter({ id, value, onChange }: ProviderFilterProps) {
         value={value ?? ''}
       >
         <option value="">All providers</option>
-        {providerOptions.map((provider) => (
+        {options.map((provider) => (
           <option key={provider} value={provider}>
             {providerLabels[provider]}
           </option>

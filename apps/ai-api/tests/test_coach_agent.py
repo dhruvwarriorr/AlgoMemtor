@@ -589,30 +589,69 @@ def test_llm_provider_moves_generation_and_coach_to_groq() -> None:
 
 
 @pytest.mark.asyncio
-async def test_groq_coach_uses_one_grounded_structured_call() -> None:
-    class StructuredModel:
+async def test_groq_coach_uses_one_grounded_plain_call() -> None:
+    from langchain_core.messages import AIMessage
+
+    class PlainModel:
         def __init__(self) -> None:
             self.calls: list[list[Any]] = []
 
-        async def ainvoke(self, messages: list[Any]) -> dict[str, Any]:
+        async def ainvoke(self, messages: list[Any]) -> AIMessage:
             self.calls.append(messages)
-            return {"parsed": {"answer": "Review the two recent contest misses."}}
+            return AIMessage(
+                content=(
+                    "Review the two recent contest misses.\n\n"
+                    "PROBLEM_IDS: codeforces:1A, not-an-id\n"
+                    "FOLLOW_UPS: What went wrong in Round A? | How do I prep?"
+                ),
+                response_metadata={"finish_reason": "stop"},
+            )
 
-    scripted = StructuredModel()
+    scripted = PlainModel()
     model = object.__new__(GeminiCoachModel)
     model.settings = settings(
         coach_llm_provider="groq",
         coach_llm_model="qwen/qwen3.8-27b",
         groq_api_key="gsk-test",
     )
-    model.structured_model = scripted
+    model.base_model = scripted
     model.throttle = ModelRequestThrottle(per_minute=0)
     result = await model.respond(request("How did my last contests go?"))
     assert result.output.answer == "Review the two recent contest misses."
+    assert result.output.presentation is not None
+    assert result.output.presentation.problemIds == ["codeforces:1A"]
+    assert result.output.presentation.suggestedQuestions == [
+        "What went wrong in Round A?",
+        "How do I prep?",
+    ]
     assert len(scripted.calls) == 1
     prompt = scripted.calls[0][1].content
     assert "Round A" in prompt
     assert "prefetchedToolResults" in prompt
+
+
+@pytest.mark.asyncio
+async def test_groq_answer_cut_by_the_token_limit_is_closed_and_flagged() -> None:
+    from langchain_core.messages import AIMessage
+
+    class CutModel:
+        async def ainvoke(self, _messages: list[Any]) -> AIMessage:
+            return AIMessage(
+                content="Use a BIT.\n\n```cpp\nint query(int i) {",
+                response_metadata={"finish_reason": "length"},
+            )
+
+    model = object.__new__(GeminiCoachModel)
+    model.settings = settings(
+        coach_llm_provider="groq",
+        coach_llm_model="qwen/qwen3.8-27b",
+        groq_api_key="gsk-test",
+    )
+    model.base_model = CutModel()
+    model.throttle = ModelRequestThrottle(per_minute=0)
+    result = await model.respond(request("What is a Fenwick tree?"))
+    assert result.output.answer.count("```") == 2
+    assert result.output.answer.endswith("_(Answer shortened. Ask me to continue.)_")
 
 
 def test_groq_image_attachment_uses_openai_image_url_format() -> None:

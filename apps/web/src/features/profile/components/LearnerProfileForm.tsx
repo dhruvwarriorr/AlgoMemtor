@@ -11,7 +11,6 @@ import {
   type RatedPracticePlatform,
   type RatingComfortRange,
   type SaveLearnerProfileRequest,
-  type StandingMetric,
 } from '@algomemtor/shared-contracts'
 
 import { ErrorState } from '@/components/states/ErrorState'
@@ -155,11 +154,6 @@ const learningPreferenceOptions: readonly Option<LearningPreference>[] = [
   { value: 'mixed_approach', label: 'Use a mixed approach' },
 ]
 
-type StandingInput = {
-  metric: StandingMetric
-  value: string
-}
-
 type FormState = {
   experience: ExperienceLevel | ''
   difficultyComfort: DifficultyComfort | ''
@@ -168,7 +162,6 @@ type FormState = {
   topics: OnboardingTopic[]
   preferredTopics: OnboardingTopic[]
   platforms: PracticePlatform[]
-  standings: Record<RatedPracticePlatform, StandingInput>
   ratingRangePlatform: RatingComfortRange['platform']
   ratingRangeMin: string
   ratingRangeMax: string
@@ -186,7 +179,6 @@ type FormErrorKey =
   | 'topics'
   | 'preferredTopics'
   | 'platforms'
-  | 'standings'
   | 'ratingComfortRange'
   | 'learningPreferences'
   | 'additionalConsiderations'
@@ -215,15 +207,6 @@ const inputClassName =
 const sectionClassName =
   'grid min-w-0 gap-5 border-b border-border py-8 first-of-type:pt-2 md:grid-cols-[minmax(0,14rem)_minmax(0,1fr)] md:gap-x-10 md:[&>*:not(:first-child)]:col-start-2'
 
-function emptyStandings(): Record<RatedPracticePlatform, StandingInput> {
-  return {
-    codeforces: { metric: 'rating', value: '' },
-    codechef: { metric: 'rating', value: '' },
-    atcoder: { metric: 'rating', value: '' },
-    leetcode: { metric: 'rating', value: '' },
-  }
-}
-
 function initialFormState(profile: LearnerProfile | null): FormState {
   const browserTimezone = Intl.DateTimeFormat()
     .resolvedOptions()
@@ -238,7 +221,6 @@ function initialFormState(profile: LearnerProfile | null): FormState {
       topics: [],
       preferredTopics: [],
       platforms: [],
-      standings: emptyStandings(),
       ratingRangePlatform: 'codeforces',
       ratingRangeMin: '',
       ratingRangeMax: '',
@@ -248,15 +230,6 @@ function initialFormState(profile: LearnerProfile | null): FormState {
       timezone: browserTimezone,
     }
   }
-
-  const standings = emptyStandings()
-
-  profile.platformPreferences.standings.forEach((standing) => {
-    standings[standing.platform] = {
-      metric: standing.metric,
-      value: String(standing.value),
-    }
-  })
 
   return {
     experience: profile.experience,
@@ -269,7 +242,6 @@ function initialFormState(profile: LearnerProfile | null): FormState {
         : [],
     preferredTopics: [...profile.preferredTopics],
     platforms: [...profile.platformPreferences.platforms],
-    standings,
     ratingRangePlatform: profile.ratingComfortRange?.platform ?? 'codeforces',
     ratingRangeMin: String(profile.ratingComfortRange?.min ?? ''),
     ratingRangeMax: String(profile.ratingComfortRange?.max ?? ''),
@@ -288,22 +260,6 @@ function buildProfileRequest(state: FormState) {
   const recommendationPreference = recommendationPreferenceForRequest(
     state.recommendationPreference,
   )
-  const standings = ratedPlatformOptions.flatMap(({ value: platform }) => {
-    const standing = state.standings[platform]
-
-    if (!state.platforms.includes(platform) || !standing.value.trim()) {
-      return []
-    }
-
-    return [
-      {
-        platform,
-        metric: standing.metric,
-        value: Number(standing.value),
-      },
-    ]
-  })
-
   return SaveLearnerProfileRequestSchema.safeParse({
     experience: state.experience,
     difficultyComfort: state.difficultyComfort,
@@ -316,9 +272,11 @@ function buildProfileRequest(state: FormState) {
           }
         : { mode: 'let_algomemtor_suggest' },
     preferredTopics: state.preferredTopics,
+    // Ratings come from linked platform accounts, so the profile no longer
+    // asks for self-reported standings.
     platformPreferences: {
       platforms: state.platforms,
-      standings,
+      standings: [],
     },
     ...(hasRatingRange
       ? {
@@ -340,7 +298,6 @@ function buildProfileRequest(state: FormState) {
 
 function errorKey(path: readonly PropertyKey[]): FormErrorKey {
   const section = String(path[0] ?? '')
-  const field = String(path[1] ?? '')
 
   if (section === 'experience' || section === 'difficultyComfort') {
     return section
@@ -359,7 +316,7 @@ function errorKey(path: readonly PropertyKey[]): FormErrorKey {
   }
 
   if (section === 'platformPreferences') {
-    return field === 'standings' ? 'standings' : 'platforms'
+    return 'platforms'
   }
 
   if (section === 'ratingComfortRange') {
@@ -544,7 +501,6 @@ function LearnerProfileFormFields({
         ? state.platforms.filter((value) => value !== platform)
         : [...state.platforms, platform],
       'platforms',
-      'standings',
     )
   }
 
@@ -557,18 +513,6 @@ function LearnerProfileFormFields({
         : [...state.learningPreferences, preference],
       'learningPreferences',
     )
-  }
-
-  function setStanding(
-    platform: RatedPracticePlatform,
-    standing: StandingInput,
-  ) {
-    changed()
-    clearErrors('standings')
-    setState((current) => ({
-      ...current,
-      standings: { ...current.standings, [platform]: standing },
-    }))
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -595,9 +539,6 @@ function LearnerProfileFormFields({
     }
   }
 
-  const selectedRatedPlatforms = ratedPlatformOptions.filter(({ value }) =>
-    state.platforms.includes(value),
-  )
   const formErrorMessages = Object.values(errors)
 
   return (
@@ -861,78 +802,6 @@ function LearnerProfileFormFields({
             message={errors.platforms}
           />
         </fieldset>
-
-        {selectedRatedPlatforms.length > 0 ? (
-          <fieldset className="space-y-4" disabled={isSaving}>
-            <legend className="font-medium text-foreground">
-              Current ratings or ranking
-            </legend>
-            <p className="text-sm text-muted-foreground">
-              These fields are optional and do not link an external account.
-            </p>
-            <div className="grid min-w-0 gap-4 2xl:grid-cols-2">
-              {selectedRatedPlatforms.map((option) => {
-                const standing = state.standings[option.value]
-
-                return (
-                  <div
-                    className="flex min-w-0 flex-col gap-2 rounded-lg border border-border p-4"
-                    key={option.value}
-                  >
-                    <label
-                      className="text-sm font-medium text-foreground"
-                      htmlFor={`${idPrefix}-${option.value}-standing`}
-                    >
-                      {option.label}{' '}
-                      {standing.metric === 'ranking' ? 'ranking' : 'rating'}
-                    </label>
-                    {option.value === 'leetcode' ? (
-                      <select
-                        className={inputClassName}
-                        id={`${idPrefix}-leetcode-metric`}
-                        onChange={(event) =>
-                          setStanding(option.value, {
-                            ...standing,
-                            metric: event.currentTarget.value as StandingMetric,
-                          })
-                        }
-                        value={standing.metric}
-                      >
-                        <option value="rating">Rating</option>
-                        <option value="ranking">Ranking</option>
-                      </select>
-                    ) : null}
-                    <input
-                      aria-describedby={
-                        errors.standings
-                          ? `${idPrefix}-standings-error`
-                          : undefined
-                      }
-                      aria-invalid={Boolean(errors.standings)}
-                      className={inputClassName}
-                      id={`${idPrefix}-${option.value}-standing`}
-                      inputMode="numeric"
-                      min="1"
-                      onChange={(event) =>
-                        setStanding(option.value, {
-                          ...standing,
-                          value: event.currentTarget.value,
-                        })
-                      }
-                      placeholder="Optional"
-                      type="number"
-                      value={standing.value}
-                    />
-                  </div>
-                )
-              })}
-            </div>
-            <FieldError
-              id={`${idPrefix}-standings-error`}
-              message={errors.standings}
-            />
-          </fieldset>
-        ) : null}
 
         <fieldset className="space-y-4" disabled={isSaving}>
           <legend className="font-medium text-foreground">

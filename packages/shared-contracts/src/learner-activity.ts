@@ -6,7 +6,7 @@ import { ProviderKeySchema } from './problem-catalog.js'
 // It is recomputed after each sync and is what the coach reads first, so it
 // holds aggregates and short lists, never raw provider payloads.
 
-export const LEARNER_ACTIVITY_DIGEST_VERSION = 'learner-activity-v1'
+export const LEARNER_ACTIVITY_DIGEST_VERSION = 'learner-activity-v2'
 
 const count = z.number().int().nonnegative()
 const percent = z.number().min(0).max(100)

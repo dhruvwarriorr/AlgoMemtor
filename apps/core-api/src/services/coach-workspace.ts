@@ -1,13 +1,15 @@
-import type {
-  ContestParticipation,
-  ExternalProblemSummary,
-  ImprovementRoadmap,
-  LearnerProblemStatus,
-  ProviderKey,
-  ProviderProfile,
-  ProviderRatingChange,
-  ProviderSolvedProblem,
-  ProviderSubmission,
+import {
+  languageFamilyCounts,
+  programmingLanguageFamily,
+  type ContestParticipation,
+  type ExternalProblemSummary,
+  type ImprovementRoadmap,
+  type LearnerProblemStatus,
+  type ProviderKey,
+  type ProviderProfile,
+  type ProviderRatingChange,
+  type ProviderSolvedProblem,
+  type ProviderSubmission,
 } from '@algomemtor/shared-contracts'
 
 // The coach workspace is the learner's complete, owner-scoped data set for a
@@ -448,7 +450,10 @@ export function buildCoachWorkspace(input: CoachWorkspaceInput): {
       ? {}
       : { acceptanceRate: profile.acceptanceRate }),
     ratedContests: ratedContestsByProvider.get(profile.provider) ?? 0,
-    languages: topCounts(new Map(Object.entries(profile.languageCounts)), 6),
+    languages: topCounts(
+      new Map(Object.entries(languageFamilyCounts(profile.languageCounts))),
+      6,
+    ),
     badges: profile.badges.slice(0, 10),
     completeness: profile.provenance.completeness,
     fetchedAt: profile.provenance.fetchedAt,
@@ -721,14 +726,14 @@ function buildDigest({
   for (const submission of submissionRows) {
     increment(verdicts, verdictGroup(submission.verdict, submission.accepted))
     if (submission.language !== undefined)
-      increment(languages, submission.language)
+      increment(languages, programmingLanguageFamily(submission.language))
     if (!submission.accepted)
       submission.tags.forEach((tag) => increment(tagFailed, tag))
   }
   if (languages.size === 0) {
     accounts.forEach((account) =>
       Object.entries(account.languages).forEach(([language, count]) =>
-        increment(languages, language, count),
+        increment(languages, programmingLanguageFamily(language), count),
       ),
     )
   }

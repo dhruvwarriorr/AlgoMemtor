@@ -197,44 +197,82 @@ export function AccountCards({
 // ---------------------------------------------------------------------------
 // Year calendar: GitHub-style heatmap of solves over the last 53 weeks.
 
+// "recent" is the rolling last 12 months; a number is a calendar year.
+type CalendarRange = 'recent' | number
+
 export function YearCalendar({
   solvedOverTime,
+  firstActivityAt,
 }: {
   solvedOverTime: Record<string, number>
+  firstActivityAt?: string
 }) {
-  const { weeks, months, total, thresholds } = useMemo(() => {
-    const today = new Date()
-    const end = new Date(
-      Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()),
+  const now = new Date()
+  const currentYear = now.getFullYear()
+  // The learner's local calendar date; day keys use the same calendar.
+  const todayKey = `${currentYear}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  const firstYear = useMemo(() => {
+    const fromActivity =
+      firstActivityAt === undefined
+        ? Number.NaN
+        : new Date(firstActivityAt).getFullYear()
+    const fromDays = Object.keys(solvedOverTime)
+      .filter((day) => (solvedOverTime[day] ?? 0) > 0)
+      .map((day) => Number(day.slice(0, 4)))
+    const candidates = [fromActivity, ...fromDays].filter((year) =>
+      Number.isFinite(year),
     )
-    // Start on the Monday 52 weeks before this week's Monday.
-    const weekday = (end.getUTCDay() + 6) % 7
-    const start = new Date(end.getTime() - (weekday + 52 * 7) * 86_400_000)
+    return Math.min(currentYear, ...candidates)
+  }, [currentYear, firstActivityAt, solvedOverTime])
+  const years = Array.from(
+    { length: currentYear - firstYear + 1 },
+    (_, index) => currentYear - index,
+  )
+  const [range, setRange] = useState<CalendarRange>('recent')
+
+  const { weeks, months, total, thresholds, columnCount } = useMemo(() => {
+    const todayUtc = new Date(`${todayKey}T00:00:00.000Z`)
+    const first =
+      range === 'recent'
+        ? new Date(todayUtc.getTime() - 364 * 86_400_000)
+        : new Date(Date.UTC(range, 0, 1))
+    const last =
+      range === 'recent' || range === todayUtc.getUTCFullYear()
+        ? todayUtc
+        : new Date(Date.UTC(range, 11, 31))
+    // Columns start on the Monday on or before the first day.
+    const weekday = (first.getUTCDay() + 6) % 7
+    const start = new Date(first.getTime() - weekday * 86_400_000)
+    const count = Math.ceil(
+      ((last.getTime() - start.getTime()) / 86_400_000 + 1) / 7,
+    )
     const columns: Array<Array<{ date: string; count: number } | null>> = []
     const monthMarks: Array<{ index: number; label: string }> = []
     let sum = 0
     const activeCounts: number[] = []
-    for (let column = 0; column < 53; column += 1) {
+    for (let column = 0; column < count; column += 1) {
       const cells: Array<{ date: string; count: number } | null> = []
       for (let row = 0; row < 7; row += 1) {
         const date = new Date(start.getTime() + (column * 7 + row) * 86_400_000)
-        if (date > end) {
+        if (date > last || date < first) {
           cells.push(null)
           continue
         }
         const key = date.toISOString().slice(0, 10)
-        const count = solvedOverTime[key] ?? 0
-        sum += count
-        if (count > 0) activeCounts.push(count)
-        cells.push({ date: key, count })
-        if (row === 0 && date.getUTCDate() <= 7) {
-          monthMarks.push({
-            index: column,
-            label: new Intl.DateTimeFormat(undefined, {
-              month: 'short',
-              timeZone: 'UTC',
-            }).format(date),
-          })
+        const solved = solvedOverTime[key] ?? 0
+        sum += solved
+        if (solved > 0) activeCounts.push(solved)
+        cells.push({ date: key, count: solved })
+        if (date.getUTCDate() === 1 || (column === 0 && row === 0)) {
+          if (monthMarks.at(-1)?.index !== column) {
+            monthMarks.push({
+              index: column,
+              label: new Intl.DateTimeFormat(undefined, {
+                month: 'short',
+                timeZone: 'UTC',
+              }).format(date),
+            })
+          }
         }
       }
       columns.push(cells)
@@ -250,8 +288,9 @@ export function YearCalendar({
       months: monthMarks,
       total: sum,
       thresholds: [quantile(0.25), quantile(0.5), quantile(0.75)],
+      columnCount: count,
     }
-  }, [solvedOverTime])
+  }, [range, solvedOverTime, todayKey])
 
   const wrapperRef = useRef<HTMLDivElement | null>(null)
   const [tip, setTip] = useState<CellTip | null>(null)
@@ -270,12 +309,38 @@ export function YearCalendar({
   return (
     <InsightCard
       action={
-        <span className="rounded-md bg-secondary px-2 py-1 text-sm font-semibold tabular-nums">
-          {total.toLocaleString()} solves
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="rounded-md bg-secondary px-2 py-1 text-sm font-semibold tabular-nums">
+            {total.toLocaleString()} solves
+          </span>
+          <label className="sr-only" htmlFor="insights-calendar-range">
+            Heatmap range
+          </label>
+          <select
+            className="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground outline-none transition-[border-color,box-shadow] focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
+            id="insights-calendar-range"
+            onChange={(event) => {
+              const value = event.currentTarget.value
+              setTip(null)
+              setRange(value === 'recent' ? 'recent' : Number(value))
+            }}
+            value={String(range)}
+          >
+            <option value="recent">Last 12 months</option>
+            {years.map((year) => (
+              <option key={year} value={year}>
+                {year}
+              </option>
+            ))}
+          </select>
+        </div>
       }
-      description="Every dated solve over the past year."
-      title="Year in practice"
+      description={
+        range === 'recent'
+          ? 'Every dated solve over the past 12 months.'
+          : `Every dated solve in ${range}.`
+      }
+      title={range === 'recent' ? 'Year in practice' : `${range} in practice`}
     >
       <div className="relative" ref={wrapperRef}>
         <CellTooltip tip={tip} />
@@ -290,13 +355,18 @@ export function YearCalendar({
                 <span
                   className="absolute"
                   key={`${mark.index}-${mark.label}`}
-                  style={{ left: `${(mark.index / 53) * 100}%` }}
+                  style={{ left: `${(mark.index / columnCount) * 100}%` }}
                 >
                   {mark.label}
                 </span>
               ))}
             </div>
-            <div className="grid grid-cols-[2rem_repeat(53,minmax(0,1fr))] gap-[3px]">
+            <div
+              className="grid gap-[3px]"
+              style={{
+                gridTemplateColumns: `2rem repeat(${columnCount}, minmax(0, 1fr))`,
+              }}
+            >
               {['Mon', '', 'Wed', '', 'Fri', '', 'Sun'].map((label, row) => (
                 <Fragment key={row}>
                   <span className="self-center text-[0.62rem] leading-none text-muted-foreground">

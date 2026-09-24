@@ -12,7 +12,6 @@ import {
 } from 'recharts'
 import type {
   CoachRichBlock,
-  CoachRichContent,
   ExternalProblemSummary,
   ProviderKey,
 } from '@algomemtor/shared-contracts'
@@ -23,13 +22,6 @@ const providerLabels = {
   leetcode: 'LeetCode',
   cses: 'CSES',
 } as const
-
-type RichContentRendererProps = {
-  content: CoachRichContent
-  onSuggestedQuestion: (question: string) => void
-  dismissedProblemKeys?: ReadonlySet<string>
-  onDismissProblem?: (provider: ProviderKey, externalId: string) => void
-}
 
 const colors = [
   'var(--chart-1)',
@@ -236,7 +228,7 @@ function ChartBlock({
   )
 }
 
-function RichBlock({
+export function RichBlock({
   block,
   dismissedProblemKeys,
   onDismissProblem,
@@ -252,7 +244,7 @@ function RichBlock({
     return (
       <section className="rounded-lg border border-border bg-background p-4">
         <h4 className="font-semibold text-foreground">{block.title}</h4>
-        <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+        <dl className="mt-3 grid grid-cols-2 gap-2">
           {visibleMetrics.map((metric) => (
             <div
               className="rounded-md border border-border p-3"
@@ -330,7 +322,7 @@ function RichBlock({
         <p className="mt-1 text-xs leading-5 text-muted-foreground">
           {block.reason}
         </p>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        <div className="mt-3 grid gap-2">
           {block.problems.map((problem) => (
             <WebProblemLink key={problem.citationId} problem={problem} />
           ))}
@@ -376,7 +368,7 @@ function RichBlock({
       <p className="mt-1 text-xs leading-5 text-muted-foreground">
         {block.reason}
       </p>
-      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+      <div className="mt-3 grid gap-2">
         {block.problems
           .filter(
             (problem) =>
@@ -405,91 +397,5 @@ function RichBlock({
           ))}
       </div>
     </section>
-  )
-}
-
-export function CoachRichContent({
-  content,
-  onSuggestedQuestion,
-  dismissedProblemKeys,
-  onDismissProblem,
-}: RichContentRendererProps) {
-  return (
-    <div className="mt-4 space-y-3 border-t border-border pt-4">
-      {content.blocks.map((block, index) => (
-        <RichBlock
-          block={block}
-          dismissedProblemKeys={dismissedProblemKeys}
-          key={`${block.type}-${index}`}
-          onDismissProblem={onDismissProblem}
-        />
-      ))}
-      {content.suggestedQuestions.length > 0 ? (
-        <section aria-label="Suggested follow-up questions">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Continue the coaching thread
-          </p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {content.suggestedQuestions.map((question) => (
-              <button
-                className="rounded-md border border-border bg-background px-3 py-2 text-left text-xs text-foreground transition-colors hover:border-primary/60 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                key={question}
-                onClick={() => onSuggestedQuestion(question)}
-                type="button"
-              >
-                {question}
-              </button>
-            ))}
-          </div>
-        </section>
-      ) : null}
-      {content.citations.length > 0 ? (
-        <details className="rounded-md border border-border p-3">
-          <summary className="cursor-pointer text-xs font-semibold text-muted-foreground">
-            Sources used for this answer
-          </summary>
-          <ul className="mt-2 space-y-2">
-            {content.citations.map((citation) => (
-              <li className="text-xs" key={citation.id}>
-                {citation.url ? (
-                  <a
-                    className="font-medium text-primary underline-offset-4 hover:underline"
-                    href={citation.url}
-                    rel="noopener noreferrer"
-                    target="_blank"
-                  >
-                    {citation.title}
-                  </a>
-                ) : (
-                  <span className="font-medium text-foreground">
-                    {citation.title}
-                  </span>
-                )}
-                <span className="ml-2 text-muted-foreground">
-                  {citation.source === 'web'
-                    ? 'Public reference'
-                    : 'Learning guide'}
-                </span>
-                {citation.detail ? (
-                  <span className="mt-1 block text-muted-foreground">
-                    {citation.detail}
-                  </span>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </details>
-      ) : null}
-      <details className="text-xs text-muted-foreground">
-        <summary className="cursor-pointer hover:text-foreground">
-          About this personalized answer
-        </summary>
-        <p className="mt-2 leading-5">
-          Built from your saved profile, learning plan, and available activity.
-          Information used here was refreshed{' '}
-          {formatDisplayDate(content.dataAsOf)}.
-        </p>
-      </details>
-    </div>
   )
 }

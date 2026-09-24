@@ -31,9 +31,16 @@ class PublicResearch:
 
 def should_ground_on_web(question: str, knowledge_count: int) -> bool:
     lowered = question.lower()
-    freshness = re.search(
-        r"\b(latest|current|today|now|updated|trend|benchmark|official|web|online)\b|\blook\s+up\b",
-        lowered,
+    explicit_web = re.search(r"\b(web|online|internet|google)\b|\blook\s+up\b", lowered)
+    # "my current rating" or "what should I do today" is about the learner's
+    # own data, not public news; only impersonal freshness asks need search.
+    personal = re.search(r"\b(my|me|i|i'm|i've|mine|myself)\b", lowered)
+    freshness = explicit_web or (
+        not personal
+        and re.search(
+            r"\b(latest|current|today|now|updated|trend|benchmark|official)\b",
+            lowered,
+        )
     )
     public_comparison = re.search(
         r"\bcompare\b.*\b(codeforces|leetcode|codechef|acceptance|rating|population|benchmark|percentile)\b|"

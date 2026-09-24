@@ -16,10 +16,9 @@ import { useNotification } from '@/app/useNotification'
 import { UserAvatar } from '@/components/brand/UserAvatar'
 import { Button } from '@/components/ui/button'
 import {
+  DEFAULT_AVATAR,
   NAME_MAX_LENGTH,
   PHOTO_AVATAR_ID,
-  avatarPreset,
-  avatarPresets,
   cleanDisplayName,
   useAvatarPhotoUrl,
   useUpdateUserIdentity,
@@ -34,16 +33,14 @@ import { cn } from '@/lib/utils'
 
 type PendingPhoto = { blob: Blob; url: string }
 
-// Display name, preset avatar or an uploaded profile picture.
+// Display name and avatar: the default initial or an uploaded picture.
 export function IdentityEditor() {
   const identity = useUserIdentity()
   const savedPhotoUrl = useAvatarPhotoUrl()
   const update = useUpdateUserIdentity()
   const { notify } = useNotification()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const savedAvatarId = identity.usesPhoto
-    ? PHOTO_AVATAR_ID
-    : identity.avatar.id
+  const savedAvatarId = identity.usesPhoto ? PHOTO_AVATAR_ID : DEFAULT_AVATAR.id
   const [name, setName] = useState(identity.hasCustomName ? identity.name : '')
   const [avatarId, setAvatarId] = useState(savedAvatarId)
   const [pendingPhoto, setPendingPhoto] = useState<PendingPhoto | null>(null)
@@ -99,7 +96,7 @@ export function IdentityEditor() {
         await uploadAvatarPhoto(pendingPhoto.blob)
       }
       if (avatarId !== PHOTO_AVATAR_ID && identity.usesPhoto) {
-        // Switching back to a preset removes the stored picture.
+        // Switching back to the default removes the stored picture.
         await deleteAvatarPhoto()
       }
       await update.mutateAsync({ name, avatarId })
@@ -127,7 +124,7 @@ export function IdentityEditor() {
           className="size-24 text-4xl"
           name={previewName}
           photoUrl={usingPhoto ? photoUrl : null}
-          preset={avatarPreset(avatarId)}
+          preset={DEFAULT_AVATAR}
         />
         <p className="max-w-36 truncate text-center text-sm font-medium text-foreground">
           {previewName}
@@ -162,7 +159,7 @@ export function IdentityEditor() {
             disabled={saving}
             onClick={() => {
               setPendingPhoto(null)
-              setAvatarId(avatarPresets[0].id)
+              setAvatarId(DEFAULT_AVATAR.id)
             }}
             size="sm"
             type="button"
@@ -198,6 +195,18 @@ export function IdentityEditor() {
             Avatar
           </legend>
           <div className="flex flex-wrap gap-2.5">
+            <AvatarOption
+              label="Default avatar"
+              onSelect={() => setAvatarId(DEFAULT_AVATAR.id)}
+              selected={avatarId !== PHOTO_AVATAR_ID}
+            >
+              <UserAvatar
+                className="size-11 text-base"
+                name={previewName}
+                photoUrl={null}
+                preset={DEFAULT_AVATAR}
+              />
+            </AvatarOption>
             {photoUrl ? (
               <AvatarOption
                 label="Your photo"
@@ -211,25 +220,23 @@ export function IdentityEditor() {
                 />
               </AvatarOption>
             ) : null}
-            {avatarPresets.map((preset) => (
-              <AvatarOption
-                key={preset.id}
-                label={preset.label}
-                onSelect={() => setAvatarId(preset.id)}
-                selected={preset.id === avatarId}
+            {photoUrl === null ? (
+              <button
+                aria-label="Upload a custom photo"
+                className="grid size-12 place-items-center rounded-full border border-dashed border-border text-muted-foreground transition-colors hover:border-primary hover:text-foreground disabled:opacity-60"
+                disabled={preparing || saving}
+                onClick={() => fileInputRef.current?.click()}
+                title="Upload a custom photo"
+                type="button"
               >
-                <UserAvatar
-                  className="size-11 text-base"
-                  name={previewName}
-                  photoUrl={null}
-                  preset={preset}
-                />
-              </AvatarOption>
-            ))}
+                <ImageUp aria-hidden="true" className="size-4" />
+              </button>
+            ) : null}
           </div>
           <p className="text-xs text-muted-foreground">
-            Photos are cropped to a square, resized on your device, and stored
-            with your AlgoMemtor account.
+            Use the default initial or upload your own photo. Photos are cropped
+            to a square, resized on your device, and stored with your AlgoMemtor
+            account.
           </p>
         </fieldset>
 

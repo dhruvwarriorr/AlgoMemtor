@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import {
   LEARNER_ACTIVITY_DIGEST_VERSION,
   LearnerActivityDigestSchema,
+  programmingLanguageFamily,
   type ContestParticipation,
   type LearnerActivityDigest,
   type ProviderKey,
@@ -309,7 +310,8 @@ export const computeLearnerActivityDigest = (
 
   const languages = new Map<string, number>()
   input.submissions.forEach((row) => {
-    if (row.language !== undefined) increment(languages, row.language)
+    if (row.language !== undefined)
+      increment(languages, programmingLanguageFamily(row.language))
   })
 
   const lastActivityFor = (provider: ProviderKey) => {

@@ -683,8 +683,7 @@ function DashboardPage() {
             <ol className="mt-1.5 flex min-h-0 flex-1 flex-col divide-y divide-border overflow-hidden [@media(max-height:1000px)]:[&>li:nth-child(n+4)]:hidden">
               {recentEvents.map((event, index) => {
                 const solved =
-                  (event.source === 'manual' && event.eventType === 'solved') ||
-                  isAcceptedSubmission(event)
+                  event.eventType === 'solved' || isAcceptedSubmission(event)
                 return (
                   <AnimatedItem
                     className="flex min-w-0 flex-1 items-center gap-3 py-1.5"
@@ -719,7 +718,7 @@ function DashboardPage() {
                             ? 'Marked solved'
                             : 'Marked attempted'
                           : solved
-                            ? 'Solved'
+                            ? 'Accepted'
                             : event.eventType.replaceAll('_', ' ')}
                       </p>
                     </div>

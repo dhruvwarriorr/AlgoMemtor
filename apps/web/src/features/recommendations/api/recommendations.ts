@@ -5,6 +5,9 @@ import {
   RecommendationFeedbackResponseSchema,
   RecommendationFeedResponseSchema,
   RecommendationRestorationResponseSchema,
+  RecommendationSteeringListResponseSchema,
+  RecommendationSteeringResponseSchema,
+  SaveRecommendationSteeringRequestSchema,
   type RecommendationFeedbackInput,
   type RecommendationFeedResponse,
 } from '@algomemtor/shared-contracts'
@@ -102,6 +105,36 @@ export function restoreRecommendationDismissal(
       authentication: 'required',
       method: 'DELETE',
       schema: RecommendationRestorationResponseSchema,
+    },
+  )
+}
+
+export function fetchRecommendationSteering({ signal }: RequestOptions = {}) {
+  return requestJson('/api/recommendations/steering', {
+    authentication: 'required',
+    schema: RecommendationSteeringListResponseSchema,
+    signal,
+  })
+}
+
+export function saveRecommendationSteering(text: string) {
+  const input = SaveRecommendationSteeringRequestSchema.parse({ text })
+  return requestJson('/api/recommendations/steering', {
+    authentication: 'required',
+    body: JSON.stringify(input),
+    headers: { 'content-type': 'application/json' },
+    method: 'POST',
+    schema: RecommendationSteeringResponseSchema,
+  })
+}
+
+export function removeRecommendationSteering(id: string) {
+  return requestJson(
+    '/api/recommendations/steering/' + encodeURIComponent(id),
+    {
+      authentication: 'required',
+      method: 'DELETE',
+      schema: RecommendationSteeringListResponseSchema,
     },
   )
 }

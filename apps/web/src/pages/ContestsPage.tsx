@@ -14,7 +14,10 @@ import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { Button } from '@/components/ui/button'
 import { ProviderFilter } from '@/features/platform/components/ProviderFilter'
-import { providerLabels } from '@/features/platform/components/provider-labels'
+import {
+  contestProviderOptions,
+  providerLabels,
+} from '@/features/platform/components/provider-labels'
 import { useContests } from '@/features/platform/hooks'
 
 type ContestStatus = NonNullable<ExternalContestsQuery['status']>
@@ -212,6 +215,7 @@ function ContestsPage() {
         <ProviderFilter
           id="contest-provider"
           onChange={(next) => updateFilters(next, status)}
+          options={contestProviderOptions}
           value={provider}
         />
         <label className="min-w-40 space-y-1.5 text-sm font-medium text-foreground">

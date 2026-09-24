@@ -67,6 +67,29 @@ function localParts(date: Date, timezone: string) {
   }
 }
 
+// YYYY-MM-DD in the learner's time zone, with one cached formatter per call
+// site; an unknown zone falls back to UTC.
+export function learnerDayKeyFormatter(timezone: string) {
+  let formatter: Intl.DateTimeFormat
+  try {
+    formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+  } catch {
+    formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'UTC',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+  }
+  return (date: Date) =>
+    Number.isNaN(date.getTime()) ? '' : formatter.format(date)
+}
+
 const numericRating = (problem: ExternalProblemSummary | undefined) =>
   typeof problem?.providerDifficulty === 'number' &&
   Number.isFinite(problem.providerDifficulty) &&

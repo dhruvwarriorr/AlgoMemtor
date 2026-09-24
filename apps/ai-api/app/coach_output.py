@@ -74,6 +74,38 @@ def redact_text(value: str) -> str:
     return _SECRET.sub("[secret removed]", text)
 
 
+_PROBLEM_ID_IN_PARENS = re.compile(
+    r"\s*\(\s*`?(?:codeforces|codechef|leetcode|cses):[^\s`()]{1,128}`?\s*\)",
+    re.IGNORECASE,
+)
+_BARE_PROBLEM_ID = re.compile(
+    r"`?\b(?:codeforces|codechef|leetcode|cses):[A-Za-z0-9_\-/]{1,128}`?",
+    re.IGNORECASE,
+)
+
+
+def strip_problem_ids(value: str) -> str:
+    """Remove raw ``provider:externalId`` tokens from answer prose.
+
+    Internal identifiers are not what learners see on the platform (LeetCode's
+    internal id 1007 is public problem 967), so printing them reads as a wrong
+    or invented reference. Problem cards carry the trusted links instead.
+    Fenced code is left untouched.
+    """
+    parts = re.split(r"(```[\s\S]*?```)", value)
+    cleaned = []
+    for part in parts:
+        if part.startswith("```"):
+            cleaned.append(part)
+            continue
+        text = _PROBLEM_ID_IN_PARENS.sub("", part)
+        text = _BARE_PROBLEM_ID.sub("", text)
+        text = re.sub(r"[ \t]{2,}", " ", text)
+        text = re.sub(r" +([,.;:])", r"\1", text)
+        cleaned.append(text)
+    return "".join(cleaned)
+
+
 def _clip(value: object, limit: int) -> str | None:
     if not isinstance(value, str):
         return None
@@ -197,7 +229,7 @@ def coerce_coach_output(raw: object) -> CoachModelOutput | None:
         return None
     try:
         return CoachModelOutput(
-            answer=_truncate_answer(redact_text(answer).strip()),
+            answer=_truncate_answer(strip_problem_ids(redact_text(answer)).strip()),
             evidence=_evidence(raw.get("evidence")),
             proposals=_proposals(raw.get("proposals")),
             presentation=_presentation(raw.get("presentation")),

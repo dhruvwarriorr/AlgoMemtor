@@ -53,6 +53,7 @@ import { PrismaProviderProfileRepository } from './repositories/provider-profile
 import { PrismaProviderDataRepository } from './repositories/provider-data-repository.js'
 import { PrismaCoachRepository } from './repositories/coach-repository.js'
 import { PrismaRecommendationRepository } from './repositories/recommendation-repository.js'
+import { PrismaRecommendationSteeringRepository } from './repositories/recommendation-steering-repository.js'
 import { RequestGate } from './utils/request-gate.js'
 import { structuredLogger } from './utils/structured-logger.js'
 
@@ -197,6 +198,9 @@ const app = createApp({
   connectorTokenRepository: new PrismaConnectorTokenRepository(prisma),
   learnerActivityRepository: new PrismaLearnerActivityRepository(prisma),
   recommendationRepository: new PrismaRecommendationRepository(prisma),
+  recommendationSteeringRepository: new PrismaRecommendationSteeringRepository(
+    prisma,
+  ),
   providerAccountRepository: new PrismaProviderAccountRepository(prisma),
   providerSyncRepository: new PrismaProviderSyncRepository(prisma),
   providerProfileRepository: profileRepository,
