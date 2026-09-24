@@ -33,6 +33,7 @@ import type {
   ProviderRatingChange,
   ContestParticipation,
   ProviderProfile,
+  ProblemContent,
   ProblemTimerSession,
   RoadmapRefreshReason,
 } from '@algomemtor/shared-contracts'
@@ -65,6 +66,14 @@ import type { RecommendationRepository } from '../repositories/recommendation-re
 import type { StructuredLogger } from '../utils/structured-logger.js'
 import type { ProgressService } from './progress-service.js'
 import { isCoachSmallTalk } from './coach-intent.js'
+import {
+  allowedCoachAnswerUrl,
+  extractCoachUrls,
+  leetcodeIdForSlug,
+  linkedProblemFromContent,
+  providerProblemFromUrl,
+  type LinkedProblem,
+} from './coach-links.js'
 import {
   buildCoachWorkspace,
   type CoachProfileDigest,
@@ -716,20 +725,34 @@ const omitCodeAndProblemText = (content: string) => {
   return text
 }
 
-const stripMarkdownLinkTargets = (content: string) =>
+// Markdown links keep their target only when it is a safe public link.
+const keepSafeMarkdownLinks = (
+  content: string,
+  allowedUrls?: ReadonlySet<string>,
+) =>
   content
     .split(/(```[\s\S]*?```)/)
     .map((part) =>
       part.startsWith('```')
         ? part
-        : part.replace(/(?<!!)\[([^\]\n]{1,200})\]\(([^)\s]{0,2048})\)/g, '$1'),
+        : part.replace(
+            /(?<!!)\[([^\]\n]{1,200})\]\(([^)\s]{0,2048})\)/g,
+            (match, text: string, target: string) =>
+              allowedCoachAnswerUrl(target, allowedUrls) ? match : text,
+          ),
     )
     .join('')
 
-const redactCoachLinksAndSecrets = (content: string) =>
-  // Keep Markdown link text, drop the target; links come from citations.
-  stripMarkdownLinkTargets(content)
+const redactCoachLinksAndSecrets = (
+  content: string,
+  allowedUrls?: ReadonlySet<string>,
+) =>
+  // Safe public https links stay clickable (only `allowedUrls` when given);
+  // any other link is reduced to its site name.
+  keepSafeMarkdownLinks(content, allowedUrls)
     .replace(/(?:https?:\/\/|www\.)[^\s)\]>"'`]+/gi, (match) => {
+      const url = match.replace(/[.,;:!?]+$/, '')
+      if (allowedCoachAnswerUrl(url, allowedUrls)) return match
       try {
         return new URL(
           /^https?:/i.test(match) ? match : `https://${match}`,
@@ -751,8 +774,33 @@ const redactCoachLinksAndSecrets = (content: string) =>
 // Coach-authored answers keep their Markdown and code examples: a CP coach
 // that cannot show code is not useful. Links and secrets are redacted rather
 // than failing the whole turn; sources are attached separately as citations.
-const sanitizeAssistantAnswer = (content: string) =>
-  redactCoachLinksAndSecrets(content).trim().slice(0, 12_000)
+const sanitizeAssistantAnswer = (
+  content: string,
+  allowedUrls?: ReadonlySet<string>,
+) => redactCoachLinksAndSecrets(content, allowedUrls).trim().slice(0, 12_000)
+
+// Public https links stay in learner text so the coach (and the saved
+// thread) can see what was pasted; query strings that look like secrets and
+// any embedded credentials are dropped.
+const keepPublicLink = (match: string) => {
+  const trailing = /[.,;:!?]+$/.exec(match)?.[0] ?? ''
+  const raw = match.slice(0, match.length - trailing.length)
+  try {
+    const url = new URL(/^https?:/i.test(raw) ? raw : `https://${raw}`)
+    url.username = ''
+    url.password = ''
+    url.hash = ''
+    if (
+      /(?:token|key|auth|session|sig|secret|password|code)=/i.test(url.search)
+    ) {
+      url.search = ''
+    }
+    const text = url.toString()
+    return isSafeCoachPublicUrl(text) ? text + trailing : '[link omitted]'
+  } catch {
+    return '[link omitted]'
+  }
+}
 
 const omitGeneratedCodeAndProblemText = (content: string) =>
   redactCoachLinksAndSecrets(
@@ -766,7 +814,7 @@ const omitGeneratedCodeAndProblemText = (content: string) =>
 
 const redactCoachContextText = (content: string, maxLength: number) =>
   omitCodeAndProblemText(content)
-    .replace(/(?:https?:\/\/|www\.)\S+/gi, '[link omitted]')
+    .replace(/(?:https?:\/\/|www\.)[^\s<>"'`]+/gi, keepPublicLink)
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[contact omitted]')
     .replace(
       /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi,
@@ -1057,6 +1105,15 @@ const withoutRefreshHint = ({
 }: ImprovementRoadmap): ImprovementRoadmap => roadmap
 
 export type CoachContextSnapshot = {
+  // Today's AlgoMemtor recommendation feed, as the learner sees it.
+  currentRecommendations?: {
+    position: number
+    provider: ProviderKey
+    externalId: string
+    title?: string
+    rating?: number
+    reason: string
+  }[]
   learnerId: string
   excludedTopics: string[]
   profile: Awaited<ReturnType<LearnerProfileRepository['findByAuthUserId']>>
@@ -1683,6 +1740,7 @@ const safePublicCitation = (citation: CoachCitation) => {
 }
 
 const MEMORY_RETRIEVAL_BUDGET_MS = 3_000
+const LINKED_PROBLEM_BUDGET_MS = 10_000
 
 // Rejects when `promise` has not settled within `ms`; the underlying request
 // still finishes (or times out) on its own.
@@ -1719,6 +1777,11 @@ export type CoachServiceOptions = {
   memoryGenerationEnabled?: boolean
   // The stored synced-activity summary: the coach's first source of facts.
   activityDigest?: (authUserId: string) => Promise<LearnerActivityDigest | null>
+  // Public statement of a catalog problem, read through its provider adapter.
+  problemContent?: (
+    provider: ProviderKey,
+    externalId: string,
+  ) => Promise<ProblemContent | null>
   now?: () => Date
 }
 
@@ -2731,11 +2794,11 @@ export class CoachService {
         input.content,
       )
     }
-    const context = await this.buildContext(
-      userId,
-      conversationId,
-      input.content,
-    )
+    const pastedUrls = extractCoachUrls(input.content)
+    const [context, linkedProblems] = await Promise.all([
+      this.buildContext(userId, conversationId, input.content),
+      this.resolveLinkedProblems(pastedUrls),
+    ])
     const request: AiCoachRequest = {
       requestId: randomUUID(),
       learnerId: userId,
@@ -2743,7 +2806,12 @@ export class CoachService {
       question: input.content,
       ...(transient === undefined ? {} : { transientContext: transient }),
       ...(transientMedia === undefined ? {} : { transientMedia }),
-      context: coachContextForAi(context),
+      context: {
+        ...coachContextForAi(context),
+        ...(pastedUrls.length === 0 ? {} : { pastedUrls }),
+        // Transient: statements reach the model for this turn only.
+        ...(linkedProblems.length === 0 ? {} : { linkedProblems }),
+      },
       ...(context.workspace === undefined
         ? {}
         : { workspace: context.workspace }),
@@ -3050,6 +3118,58 @@ export class CoachService {
     return CoachResponseSchema.parse({ message: savedAssistant, roadmap })
   }
 
+  // Platform problem links the learner pasted, read through the provider
+  // adapters within a short budget. Unresolvable links are left for the AI
+  // service's own public page reader.
+  private async resolveLinkedProblems(
+    urls: readonly string[],
+  ): Promise<LinkedProblem[]> {
+    const read = this.options.problemContent
+    if (read === undefined || urls.length === 0) return []
+    const references = urls.flatMap((url) => {
+      const reference = providerProblemFromUrl(url)
+      return reference === null ? [] : [reference]
+    })
+    if (references.length === 0) return []
+    const leetcodeCatalog = references.some(
+      (reference) => reference.leetcodeSlug !== undefined,
+    )
+      ? await Promise.all(
+          this.options.providers
+            .filter((provider) => provider.key === 'leetcode')
+            .map((provider) =>
+              provider.search({}).then(
+                (result) => result.problems,
+                () => [],
+              ),
+            ),
+        ).then((lists) => lists.flat())
+      : []
+    const results = await Promise.all(
+      references.map(async (reference) => {
+        const externalId =
+          reference.externalId ??
+          (reference.leetcodeSlug === undefined
+            ? undefined
+            : leetcodeIdForSlug(reference.leetcodeSlug, leetcodeCatalog))
+        if (externalId === undefined) return null
+        try {
+          const content = await withinBudget(
+            read(reference.provider, externalId),
+            LINKED_PROBLEM_BUDGET_MS,
+          )
+          return content === null ? null : linkedProblemFromContent(content)
+        } catch {
+          this.options.logger.warn('coach_linked_problem_unavailable', {
+            provider: reference.provider,
+          })
+          return null
+        }
+      }),
+    )
+    return results.filter((item): item is LinkedProblem => item !== null)
+  }
+
   async confirmProposal(userId: string, proposalId: string) {
     const key = `${userId}:${proposalId}`
     const inFlight = this.proposalConfirmations.get(key)
@@ -3234,7 +3354,10 @@ export class CoachService {
   private sanitizeAiResult(
     result: AiCoachResult,
     context: CoachContextSnapshot,
-    options: { allowMemoryProposals: boolean } = { allowMemoryProposals: true },
+    options: {
+      allowMemoryProposals: boolean
+      allowedUrls?: ReadonlySet<string>
+    } = { allowMemoryProposals: true },
   ): AiCoachResult {
     const redactedEvidence = result.evidence.map((item) => ({
       ...item,
@@ -3337,7 +3460,10 @@ export class CoachService {
                   isSafeCoachText(question) && !question.includes('removed]'),
               ),
           }
-    const safeAnswer = sanitizeAssistantAnswer(redactedResult.answer)
+    const safeAnswer = sanitizeAssistantAnswer(
+      redactedResult.answer,
+      options.allowedUrls,
+    )
     if (safeAnswer.length === 0) {
       throw new Error('The AI coach returned an empty answer.')
     }
@@ -3476,6 +3602,7 @@ export class CoachService {
       providerProfiles,
       memories,
       conversation,
+      recommendationBatches,
     ] = await Promise.all([
       this.options.learnerProfileRepository.findByAuthUserId(userId),
       this.getRoadmap(userId),
@@ -3526,6 +3653,11 @@ export class CoachService {
         return []
       }),
       this.options.repository.getConversation(userId, conversationId),
+      safeList(
+        this.options.recommendationRepository?.listBatchesByAuthUserId(
+          userId,
+        ) ?? Promise.resolve([]),
+      ),
     ])
     const [activityDigest, catalogSettled] = await Promise.all([
       activityDigestPromise,
@@ -3647,9 +3779,42 @@ export class CoachService {
           changedTopics,
         }
       })
+    const catalogByKey = new Map(
+      catalogSettled.flatMap((result) =>
+        result.status === 'fulfilled'
+          ? result.value.problems.map(
+              (problem) =>
+                [
+                  identity(problem.provider, problem.externalId),
+                  problem,
+                ] as const,
+            )
+          : [],
+      ),
+    )
+    const currentRecommendations = (recommendationBatches[0]?.items ?? [])
+      .slice(0, 10)
+      .map((item) => {
+        const problem = catalogByKey.get(
+          identity(item.provider, item.externalId),
+        )
+        return {
+          position: item.position,
+          provider: item.provider,
+          externalId: item.externalId,
+          ...(problem === undefined ? {} : { title: problem.title }),
+          ...(typeof problem?.providerDifficulty === 'number'
+            ? { rating: problem.providerDifficulty }
+            : {}),
+          reason: item.reason.slice(0, 240),
+        }
+      })
     return {
       learnerId: userId,
       excludedTopics,
+      ...(currentRecommendations.length === 0
+        ? {}
+        : { currentRecommendations }),
       profile: safeLearnerProfile(profile, excludedTopics),
       preferences,
       roadmap,

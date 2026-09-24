@@ -77,6 +77,10 @@ learner profile
   after explicit learner consent. Never scrape problem content, use browser
   automation, request credentials, or bypass authentication, CAPTCHA, access
   controls, or provider blocks.
+- Exception (decision of 2026-09-24): the coach may read a public page or
+  platform problem the learner explicitly links, for that turn only, through
+  the provider adapters or the AI service's SSRF-guarded `web_reader`. Page
+  text is never stored.
 - React never calls provider APIs directly. External access, normalization,
   caching, rate handling, and URL safety belong to Express.
 - AI ranks only a bounded candidate set supplied by deterministic backend code.
@@ -298,6 +302,10 @@ source, tests, and `git status` before relying on it.
   `refreshHint`. Production Dockerfiles, `deploy/`, and
   `docker-compose.prod.yml` exist; live deployment is still unverified.
 
+- 2026-09-24 (latest): the coach reads pasted links (platform problems through
+  provider adapters, other pages through `web_reader`), answers beyond CP, keeps
+  safe public https links clickable, renders math as plain text, and no longer
+  shows follow-ups or sources.
 - 2026-09-24 (later): Recommendations accept plain-language instructions
   (`/api/recommendations/steering`, `core.recommendation_steering`, saved to
   learner memory with consent); the coach has a small-talk fast path, stricter

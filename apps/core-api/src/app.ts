@@ -90,8 +90,16 @@ import {
   type RecommendationFeedResponse,
   type RecommendationSteering,
 } from '@algomemtor/shared-contracts'
-import type { ExternalProblemSummary } from '@algomemtor/shared-contracts'
+import type {
+  ExternalProblemSummary,
+  ProviderKey,
+} from '@algomemtor/shared-contracts'
 import cors from 'cors'
+import {
+  leetcodeIdForSlug,
+  linkedProblemFromContent,
+  providerProblemFromUrl,
+} from './services/coach-links.js'
 import {
   buildAnalyticsInsights,
   learnerDayKeyFormatter,
@@ -946,6 +954,9 @@ export const createApp = (options: CreateAppOptions = {}) => {
     aiRoadmapNoteClient,
     logger,
     memoryGenerationEnabled: process.env.MEMORY_GENERATION_ENABLED !== 'false',
+    problemContent: async (provider, externalId) =>
+      (await catalogService.getProblemContent(provider, externalId))?.content ??
+      null,
     activityDigest: async (authUserId) => {
       const accounts =
         await providerAccountRepository.findAllByAuthUserId(authUserId)
@@ -1424,6 +1435,96 @@ export const createApp = (options: CreateAppOptions = {}) => {
           input.data.provider,
         ),
       })
+    },
+  )
+
+  // The coach agent opens a platform problem the learner mentioned (by link
+  // or ID) through the same provider adapters as the problem detail page.
+  app.post(
+    '/internal/coach/problem-content',
+    requireInternalService,
+    async (request, response) => {
+      const input = z
+        .union([
+          z.object({ url: z.string().trim().min(8).max(2_048) }).strict(),
+          z
+            .object({
+              provider: ProviderKeySchema,
+              externalId: z.string().trim().min(1).max(128),
+            })
+            .strict(),
+        ])
+        .safeParse(request.body ?? {})
+      if (!input.success) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'INVALID_COACH_PROBLEM_REFERENCE',
+              'Send a platform problem link or a provider and problem ID.',
+            ),
+          )
+        return
+      }
+      let provider: ProviderKey | undefined
+      let externalId: string | undefined
+      if ('url' in input.data) {
+        const reference = providerProblemFromUrl(input.data.url)
+        provider = reference?.provider
+        externalId = reference?.externalId
+        if (reference?.leetcodeSlug !== undefined) {
+          externalId = leetcodeIdForSlug(
+            reference.leetcodeSlug,
+            (
+              await Promise.all(
+                providers
+                  .filter((item) => item.key === 'leetcode')
+                  .map((item) =>
+                    item.search({}).then(
+                      (result) => result.problems,
+                      () => [],
+                    ),
+                  ),
+              )
+            ).flat(),
+          )
+        }
+      } else {
+        provider = input.data.provider
+        externalId = input.data.externalId
+      }
+      if (provider === undefined || externalId === undefined) {
+        response
+          .status(404)
+          .json(
+            createApiError(
+              'COACH_PROBLEM_NOT_FOUND',
+              'That link is not a known platform problem.',
+            ),
+          )
+        return
+      }
+      try {
+        const result = await catalogService.getProblemContent(
+          provider,
+          externalId,
+          response.locals.requestId as string,
+        )
+        if (result?.content === null || result?.content === undefined) {
+          response
+            .status(404)
+            .json(
+              createApiError(
+                'COACH_PROBLEM_NOT_FOUND',
+                'That problem statement is not available.',
+              ),
+            )
+          return
+        }
+        response.json({ data: linkedProblemFromContent(result.content) })
+      } catch (error) {
+        if (!respondWithProviderError(error, response)) throw error
+      }
     },
   )
 

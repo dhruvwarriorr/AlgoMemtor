@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { splitCoachAnswer } from './answer-parts'
+import { plainMath, splitCoachAnswer } from './answer-parts'
 
 describe('splitCoachAnswer', () => {
   it('separates prose from fenced code blocks in order', () => {
@@ -37,5 +37,19 @@ describe('splitCoachAnswer', () => {
       segments: [{ type: 'text', text: 'Just text.' }],
       codeBlocks: [],
     })
+  })
+})
+
+describe('plainMath', () => {
+  it('turns TeX math into readable text and leaves money and code alone', () => {
+    expect(
+      plainMath(
+        'Map input bounds (e.g., $O(N \\log N)$ vs $O(N^2)$) and $a_{i} \\le 10^{9}$.',
+      ),
+    ).toBe('Map input bounds (e.g., O(N log N) vs O(N²)) and a_i ≤ 10⁹.')
+    expect(plainMath('It costs $5 and $10.')).toBe('It costs $5 and $10.')
+    expect(plainMath('Keep `$x$` and\n```\n$y$\n```')).toBe(
+      'Keep `$x$` and\n```\n$y$\n```',
+    )
   })
 })

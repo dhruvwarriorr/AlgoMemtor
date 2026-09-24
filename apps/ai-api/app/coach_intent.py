@@ -224,6 +224,9 @@ def is_complex_turn(
     """
     if has_transient_context or has_media:
         return True
+    # A shared link is usually a specific problem or article to work through.
+    if re.search(r"https?://", question, re.IGNORECASE):
+        return True
     if len(question) > 400:
         return True
     return bool(_COMPLEX.search(question))

@@ -935,6 +935,36 @@ Server handling (`ConnectorService`):
 - **Review triggers:** before a public deployment, on any LeetCode objection
   or block, or when LeetCode offers an official API.
 
+#### Decision: coach reads shared links and answers beyond CP (2026-09-24)
+
+- **Context:** the project owner asked for a coach with the freedom of a
+  general assistant: answer any question, work from links the learner pastes,
+  and use all of the learner's platform and AlgoMemtor data. Pasted links were
+  replaced with `[link omitted]`, and the coach refused non-CP topics.
+- **Chosen by the project owner:** pasted public https links stay in the saved
+  message. Platform problem links (Codeforces, CodeChef, LeetCode, CSES) are
+  opened through the provider adapters' existing `getContent` path; any other
+  link (or a platform page the adapter cannot open) is read by the AI
+  service's `web_reader` for that turn only. The agent can also call
+  `open_problem` (via `POST /internal/coach/problem-content`) and
+  `read_web_page`. Statements and page text are transient context and are
+  never stored. The CP-only scope rule is removed; safety rules remain.
+- **Safety:** the reader accepts https only (http is upgraded), rejects
+  credentials, private/loopback/link-local hosts and hosts that resolve to
+  non-public addresses, re-validates every redirect, and bounds time (10 s),
+  size (1.5 MB) and content type (HTML, text, JSON). Every safe public https
+  link in an answer stays clickable (opened in a new tab with
+  `noopener noreferrer`); other schemes, credentials, and private or internal
+  hosts are reduced to their site name. A model-written URL can therefore be
+  wrong; the prompt asks for links only when the coach is confident they
+  exist.
+- **Consequences:** a learner can ask the coach to read a problem page that a
+  provider's terms may restrict for automated access; some sites block
+  automated reads (the coach says so and helps from what it knows); DNS
+  rebinding between validation and connect is not fully excluded.
+- **Review triggers:** a provider objection, before a public deployment, or any
+  need to store fetched page content.
+
 ### Provider source failure policy
 
 | Condition                           | Result                                                    |
@@ -1508,10 +1538,13 @@ grounding no longer triggers on words such as "now" or "current" in personal
 questions.
 
 **Chat layout.** The main chat shows only the coach's prose; fenced code becomes
-a compact chip. The right-hand Answer details panel (a drawer below 1280 px)
-shows, for the selected answer, picked problems, code, web problem links,
-charts and data (only when requested), confirmation-gated actions, follow-up
-questions, and sources with the data-as-of time.
+a compact chip, and LaTeX math is rendered as plain text (the AI service
+converts it and the web renderer converts older messages). The right-hand
+Answer details panel (a drawer below 1280 px) shows, for the selected answer,
+picked problems, code, web problem links, charts and data (only when
+requested), and confirmation-gated actions. Follow-up suggestions and source
+lists are not shown anywhere. The coach context also carries today's
+recommendation feed (`currentRecommendations`).
 
 **Roadmap refresh.** `GET /api/coach/roadmap` rebuilds the plan from stored
 evidence on every read and saves a new version only when its content changes.

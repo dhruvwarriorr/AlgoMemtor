@@ -58,3 +58,38 @@ async def request_live_refresh(
         if isinstance(data, dict)
         else {"error": "The platform refresh returned an invalid response."}
     )
+
+
+async def request_problem_content(
+    settings: AiSettings, reference: dict[str, str]
+) -> dict[str, Any]:
+    """Read a platform problem statement through the core provider adapters.
+
+    ``reference`` is ``{"url": ...}`` or ``{"provider": ..., "externalId": ...}``.
+    """
+    if not live_refresh_available(settings):
+        return {"error": "Problem lookup is not configured."}
+    url = f"{settings.core_api_url.rstrip('/')}/internal/coach/problem-content"
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.post(
+                url,
+                json=reference,
+                headers={"x-internal-service-token": settings.internal_service_token},
+            )
+    except httpx.HTTPError:
+        return {"error": "The problem could not be opened right now."}
+    if response.status_code == 404:
+        return {"error": "That problem or link is not a known platform problem."}
+    if response.status_code != 200:
+        return {"error": "The problem could not be opened right now."}
+    try:
+        body = response.json()
+    except ValueError:
+        return {"error": "The problem lookup returned an invalid response."}
+    data = body.get("data") if isinstance(body, dict) else None
+    return (
+        data
+        if isinstance(data, dict)
+        else {"error": "The problem lookup returned an invalid response."}
+    )

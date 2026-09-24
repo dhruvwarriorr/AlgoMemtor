@@ -9,7 +9,7 @@ from uuid import UUID
 
 import pytest
 from app.coach_models import CoachRequest
-from app.coach_output import coerce_coach_output, redact_text
+from app.coach_output import coerce_coach_output, redact_text, restrict_links
 from app.coach_service import (
     CoachRateLimitedError,
     CoachService,
@@ -216,8 +216,9 @@ def test_output_repair_redacts_links_instead_of_failing() -> None:
         }
     )
     assert output is not None
-    assert "cp-algorithms.com" in output.answer
-    assert "https://" not in output.answer
+    # Links survive repair; an explicit allowlist can still reduce them.
+    assert "cp-algorithms.com" in restrict_links(output.answer, set())
+    assert "https://" not in restrict_links(output.answer, set())
     assert "[contact removed]" in output.answer
     assert len(output.evidence) == 1
     assert [proposal.actionType for proposal in output.proposals] == [

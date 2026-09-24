@@ -244,7 +244,9 @@ describe('coach API', () => {
       const headers = authorization('user-a')
       const read = async () =>
         ImprovementRoadmapResponseSchema.parse(
-          await (await fetch(`${baseUrl}/api/coach/roadmap`, { headers })).json(),
+          await (
+            await fetch(`${baseUrl}/api/coach/roadmap`, { headers })
+          ).json(),
         ).data
 
       const first = await read()
@@ -377,8 +379,7 @@ describe('coach API', () => {
     const classifyingClient = (
       result: AiRoadmapNoteResponse | (() => never),
     ): AiRoadmapNoteClient => ({
-      classify: async () =>
-        typeof result === 'function' ? result() : result,
+      classify: async () => (typeof result === 'function' ? result() : result),
     })
 
     const consented = async () => {
@@ -936,6 +937,111 @@ describe('coach API', () => {
     expect(requests[0]?.context).not.toHaveProperty('memories')
   })
 
+  it('opens a pasted platform problem for the turn and keeps links clickable', async () => {
+    const progressRepository = new InMemoryProgressRepository()
+    await progressRepository.saveConsent(
+      userA,
+      true,
+      'personalized-coaching-rag-v2',
+    )
+    const url = 'https://codeforces.com/problemset/problem/2266/G'
+    const provider: ProblemProvider = {
+      key: 'codeforces',
+      search: vi.fn(async () => ({
+        problems,
+        freshness: providerFreshness,
+        warnings: [],
+      })),
+      getHealth: () => providerFreshness,
+      getContent: vi.fn(async (externalId: string) => ({
+        content: {
+          provider: 'codeforces' as const,
+          externalId,
+          canonicalUrl: url,
+          title: 'G. Grid Paths',
+          statementText: 'Count the paths in an n by m grid.',
+          constraints: ['1 ≤ n, m ≤ 2·10^5'],
+          examples: [{ input: '2 2', output: '2' }],
+          hints: [],
+          isPaidOnly: false,
+          completeness: 'complete' as const,
+          provenance: {
+            provider: 'codeforces' as const,
+            providerId: externalId,
+            canonicalUrl: url,
+            sourceUrl: url,
+            extractionStrategy: 'sanitized_html' as const,
+            schemaVersion: 'test',
+            completeness: 'complete' as const,
+            fetchedAt: new Date().toISOString(),
+            stale: false,
+          },
+        },
+        freshness: providerFreshness,
+        warnings: [],
+      })),
+    }
+    let captured: AiCoachRequest | undefined
+    const aiCoachClient: AiCoachClient = {
+      respond: vi.fn(async (request): Promise<AiCoachResult> => {
+        captured = request
+        return {
+          answer: `The key idea is a DP over rows; the problem is at ${url} and not https://made.up/page.`,
+          evidence: [],
+          proposals: [],
+        }
+      }),
+    }
+    const baseUrl = startApp({ aiCoachClient, progressRepository, provider })
+    const headers = {
+      ...authorization('user-a'),
+      'content-type': 'application/json',
+    }
+    const create = await fetch(`${baseUrl}/api/coach/conversations`, {
+      method: 'POST',
+      headers,
+      body: '{}',
+    })
+    const conversationId = (await create.json()).data.id as string
+    const response = await fetch(
+      `${baseUrl}/api/coach/conversations/${conversationId}/messages`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          content: `help me with this question - ${url}`,
+        }),
+      },
+    )
+
+    expect(response.status).toBe(200)
+    const context = captured?.context as Record<string, unknown>
+    expect(context.pastedUrls).toEqual([url])
+    expect(context.linkedProblems).toEqual([
+      {
+        provider: 'codeforces',
+        externalId: '2266G',
+        title: 'G. Grid Paths',
+        url,
+        statement: expect.stringContaining('Count the paths'),
+      },
+    ])
+    const body = CoachResponseSchema.parse(await response.json())
+    expect(body.message.content).toContain(url)
+    // Safe public links stay clickable, not just the pasted one.
+    expect(body.message.content).toContain('https://made.up/page')
+    const thread = await fetch(
+      `${baseUrl}/api/coach/conversations/${conversationId}`,
+      { headers },
+    )
+    const saved = (await thread.json()) as {
+      messages: { role: string; content: string }[]
+    }
+    expect(saved.messages[0]?.content).toBe(
+      `help me with this question - ${url}`,
+    )
+  })
+
   it('honors a learner topic exclusion in roadmap, rich content, and AI output', async () => {
     const progressRepository = new InMemoryProgressRepository()
     await progressRepository.saveConsent(
@@ -1417,7 +1523,9 @@ describe('coach API', () => {
 
     expect(coachResponse.message.content).toContain('`left`')
     expect(coachResponse.message.content).toContain('`right`')
-    expect(coachResponse.message.content).toContain('```cpp\nint total = 0;\n```')
+    expect(coachResponse.message.content).toContain(
+      '```cpp\nint total = 0;\n```',
+    )
   })
 
   it('omits transient code from saved conversation history', async () => {

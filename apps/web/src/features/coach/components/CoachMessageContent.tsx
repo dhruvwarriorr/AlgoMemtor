@@ -3,7 +3,7 @@ import { Check, Code2, Copy } from '@/components/icons/algo-icons'
 import Markdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
-import { codeLanguageLabel, splitCoachAnswer } from '../answer-parts'
+import { codeLanguageLabel, plainMath, splitCoachAnswer } from '../answer-parts'
 
 function textOf(node: ReactNode): string {
   if (typeof node === 'string' || typeof node === 'number') return String(node)
@@ -147,7 +147,7 @@ function MarkdownText({ content }: { content: string }) {
       remarkPlugins={[remarkGfm]}
       skipHtml
     >
-      {content}
+      {plainMath(content)}
     </Markdown>
   )
 }

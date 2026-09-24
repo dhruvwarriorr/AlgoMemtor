@@ -13,16 +13,14 @@ const timestamp = '2026-09-17T12:00:00.000Z'
 
 const panelProps = {
   pending: false,
-  disabled: false,
   dismissedProblemKeys: new Set<string>(),
   confirmPending: false,
   onDismissProblem: vi.fn(),
-  onAsk: vi.fn(),
   onConfirmProposal: vi.fn(),
 }
 
 describe('CoachAnswerPanel', () => {
-  it('moves problems, code, web links, charts, follow-ups and sources out of the chat', () => {
+  it('moves problems, code, web links and charts out of the chat, without follow-ups or sources', () => {
     const content = CoachRichContentSchema.parse({
       version: 'coach-rich-v2',
       blocks: [
@@ -127,10 +125,10 @@ describe('CoachAnswerPanel', () => {
     expect(panel).toContain('Two Sum practice problem')
     expect(panel).toContain('Code from your coach')
     expect(panel).toContain('int main() { return 0; }')
-    expect(panel).toContain('Ask next')
-    expect(panel).toContain('Give me a progressive hint.')
-    expect(panel).toContain('Sources')
-    expect(panel).toContain('Recent failed attempts')
+    expect(panel).not.toContain('Ask next')
+    expect(panel).not.toContain('Give me a progressive hint.')
+    expect(panel).not.toContain('Sources')
+    expect(panel).not.toContain('Recent failed attempts')
     expect(panel).not.toContain('Continue the coaching thread')
     expect(panel).not.toContain('About this personalized answer')
     expect(panel).not.toContain('Sources used for this answer')
@@ -147,7 +145,7 @@ describe('CoachAnswerPanel', () => {
     expect(chat).not.toContain('int main()')
 
     expect(answerDetailsSummary(answerDetails(message))).toBe(
-      '1 problem · 1 code block · 1 web link · 2 charts · 2 sources',
+      '1 problem · 1 code block · 1 web link · 2 charts',
     )
   })
 

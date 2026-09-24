@@ -77,3 +77,125 @@ const languageNames: Record<string, string> = {
 export function codeLanguageLabel(language: string) {
   return languageNames[language] ?? (language === '' ? 'Code' : language)
 }
+
+const latexSymbols: Record<string, string> = {
+  '\\log': 'log',
+  '\\ln': 'ln',
+  '\\min': 'min',
+  '\\max': 'max',
+  '\\gcd': 'gcd',
+  '\\bmod': 'mod',
+  '\\pmod': 'mod',
+  '\\mod': 'mod',
+  '\\leq': '≤',
+  '\\le': '≤',
+  '\\geq': '≥',
+  '\\ge': '≥',
+  '\\neq': '≠',
+  '\\ne': '≠',
+  '\\approx': '≈',
+  '\\cdots': '…',
+  '\\ldots': '…',
+  '\\dots': '…',
+  '\\cdot': '·',
+  '\\times': '×',
+  '\\pm': '±',
+  '\\infty': '∞',
+  '\\rightarrow': '→',
+  '\\Rightarrow': '⇒',
+  '\\to': '→',
+  '\\in': '∈',
+  '\\sum': 'Σ',
+  '\\oplus': '⊕',
+  '\\lfloor': '⌊',
+  '\\rfloor': '⌋',
+  '\\lceil': '⌈',
+  '\\rceil': '⌉',
+  '\\alpha': 'α',
+  '\\beta': 'β',
+  '\\lambda': 'λ',
+  '\\pi': 'π',
+  '\\Theta': 'Θ',
+  '\\Omega': 'Ω',
+  '\\left': '',
+  '\\right': '',
+  '\\,': ' ',
+  '\\;': ' ',
+  '\\quad': ' ',
+}
+const superscripts: Record<string, string> = {
+  '0': '⁰',
+  '1': '¹',
+  '2': '²',
+  '3': '³',
+  '4': '⁴',
+  '5': '⁵',
+  '6': '⁶',
+  '7': '⁷',
+  '8': '⁸',
+  '9': '⁹',
+  '+': '⁺',
+  '-': '⁻',
+  n: 'ⁿ',
+}
+const escapeRegExp = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+function plainFormula(formula: string) {
+  let text = formula
+  for (let pass = 0; pass < 3; pass += 1) {
+    text = text
+      .replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g, '($1)/($2)')
+      .replace(/\\sqrt\{([^{}]*)\}/g, '√($1)')
+      .replace(
+        /\\(?:text|mathrm|mathbf|mathit|mathcal|operatorname|textbf)\{([^{}]*)\}/g,
+        '$1',
+      )
+  }
+  for (const command of Object.keys(latexSymbols).sort(
+    (left, right) => right.length - left.length,
+  )) {
+    text = text.replace(
+      new RegExp(`${escapeRegExp(command)}(?![A-Za-z])`, 'g'),
+      latexSymbols[command] ?? '',
+    )
+  }
+  return text
+    .replace(/\^\{?([0-9+\-n]{1,3})\}?/g, (_match, power: string) =>
+      [...power].map((char) => superscripts[char] ?? char).join(''),
+    )
+    .replace(/\^\{([^{}]*)\}/g, '^($1)')
+    .replace(/_\{([^{}]*)\}/g, '_$1')
+    .replace(/\\\{/g, '{')
+    .replace(/\\\}/g, '}')
+    .replace(/\\([A-Za-z]+)/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}
+
+// The chat renders Markdown without a math engine, so "$O(N \log N)$" would
+// show dollar signs and backslashes. Code is left untouched, and "$5 and $10"
+// stays money: TeX spans hug their content and carry a math character.
+export function plainMath(content: string) {
+  return content
+    .split(/(```[\s\S]*?```|`[^`\n]*`)/)
+    .map((part) =>
+      part.startsWith('`')
+        ? part
+        : part.replace(
+            /\$\$([^$]{1,400})\$\$|\$([^$\n]{1,200})\$|\\\((.{1,200}?)\\\)/g,
+            (match, block?: string, inline?: string, paren?: string) => {
+              const formula = block ?? inline ?? paren ?? ''
+              if (
+                inline !== undefined &&
+                (formula !== formula.trim() ||
+                  !/[\\^_=()+*/<>a-zA-Z]/.test(formula))
+              ) {
+                return match
+              }
+              return plainFormula(formula)
+            },
+          ),
+    )
+    .join('')
+}

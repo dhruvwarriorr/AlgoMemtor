@@ -16,6 +16,15 @@ _UNSAFE_COACH_TEXT = re.compile(
     re.IGNORECASE,
 )
 
+# Answers may carry links (filtered against the turn's allowed URLs by the
+# service); contacts and secrets are never allowed.
+_UNSAFE_ANSWER_TEXT = re.compile(
+    r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|"
+    r"\bbearer\s+[A-Za-z0-9._~+/=-]{12,}|"
+    r"\b(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token)\s*[:=]\s*\S+",
+    re.IGNORECASE,
+)
+
 CoachActionType = Literal[
     "set_topic_status",
     "save_memory",
@@ -319,8 +328,8 @@ class CoachModelOutput(CoachStrictModel):
     @field_validator("answer")
     @classmethod
     def reject_unsafe_answer(cls, value: str) -> str:
-        if _UNSAFE_COACH_TEXT.search(value):
-            raise ValueError("Coach answers cannot contain links or secrets.")
+        if _UNSAFE_ANSWER_TEXT.search(value):
+            raise ValueError("Coach answers cannot contain contacts or secrets.")
         return value
 
 

@@ -186,7 +186,13 @@ def verdict_group(verdict: object, accepted: object = None) -> str:
 
 
 def tool_declarations(
-    *, knowledge: bool, web: bool, refresh: bool = False, memory: bool = False
+    *,
+    knowledge: bool,
+    web: bool,
+    refresh: bool = False,
+    memory: bool = False,
+    pages: bool = False,
+    problems: bool = False,
 ) -> list[ToolDeclaration]:
     common_filters = {
         "provider": {
@@ -431,6 +437,43 @@ def tool_declarations(
                 },
             }
         )
+    if pages:
+        declarations.append(
+            {
+                "name": "read_web_page",
+                "description": (
+                    "Open a public https web page (a link the learner shared, or a "
+                    "result from web_search) and return its readable text."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {"url": {"type": "string"}},
+                    "required": ["url"],
+                },
+            }
+        )
+    if problems:
+        declarations.append(
+            {
+                "name": "open_problem",
+                "description": (
+                    "Read the full public statement, constraints and samples of a "
+                    "Codeforces, CodeChef, LeetCode or CSES problem, by its link or "
+                    "by provider and problem ID (e.g. codeforces / 2266G)."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string"},
+                        "provider": {
+                            "type": "string",
+                            "enum": ["codeforces", "codechef", "leetcode", "cses"],
+                        },
+                        "externalId": {"type": "string"},
+                    },
+                },
+            }
+        )
     return declarations
 
 
@@ -444,6 +487,9 @@ class WorkspaceTools:
         web_search: Callable[[str], Awaitable[dict[str, Any]]] | None = None,
         platform_refresh: Callable[[str], Awaitable[dict[str, Any]]] | None = None,
         memory_recall: Callable[[str], Awaitable[dict[str, Any]]] | None = None,
+        page_reader: Callable[[str], Awaitable[dict[str, Any]]] | None = None,
+        problem_reader: Callable[[dict[str, str]], Awaitable[dict[str, Any]]]
+        | None = None,
         now: datetime | None = None,
     ) -> None:
         self.workspace = workspace or {}
@@ -451,6 +497,8 @@ class WorkspaceTools:
         self.web_search = web_search
         self.platform_refresh = platform_refresh
         self.memory_recall = memory_recall
+        self.page_reader = page_reader
+        self.problem_reader = problem_reader
         self.refreshed: set[str] = set()
         self.now = now or datetime.now(UTC)
 
@@ -478,6 +526,26 @@ class WorkspaceTools:
                     return {"error": "This platform was already refreshed this turn."}
                 self.refreshed.add(provider)
                 return await self.platform_refresh(provider)
+            if name == "read_web_page" and self.page_reader is not None:
+                url = arguments.get("url")
+                if not isinstance(url, str) or not url.strip():
+                    return {"error": "A page URL is required."}
+                return await self.page_reader(url.strip()[:2_048])
+            if name == "open_problem" and self.problem_reader is not None:
+                url = arguments.get("url")
+                provider = arguments.get("provider")
+                external_id = arguments.get("externalId")
+                if isinstance(url, str) and url.strip():
+                    return await self.problem_reader({"url": url.strip()[:2_048]})
+                if (
+                    provider in {"codeforces", "codechef", "leetcode", "cses"}
+                    and isinstance(external_id, str)
+                    and external_id.strip()
+                ):
+                    return await self.problem_reader(
+                        {"provider": provider, "externalId": external_id.strip()[:128]}
+                    )
+                return {"error": "Give a problem link, or a provider and problem ID."}
             query = arguments.get("query")
             if not isinstance(query, str) or not query.strip():
                 return {"error": "A non-empty query is required."}

@@ -22,6 +22,7 @@ from .coach_models import (
     CoachPresentation,
     CoachProposal,
 )
+from .web_reader import normalize_public_url
 
 ANSWER_LIMIT = 12_000
 
@@ -59,19 +60,73 @@ def _host_only(match: re.Match[str]) -> str:
 _MARKDOWN_LINK = re.compile(r"(?<!!)\[([^\]\n]{1,200})\]\(([^)\s]{0,2048})\)")
 
 
-def redact_text(value: str) -> str:
-    # Keep a Markdown link's text, drop its target: links are attached by the
-    # application from validated citations, never from model prose.
-    parts = re.split(r"(```[\s\S]*?```)", value)
-    text = "".join(
-        part
-        if part.startswith("```")
-        else _MARKDOWN_LINK.sub(lambda m: m.group(1), part)
-        for part in parts
-    )
-    text = _URL.sub(_host_only, text)
-    text = _EMAIL.sub("[contact removed]", text)
+def redact_text(value: str, *, keep_urls: bool = False) -> str:
+    """Remove contacts and secrets; links too unless ``keep_urls``.
+
+    Answers keep their links here and are filtered against the turn's allowed
+    URLs by ``restrict_links``, which keeps safe public https links.
+    """
+    if not keep_urls:
+        parts = re.split(r"(```[\s\S]*?```)", value)
+        value = "".join(
+            part
+            if part.startswith("```")
+            else _MARKDOWN_LINK.sub(lambda m: m.group(1), part)
+            for part in parts
+        )
+        value = _URL.sub(_host_only, value)
+    text = _EMAIL.sub("[contact removed]", value)
     return _SECRET.sub("[secret removed]", text)
+
+
+def _normal_url(value: str) -> str:
+    return value.rstrip(".,;:!?").rstrip("/")
+
+
+def _is_clickable(url: str) -> bool:
+    return url.lower().startswith("https://") and normalize_public_url(url) is not None
+
+
+def restrict_links(value: str, allowed: set[str] | frozenset[str] | None = None) -> str:
+    """Keep answer links clickable when they are safe public https URLs.
+
+    With ``allowed`` given, only those URLs stay clickable. Unsafe links
+    (other schemes, credentials, private or internal hosts) are always reduced
+    to their site name.
+    """
+    allowed_normal = None if allowed is None else {_normal_url(url) for url in allowed}
+
+    def keep(url: str) -> bool:
+        if not _is_clickable(url.rstrip(".,;:!?")):
+            return False
+        return allowed_normal is None or _normal_url(url) in allowed_normal
+
+    def link(match: re.Match[str]) -> str:
+        return match.group(0) if keep(match.group(2)) else match.group(1)
+
+    def bare(match: re.Match[str]) -> str:
+        raw = match.group(0)
+        trailing = raw[len(raw.rstrip(".,;:!?")) :]
+        if keep(raw):
+            return raw
+        return _host_only(match) if not trailing else _host_only(match) + trailing
+
+    def clean(part: str) -> str:
+        placeholders: list[str] = []
+
+        def keep_markdown(match: re.Match[str]) -> str:
+            placeholders.append(link(match))
+            return f"\u0000{len(placeholders) - 1}\u0000"
+
+        text = _MARKDOWN_LINK.sub(keep_markdown, part)
+        text = _URL.sub(bare, text)
+        return re.sub(
+            "\u0000(\\d+)\u0000", lambda m: placeholders[int(m.group(1))], text
+        )
+
+    parts = re.split(r"(```[\s\S]*?```)", value)
+    cleaned = [part if part.startswith("```") else clean(part) for part in parts]
+    return "".join(cleaned)
 
 
 _PROBLEM_ID_IN_PARENS = re.compile(
@@ -104,6 +159,133 @@ def strip_problem_ids(value: str) -> str:
         text = re.sub(r" +([,.;:])", r"\1", text)
         cleaned.append(text)
     return "".join(cleaned)
+
+
+_LATEX_SYMBOLS = {
+    r"\log": "log",
+    r"\ln": "ln",
+    r"\lg": "lg",
+    r"\min": "min",
+    r"\max": "max",
+    r"\gcd": "gcd",
+    r"\bmod": "mod",
+    r"\pmod": "mod",
+    r"\mod": "mod",
+    r"\leq": "≤",
+    r"\le": "≤",
+    r"\geq": "≥",
+    r"\ge": "≥",
+    r"\neq": "≠",
+    r"\ne": "≠",
+    r"\approx": "≈",
+    r"\cdot": "·",
+    r"\cdots": "…",
+    r"\ldots": "…",
+    r"\dots": "…",
+    r"\times": "×",
+    r"\div": "÷",
+    r"\pm": "±",
+    r"\infty": "∞",
+    r"\to": "→",
+    r"\rightarrow": "→",
+    r"\Rightarrow": "⇒",
+    r"\leftarrow": "←",
+    r"\iff": "⇔",
+    r"\implies": "⇒",
+    r"\in": "∈",
+    r"\notin": "∉",
+    r"\subseteq": "⊆",
+    r"\subset": "⊂",
+    r"\cup": "∪",
+    r"\cap": "∩",
+    r"\sum": "Σ",
+    r"\prod": "Π",
+    r"\forall": "∀",
+    r"\exists": "∃",
+    r"\oplus": "⊕",
+    r"\land": "∧",
+    r"\lor": "∨",
+    r"\neg": "¬",
+    r"\lfloor": "⌊",
+    r"\rfloor": "⌋",
+    r"\lceil": "⌈",
+    r"\rceil": "⌉",
+    r"\alpha": "α",
+    r"\beta": "β",
+    r"\gamma": "γ",
+    r"\delta": "δ",
+    r"\epsilon": "ε",
+    r"\lambda": "λ",
+    r"\mu": "μ",
+    r"\pi": "π",
+    r"\sigma": "σ",
+    r"\theta": "θ",
+    r"\phi": "φ",
+    r"\omega": "ω",
+    r"\Theta": "Θ",
+    r"\Omega": "Ω",
+    r"\left": "",
+    r"\right": "",
+    r"\,": " ",
+    r"\;": " ",
+    r"\!": "",
+    r"\quad": " ",
+    r"\qquad": " ",
+}
+_SUPERSCRIPTS = str.maketrans("0123456789+-n", "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻ⁿ")
+_MATH_SPAN = re.compile(
+    r"\$\$([^$]{1,400})\$\$|\$([^$\n]{1,200})\$|\\\((.{1,200}?)\\\)"
+)
+
+
+def _plain_formula(formula: str) -> str:
+    text = formula
+    for _ in range(3):
+        text = re.sub(r"\\frac\{([^{}]*)\}\{([^{}]*)\}", r"(\1)/(\2)", text)
+        text = re.sub(r"\\sqrt\{([^{}]*)\}", r"√(\1)", text)
+        text = re.sub(
+            r"\\(?:text|mathrm|mathbf|mathit|mathcal|operatorname|textbf)\{([^{}]*)\}",
+            r"\1",
+            text,
+        )
+    for command in sorted(_LATEX_SYMBOLS, key=len, reverse=True):
+        text = re.sub(
+            re.escape(command) + r"(?![A-Za-z])", _LATEX_SYMBOLS[command], text
+        )
+    text = re.sub(
+        r"\^\{?([0-9+\-n]{1,3})\}?",
+        lambda m: m.group(1).translate(_SUPERSCRIPTS),
+        text,
+    )
+    text = re.sub(r"\^\{([^{}]*)\}", r"^(\1)", text)
+    text = re.sub(r"_\{([^{}]*)\}", r"_\1", text)
+    text = text.replace(r"\{", "{").replace(r"\}", "}").replace("\\\\", " ")
+    text = re.sub(r"\\([A-Za-z]+)", r"\1", text)
+    return re.sub(r"\s{2,}", " ", text).strip()
+
+
+def _math_replacement(match: re.Match[str]) -> str:
+    formula = match.group(1) or match.group(2) or match.group(3) or ""
+    # "$5 and $10" is money, not math: TeX spans hug their content and carry
+    # at least one math character.
+    if match.group(2) is not None and (
+        formula != formula.strip() or not re.search(r"[\\^_=()+*/<>a-zA-Z]", formula)
+    ):
+        return match.group(0)
+    return _plain_formula(formula)
+
+
+def plain_math(value: str) -> str:
+    """Turn LaTeX math (``$O(N \\log N)$``) into readable plain text.
+
+    The chat renders Markdown without a math engine, so raw LaTeX showed up as
+    dollar signs and backslashes. Code blocks and inline code are untouched.
+    """
+    parts = re.split(r"(```[\s\S]*?```|`[^`\n]*`)", value)
+    return "".join(
+        part if part.startswith("`") else _MATH_SPAN.sub(_math_replacement, part)
+        for part in parts
+    )
 
 
 def _clip(value: object, limit: int) -> str | None:
@@ -229,7 +411,11 @@ def coerce_coach_output(raw: object) -> CoachModelOutput | None:
         return None
     try:
         return CoachModelOutput(
-            answer=_truncate_answer(strip_problem_ids(redact_text(answer)).strip()),
+            answer=_truncate_answer(
+                plain_math(
+                    strip_problem_ids(redact_text(answer, keep_urls=True))
+                ).strip()
+            ),
             evidence=_evidence(raw.get("evidence")),
             proposals=_proposals(raw.get("proposals")),
             presentation=_presentation(raw.get("presentation")),

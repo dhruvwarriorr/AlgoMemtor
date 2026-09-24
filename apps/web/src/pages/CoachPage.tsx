@@ -719,16 +719,10 @@ function CoachPage() {
     message: selectedAnswer,
     pending: sendMessage.isPending,
     highlightedCode,
-    disabled: !consentEnabled || sendMessage.isPending,
     dismissedProblemKeys,
     confirmPending: confirmAction.isPending,
     onDismissProblem: (provider: ProviderKey, externalId: string) =>
       dismissProblem.mutate({ provider, externalId }),
-    onAsk: (question: string) => {
-      setDetailsOpen(false)
-      setContent(question)
-      void submitMessage(question)
-    },
     onConfirmProposal: (proposalId: string) =>
       void confirmAction.mutateAsync(proposalId),
   }

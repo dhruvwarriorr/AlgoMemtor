@@ -235,8 +235,9 @@ def test_presentation_accepts_only_trusted_problem_identities() -> None:
 
 
 def test_rejects_links_in_coach_text() -> None:
+    # Answers may carry links (filtered by the service); contacts never.
     with pytest.raises(ValidationError):
-        CoachModelOutput(answer="Read https://example.com for the solution.")
+        CoachModelOutput(answer="Email coach@example.com for the solution.")
     with pytest.raises(ValidationError):
         CoachCheckInResponse(content="Open https://example.com after practice.")
     with pytest.raises(ValidationError):
