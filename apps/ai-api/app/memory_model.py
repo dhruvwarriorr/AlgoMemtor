@@ -4,6 +4,7 @@ from typing import Any, Protocol
 
 from pydantic import ValidationError
 
+from .embedding import Embedder, EmbeddingError, create_embedder
 from .llm import generation_model
 from .memory_models import MemoryProcessRequest, ReflectionGenerationOutput
 from .settings import AiSettings
@@ -51,13 +52,14 @@ class MemoryGenerationModel(Protocol):
     ) -> MemoryModelResult: ...
 
 
-class GeminiMemoryGenerationModel:
+class ProviderMemoryGenerationModel:
     def __init__(self, settings: AiSettings) -> None:
         model = generation_model(
             settings,
+            workload="memory_generation",
             temperature=0.2,
-            max_tokens=settings.llm_max_output_tokens,
-            timeout=settings.llm_timeout_seconds,
+            max_tokens=settings.memory_max_output_tokens,
+            timeout=settings.ai_request_timeout_seconds,
             max_retries=0,
         )
         self.structured_model = model.with_structured_output(
@@ -78,7 +80,9 @@ class GeminiMemoryGenerationModel:
         )
         parsed = result.get("parsed")
         if not isinstance(parsed, ReflectionGenerationOutput):
-            raise TypeError("Gemini returned no validated memory output.")
+            raise TypeError(
+                "The configured provider returned no validated memory output."
+            )
         raw = result.get("raw")
         usage = getattr(raw, "usage_metadata", None) or {}
         return MemoryModelResult(
@@ -88,42 +92,24 @@ class GeminiMemoryGenerationModel:
         )
 
 
-class MemoryEmbeddingError(RuntimeError):
-    pass
+MemoryEmbeddingError = EmbeddingError
 
 
-class MemoryEmbedder(Protocol):
-    async def embed(self, text: str, *, task_type: str) -> list[float]: ...
+MemoryEmbedder = Embedder
 
 
-class GeminiMemoryEmbedder:
+class ProviderMemoryEmbedder:
     def __init__(self, settings: AiSettings) -> None:
-        from langchain_google_genai import GoogleGenerativeAIEmbeddings
-
-        self.settings = settings
-        self.embedding_model = GoogleGenerativeAIEmbeddings(
-            model=settings.embedding_model,
-            api_key=settings.llm_api_key,
-            output_dimensionality=settings.embedding_dimensions,
-        )
+        self.embedder = create_embedder(settings)
 
     async def embed(self, text: str, *, task_type: str) -> list[float]:
-        vector = await self.embedding_model.aembed_query(
-            text,
-            task_type=task_type,
-            output_dimensionality=self.settings.embedding_dimensions,
-        )
-        if len(vector) != self.settings.embedding_dimensions:
-            raise MemoryEmbeddingError(
-                "Embedding dimension did not match the contract."
-            )
-        if not all(isinstance(value, (int, float)) for value in vector):
-            raise MemoryEmbeddingError("Embedding contained a non-numeric value.")
-        return [float(value) for value in vector]
+        return await self.embedder.embed(text, task_type=task_type)
 
 
 def validate_model_result(result: MemoryModelResult) -> ReflectionGenerationOutput:
     try:
         return ReflectionGenerationOutput.model_validate(result.output)
     except ValidationError as error:
-        raise ValueError("Gemini returned an invalid memory schema.") from error
+        raise ValueError(
+            "The configured provider returned an invalid memory schema."
+        ) from error

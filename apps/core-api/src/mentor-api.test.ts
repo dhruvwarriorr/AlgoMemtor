@@ -343,7 +343,6 @@ describe('Doubt Helper API', () => {
       ).json(),
     )
     expect(completed.data.stage).toBe('completed')
-    expect(await repository.listRevisions(userA)).toHaveLength(1)
   })
 
   it('requires code for debugging doubts and rejects unknown links', async () => {

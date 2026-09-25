@@ -53,7 +53,6 @@ describe('progress report', () => {
       helpSessions: [],
       metadata: new Map(),
       upsolvePending: 2,
-      revisionsDue: 1,
       timeZone: 'UTC',
       now,
     })
@@ -72,11 +71,29 @@ describe('progress report', () => {
       expect.arrayContaining([
         'rating-projection',
         'upsolve-pending',
-        'revisions-due',
         'streak',
       ]),
     )
     expect(report.hintDependency.trend).toBe('insufficient_data')
+  })
+
+  it('counts streaks on solve days, like the Progress page', () => {
+    const report = buildProgressReport({
+      activity: baseActivity([
+        // Only failed submissions today: active, but no solve.
+        submission('4A', 0, false),
+        submission('5A', 2, true),
+      ]),
+      roadmapTopics: [],
+      contests: [],
+      helpSessions: [],
+      metadata: new Map(),
+      upsolvePending: 0,
+      timeZone: 'UTC',
+      now,
+    })
+    expect(report.consistency.currentStreak).toBe(0)
+    expect(report.consistency.activeDaysLast30).toBe(2)
   })
 
   it('reports weak topic accuracy and stale focus topics with evidence', () => {
@@ -128,7 +145,6 @@ describe('progress report', () => {
       helpSessions: [],
       metadata,
       upsolvePending: 0,
-      revisionsDue: 0,
       timeZone: 'UTC',
       now,
     })

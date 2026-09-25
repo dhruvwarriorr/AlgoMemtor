@@ -2,83 +2,115 @@ from decimal import Decimal
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, ValidationInfo, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-LlmProvider = Literal["gemini", "groq"]
+AiProvider = Literal["local", "openrouter"]
+ModelRole = Literal["fast", "strong", "huge_context"]
 
 
 class AiSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    """AI runtime configuration for the two supported deployment modes."""
 
+    model_config = SettingsConfigDict(
+        env_file=".env", extra="ignore", populate_by_name=True
+    )
+
+    app_environment: Literal["development", "test", "production"] = Field(
+        default="development", validation_alias="APP_ENV"
+    )
+    ai_provider: AiProvider = "local"
+    ai_development_allow_cloud_fallback: bool = False
     database_url: str | None = None
     internal_service_token: str = ""
-    # Base URL of the core API, used by the coach to request a live refresh of
-    # a learner's platform data. Blank disables the refresh tool.
     core_api_url: str = ""
-    coach_live_refresh_timeout_seconds: float = Field(default=30, gt=0, le=60)
-    # Time the tool-using coach agent may spend before a faster, single-call
-    # answer is used instead. Must leave room within the response timeout.
-    coach_agent_timeout_seconds: float = Field(default=75, gt=0, le=240)
-    # Text generation (ranking, memory, roadmap notes, and the coach unless
-    # COACH_LLM_PROVIDER overrides it). "groq" uses GROQ_API_KEY and a Groq
-    # LLM_MODEL such as qwen/qwen3.8-27b. Embeddings and web grounding always
-    # use Gemini with LLM_API_KEY.
-    llm_provider: LlmProvider = "gemini"
-    # The Gemini key; also used for embeddings and web grounding.
-    llm_api_key: str = ""
-    llm_model: str = "gemini-3.5-flash-lite"
-    llm_timeout_seconds: float = Field(default=90, gt=0, le=120)
+
+    # Local development. Ollama exposes an OpenAI-compatible chat endpoint;
+    # sentence-transformers loads embeddings from the normal user cache.
+    local_ai_base_url: str = "http://127.0.0.1:11434/v1"
+    local_ai_model: str = "qwen3:8b-q4_K_M"
+    local_ai_context_tokens: int = Field(default=16_384, ge=8_192, le=32_768)
+    # Qwen3 "thinks" before answering unless told not to, which makes local
+    # answers 5-10x slower on laptop hardware. "off" answers directly;
+    # "deep" lets only the deepest requests (thinking level high) think.
+    local_ai_thinking: Literal["off", "deep"] = "off"
+    # Ollama unloads an idle model after 5 minutes and reloading costs tens of
+    # seconds; the AI service keeps it loaded this long between requests.
+    local_ai_keep_alive_minutes: int = Field(default=60, ge=0, le=1_440)
+    # Answer Coach turns in one call over prefetched workspace data instead
+    # of a multi-step tool agent; each agent step re-reads the context.
+    local_ai_single_call: bool = True
+    local_embedding_model: str = "Qwen/Qwen3-Embedding-0.6B"
+    local_embedding_dimensions: int = Field(default=1_024, ge=1_024, le=1_024)
+    local_embedding_version: str = "qwen3-embedding-0.6b-1024-v1"
+
+    # Production. These are the only cloud models used by the application.
+    openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_app_name: str = "AlgoMemtor"
+    openrouter_app_url: str = ""
+    ai_fast_model: str = "openai/gpt-oss-20b"
+    ai_strong_model: str = "openai/gpt-oss-120b"
+    ai_huge_context_model: str = "qwen/qwen3.8-flash"
+    ai_huge_context_threshold_tokens: int = Field(
+        default=100_000, ge=32_768, le=900_000
+    )
+    ai_embedding_model: str = "qwen/qwen3-embedding-8b"
+    ai_embedding_dimensions: int = Field(default=1_024, ge=1_024, le=1_024)
+    ai_embedding_version: str = "qwen3-embedding-8b-1024-v1"
+    ai_web_search_provider: Literal["openrouter"] = "openrouter"
+    ai_web_search_engine: Literal["parallel"] = "parallel"
+    ai_web_search_model: str = "openai/gpt-oss-20b"
+
+    ai_request_timeout_seconds: float = Field(default=110, gt=0, le=900)
+    ai_max_retries: int = Field(default=2, ge=0, le=4)
+    ai_model_escalation_enabled: bool = True
+    ai_model_escalation_max_attempts: int = Field(default=1, ge=0, le=1)
     ai_audit_timeout_seconds: float = Field(default=0.5, gt=0, le=5)
-    llm_max_output_tokens: int = Field(default=4096, gt=0, le=8192)
+    ai_budget_tracking_enabled: bool = True
+    ai_monthly_soft_budget_usd: Decimal = Field(default=Decimal("5.00"), ge=0)
+    ai_budget_warning_percent: int = Field(default=80, ge=1, le=100)
+
+    ranking_max_output_tokens: int = Field(default=2_048, ge=512, le=8_192)
+    memory_max_output_tokens: int = Field(default=2_048, ge=512, le=8_192)
+    upsolve_max_output_tokens: int = Field(default=2_048, ge=512, le=8_192)
+    report_max_output_tokens: int = Field(default=4_096, ge=1_024, le=16_384)
+    coach_max_output_tokens: int = Field(default=4_096, ge=2_048, le=32_768)
+    doubt_helper_max_output_tokens: int = Field(default=8_192, ge=2_048, le=32_768)
+    solution_max_output_tokens: int = Field(default=16_384, ge=4_096, le=65_536)
+    mentor_max_output_tokens: int = Field(default=16_384, ge=2_048, le=65_536)
     coach_thinking_level: Literal["low", "medium", "high"] = "high"
-    # Thinking tokens count against the output budget, so the coach needs far
-    # more room than ranking or memory calls. Kept separate from
-    # LLM_MAX_OUTPUT_TOKENS so a small shared budget cannot truncate answers.
-    coach_max_output_tokens: int = Field(default=24_576, ge=2_048, le=65_536)
-    coach_agent_enabled: bool = True
-    # Four tool rounds cover almost every question; each extra round is one
-    # more billable request against per-minute and per-day quotas.
-    coach_agent_max_steps: int = Field(default=4, ge=1, le=12)
-    # Optional coach-only model (e.g. a stronger model for chat while ranking
-    # and memory stay on LLM_MODEL). Blank means LLM_MODEL. Prices apply to
-    # the coach model and fall back to the LLM_* prices when unset.
-    coach_llm_model: str = ""
-    # Coach provider; blank follows LLM_PROVIDER. With "groq",
-    # COACH_LLM_MODEL (or LLM_MODEL) names a Groq model.
-    coach_llm_provider: LlmProvider | None = None
-    # Opt-in coach router: use Qwen for concise text and Gemini for context-
-    # heavy or multimodal turns, with one cross-provider retry on failure.
-    coach_hybrid_enabled: bool = False
-    coach_gemini_model: str = "gemini-3.5-flash-lite"
-    coach_groq_model: str = "qwen/qwen3.8-27b"
-    groq_api_key: str = ""
-    # Default below the current on-demand Groq account's 1,000 OTPM limit.
-    # Higher-tier deployments can raise this after checking their quota.
-    groq_max_completion_tokens: int = Field(default=8_192, ge=512, le=32_768)
-    # Groq's per-minute token allowance for the coach model (input + output).
-    # Each turn's context and answer budgets are sized to fit inside it.
-    groq_tokens_per_minute: int = Field(default=6_000, ge=1_000, le=10_000_000)
-    coach_input_price_per_million_usd: Decimal | None = Field(default=None, ge=0)
-    coach_output_price_per_million_usd: Decimal | None = Field(default=None, ge=0)
-    # Process-local cap on coach model requests per minute. 0 disables it.
-    # Set it to the project's RPM quota so turns wait for a free slot
-    # instead of failing with provider 429s.
+    mentor_thinking_level: Literal["low", "medium", "high"] = "low"
+    solution_thinking_level: Literal["low", "medium", "high"] = "medium"
     coach_model_requests_per_minute: int = Field(default=0, ge=0, le=10_000)
-    # End-to-end model budget for one coach turn (all agent steps). Express
-    # waits a little longer than this plus web grounding before giving up.
-    coach_response_timeout_seconds: float = Field(default=140, gt=0, le=300)
-    llm_input_price_per_million_usd: Decimal = Field(default=Decimal("0.30"), ge=0)
-    llm_output_price_per_million_usd: Decimal = Field(default=Decimal("2.50"), ge=0)
-    llm_pricing_version: str = "gemini-3.5-flash-lite-standard-2026-09"
-    ai_ranking_version: str = "ai-gemini-rag-v2"
-    coach_version: str = "coach-gemini-rag-v2"
-    embedding_model: str = "gemini-embedding-001"
-    embedding_dimensions: int = Field(default=768, ge=256, le=3072)
-    embedding_timeout_seconds: float = Field(default=4, gt=0, le=30)
-    memory_generation_version: str = "memory-gemini-v1"
+    coach_response_timeout_seconds: float = Field(default=140, gt=0, le=900)
+    coach_agent_enabled: bool = True
+    coach_agent_max_steps: int = Field(default=4, ge=1, le=12)
+    coach_agent_timeout_seconds: float = Field(default=75, gt=0, le=240)
+    coach_live_refresh_timeout_seconds: float = Field(default=30, gt=0, le=60)
+    mentor_timeout_seconds: float = Field(default=110, gt=0, le=900)
+
+    # Configurable list-price defaults for request cost observability.
+    ai_fast_input_price_per_million_usd: Decimal = Field(default=Decimal("0.018"), ge=0)
+    ai_fast_output_price_per_million_usd: Decimal = Field(default=Decimal("0.09"), ge=0)
+    ai_strong_input_price_per_million_usd: Decimal = Field(
+        default=Decimal("0.15"), ge=0
+    )
+    ai_strong_output_price_per_million_usd: Decimal = Field(
+        default=Decimal("0.60"), ge=0
+    )
+    ai_huge_input_price_per_million_usd: Decimal = Field(default=Decimal("0.15"), ge=0)
+    ai_huge_output_price_per_million_usd: Decimal = Field(default=Decimal("0.47"), ge=0)
+    ai_embedding_price_per_million_usd: Decimal = Field(default=Decimal("0.01"), ge=0)
+    ai_web_search_price_per_request_usd: Decimal = Field(default=Decimal("0.005"), ge=0)
+    ai_pricing_version: str = "openrouter-public-2026-09-25"
+
+    ai_ranking_version: str = "ai-provider-router-v3"
+    coach_version: str = "coach-provider-router-v3"
+    memory_generation_version: str = "memory-provider-router-v2"
     memory_prompt_version: str = "memory-prompt-v1"
     consent_policy_version: str = "personalized-coaching-rag-v2"
+    embedding_timeout_seconds: float = Field(default=30, gt=0, le=120)
     memory_min_confidence: float = Field(default=0.75, ge=0, le=1)
     memory_proposed_min_confidence: float = Field(default=0.50, ge=0, le=1)
     memory_min_evidence_strength: float = Field(default=0.75, ge=0, le=1)
@@ -91,100 +123,161 @@ class AiSettings(BaseSettings):
     coach_web_grounding_enabled: bool = True
     coach_web_grounding_timeout_seconds: float = Field(default=20, ge=10, le=60)
     internal_rate_limit_per_minute: int = Field(default=120, ge=10, le=2_000)
-    # Mentor tools (Doubt Helper, Solution Explorer, contest and progress
-    # reports). Blank provider uses Gemini when LLM_API_KEY is set, otherwise
-    # Groq; blank model uses LLM_MODEL (Gemini) or COACH_GROQ_MODEL (Groq).
-    # Groq calls are still capped by GROQ_MAX_COMPLETION_TOKENS.
-    mentor_llm_provider: LlmProvider | None = None
-    mentor_model: str = ""
-    mentor_thinking_level: Literal["low", "medium", "high"] = "low"
-    mentor_max_output_tokens: int = Field(default=16_384, ge=2_048, le=65_536)
-    mentor_timeout_seconds: float = Field(default=110, gt=0, le=240)
-    # The Solution Explorer writes three complete programs; it may use a
-    # stronger model or deeper thinking than the per-turn Doubt Helper.
-    solution_model: str = ""
-    solution_thinking_level: Literal["low", "medium", "high"] = "medium"
-    # Public page reading for the Coach and mentor tools. When a site answers a
-    # direct server request with a bot challenge, the page is read once through
-    # this public reader service instead. Blank disables the fallback.
+
     web_reader_proxy_url: str = "https://r.jina.ai/"
     web_reader_proxy_api_key: str = ""
     web_reader_timeout_seconds: float = Field(default=10, gt=0, le=60)
     web_reader_cache_seconds: float = Field(default=1_800, ge=0, le=86_400)
-    # Web search falls back to Groq's built-in browser_search tool when Gemini
-    # Google Search grounding fails or runs out of quota. Blank disables it.
-    web_search_groq_model: str = "openai/gpt-oss-20b"
     web_search_timeout_seconds: float = Field(default=40, ge=5, le=120)
 
-    @field_validator("coach_llm_provider", "mentor_llm_provider", mode="before")
-    @classmethod
-    def blank_coach_provider_follows_llm_provider(cls, value: object) -> object:
-        return None if isinstance(value, str) and not value.strip() else value
-
     @field_validator(
-        "llm_model",
-        "llm_pricing_version",
-        "ai_ranking_version",
-        "coach_version",
-        "embedding_model",
-        "memory_generation_version",
-        "consent_policy_version",
+        "local_ai_model",
+        "local_embedding_model",
+        "ai_fast_model",
+        "ai_strong_model",
+        "ai_huge_context_model",
+        "ai_embedding_model",
         mode="before",
     )
     @classmethod
-    def use_versioned_default_when_blank(
-        cls, value: object, info: ValidationInfo
-    ) -> object:
-        if not isinstance(value, str) or value.strip():
-            return value
-        defaults = {
-            "llm_model": "gemini-3.5-flash-lite",
-            "llm_pricing_version": "gemini-3.5-flash-lite-standard-2026-09",
-            "ai_ranking_version": "ai-gemini-rag-v2",
-            "coach_version": "coach-gemini-rag-v2",
-            "embedding_model": "gemini-embedding-001",
-            "memory_generation_version": "memory-gemini-v1",
-            "consent_policy_version": "personalized-coaching-rag-v2",
-        }
-        return defaults[info.field_name]
+    def model_names_must_not_be_blank(cls, value: object) -> object:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        raise ValueError("AI model names cannot be blank.")
 
-    @property
-    def effective_coach_model(self) -> str:
-        return self.coach_llm_model.strip() or self.llm_model
-
-    @property
-    def effective_coach_provider(self) -> LlmProvider:
-        return self.coach_llm_provider or self.llm_provider
+    @model_validator(mode="after")
+    def deployment_mode_is_explicit(self) -> "AiSettings":
+        if (
+            self.app_environment == "development"
+            and self.ai_provider == "openrouter"
+            and not self.ai_development_allow_cloud_fallback
+        ):
+            raise ValueError(
+                "Development cannot use OpenRouter unless "
+                "AI_DEVELOPMENT_ALLOW_CLOUD_FALLBACK=true."
+            )
+        if self.app_environment == "production" and self.ai_provider != "openrouter":
+            raise ValueError("Production requires AI_PROVIDER=openrouter.")
+        if self.ai_provider == "local":
+            # A laptop model reads ~220 and writes ~15 tokens a second; cloud
+            # timeout defaults would cut local answers off before they finish.
+            # Explicitly configured values are kept.
+            local_defaults = {
+                "ai_request_timeout_seconds": 300.0,
+                "coach_response_timeout_seconds": 280.0,
+                "mentor_timeout_seconds": 480.0,
+            }
+            for name, value in local_defaults.items():
+                if name not in self.model_fields_set:
+                    setattr(self, name, value)
+        return self
 
     @property
     def generation_api_key(self) -> str:
-        """Key for ranking, memory, and roadmap-note generation."""
-        return self.groq_api_key if self.llm_provider == "groq" else self.llm_api_key
+        return "ollama" if self.ai_provider == "local" else self.openrouter_api_key
+
+    @property
+    def llm_model(self) -> str:
+        return self.model_for_role("fast")
+
+    @property
+    def llm_timeout_seconds(self) -> float:
+        return self.ai_request_timeout_seconds
+
+    @property
+    def llm_max_output_tokens(self) -> int:
+        return self.ranking_max_output_tokens
+
+    @property
+    def llm_input_price_per_million_usd(self) -> Decimal:
+        return self.prices_for_role("fast")[0]
+
+    @property
+    def llm_output_price_per_million_usd(self) -> Decimal:
+        return self.prices_for_role("fast")[1]
+
+    @property
+    def llm_pricing_version(self) -> str:
+        return self.ai_pricing_version
+
+    @property
+    def embedding_model(self) -> str:
+        return self.active_embedding_model
+
+    @property
+    def embedding_dimensions(self) -> int:
+        return self.active_embedding_dimensions
+
+    @property
+    def effective_coach_provider(self) -> AiProvider:
+        return self.ai_provider
+
+    @property
+    def effective_coach_model(self) -> str:
+        return self.model_for_role("fast")
 
     @property
     def coach_api_key(self) -> str:
-        return (
-            self.groq_api_key
-            if self.effective_coach_provider == "groq"
-            else self.llm_api_key
-        )
+        return self.generation_api_key
 
     @property
     def effective_coach_max_output_tokens(self) -> int:
-        if self.effective_coach_provider == "groq":
-            return min(self.coach_max_output_tokens, self.groq_max_completion_tokens)
         return self.coach_max_output_tokens
 
     @property
     def effective_coach_prices(self) -> tuple[Decimal, Decimal]:
+        return self.prices_for_role("fast")
+
+    @property
+    def active_embedding_model(self) -> str:
         return (
-            self.coach_input_price_per_million_usd
-            if self.coach_input_price_per_million_usd is not None
-            else self.llm_input_price_per_million_usd,
-            self.coach_output_price_per_million_usd
-            if self.coach_output_price_per_million_usd is not None
-            else self.llm_output_price_per_million_usd,
+            self.local_embedding_model
+            if self.ai_provider == "local"
+            else self.ai_embedding_model
         )
+
+    @property
+    def active_embedding_dimensions(self) -> int:
+        return (
+            self.local_embedding_dimensions
+            if self.ai_provider == "local"
+            else self.ai_embedding_dimensions
+        )
+
+    @property
+    def active_embedding_version(self) -> str:
+        return (
+            self.local_embedding_version
+            if self.ai_provider == "local"
+            else self.ai_embedding_version
+        )
+
+    def model_for_role(self, role: ModelRole) -> str:
+        if self.ai_provider == "local":
+            return self.local_ai_model
+        return {
+            "fast": self.ai_fast_model,
+            "strong": self.ai_strong_model,
+            "huge_context": self.ai_huge_context_model,
+        }[role]
+
+    def prices_for_role(self, role: ModelRole) -> tuple[Decimal, Decimal]:
+        if self.ai_provider == "local":
+            return Decimal(), Decimal()
+        return {
+            "fast": (
+                self.ai_fast_input_price_per_million_usd,
+                self.ai_fast_output_price_per_million_usd,
+            ),
+            "strong": (
+                self.ai_strong_input_price_per_million_usd,
+                self.ai_strong_output_price_per_million_usd,
+            ),
+            "huge_context": (
+                self.ai_huge_input_price_per_million_usd,
+                self.ai_huge_output_price_per_million_usd,
+            ),
+        }[role]
 
 
 @lru_cache

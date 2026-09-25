@@ -167,6 +167,33 @@ describe('deterministic recommendation ranking', () => {
     expect(ranked[0]?.score).toBeGreaterThan(ranked[1]?.score ?? 0)
   })
 
+  it('puts topics the learner asked for ahead of other focus topics', () => {
+    const candidates = [
+      ...Array.from({ length: 6 }, (_, index) =>
+        problem(`${300 + index}A`, 900, ['graphs', 'strings'], 500 + index),
+      ),
+      ...Array.from({ length: 4 }, (_, index) =>
+        problem(`${400 + index}A`, 900, ['bit-manipulation'], 100 + index),
+      ),
+    ]
+    const history = deriveRecommendationHistory([], [], candidates)
+    const base = deriveRankingProfile(profile)
+    const ranked = rankRecommendations({
+      candidates,
+      history,
+      profile: {
+        ...base,
+        focusTopics: ['graphs', 'strings', 'bit-manipulation'],
+        priorityTopics: ['bit-manipulation'],
+      },
+      limit: 4,
+    })
+    expect(ranked.map(({ problem: item }) => item.topics)).toEqual(
+      Array.from({ length: 4 }, () => ['bit-manipulation']),
+    )
+    expect(ranked[0]?.reason).toContain('as you asked')
+  })
+
   it('is reproducible and prefers a new mix on refresh', () => {
     const candidates = Array.from({ length: 20 }, (_, index) =>
       problem(

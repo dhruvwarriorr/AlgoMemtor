@@ -16,7 +16,7 @@ The repository includes a unified Codeforces, CodeChef, LeetCode, and CSES
 catalog. React consumes the same normalized `/api/*` contract in mocked and live
 modes; Express owns provider validation, normalization, safe URLs, filtering,
 caching, rate handling, account observations, and freshness. The current
-implementation also adds bounded Gemini ranking and a personalized CP/DSA coach
+implementation also adds bounded provider-neutral AI ranking and a personalized CP/DSA coach
 through FastAPI, provider profiles/activity/contests, manual progress,
 bookmarks, analytics, timers, learner-memory retrieval, an adaptive roadmap,
 and in-app check-ins. Deterministic fallbacks keep recommendations, roadmap
@@ -86,7 +86,7 @@ Normalized candidate problems
 Express -> FastAPI internal ranking call
           |
           v
-FastAPI -> Gemini (bounded metadata only)
+FastAPI -> local Qwen in development / OpenRouter in production
           |
           v
 Ranked problem cards + explanations
@@ -121,7 +121,7 @@ Browser
                    +-- POST /internal/coach/respond and check-in generation
                         -> FastAPI over a server-side token
                              |
-                             +-- Gemini ranking, coaching, and explanations
+                             +-- routed ranking, coaching, and explanations
                              +-- PostgreSQL (ai schema; audits, memories, vectors)
 ```
 
@@ -129,7 +129,7 @@ Browser
 | ----------------- | ------------------------------------------------------------------------------------------------------- |
 | React             | Accessible catalog UI, filters, recommendations, coach workspace, and safe outbound navigation          |
 | Express           | Authentication-aware product APIs, provider adapters, normalization, caching, progress, and coach state |
-| FastAPI           | Internal bounded Gemini ranking, coaching explanations, learner memory, and vector retrieval            |
+| FastAPI           | Internal routed AI ranking, coaching explanations, learner memory, and vector retrieval                 |
 | PostgreSQL        | Learner data, normalized metadata cache, roadmap, chats, check-ins, bookmarks, history, and events      |
 | External provider | Canonical statement, examples, editor, submissions, judging, and authoritative solve status             |
 
@@ -147,24 +147,16 @@ configured provider snapshots, applies deterministic filtering rules, and sends
 at most 40 unique metadata candidates to FastAPI. The browser never calls FastAPI. The
 core service calls `POST /internal/recommendations/rank` with the shared
 `X-Internal-Service-Token` only when its AI client is configured. FastAPI uses
-the configured text model with Pydantic structured output: Gemini by default,
-or Groq when `LLM_PROVIDER=groq` (for example `LLM_MODEL=qwen/qwen3.8-27b` with
-`GROQ_API_KEY`). `LLM_PROVIDER` covers ranking, memory generation, roadmap
-notes, and the coach (`COACH_LLM_PROVIDER` can override it for the coach).
-Embeddings and coach web grounding always use Gemini, so `LLM_API_KEY` stays
-required. `COACH_HYBRID_ENABLED=true` additionally routes concise text coach
-turns to Qwen and context-heavy, learner-history, web-grounded, or attachment
-turns to `COACH_GEMINI_MODEL` (default `gemini-3.5-flash-lite`). If the chosen
-provider fails or is rate-limited, the coach tries the other provider once;
-if both fail, it reports unavailability rather than fabricating a reply. Qwen
-uses one bounded, structured call with local learner-data prefetch to fit
-smaller Groq quotas. Each turn sizes its own answer and context budget (quick,
-standard or deep) inside `GROQ_TOKENS_PER_MINUTE` (default 6000);
-`GROQ_MAX_COMPLETION_TOKENS` (default 8192) is only the upper bound, and a
-Groq answer that still hits the limit is continued once. Gemini handles multimodal inputs natively;
-for Qwen failover, images use its vision input, audio/video is transcribed
-transiently, and PDF text is extracted locally. No attachment or transcript
-is saved in chat history or audits. It returns up to ten allowlisted provider IDs, scores, concise reasons,
+Pydantic-validated structured output through one provider-neutral layer.
+Development uses Ollama `qwen3:8b-q4_K_M` with a 16K context and local
+`Qwen/Qwen3-Embedding-0.6B` embeddings. Production uses OpenRouter: GPT-OSS
+20B for fast work, GPT-OSS 120B for difficult reasoning, Qwen3.8 Flash only
+for packed contexts above 100K tokens, Qwen3-Embedding-8B for embeddings, and
+the hosted `openrouter:web_search` tool with the `parallel` engine. Development
+never falls back to cloud unless the operator explicitly enables it. Each turn
+uses a bounded task-specific context and output budget. Transient code, page
+text, and attachments are not saved in chat history or audits. The ranking
+response returns up to ten allowlisted provider IDs, scores, concise reasons,
 fallback state, measured latency, optional token usage, estimated cost, and an
 optional audit ID. Express validates the response again and resolves canonical
 Codeforces URLs from its own provider snapshot.
@@ -175,19 +167,19 @@ Codeforces ID, title, rating, normalized difficulty, topics, and solved count.
 It also includes bounded counts of unique observed attempted and solved
 problems by topic from manual statuses and permitted provider activity; these
 counts are partial evidence, not a mastery score, and require current
-personalized-AI consent before they are sent to Gemini.
+personalized-AI consent before they are sent to the configured generation model.
 It excludes request/learner service identifiers, canonical URLs,
 `additionalConsiderations`, full problem content, and raw prompts. The note is
 optional, trimmed, capped at 500 characters, and not used by the deterministic
 fallback; structured profile choices remain authoritative.
 
 If `INTERNAL_SERVICE_TOKEN` is empty in core, the HTTP client is replaced by a
-local unavailable client. If FastAPI has no key for its configured
-provider (`LLM_API_KEY` for Gemini, `GROQ_API_KEY` for Groq), it returns a
+local unavailable client. If local Ollama is unavailable, or production lacks
+`OPENROUTER_API_KEY`, FastAPI returns a
 `not_configured` fallback. Timeouts, provider errors, invalid model output,
 unavailable HTTP responses, invalid JSON, and invalid response schemas all keep
 the deterministic recommendation feed available. AI batches use
-`ai-gemini-rag-v2`; fallback batches use
+`ai-provider-router-v3`; fallback batches use
 `ai-rag-v2-fallback-deterministic-v2`.
 
 The internal endpoint requires the same non-empty token in the AI service. A
@@ -202,11 +194,11 @@ preference note. Audit failures are non-fatal.
 
 The evaluation dataset and runner live in `apps/core-api/evaluation/`. Use
 `npx tsx apps/core-api/evaluation/run.ts --validate-only` to validate the 48
-scenarios without calling Gemini. A live comparison is explicitly opt-in with
+scenarios without calling a live model. A live comparison is explicitly opt-in with
 `ALGOMEMTOR_EVALUATION_ENABLED=true` plus an AI URL and internal token; it
 reports relevance, difficulty, diversity, preference, p95 latency, and average
 estimated cost against the deterministic baseline. The local harness does not
-by itself establish live Gemini quality, latency, cost, or authenticated browser
+by itself establish live provider quality, latency, cost, or authenticated browser
 acceptance.
 
 The isolated Phase 10 memory harness is in
@@ -216,7 +208,7 @@ and enforce vector-vs-SQL recall@5, three-run median ranking improvement,
 privacy/unknown-ID, p95 latency, and cost gates. A deployment adapter must
 provide the database-backed store and ranker, explicit evidence/memory
 fixtures, and at least three scenarios per memory category before these gates
-can be used as live Gemini or PostgreSQL evidence. The top-level `run` helper
+can be used as live model or PostgreSQL evidence. The top-level `run` helper
 enables that strict matrix validation by default.
 
 ## Personalized coach and adaptive roadmap
@@ -234,17 +226,17 @@ provider activity and completeness, submissions, solves, ratings, contests,
 progress, reflections, recommendation feedback, bookmarks, dismissals, and up
 to five query-relevant active memories. FastAPI combines that private snapshot
 with up to eight versioned CP/DSA knowledge chunks using hybrid keyword/vector
-retrieval. A relevance router may make one de-identified Gemini Google Search
-grounding call for current/public questions; names, handles, ratings,
+retrieval. A relevance router may make one de-identified OpenRouter web-search
+call for current/public questions; names, handles, ratings,
 conversations, and private history never enter that search query. The model
 cannot query the core database, invent URLs, or perform writes. For practice
 requests, the de-identified search may include up to three roadmap topic names.
-Gemini can surface direct problem pages only by selecting exact citation IDs
-returned in Google Search grounding metadata; Express revalidates those public
+The model can surface direct problem pages only by selecting exact citation IDs
+returned by web search; Express revalidates those public
 HTTPS sources before rendering them as attributed web-grounded problem cards.
 Roadmap placement comes from the versioned deterministic `topic-assessment-v1`
 engine (30% smoothed success, 25% breadth, 20% target difficulty, 15% recent
-submission accuracy, and 10% recency); Gemini explains the result but does not
+submission accuracy, and 10% recency); AI explains the result but does not
 assign mastery. Manual topic statuses always determine the displayed lane.
 
 The roadmap uses the curated prerequisite taxonomy, and Express selects at most
@@ -258,7 +250,7 @@ The coach also provides in-app check-ins. Learners can choose a local weekly
 review day/time and separately enable event nudges. The memory worker
 periodically queues due owner-scoped refreshes through the durable PostgreSQL
 outbox. Event check-ins are capped at two per rolling seven days and
-deduplicated for 72 hours. Gemini outages leave the deterministic roadmap and
+deduplicated for 72 hours. AI outages leave the deterministic roadmap and
 trusted practice selection available while the chat presents a concise retry
 message without exposing internal fallback state.
 
@@ -266,7 +258,7 @@ Assistant messages persist a validated `coach-rich-v2` snapshot when useful:
 metrics, accessible line/bar/stacked-bar charts with tabular fallbacks,
 timelines, comparison tables, trusted catalog problem cards, web-grounded
 problem sources, citations, and clickable
-follow-up questions. Gemini selects only from the dataset IDs supplied for the
+follow-up questions. AI selects only from the dataset IDs supplied for the
 turn; Express hydrates chart values and canonical
 problem links from trusted datasets. Internet-discovered problems use only
 grounding metadata URLs and cannot create progress, bookmark, or roadmap
@@ -364,7 +356,7 @@ Core API:
 ```text
 AI_API_URL=http://localhost:8000
 CORE_API_URL=http://localhost:3001
-AI_RANKING_TIMEOUT_MS=25000
+AI_RANKING_TIMEOUT_MS=60000
 INTERNAL_SERVICE_TOKEN=
 PROGRESS_ENABLED=true
 MEMORY_GENERATION_ENABLED=true
@@ -374,42 +366,32 @@ MEMORY_RAG_ENABLED=true
 AI API:
 
 ```text
-LLM_API_KEY=
-LLM_MODEL=gemini-3.5-flash-lite
-LLM_TIMEOUT_SECONDS=90
-LLM_MAX_OUTPUT_TOKENS=4096
-COACH_THINKING_LEVEL=high
-LLM_INPUT_PRICE_PER_MILLION_USD=0.30
-LLM_OUTPUT_PRICE_PER_MILLION_USD=2.50
-LLM_PRICING_VERSION=gemini-3.5-flash-lite-standard-2026-09
-AI_RANKING_VERSION=ai-gemini-rag-v2
-COACH_VERSION=coach-gemini-rag-v2
-CONSENT_POLICY_VERSION=personalized-coaching-rag-v2
+APP_ENV=development
+AI_PROVIDER=local
+AI_DEVELOPMENT_ALLOW_CLOUD_FALLBACK=false
+LOCAL_AI_BASE_URL=http://127.0.0.1:11434/v1
+LOCAL_AI_MODEL=qwen3:8b-q4_K_M
+LOCAL_AI_CONTEXT_TOKENS=16384
+LOCAL_EMBEDDING_MODEL=Qwen/Qwen3-Embedding-0.6B
+LOCAL_EMBEDDING_DIMENSIONS=1024
 DATABASE_URL=postgresql+psycopg://algomemtor:algomemtor_local@127.0.0.1:5433/algomemtor
-AI_AUDIT_TIMEOUT_SECONDS=0.5
 INTERNAL_SERVICE_TOKEN=
-EMBEDDING_MODEL=gemini-embedding-001
-EMBEDDING_DIMENSIONS=768
-EMBEDDING_TIMEOUT_SECONDS=4
-MEMORY_GENERATION_VERSION=memory-gemini-v1
 MEMORY_MIN_CONFIDENCE=0.75
 MEMORY_MIN_EVIDENCE_STRENGTH=0.75
 MEMORY_SIMILARITY_THRESHOLD=0.75
-MEMORY_RETRIEVAL_LIMIT=5
-MEMORY_AUDIT_TIMEOUT_SECONDS=0.5
+MEMORY_RETRIEVAL_LIMIT=15
 MEMORY_GENERATION_ENABLED=true
 MEMORY_RAG_ENABLED=true
 COACH_KNOWLEDGE_RAG_ENABLED=true
 COACH_WEB_GROUNDING_ENABLED=true
-COACH_WEB_GROUNDING_TIMEOUT_SECONDS=20
 ```
 
 The core URL must be HTTPS or an HTTP loopback URL and cannot contain
-credentials, query parameters, or fragments. `LLM_API_KEY` enables Gemini; the
-two price variables calculate an estimate from reported token usage and are not
-live billing data. `LLM_PRICING_VERSION` labels the price assumptions in audit
-rows. `DATABASE_URL` enables the AI audit, memory, and vector tables. Reflection
-notes are sent to Gemini only after the learner enables the separate AI note
+credentials, query parameters, or fragments. `DATABASE_URL` enables the AI
+audit, memory, and vector tables. Production sets `APP_ENV=production`,
+`AI_PROVIDER=openrouter`, and `OPENROUTER_API_KEY`; the complete model and cost
+configuration is documented in `apps/ai-api/.env.example`. Reflection
+notes are sent to AI only after the learner enables the separate AI note
 sharing choice. Structured progress signals remain separate from raw notes.
 
 ### 4. Configure Supabase authentication
@@ -484,6 +466,24 @@ npm run db:down
 
 ### 6. Start development
 
+Install and verify the two local models once. The helper uses Ollama for the
+4-bit chat model and the standard Hugging Face user cache for embeddings; it
+does not put weights in the repository.
+
+```bash
+npm run ai:local:setup
+npm run ai:local:check
+```
+
+After applying the AI migration, rebuild the versioned 1024-dimensional vector
+columns. The command is restartable and skips rows already written with the
+active embedding version.
+
+```bash
+npm run db:migrate:ai
+npm run ai:embeddings:reindex
+```
+
 ```bash
 npm run dev
 ```
@@ -554,7 +554,7 @@ npx tsx apps/core-api/evaluation/run.ts --validate-only
 ```
 
 The evaluation validation is local-only. A live AI-vs-baseline run is opt-in and
-requires a configured Gemini-backed AI service; these checks do not replace
+requires a configured AI service; these checks do not replace
 authenticated browser acceptance.
 
 ## Documentation

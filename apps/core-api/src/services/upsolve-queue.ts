@@ -1,5 +1,6 @@
 import {
   isSafeCoachPublicUrl,
+  UPSOLVE_CHART_WINDOW_DAYS,
   UpsolveContestSchema,
   type ProviderKey,
   type UpsolveContest,
@@ -15,6 +16,7 @@ import {
 } from '../repositories/mentor-repository.js'
 import {
   contestDurationMinutes,
+  participationWindow,
   type AnalyzedContest,
 } from './contest-analysis.js'
 
@@ -52,7 +54,7 @@ const monthKey = (date: Date) => date.toISOString().slice(0, 7)
 // Per contest, the first two unsolved problems and the next two are
 // candidates for the queue.
 export const CANDIDATE_DEPTH = 4
-const HISTORY_LIMIT = 8
+const HISTORY_LIMIT = 12
 
 export type UpsolveCandidate = UpsolveItem & {
   frontierRank: number
@@ -127,21 +129,34 @@ export function buildUpsolve(input: {
   const eligible = input.contests
     .filter((item) => item.metrics !== undefined && item.contest !== undefined)
     .slice(0, UPSOLVE_CONTEST_LIMIT)
+  // Totals and charts cover the last UPSOLVE_CHART_WINDOW_DAYS; the queue
+  // and contest cards still draw on every recent contest.
+  const windowStart =
+    input.now.getTime() - UPSOLVE_CHART_WINDOW_DAYS * 86_400_000
 
   for (const [contestIndex, analyzed] of eligible.entries()) {
     const metrics = analyzed.metrics
     const contest = analyzed.contest
     if (metrics === undefined || contest?.startsAt === undefined) continue
     const provider = metrics.provider
-    const contestEnd = new Date(
+    // A solve after the contest ended is an upsolve, unless it came in the
+    // learner's own sitting: the contest itself, or their first practice
+    // session on it (whose solves count as solved in that sitting).
+    const officialEnd =
       contest.startsAt.getTime() +
-        contestDurationMinutes(provider, contest) * 60_000,
-    )
+      contestDurationMinutes(provider, contest) * 60_000
+    const sitting = participationWindow(analyzed.participation, contest) ?? {
+      start: contest.startsAt.getTime(),
+      end: officialEnd,
+    }
+    const isUpsolveTime = (time: number) =>
+      time > officialEnd && !(time >= sitting.start && time <= sitting.end)
     const daysAgo = Math.max(
       0,
       (input.now.getTime() - contest.startsAt.getTime()) / 86_400_000,
     )
     const userRating = latestRating.get(provider)
+    const inWindow = contest.startsAt.getTime() >= windowStart
     const items: UpsolveItem[] = []
     let frontierRank = 0
     let solvedInContest = 0
@@ -205,25 +220,53 @@ export function buildUpsolve(input: {
           submission.provider === provider &&
           submission.problemKey === problemKey &&
           submission.isAccepted &&
-          submission.occurredAt.getTime() > contestEnd.getTime(),
+          isUpsolveTime(submission.occurredAt.getTime()),
       )
       const observation = solvedObservation.get(ref)
       const status = activity.statuses.get(ref)
       const learnerState = input.states.get(ref)
+      const after = (date: Date | undefined) =>
+        date !== undefined && isUpsolveTime(date.getTime())
+      // An upsolve is a solve after the learner's sitting, or an explicit
+      // "mark solved". Solve evidence from before, during, or with no time is
+      // not an upsolve: the problem simply counts as already solved.
       const upsolvedAt =
         acceptedAfter?.occurredAt ??
-        (observation === undefined
-          ? undefined
-          : (observation.occurredAt ?? input.now)) ??
-        (status?.status === 'solved' ? status.occurredAt : undefined) ??
+        (after(observation?.occurredAt)
+          ? observation?.occurredAt
+          : undefined) ??
+        (status?.status === 'solved' && after(status.occurredAt)
+          ? status.occurredAt
+          : undefined) ??
         (learnerState === 'solved' ? input.now : undefined)
+      const solvedOtherwise =
+        upsolvedAt === undefined &&
+        (observation !== undefined ||
+          status?.status === 'solved' ||
+          activity.submissions.some(
+            (submission) =>
+              submission.provider === provider &&
+              submission.problemKey === problemKey &&
+              submission.isAccepted,
+          ))
+      if (solvedOtherwise) {
+        solvedInContest += 1
+        items.push({
+          ...base,
+          status: 'solved_in_contest',
+          priority: 0,
+          priorityReason: 'Already solved.',
+        })
+        continue
+      }
       const statusSource: 'provider' | 'manual' | undefined =
-        acceptedAfter !== undefined || observation !== undefined
+        acceptedAfter !== undefined || after(observation?.occurredAt)
           ? 'provider'
-          : status?.status === 'solved' && status.source !== 'manual'
-            ? 'provider'
+          : learnerState === 'solved' ||
+              (status?.status === 'solved' && status.source === 'manual')
+            ? 'manual'
             : upsolvedAt !== undefined
-              ? 'manual'
+              ? 'provider'
               : undefined
       const state =
         upsolvedAt !== undefined
@@ -267,7 +310,9 @@ export function buildUpsolve(input: {
         priorityReason: reason,
       }
       items.push(item)
-      unsolvedItems.push({ ...item, contestStart: contest.startsAt })
+      if (inWindow) {
+        unsolvedItems.push({ ...item, contestStart: contest.startsAt })
+      }
       if (state === 'pending' && rank < CANDIDATE_DEPTH) {
         candidates.push({
           ...item,
@@ -292,7 +337,7 @@ export function buildUpsolve(input: {
         })
       }
     }
-    if (history.length < HISTORY_LIMIT) {
+    if (inWindow && history.length < HISTORY_LIMIT) {
       history.push({
         provider,
         contestId: metrics.contestId.slice(0, 128),
@@ -301,6 +346,9 @@ export function buildUpsolve(input: {
         total: items.length,
         solvedInContest,
         upsolved: upsolvedHere,
+        ...(analyzed.participation.mode === undefined
+          ? {}
+          : { participation: analyzed.participation.mode }),
       })
     }
     const parsed = UpsolveContestSchema.safeParse({
@@ -314,6 +362,9 @@ export function buildUpsolve(input: {
         ? {}
         : { ratingChange: metrics.ratingChange }),
       solvedInContest: metrics.solvedCount,
+      ...(analyzed.participation.mode === undefined
+        ? {}
+        : { participation: analyzed.participation.mode }),
       coverage: metrics.coverage,
       ...(metrics.coverageNotes[0] === undefined
         ? {}
@@ -355,10 +406,22 @@ export function buildUpsolve(input: {
     contests: upsolveContests,
     history,
     summary: {
+      windowDays: UPSOLVE_CHART_WINDOW_DAYS,
       flagged,
       upsolved: upsolvedCount,
       skipped,
       pending,
+      byProvider: [
+        ...unsolvedItems
+          .reduce((counts, item) => {
+            const entry = counts.get(item.provider) ?? { upsolved: 0, open: 0 }
+            if (item.status === 'upsolved') entry.upsolved += 1
+            if (item.status === 'pending') entry.open += 1
+            counts.set(item.provider, entry)
+            return counts
+          }, new Map<ProviderKey, { upsolved: number; open: number }>())
+          .entries(),
+      ].map(([provider, counts]) => ({ provider, ...counts })),
       completionRate:
         flagged - skipped > 0
           ? Math.round((upsolvedCount / (flagged - skipped)) * 1_000) / 1_000
@@ -407,32 +470,40 @@ const byContestThenRank = (
   left.frontierRank - right.frontierRank
 
 // A fresh queue: the first two unsolved problems of each contest, newest
-// contest first.
+// contest first, filled up the same way a replacement would be.
 export function initialQueue(
   candidates: readonly UpsolveCandidate[],
   size: number,
 ): string[] {
-  return candidates
-    .filter((item) => item.frontierRank < 2)
-    .sort(byContestThenRank)
+  return replacementPool(candidates, [], size)
     .slice(0, size)
     .map((item) => item.id)
 }
 
 // What may replace a finished problem: the top-two unsolved problems of any
-// contest, or the next two unsolved problems of the latest contest that
-// still has open problems. Ordered newest contest first.
+// contest, so the queue holds at most two open problems of one contest.
+// Only when those run out does the latest contest with open problems
+// offer its next two. Ordered newest contest first.
 export function replacementPool(
   candidates: readonly UpsolveCandidate[],
   kept: readonly string[],
+  need = 0,
 ): UpsolveCandidate[] {
   const open = candidates.filter((item) => !kept.includes(item.id))
-  const latest = Math.min(...open.map((item) => item.contestIndex))
-  return open
-    .filter(
-      (item) =>
-        item.frontierRank < 2 ||
-        (item.contestIndex === latest && item.frontierRank < CANDIDATE_DEPTH),
-    )
+  const frontier = open
+    .filter((item) => item.frontierRank < 2)
     .sort(byContestThenRank)
+  if (frontier.length >= need) return frontier
+  const latest = Math.min(...open.map((item) => item.contestIndex))
+  return [
+    ...frontier,
+    ...open
+      .filter(
+        (item) =>
+          item.contestIndex === latest &&
+          item.frontierRank >= 2 &&
+          item.frontierRank < CANDIDATE_DEPTH,
+      )
+      .sort(byContestThenRank),
+  ]
 }

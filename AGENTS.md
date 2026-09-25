@@ -315,12 +315,13 @@ source, tests, and `git status` before relying on it.
   self-reported current ratings were removed from Settings/onboarding.
 - 2026-09-24 (mentor tools): the Coach is chat-only. Doubt Helper
   (`/doubt-helper`, five-level hints, server-enforced solution reveal),
-  Solution Explorer (`/solutions`), Upsolve (`/upsolve`, revision schedule),
+  Solution Explorer (`/solutions`), Upsolve (`/upsolve`),
   Contest Analysis (`/contest-analysis`) and Progress Report
   (`/progress/report`) are separate sections; the Coach answers clear requests
   for them with a `feature_redirect` card and no model call.
   New `core` tables: `problem_help_sessions`/`_turns`, `mentor_reports`,
-  `upsolve_item_states`, `revision_items`. Personalized AI is always on;
+  `upsolve_item_states`, `revision_items` (unused since the revision
+  schedule was removed on 2026-09-25). Personalized AI is always on;
   Settings has an Accounts section (Google connect, change password).
 - 2026-09-25: mentor tools work from a link alone (`page_retrieval.py`: direct
   read, then the `WEB_READER_PROXY_URL` reader for blocked pages; see the
@@ -333,7 +334,25 @@ source, tests, and `git status` before relying on it.
   (`coach_context.py`). Pathway and check-ins are removed; do not re-add them.
   Upsolve keeps a stable five-problem queue (fixed rule first, AI-picked
   replacements), loads full CodeChef/LeetCode contest problem lists, and has
-  no reminders.
+  no reminders. Unrated live and practised-after Codeforces contests are
+  derived from submissions. The mentor pages share `chart-theme.ts` and
+  `components/visuals.tsx` (KPI tiles, chart cards) with the Progress look.
+- 2026-09-25 (AI providers): development runs on local Ollama
+  `qwen3:8b-q4_K_M` (16K context) and local `Qwen/Qwen3-Embedding-0.6B`
+  (1024 dims); production uses OpenRouter only. There is no direct
+  Gemini/Groq integration.
+- 2026-09-25 (later): the revision schedule is removed from the product.
+  Upsolve counts a problem as upsolved only when it was solved after the
+  contest ended and outside the learner's sitting (live contest or first
+  practice session); its charts and totals cover the last 30 days
+  (`UPSOLVE_CHART_WINDOW_DAYS`); the queue holds at most two open problems per
+  contest while others remain, is never saved from incomplete contest data,
+  and loaded contest lists are reused. Local AI runs with thinking off,
+  single-call Coach turns, a warm chat model and a process-wide embedding
+  model (see "Local model tuning" in PROJECT_DOCUMENTATION); recommendation
+  bands follow the observed Codeforces rating once onboarding comfort is
+  outgrown, steered topics outrank other focus topics, and
+  `AI_RANKING_TIMEOUT_MS` defaults to 60 s.
 
 Important: this snapshot describes the working tree, which currently contains
 uncommitted Week 10 work. It is context, not permission to commit or rewrite it.

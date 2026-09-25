@@ -254,6 +254,8 @@ export class CodeChefProvider implements ProblemProvider {
         if (best === undefined || overlap > best.overlap) {
           best = { list, overlap }
         }
+        // Every submitted problem is in this division: no need to look on.
+        if (overlap === submitted.size) break
       }
       if (best !== undefined && best.list.length > 0) problems = best.list
     }

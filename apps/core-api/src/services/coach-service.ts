@@ -422,6 +422,26 @@ const redactExcludedCoachTopics = (
   }, value)
 }
 
+// Answers drop whole lines that mention an excluded topic. Replacing the
+// words inside a line mangled problem titles ("Remove [topic omitted by
+// learner] Elements") and left sentences that no longer made sense.
+const withoutExcludedTopicLines = (
+  value: string,
+  excludedTopics: readonly string[],
+) => {
+  if (excludedTopics.length === 0) return value
+  let inCode = false
+  const kept = value.split('\n').filter((line) => {
+    if (line.trimStart().startsWith('```')) {
+      inCode = !inCode
+      return true
+    }
+    return inCode || !containsExcludedCoachTopic(line, excludedTopics)
+  })
+  const text = kept.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+  return text === '' ? redactExcludedCoachTopics(value, excludedTopics) : text
+}
+
 export const CoachTopicDefinitions = topicDefinitions
 
 export function validateCoachPrerequisiteGraph(
@@ -2442,7 +2462,7 @@ export class CoachService {
       )
     }
     const now = this.now().toISOString()
-    const answer = redactExcludedCoachTopics(
+    const answer = withoutExcludedTopicLines(
       sanitizeAssistantAnswer(result.answer),
       excludedTopics,
     )
@@ -2780,7 +2800,7 @@ export class CoachService {
           }
     const redactedResult: AiCoachResult = {
       ...result,
-      answer: redactExcludedCoachTopics(result.answer, context.excludedTopics),
+      answer: withoutExcludedTopicLines(result.answer, context.excludedTopics),
       evidence: redactedEvidence,
       proposals: proposalsWithRedactedText,
       citations,

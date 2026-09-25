@@ -115,15 +115,35 @@ const round1 = (value: number) => Math.round(value * 10) / 10
 const codeforcesIndex = (contestId: string, externalId: string) =>
   externalId.startsWith(contestId) ? externalId.slice(contestId.length) : ''
 
+// The time the learner competed in: the contest itself, or for a contest
+// practised afterwards, their own first sitting on it.
+export function participationWindow(
+  participation: ActivityParticipation,
+  contest: CatalogContest,
+): { start: number; end: number } | undefined {
+  if (participation.session !== undefined) {
+    return {
+      start: participation.session.start.getTime(),
+      end: participation.session.end.getTime(),
+    }
+  }
+  if (contest.startsAt === undefined) return undefined
+  const start = contest.startsAt.getTime()
+  return {
+    start,
+    end:
+      start + contestDurationMinutes(participation.provider, contest) * 60_000,
+  }
+}
+
 export function contestSubmissions(
   participation: ActivityParticipation,
   contest: CatalogContest,
   submissions: readonly ActivitySubmission[],
 ) {
-  if (contest.startsAt === undefined) return []
-  const start = contest.startsAt.getTime()
-  const end =
-    start + contestDurationMinutes(participation.provider, contest) * 60_000
+  const window = participationWindow(participation, contest)
+  if (window === undefined) return []
+  const { start, end } = window
   const codeforcesProblem = new RegExp(
     `^${participation.contestId}[A-Z][0-9]?$`,
   )
@@ -150,10 +170,11 @@ export function buildContestMetrics(input: {
   metadata: ReadonlyMap<string, ProblemMeta>
 }): ContestMetrics | undefined {
   const { participation, contest } = input
-  if (contest.startsAt === undefined) return undefined
+  const window = participationWindow(participation, contest)
+  if (contest.startsAt === undefined || window === undefined) return undefined
   const provider = participation.provider
-  const start = contest.startsAt.getTime()
-  const duration = contestDurationMinutes(provider, contest)
+  const start = window.start
+  const duration = Math.max(1, Math.round((window.end - start) / 60_000))
   const inContest = contestSubmissions(
     participation,
     contest,
@@ -308,7 +329,11 @@ export function buildContestMetrics(input: {
   const lastMinute = minutes.at(-1)
   const firstAccepted = solvedOrder[0]?.solvedMinute
   const notes: string[] = []
-  if (inContest.length === 0) {
+  if (participation.mode === 'practice') {
+    notes.push(
+      'You worked on this contest after it ended; problems you solved count as upsolved.',
+    )
+  } else if (inContest.length === 0) {
     notes.push(
       'No submissions from this contest were found in your synced activity. Sync your platform to analyze it.',
     )
@@ -506,3 +531,81 @@ export const metricsForAi = (metrics: ContestMetrics) => ({
   rapidWrongResubmits: metrics.rapidWrongResubmits,
   coverageNotes: metrics.coverageNotes,
 })
+
+const PRACTICE_WINDOW_MS = 21 * 86_400_000
+const SESSION_GAP_MS = 60 * 60_000
+
+// A practice sitting: from the first submission after the contest, for the
+// contest's length, extended while submissions follow within an hour.
+export function practiceSession(
+  times: readonly number[],
+  contestEnd: number,
+  durationMs: number,
+): { start: Date; end: Date } {
+  const after = times.filter((at) => at > contestEnd).sort((a, b) => a - b)
+  const first = after[0] ?? contestEnd
+  let end = first + durationMs
+  let previous = first
+  for (const at of after.slice(1)) {
+    if (at > end && at - previous > SESSION_GAP_MS) break
+    end = Math.max(end, at)
+    previous = at
+  }
+  return { start: new Date(first), end: new Date(end) }
+}
+const PRACTICE_LOOKBACK_MS = 120 * 86_400_000
+
+// Codeforces contests the learner took part in without a rating change:
+// live but unrated (Div. 3 or 4 above the rating limit, out of competition)
+// or worked on in the three weeks after the contest (virtual or practice).
+// Problem IDs carry the contest ID, so submissions identify the contest.
+export function codeforcesContestsFromSubmissions(input: {
+  submissions: readonly ActivitySubmission[]
+  known: ReadonlySet<string>
+  catalog: readonly CatalogContest[]
+  now: Date
+}): ActivityParticipation[] {
+  const byContest = new Map<string, ActivitySubmission[]>()
+  for (const submission of input.submissions) {
+    if (submission.provider !== 'codeforces') continue
+    if (
+      input.now.getTime() - submission.occurredAt.getTime() >
+      PRACTICE_LOOKBACK_MS
+    ) {
+      continue
+    }
+    const contestId = /^(\d{1,6})[A-Z][0-9]?$/.exec(submission.externalId)?.[1]
+    if (contestId === undefined || input.known.has(contestId)) continue
+    const list = byContest.get(contestId) ?? []
+    list.push(submission)
+    byContest.set(contestId, list)
+  }
+  const participations: ActivityParticipation[] = []
+  for (const [contestId, submissions] of byContest) {
+    const contest = input.catalog.find(
+      (item) => item.provider === 'codeforces' && item.externalId === contestId,
+    )
+    if (contest?.startsAt === undefined) continue
+    const start = contest.startsAt.getTime()
+    const end = start + contestDurationMinutes('codeforces', contest) * 60_000
+    const times = submissions.map((submission) =>
+      submission.occurredAt.getTime(),
+    )
+    const live = times.some((at) => at >= start && at <= end)
+    const soonAfter = times.some(
+      (at) => at > end && at - end <= PRACTICE_WINDOW_MS,
+    )
+    if (!live && !soonAfter) continue
+    participations.push({
+      provider: 'codeforces',
+      contestId,
+      contestName: contest.name,
+      canonicalUrl: contest.canonicalUrl,
+      attendedAt: contest.startsAt,
+      completeness: 'partial',
+      mode: live ? 'unrated' : 'practice',
+      ...(live ? {} : { session: practiceSession(times, end, end - start) }),
+    })
+  }
+  return participations
+}

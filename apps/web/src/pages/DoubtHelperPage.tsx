@@ -15,11 +15,19 @@ import {
   ArrowRight,
   BookOpen,
   Check,
+  CheckCheck,
+  CloudOff,
   Code2,
+  Compass,
   Crosshair,
+  Gauge,
+  Lightbulb,
   Lock,
   MessageCircle,
   Plus,
+  ShieldCheck,
+  XCircle,
+  type IconComponent,
 } from '@/components/icons/algo-icons'
 import { AiLoader, type AiLoaderStep } from '@/components/motion/AiLoader'
 import { ErrorState } from '@/components/states/ErrorState'
@@ -27,6 +35,7 @@ import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { useNotification } from '@/app/useNotification'
 import { CoachMessageContent } from '@/features/coach/components/CoachMessageContent'
+import { KpiTile } from '@/features/mentor/components/visuals'
 import {
   MentorChatDock,
   type DockMessage,
@@ -51,6 +60,17 @@ import {
 } from '@/features/mentor/hooks'
 import { mentorToolPath } from '@/features/mentor/feature-routes'
 import { cn } from '@/lib/utils'
+
+const doubtIcons: Record<ProblemHelpDoubtType, IconComponent> = {
+  understand_problem: BookOpen,
+  find_approach: Compass,
+  approach_review: ShieldCheck,
+  compilation_error: Code2,
+  no_output: CloudOff,
+  wrong_answer: XCircle,
+  performance_tle_mle: Gauge,
+  general: MessageCircle,
+}
 
 const doubtOptions: readonly {
   value: ProblemHelpDoubtType
@@ -155,28 +175,51 @@ function HintLadder({ level, stage }: { level: number; stage: string }) {
   return (
     <ol
       aria-label={`Hint ${Math.min(level, 5)} of 5`}
-      className="grid grid-cols-5 gap-1.5"
+      className="grid grid-cols-5"
     >
       {levelNames.map((name, index) => {
         const reached = index < level
         const current = index === level - 1
         return (
-          <li className="min-w-0" key={name}>
+          <li
+            className="relative flex min-w-0 flex-col items-center"
+            key={name}
+          >
+            {index > 0 ? (
+              <span
+                aria-hidden="true"
+                className={cn(
+                  'absolute top-4 right-1/2 h-0.5 w-full -translate-y-1/2',
+                  reached ? 'bg-primary' : 'bg-border',
+                )}
+              />
+            ) : null}
             <span
               className={cn(
-                'block h-1.5 rounded-full transition-colors',
-                reached ? (index === 4 ? 'bg-sun' : 'bg-primary') : 'bg-border',
+                'relative grid size-8 place-items-center rounded-full font-heading text-sm font-bold transition-colors',
+                reached
+                  ? index === 4
+                    ? 'bg-sun text-sun-foreground'
+                    : 'mesh-card text-white'
+                  : 'border border-border bg-card text-muted-foreground',
+                current && 'ring-4 ring-primary/20',
               )}
-            />
+            >
+              {reached && !current ? (
+                <Check aria-hidden="true" className="size-4" />
+              ) : (
+                index + 1
+              )}
+            </span>
             <span
               className={cn(
-                'mt-1.5 block truncate text-[0.7rem]',
+                'mt-1.5 max-w-full truncate text-center text-[0.7rem]',
                 current
                   ? 'font-semibold text-foreground'
                   : 'text-muted-foreground',
               )}
             >
-              {index + 1}. {name}
+              {name}
             </span>
           </li>
         )
@@ -187,6 +230,52 @@ function HintLadder({ level, stage }: { level: number; stage: string }) {
           : `Currently at hint ${level}`}
       </span>
     </ol>
+  )
+}
+
+// Your help history at a glance, shown above a new doubt.
+function HelpStats() {
+  const sessionsQuery = useHelpSessions()
+  const sessions = sessionsQuery.data?.data ?? []
+  if (sessions.length === 0) return null
+  const solved = sessions.filter((item) => item.stage === 'completed').length
+  const reveals = sessions.filter(
+    (item) => item.solutionRevealedAt !== undefined,
+  ).length
+  const average =
+    sessions.reduce((sum, item) => sum + Math.min(item.hintLevel, 5), 0) /
+    sessions.length
+  return (
+    <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <KpiTile
+        detail="Problems you asked about"
+        icon={Crosshair}
+        label="Help sessions"
+        tone="accent"
+        value={sessions.length}
+      />
+      <KpiTile
+        detail="Marked solved"
+        icon={CheckCheck}
+        label="Solved"
+        tone="green"
+        value={solved}
+      />
+      <KpiTile
+        detail="Lower means more independence"
+        icon={Lightbulb}
+        label="Average hint"
+        tone="sky"
+        value={average.toFixed(1)}
+      />
+      <KpiTile
+        detail="Sessions that revealed the solution"
+        icon={Lock}
+        label="Full reveals"
+        tone="sand"
+        value={reveals}
+      />
+    </dl>
   )
 }
 
@@ -442,34 +531,49 @@ function IntakeForm({ initialProblem }: { initialProblem: string }) {
           Type of doubt
         </legend>
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
-          {doubtOptions.map((option) => (
-            <label
-              className={cn(
-                'flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring',
-                doubtType === option.value
-                  ? 'border-primary bg-primary/5'
-                  : 'border-border hover:bg-secondary/60',
-              )}
-              key={option.value}
-            >
-              <input
-                checked={doubtType === option.value}
-                className="mt-1 accent-[var(--primary)]"
-                name="doubt-type"
-                onChange={() => setDoubtType(option.value)}
-                type="radio"
-                value={option.value}
-              />
-              <span className="min-w-0">
-                <span className="block text-sm font-medium text-foreground">
-                  {option.label}
+          {doubtOptions.map((option) => {
+            const Icon = doubtIcons[option.value]
+            const chosen = doubtType === option.value
+            return (
+              <label
+                className={cn(
+                  'flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-[border-color,background-color,box-shadow] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring',
+                  chosen
+                    ? 'border-primary bg-primary/5 shadow-soft'
+                    : 'border-border hover:bg-secondary/60',
+                )}
+                key={option.value}
+              >
+                <input
+                  checked={chosen}
+                  className="sr-only"
+                  name="doubt-type"
+                  onChange={() => setDoubtType(option.value)}
+                  type="radio"
+                  value={option.value}
+                />
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'grid size-9 shrink-0 place-items-center rounded-lg transition-colors',
+                    chosen
+                      ? 'mesh-card text-white'
+                      : 'bg-accent text-accent-foreground',
+                  )}
+                >
+                  <Icon className="size-4" />
                 </span>
-                <span className="block text-xs leading-5 text-muted-foreground">
-                  {option.hint}
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-foreground">
+                    {option.label}
+                  </span>
+                  <span className="block text-xs leading-5 text-muted-foreground">
+                    {option.hint}
+                  </span>
                 </span>
-              </span>
-            </label>
-          ))}
+              </label>
+            )
+          })}
         </div>
       </fieldset>
 
@@ -893,7 +997,7 @@ function SessionView({ sessionId }: { sessionId: string }) {
                 onClick={() =>
                   void act(
                     { action: 'complete', expectedVersion: session.version },
-                    'Nice work. Added to your revision schedule.',
+                    'Nice work. Marked solved.',
                   )
                 }
                 type="button"
@@ -923,7 +1027,7 @@ function SessionView({ sessionId }: { sessionId: string }) {
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-4">
           <p className="min-w-0 flex-1 text-sm text-muted-foreground">
             {session.stage === 'completed'
-              ? 'Solved. It will come back in your revision schedule so the idea sticks.'
+              ? 'Solved. See how else it can be solved, or start a new doubt.'
               : session.stage === 'abandoned'
                 ? 'This session has ended. Your hints stay here for reference.'
                 : 'See how else this problem can be solved and what experienced solvers noticed.'}
@@ -1122,6 +1226,7 @@ function DoubtHelperPage() {
           </p>
         </div>
       </header>
+      {sessionId === undefined ? <HelpStats /> : null}
       <div className="grid min-w-0 gap-6 lg:grid-cols-[17rem_minmax(0,1fr)]">
         <SessionList activeId={sessionId} />
         <div className="min-w-0 max-w-4xl">

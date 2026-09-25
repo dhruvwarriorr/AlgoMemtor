@@ -873,7 +873,25 @@ class WorkspaceTools:
                     ),
                 }
             )
+        for item in items:
+            tries = item["solved"] + item["failedSubmissions"]
+            if tries:
+                item["failedShare"] = round(item["failedSubmissions"] / tries, 2)
         items.sort(key=lambda item: item["solved"], reverse=True)
+        # Precomputed so a model does not rank raw counts itself: tags with
+        # enough evidence, by the share of failed submissions to solves.
+        weakest = sorted(
+            (
+                item
+                for item in items
+                if item["solved"] + item["failedSubmissions"] >= 8
+                and item["failedSubmissions"] > 0
+                # Some platforms tag problems with their own name; that is a
+                # source, not a topic.
+                and item["tag"] not in _PLATFORM_TAGS
+            ),
+            key=lambda item: (-item["failedShare"], item["solved"]),
+        )[:5]
         if topic is not None and not items:
             match = next(
                 (item for key, item in roadmap.items() if _label_matches(key, topic)),
@@ -884,7 +902,29 @@ class WorkspaceTools:
                 "roadmap": match,
                 "note": "No solved or failed problems observed for this tag.",
             }
-        return {"totalTags": len(items), "items": items[:40]}
+        return {
+            "totalTags": len(items),
+            **(
+                {
+                    "weakestTags": [
+                        {
+                            "tag": item["tag"],
+                            "solved": item["solved"],
+                            "failedSubmissions": item["failedSubmissions"],
+                            "failedShare": item["failedShare"],
+                        }
+                        for item in weakest
+                    ],
+                    "weakestNote": (
+                        "Ranked by failed submissions per solve; tags with "
+                        "fewer than 8 solves plus failures are left out."
+                    ),
+                }
+                if topic is None and weakest
+                else {}
+            ),
+            "items": items[:40],
+        }
 
     def activity_summary(self, args: dict[str, Any]) -> dict[str, Any]:
         days = _int_arg(args, "days", 30, 1, 730)
@@ -949,6 +989,7 @@ class WorkspaceTools:
         }
 
 
+_PLATFORM_TAGS = frozenset({"codeforces", "codechef", "leetcode", "cses", "atcoder"})
 _PERSONAL = re.compile(r"\b(my|me|mine|i|i'm|i've|am i|have i|did i)\b", re.IGNORECASE)
 _PREFETCH_RULES: tuple[tuple[re.Pattern[str], str, dict[str, Any], bool], ...] = (
     (

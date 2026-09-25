@@ -9,7 +9,7 @@ import httpx
 import pytest
 from app import core_client
 from app.coach_models import CoachModelOutput, CoachRequest
-from app.coach_service import GeminiCoachModel, recent_openings
+from app.coach_service import ProviderCoachModel, recent_openings
 from app.coach_tools import WorkspaceTools, tool_declarations
 from app.settings import AiSettings
 from langchain_core.messages import AIMessage
@@ -21,8 +21,9 @@ def settings(**updates: Any) -> AiSettings:
     values: dict[str, Any] = {
         "_env_file": None,
         "internal_service_token": "internal-test-token",
-        "llm_api_key": "test-key",
         "core_api_url": "http://core.test",
+        # These tests exercise the multi-step agent path.
+        "local_ai_single_call": False,
     }
     values.update(updates)
     return AiSettings(**values)
@@ -137,7 +138,7 @@ async def test_slow_agent_falls_back_to_a_fast_answer() -> None:
             }
 
     fast = FastModel()
-    model = object.__new__(GeminiCoachModel)
+    model = object.__new__(ProviderCoachModel)
     model.settings = settings(coach_agent_timeout_seconds=0.05)
     model.services = None
     model.base_model = SlowAgent()

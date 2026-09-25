@@ -645,7 +645,7 @@ describe('recommendation API', () => {
             score: 1 - index / 20,
             reason: `AI-ranked candidate ${index + 1}.`,
           })),
-        model: 'gemini-3.5-flash',
+        model: 'openai/gpt-oss-20b',
         fallback: false,
         latencyMs: 150,
         inputTokens: 900,
@@ -745,7 +745,7 @@ describe('recommendation API', () => {
               score: 0.8,
               reason: 'Matches the deterministic shortlist.',
             })),
-          model: 'gemini-3.5-flash',
+          model: 'openai/gpt-oss-20b',
           fallback: false,
           latencyMs: 100,
         }
@@ -785,7 +785,7 @@ describe('recommendation API', () => {
   it('regenerates and retries AI after a profile preference change', async () => {
     const rank = vi.fn<AiRecommendationClient['rank']>(async () => ({
       items: [],
-      model: 'gemini-3.5-flash',
+      model: 'openai/gpt-oss-20b',
       fallback: true,
       fallbackReason: 'provider_error',
       latencyMs: 10,
@@ -823,7 +823,7 @@ describe('recommendation API', () => {
               ? 'Prefer short graph revision problems for this batch.'
               : 'Matches the bounded candidate set.',
         })),
-      model: 'gemini-3.5-flash',
+      model: 'openai/gpt-oss-20b',
       fallback: false,
       latencyMs: 20,
     }))

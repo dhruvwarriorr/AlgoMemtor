@@ -184,8 +184,9 @@ const app = createApp({
     ? new HttpAiCoachClient({
         baseUrl: aiConfig.baseUrl,
         internalServiceToken: aiConfig.internalServiceToken,
-        // FastAPI allows up to 20s of web grounding plus a 140s agent budget.
-        timeoutMs: 170_000,
+        // Covers a local model's longest turn (FastAPI allows 280s) as well
+        // as cloud grounding plus the agent budget.
+        timeoutMs: 300_000,
       })
     : new UnavailableAiCoachClient(),
   aiRoadmapNoteClient: aiConfig.configured
@@ -195,8 +196,9 @@ const app = createApp({
     ? new HttpAiMentorClient({
         baseUrl: aiConfig.baseUrl,
         internalServiceToken: aiConfig.internalServiceToken,
-        // FastAPI allows 110s per model call plus one repair or search.
-        timeoutMs: 240_000,
+        // A local model needs minutes for long answers; FastAPI enforces its
+        // own per-call limits (480s for mentor calls in local mode).
+        timeoutMs: 500_000,
       })
     : new UnavailableAiMentorClient(),
   mentorRepository: new PrismaMentorRepository(prisma),

@@ -61,7 +61,7 @@ async def test_ranking_audit_migration_and_repository_store_only_preference_hash
         request_id=request_id,
         learner_id=learner_id,
         model="integration-test-model",
-        ranking_version="ai-gemini-v1",
+        ranking_version="ai-provider-router-v3",
         pricing_version="integration-pricing-v1",
         candidate_ids=["codeforces:100A", "codeforces:200B"],
         returned_ids=["codeforces:200B", "codeforces:100A"],

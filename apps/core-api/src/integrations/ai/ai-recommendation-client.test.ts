@@ -41,7 +41,7 @@ const successPayload = {
       reason: 'Matches the current graph focus.',
     },
   ],
-  model: 'gemini-3.5-flash',
+  model: 'openai/gpt-oss-20b',
   fallback: false,
   latencyMs: 120,
   inputTokens: 100,

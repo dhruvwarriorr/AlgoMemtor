@@ -58,40 +58,40 @@ def test_turn_tiers_follow_the_question() -> None:
     assert turn_tier("hi there, what", has_linked_problems=True) == "deep"
 
 
-def test_groq_budgets_fit_the_per_minute_allowance() -> None:
-    config = settings(groq_tokens_per_minute=6_000, groq_max_completion_tokens=8_192)
+def test_local_budgets_fit_the_16k_context() -> None:
+    config = settings(local_ai_context_tokens=16_384)
     for question in ("What is my rating?", "Debug my DP solution, it gets TLE"):
         budget = plan_turn_budget(
-            config, provider="groq", question=question, context={}
+            config, provider="local", question=question, context={}
         )
-        assert budget.input_tokens + budget.output_tokens <= 6_000
+        assert budget.input_tokens + budget.output_tokens <= 15_584
         assert budget.output_tokens >= 600
     quick = plan_turn_budget(
-        config, provider="groq", question="What is my rating?", context={}
+        config, provider="local", question="What is my rating?", context={}
     )
     deep = plan_turn_budget(
         config,
-        provider="groq",
+        provider="local",
         question="Debug my DP solution, it gets TLE",
         context={},
     )
     assert deep.output_tokens > quick.output_tokens
 
 
-def test_gemini_budgets_scale_with_the_turn() -> None:
-    config = settings(coach_max_output_tokens=24_576)
+def test_openrouter_budgets_scale_with_the_turn() -> None:
+    config = settings(solution_max_output_tokens=12_000)
     quick = plan_turn_budget(
-        config, provider="gemini", question="What is my rating?", context={}
+        config, provider="openrouter", question="What is my rating?", context={}
     )
     deep = plan_turn_budget(
         config,
-        provider="gemini",
+        provider="openrouter",
         question="Prove why this greedy works and write the code",
         context={},
     )
-    assert quick.output_tokens == 2_048
+    assert quick.output_tokens == 1_024
     assert quick.agent_steps == 1
-    assert deep.output_tokens == 24_576
+    assert deep.output_tokens == 12_000
     assert deep.deep_reasoning is True
 
 
@@ -121,6 +121,22 @@ def test_newest_turns_are_kept_for_follow_ups() -> None:
     turns = packed.get("recentTurns")
     assert isinstance(turns, list) and turns
     assert turns[-1]["content"].startswith("Old turn 19")
+
+
+def test_a_long_last_answer_is_shortened_not_dropped() -> None:
+    context: dict[str, object] = {
+        "recentTurns": [
+            {"role": "user", "content": "Explain Dijkstra briefly."},
+            {"role": "assistant", "content": "Dijkstra relaxes edges. " * 400},
+        ]
+    }
+    packed = pack_context(context, "And with a Fibonacci heap?", budget_tokens=3_200)
+    turns = packed.get("recentTurns")
+    assert isinstance(turns, list) and len(turns) == 1
+    assert turns[0]["role"] == "assistant"
+    assert turns[0]["content"].startswith("Dijkstra relaxes edges.")
+    assert turns[0]["content"].endswith("…")
+    assert estimate_tokens(turns) <= 3_200 * 0.2 + 1
 
 
 def test_small_contexts_pass_through_unchanged() -> None:

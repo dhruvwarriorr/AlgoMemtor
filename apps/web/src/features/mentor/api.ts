@@ -8,9 +8,6 @@ import {
   ProblemHelpTurnRequestSchema,
   ProgressNarrativeResponseSchema,
   ProgressReportResponseSchema,
-  ReviewRevisionRequestSchema,
-  RevisionResponseSchema,
-  RevisionsResponseSchema,
   SolutionAccessResponseSchema,
   SolutionChatRequestSchema,
   SolutionChatResponseSchema,
@@ -22,7 +19,6 @@ import {
   type ExploreSolutionsRequest,
   type ProblemHelpTurnRequest,
   type ProviderKey,
-  type ReviewRevisionRequest,
   type SolutionChatRequest,
   type StartProblemHelpRequest,
   type UpdateUpsolveItemRequest,
@@ -139,10 +135,14 @@ export function askSolutionChat(input: SolutionChatRequest) {
   )
 }
 
-// Upsolve and revisions ----------------------------------------------------
+// Upsolve ------------------------------------------------------------------
 
-export function fetchUpsolve({ signal }: RequestOptions = {}) {
-  return requestJson('/api/upsolve', {
+// `refresh` pulls the learner's newest platform data before recomputing.
+export function fetchUpsolve({
+  signal,
+  refresh = false,
+}: RequestOptions & { refresh?: boolean } = {}) {
+  return requestJson(refresh ? '/api/upsolve?refresh=true' : '/api/upsolve', {
     authentication: 'required',
     schema: UpsolveResponseSchema,
     signal,
@@ -166,26 +166,16 @@ export function updateUpsolveItem(
   )
 }
 
-export function fetchRevisions({ signal }: RequestOptions = {}) {
-  return requestJson('/api/revisions', {
-    authentication: 'required',
-    schema: RevisionsResponseSchema,
-    signal,
-  })
-}
-
-export function reviewRevision(id: string, input: ReviewRevisionRequest) {
-  return post(
-    `/api/revisions/${encodeURIComponent(id)}/review`,
-    ReviewRevisionRequestSchema.parse(input),
-    RevisionResponseSchema,
-  )
-}
-
 // Contest analysis ---------------------------------------------------------
 
-export function fetchContestOverview({ signal }: RequestOptions = {}) {
-  return requestJson('/api/contest-analysis', {
+export function fetchContestOverview({
+  signal,
+  refresh = false,
+}: RequestOptions & { refresh?: boolean } = {}) {
+  const path = refresh
+    ? '/api/contest-analysis?refresh=true'
+    : '/api/contest-analysis'
+  return requestJson(path, {
     authentication: 'required',
     schema: ContestAnalysisOverviewResponseSchema,
     signal,

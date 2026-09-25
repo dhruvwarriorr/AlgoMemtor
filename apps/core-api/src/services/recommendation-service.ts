@@ -132,26 +132,36 @@ const steeringPreference = (
 
 const roundToHundred = (value: number) => Math.round(value / 100) * 100
 
-// A learner who lets AlgoMemtor decide gets a band around their latest
-// observed Codeforces rating rather than their onboarding estimate.
-const calibratedRatingBand = (
+// An onboarding comfort band this far below the learner's observed rating
+// is out of date: they have outgrown it.
+const OUTGROWN_BAND_MARGIN = 300
+
+// Whether the learner's latest observed Codeforces rating should set the
+// band instead of their onboarding estimate: they let AlgoMemtor decide, or
+// they have clearly outgrown the comfort level they picked. An explicit
+// rating range is always kept.
+const usesObservedRating = (
+  profile: LearnerProfile | null,
+  current: ReturnType<typeof deriveRankingProfile>['ratingBand'],
+  observedRating: number | undefined,
+): observedRating is number =>
+  profile !== null &&
+  observedRating !== undefined &&
+  profile.ratingComfortRange === undefined &&
+  (profile.difficultyComfort === 'let_algomemtor_decide' ||
+    observedRating >= current.max + OUTGROWN_BAND_MARGIN)
+
+export const calibratedRatingBand = (
   profile: LearnerProfile | null,
   current: ReturnType<typeof deriveRankingProfile>['ratingBand'],
   observedRating: number | undefined,
 ) => {
-  if (
-    profile === null ||
-    observedRating === undefined ||
-    profile.ratingComfortRange !== undefined ||
-    profile.difficultyComfort !== 'let_algomemtor_decide'
-  ) {
-    return current
-  }
+  if (!usesObservedRating(profile, current, observedRating)) return current
   const min = Math.max(800, roundToHundred(observedRating - 100))
   return { min, max: Math.max(min, roundToHundred(observedRating + 200)) }
 }
 
-export const AI_RANKING_VERSION = 'ai-gemini-rag-v2'
+export const AI_RANKING_VERSION = 'ai-provider-router-v3'
 export const AI_FALLBACK_RANKING_VERSION = 'ai-rag-v2-fallback-deterministic-v2'
 export const AI_CANDIDATE_LIMIT = 40
 const AI_POLICY_VERSION = 'personalized-coaching-rag-v2'
@@ -678,9 +688,24 @@ export class RecommendationService {
       (steering.difficulty === undefined
         ? undefined
         : steeringDifficultyBands[steering.difficulty])
+    const outgrown =
+      steeredBand === undefined &&
+      profile?.difficultyComfort !== 'let_algomemtor_decide' &&
+      usesObservedRating(
+        profile,
+        profileRankingProfile.ratingBand,
+        signals.observedCodeforcesRating,
+      )
+    const { targetDifficulty: _outgrownDifficulty, ...withoutDifficulty } =
+      profileRankingProfile
     const rankingProfile = {
-      ...profileRankingProfile,
+      // A comfort level the learner has outgrown no longer asks for easy
+      // problems either.
+      ...(outgrown ? withoutDifficulty : profileRankingProfile),
       preferredProviders: steeredProviders,
+      ...(steering.includeTopics.length === 0
+        ? {}
+        : { priorityTopics: steering.includeTopics }),
       ...(steering.difficulty === undefined
         ? {}
         : { targetDifficulty: steering.difficulty }),

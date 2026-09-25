@@ -27,7 +27,7 @@ and the currently implemented behavior together so that mismatches are visible.
 12. [HTTP API](#12-http-api)
 13. [Database model](#13-database-model)
 14. [Authentication and privacy](#14-authentication-and-privacy)
-15. [Recommendations, Gemini, and memory](#15-recommendations-gemini-and-memory)
+15. [Recommendations, routed AI, and memory](#15-recommendations-routed-ai-and-memory)
 16. [Frontend engineering](#16-frontend-engineering)
 17. [Configuration](#17-configuration)
 18. [Local setup and daily operation](#18-local-setup-and-daily-operation)
@@ -60,7 +60,7 @@ The product loop is:
 learner profile
     -> provider metadata and public profile observations
     -> deterministic filters
-    -> optional Gemini ranking and explanation
+    -> optional routed AI ranking and explanation
     -> attributed canonical provider link
     -> manual or provider-observed evidence
     -> analytics and learner memory
@@ -68,7 +68,7 @@ learner profile
 
 The protected Coach experience extends this loop into a persistent learning
 relationship: Express builds a bounded snapshot of the learner's profile,
-roadmap, activity, feedback, and approved memories; FastAPI/LangChain/Gemini
+roadmap, activity, feedback, and approved memories; FastAPI and the configured AI provider
 returns validated teaching, hints, evidence references, and optional actions.
 The coach never executes code, submits problems, or writes learner data without
 an explicit confirmation.
@@ -83,9 +83,9 @@ compiler, hidden tests, submissions, verdicts, and account ownership.
 - Provider ownership is visible through attribution and canonical links.
 - React talks to the Express API, never directly to external providers.
 - Provider responses, HTML, GraphQL, and AI output are untrusted input.
-- Deterministic filtering and ranking remain usable when Gemini is unavailable.
+- Deterministic filtering and ranking remain usable when AI is unavailable.
 - A versioned deterministic topic assessment remains authoritative for roadmap
-  placement; Gemini explains it but does not assign mastery.
+  placement; AI explains it but does not assign mastery.
 - Manual roadmap statuses take precedence over assessments and are visible as
   learner-controlled lanes.
 - Aggregate statistics are never presented as individual solve evidence.
@@ -124,7 +124,7 @@ The following capabilities are implemented in the current working tree:
 | Manual progress                                             | Implemented                      | `unsolved`, `attempted`, `solved`, reflections, timers                                                                             |
 | Bookmarks and dismissals                                    | Implemented                      | Owner-scoped persistence and recommendation actions                                                                                |
 | Deterministic recommendations                               | Implemented                      | Validated candidate set and stable fallback                                                                                        |
-| Gemini ranking                                              | Implemented behind configuration | LangChain client, structured output, validation, fallback                                                                          |
+| Routed AI ranking                                           | Implemented behind configuration | Local/OpenRouter adapter, structured output, validation, fallback                                                                  |
 | Learner memory/RAG                                          | Implemented behind configuration | FastAPI memory generation, retrieval, audit, deletion                                                                              |
 | Personalized CP/DSA coach                                   | Implemented locally              | Protected `/coach`, saved conversations, hybrid learner/knowledge/web retrieval, progressive teaching, validated action proposals  |
 | Coach RAG v2 rich responses                                 | Implemented locally              | Versioned knowledge index, conditional public grounding, deterministic charts/metrics/timelines/problems, persisted rich snapshots |
@@ -153,7 +153,7 @@ future contributor should preserve is:
   for database compatibility; no new open endpoint or UI event should be
   reintroduced as solve evidence without a new product decision.
 - Coach AI fallback is intentionally learner-facing unavailable status. When
-  FastAPI/Gemini returns a fallback, the system does not save fabricated advice,
+  FastAPI returns a fallback, the system does not save fabricated advice,
   rich content, action proposals, or a learner-memory job for that turn.
 - Coach turns accept one transient attachment up to 8 MiB (supported image,
   document, audio, or video types). Raw attachment data is sent only for that
@@ -173,7 +173,7 @@ gap, not a runtime failure observed by this documentation pass. Fix that
 fixture, rerun `npm run test`, and then repeat `git diff --check` before making
 claims about a fully green suite.
 
-Live Gemini quality/cost/latency, provider behavior, authenticated Supabase
+Live provider quality/cost/latency, provider behavior, authenticated Supabase
 browser flows, worker restart behavior, production migrations, accessibility/
 performance, and deployment remain release gates. Local tests and builds do not
 prove those conditions. Never copy real API keys or other environment secrets
@@ -253,7 +253,7 @@ The onboarding form captures:
 - optional public provider handles with explicit public-sync consent.
 
 The structured choices are authoritative for deterministic ranking. Free-form
-notes are optional context and are bounded before they can reach Gemini.
+notes are optional context and are bounded before they can reach AI.
 Settings presents the recommendation preference and other practice
 considerations in one editable note. The existing two bounded profile fields
 remain in the API so previously saved notes stay available.
@@ -303,7 +303,7 @@ The recommendation flow:
 6. attaches canonical URLs from Express-owned provider data; and
 7. persists the recommendation batch and item explanations.
 
-Gemini cannot add an unknown problem, URL, provider, or learner status. If AI is
+AI cannot add an unknown problem, URL, provider, or learner status. If AI is
 unavailable, deterministic ranking remains the visible fallback.
 
 **Learner signals (`recommendation-signals.ts`).** Before shortlisting, Express
@@ -487,7 +487,7 @@ doubt and question) rather than taken by confidence alone.
   enforces `hintLevel >= 1` and the confirmation stage, and FastAPI repairs or
   withholds code that exceeds the locked disclosure level. Sessions use
   optimistic `expectedVersion` checks so double clicks cannot skip levels.
-  Marking a session solved adds the problem to the revision schedule. A link is
+  A link is
   enough: when the provider adapter cannot read the statement (for example
   Codeforces answering server requests with a bot challenge), the AI service
   reads the public page itself (see the decision below) and, as a last resort,
@@ -512,37 +512,61 @@ doubt and question) rather than taken by confidence alone.
   grounds the optimal approach. Community solutions come first from the
   platform's own public API (Codeforces `contest.status`: the fastest accepted
   submissions in that language, one per author; LeetCode: the most-voted
-  solution posts tagged with that language), then from web search (Gemini
-  Google Search grounding, falling back to Groq `browser_search`) ranked by how
+  solution posts tagged with that language), then from OpenRouter web search
+  with the `parallel` engine, ranked by how
   specific each hit is to the problem and language. A bottom-right assistant
   answers follow-up and cross questions with the cached page as context
   (`POST /api/solutions/chat`; the conversation stays in the browser).
   Explorations are cached per learner, problem and language; explorations
   written before the problem explanation existed are regenerated.
+- **Contests the learner took part in** (Upsolve and Contest Analysis) come
+  from the rating history plus, for Codeforces, contests found from the
+  learner's own submissions: live rounds without a rating change (Div. 3/4
+  above the rating limit, out of competition) are marked "Live, unrated", and
+  contests worked on within three weeks after they ended are marked "Practised
+  after" (Upsolve only; Contest Analysis skips them because there is no
+  in-contest timing). `GET /api/upsolve?refresh=true` and
+  `GET /api/contest-analysis?refresh=true` first pull the learner's newest
+  platform data (bounded to 35 s). Cold CodeChef/LeetCode contest lists are
+  fetched for the ten most recent contests; a CodeChef division lookup stops
+  once every submitted problem is found.
 - **Upsolve Tracker** (`/upsolve`). Uses the learner's last 12 matched
   contests with their full problem lists: Codeforces from the catalog, CodeChef
   from the public contest API (the Starters division whose problems the learner
   submitted to, scored problems ordered by solves), LeetCode from the public
-  `contestQuestionList` GraphQL query. Lists are cached for six hours. "Up next"
-  always holds five problems. A fresh queue follows a fixed rule: the first two
-  unsolved problems of each contest, newest contest first. Problems then stay
-  in place until solved or skipped; each freed slot is filled at the bottom by
-  the AI mentor (`POST /internal/mentor/upsolve-pick`), which chooses between
-  the top-two unsolved problems of earlier contests and the next two unsolved
-  problems of the latest contest from the learner's rating, topic evidence and
-  contest attempts (score order when the AI is unavailable). Candidate scores
+  `contestQuestionList` GraphQL query. Lists are cached for six hours, and the
+  mentor service keeps every list that loaded for the life of the process (a
+  finished contest's problems never change), so a platform timeout cannot
+  empty a contest. "Up next" always holds five problems. A fresh queue follows
+  a fixed rule: the first two unsolved problems of each contest, newest contest
+  first. Problems then stay
+  in place until solved or skipped (the queue restarts from the rule when a
+  newer contest appears); each freed slot is filled at the bottom by
+  the AI mentor (`POST /internal/mentor/upsolve-pick`), which chooses among the
+  top-two unsolved problems of every contest, so the queue holds at most two
+  open problems of one contest; only when those run out does the latest
+  contest offer its next two (score order when the AI is unavailable). A
+  fresh queue is filled the same way. Candidate scores
   combine recency (e^(-days/30)), rating fit (a Gaussian around rating + 100,
   sigma 300), contest attempts and the top-two position. The queue order is
-  stored in `core.mentor_reports` (`upsolve_queue`); a fresh queue built while a
-  recent contest's problem list is missing is shown but not stored. Every row
+  stored in `core.mentor_reports` (`upsolve_queue`, version 5); a queue built
+  while a recent contest's problem list is missing is shown but never stored,
+  because that contest's queued problems would only look finished. Every row
   can be marked solved on every platform (`upsolve_item_states.state =
   'solved'`; Codeforces and CodeChef also record a self-reported progress
-  status). A small chart shows, per recent contest, problems solved during it,
-  upsolved after and still open. "Latest contests" shows the most recent
-  contest on each platform; opening it lists all of its problems with their
-  status. Accepted submissions after the contest or solved observations mark a
-  problem upsolved (provider evidence). Upsolved problems enter the spaced
-  revision schedule (3, 7, 21 and 45 days). There are no reminders.
+  status). The charts (per-contest solved during it, upsolved after and still
+  open; follow-through; upsolved by platform, with every linked platform
+  listed) and the summary totals cover contests from the last 30 days
+  (`UPSOLVE_CHART_WINDOW_DAYS`, sent as `summary.windowDays`); the queue and
+  contest cards still use every recent contest. "Latest contests" shows the
+  most recent contest on each platform; opening it lists all of its problems
+  with their status. A problem is upsolved only when it was solved after the
+  contest ended and outside the learner's own sitting (the live contest, or the
+  first practice session of a contest practised after it ended): an accepted
+  submission, a timestamped solved observation or status, or "Mark solved".
+  Solve evidence from before or during the sitting, or without a time, counts
+  as already solved. There is no revision schedule and there are no
+  reminders.
 - **Contest Analysis** (`/contest-analysis`). Contests are matched to the
   provider schedule (Codeforces ID, LeetCode slug, name/number tokens, or a
   unique time window). Metrics come from submission timestamps inside the
@@ -556,7 +580,8 @@ doubt and question) rather than taken by confidence alone.
   Non-Codeforces contests list only submitted problems and say so.
 - **Progress Report** (`/progress/report`). Deterministic topic progress,
   weekly first-attempt accuracy, consistency and streaks, contest solving speed
-  by difficulty band (earlier vs recent medians), rating trajectory with a
+  by difficulty band (earlier vs recent medians; live contests only, since a
+  practice sitting's clock starts at its first submission), rating trajectory with a
   per-contest slope and 90-day projection, and Doubt Helper hint dependency.
   Evidence-based insight statements link to the relevant section. An optional
   weekly AI insight report interprets the same numbers.
@@ -593,16 +618,15 @@ again.
   `WEB_READER_CACHE_SECONDS` (30 minutes) so consecutive turns do not refetch.
   Page text stays transient and is never stored. When no page can be read,
   web search restates the statement and the exploration is labeled as
-  search-based. Web search uses Gemini Google Search grounding and falls back
-  to Groq `browser_search` (`WEB_SEARCH_GROQ_MODEL`) when grounding is out of
-  quota.
+  search-based. Web search uses OpenRouter's hosted `openrouter:web_search`
+  tool with the `parallel` engine.
 - **Alternatives:** asking for a pasted statement (kept as an optional
-  fallback), Gemini URL context (also blocked by the challenge), and a headless
+  fallback), provider URL context (also blocked by the challenge), and a headless
   browser (rejected: heavy and it would solve challenges).
 - **Consequences:** the reader service sees which public URLs are read; some
-  providers' terms may restrict automated reads of problem pages; free-tier
-  Groq `browser_search` consumes most of a day's token allowance per search,
-  so it is only a fallback. Community solutions prefer the platforms' own
+  providers' terms may restrict automated reads of problem pages. Hosted web
+  search is used only after direct/provider page retrieval fails. Community
+  solutions prefer the platforms' own
   public APIs for that reason.
 - **Review triggers:** a provider objection, a reader-service policy change,
   before a public deployment, or any need to store fetched content.
@@ -675,10 +699,10 @@ Browser (React + Vite)
 
 Express -- internal token --> FastAPI AI API
                                 +-- JWT verification
-                                +-- bounded Gemini/LangChain ranking
+                                +-- bounded local/OpenRouter ranking
                                 +-- coach tutoring and validated rich JSON responses
                                 +-- learner-memory and knowledge retrieval
-                                +-- conditional de-identified Gemini Search grounding
+                                +-- conditional de-identified OpenRouter web search
                                 +-- PostgreSQL ai schema through Alembic
 
 External providers
@@ -694,7 +718,7 @@ External providers
 | --------------------------- | -------------------------------------------------------------------------------------------------- |
 | `apps/web`                  | Routes, UI, auth state, URL filters, accessible interactions                                       |
 | `apps/core-api`             | Authenticated product API, adapters, normalization, persistence, safe URLs, deterministic coaching |
-| `apps/ai-api`               | Gemini ranking, coaching explanations, learner memory, vector retrieval, keyed audits              |
+| `apps/ai-api`               | Routed AI ranking, coaching explanations, learner memory, vector retrieval, keyed audits           |
 | `packages/shared-contracts` | Runtime-validated TypeScript contracts shared by API, UI, and mocks                                |
 | Prisma                      | `core` PostgreSQL schema and migrations                                                            |
 | Alembic                     | `ai` PostgreSQL schema and migrations                                                              |
@@ -1375,10 +1399,8 @@ exposed to the browser.
 | `GET`  | `/api/solutions/access?problemUrl=&language=`   | Learner status and unlock reason for a problem |
 | `POST` | `/api/solutions/explore`                        | Generate or reuse an exploration (optional `transientStatement`) |
 | `POST` | `/api/solutions/chat`                           | Answer a follow-up question with the cached exploration as context |
-| `GET`  | `/api/upsolve`                                  | Queue, contests, completion summary, revisions due |
+| `GET`  | `/api/upsolve`                                  | Queue, contests, 30-day summary and history (`?refresh=true` pulls platform data first) |
 | `PUT`  | `/api/upsolve/items/:provider/:externalId`      | Skip, restore or mark solved (`skipped`, `pending`, `solved`) |
-| `GET`  | `/api/revisions`                                | Revision schedule |
-| `POST` | `/api/revisions/:revisionId/review`             | `remembered` advances the interval; `struggled` resets it |
 | `GET`  | `/api/contest-analysis`                         | Contest list and cross-contest pattern metrics |
 | `GET`  | `/api/contest-analysis/:provider/:contestId`    | Contest metrics and cached narrative |
 | `POST` | `/api/contest-analysis/:provider/:contestId/narrative` | Write or reuse the contest narrative |
@@ -1481,7 +1503,8 @@ Prisma owns the `core` schema. Important tables include:
   (`solution_exploration`, `contest_analysis`, `contest_patterns`,
   `progress_narrative`) with a source hash for regeneration.
 - `core.upsolve_item_states` — skipped upsolve items.
-- `core.revision_items` — spaced revision stage and due date per problem.
+- `core.revision_items` — no longer read or written (the revision schedule was
+  removed on 2026-09-25); the table is kept until a migration drops it.
 
 All provider rows retain provider identity and provenance. Unique constraints
 prevent duplicate provider/account/problem observations. Deletion cascades from
@@ -1565,7 +1588,7 @@ history deletion or full learner deletion.
 
 - Supabase publishable key may be exposed to Vite.
 - Supabase secret/service-role keys remain server-side.
-- Gemini keys remain in FastAPI configuration.
+- The OpenRouter key remains in production FastAPI configuration only.
 - Internal service tokens are server-to-server only.
 - Provider passwords, cookies, CSRF tokens, CAPTCHA results, private responses,
   and learner source code are never persisted or logged.
@@ -1606,9 +1629,9 @@ embedded, or included in AI audits. Learners may also attach one supported image
 document, audio, or video file of up to 8 MiB to a coach turn through a single
 attachment control. JPEG, PNG, WebP, PDF, TXT, Markdown, DOCX, MP3, WAV, M4A,
 MP4, and WebM are accepted. TXT, Markdown, and DOCX text is extracted in memory;
-other formats are sent as transient Gemini media when Gemini handles the turn.
-With hybrid routing enabled, multimodal turns prefer Gemini 3.5 Flash-Lite;
-if it is unavailable, Qwen receives supported images as vision input,
+other supported formats are sent as transient media when the selected production
+model accepts them. Local Qwen development remains text-first; unsupported media
+produces a clear request for extracted text or a screenshot,
 audio/video through a transient Whisper transcription, and PDFs through bounded
 local text extraction. The attachment is used for that
 turn only and is never saved in conversation history, embeddings, or audits.
@@ -1625,7 +1648,7 @@ cascade-delete flow for all learner data.
 
 ---
 
-## 15. Recommendations, Gemini, and memory
+## 15. Recommendations, routed AI, and memory
 
 ### Coach RAG v2 retrieval and rich responses
 
@@ -1646,13 +1669,13 @@ such as “why does that work?” retain their algorithm topic. An independent n
 question searches on its own. This conversation excerpt is never added to the
 public-web search query or stored in retrieval audits.
 
-The relevance router invokes at most one Gemini Google Search grounding call
+The relevance router invokes at most one OpenRouter hosted web-search call
 when the question requests current/public/external information or internal
 coverage is insufficient. The query is de-identified before the call, and
 grounding metadata is converted into at most five validated public HTTPS
 citations. Practice-problem requests also activate this lane. The query may add
 up to three generic current-focus topic names, but never a name, handle, rating,
-conversation, or private history. Gemini may select exact grounded citation IDs
+conversation, or private history. AI may select exact grounded citation IDs
 as web problem sources. Express accepts only selected IDs that are present in
 Google's grounding metadata and still pass public-HTTPS validation;
 model-authored URLs are never accepted. Web results cannot fabricate learner
@@ -1669,14 +1692,14 @@ when the learner explicitly asks for a visual display. Problem cards can still
 appear when the learner requests practice or problem recommendations. A
 response can also contain up to five trusted catalog problems or grounded web
 problem sources, plus
-citations and two to four follow-up questions. Gemini chooses from the
+citations and two to four follow-up questions. AI chooses from the
 allowlisted dataset IDs, catalog problem IDs, and grounded citation IDs
 available for that turn; chart numbers and catalog problem links are hydrated
 from deterministic Express datasets. Web problem cards link through verified
 grounding metadata and are visibly attributed as web-grounded. Existing v1
 messages without `richContent` remain readable.
 
-If Gemini, embeddings, the knowledge database, or Search grounding is
+If generation, embeddings, the knowledge database, or web search is
 unavailable, the deterministic composer still returns requested trusted learner
 metrics, history, charts, and problems where available, while chat uses a
 concise retry message instead of topic-specific hard-coded advice. Internal fallback and data
@@ -1719,9 +1742,9 @@ The prerequisite graph and provider-tag aliases are deterministic and limited
 to the canonical taxonomy. Optional practice sets are selected by Express from
 trusted catalog records, exclude solved/actively dismissed identities, and are
 capped at two foundation, two target, and one stretch problem per topic.
-Gemini may order or explain those candidates but cannot invent IDs or URLs. In
-coach chat only, Gemini may additionally select up to five exact web citation
-IDs produced by the separate de-identified Google Search grounding call. These
+AI may order or explain those candidates but cannot invent IDs or URLs. In
+coach chat only, AI may additionally select up to five exact web citation IDs
+produced by the separate de-identified OpenRouter web-search call. These
 appear as attributed external practice sources, not trusted catalog records;
 they cannot be bookmarked, marked solved, or used as roadmap evidence until a
 provider adapter validates and imports the corresponding identity.
@@ -1740,7 +1763,7 @@ FastAPI (`coach_intent.py`) classify a turn before any heavy work. Short
 conversational messages (greetings, thanks, goodbyes, "who are you") take a
 small-talk path: Express sends only the stored plan's focus names and the last
 four turns with `turnKind: "smalltalk"`; FastAPI answers with one short,
-fast-model call (Groq when configured, otherwise Gemini) with no retrieval, web
+FAST-model call with no retrieval, web
 research, tools, or learner statistics, and falls back to a fixed reply if the
 model fails. Every other turn uses the full pipeline. The system prompt requires
 answers to match the question's scope and every learner-specific number or
@@ -1749,10 +1772,9 @@ problem to be copied from supplied data or tool results; raw
 because internal IDs differ from public numbers (LeetCode's internal 1007 is
 public problem 967). Deep reasoning (`COACH_THINKING_LEVEL`) is reserved for
 debugging, proofs, attached code, and plans; other agent turns use light
-reasoning. In hybrid mode, complex turns, attachments, and personal-data
-lookups route to Gemini; concept questions route to Groq, which generates plain
-Markdown with a `PROBLEM_IDS` / `FOLLOW_UPS` trailer instead of function
-calling (Groq tool calls ended long answers early). Express bounds semantic
+reasoning. Production routes ordinary conversations to FAST, difficult reasoning
+to STRONG, and contexts above the configured threshold to HUGE CONTEXT. Local
+development uses its single Qwen3-8B model. Express bounds semantic
 memory retrieval to 3 s and falls back to the stored memory list. Public web
 grounding no longer triggers on words such as "now" or "current" in personal
 questions.
@@ -1790,7 +1812,7 @@ references, and confirmation-gated roadmap/progress/bookmark proposals. A
 progressive hint ladder is reserved for requests to solve a specific CP/DSA
 problem; concept, planning, interview, debugging, and profile questions are
 answered directly. Transient code/problem/media input is never persisted. If
-FastAPI/Gemini is down or returns a fallback response, the roadmap and practice
+FastAPI AI is down or returns a fallback response, the roadmap and practice
 set remain usable, but chat saves and displays only “Coach is unavailable right
 now. Please try again later.” No coaching advice, evidence, rich blocks, action
 proposals, or learner-memory job is generated for that failed turn. The fallback
@@ -1843,29 +1865,69 @@ before the first model step and arrive as `prefetchedToolResults`, which keeps
 lighter models grounded and usually saves a tool round. Each agent turn uses
 one to `COACH_AGENT_MAX_STEPS + 1` model requests (default at most five).
 `COACH_MODEL_REQUESTS_PER_MINUTE` can be set to the project's RPM quota so turns
-wait briefly for a slot instead of receiving provider 429s. The default model is
-`gemini-3.5-flash-lite` ($0.30 input / $2.50 output per million tokens,
-standard tier); `COACH_LLM_MODEL` can move only the coach to a stronger model,
-with `COACH_*_PRICE_PER_MILLION_USD` keeping its audit cost estimates correct.
-Free-tier daily request limits are small, so production needs a paid tier (or
-`COACH_AGENT_ENABLED=false` for single-call mode).
+wait briefly for a slot instead of receiving provider 429s. Development uses
+`qwen3:8b-q4_K_M`. Production uses `openai/gpt-oss-20b` for ordinary turns,
+`openai/gpt-oss-120b` for deep reasoning, and `qwen/qwen3.8-flash` only when
+packed context exceeds `AI_HUGE_CONTEXT_THRESHOLD_TOKENS`. Configurable price
+fields keep request audit estimates current; they are advisory rather than
+provider billing records.
 
 ### Coach token budgets and context packing
 
 Each coach turn gets a budget from `coach_context.py` before any model call:
 
-| Tier | Chosen when | Gemini output | Groq output | Context budget (Gemini / Groq) | Agent steps |
-| ---- | ----------- | ------------- | ----------- | ------------------------------ | ----------- |
-| quick | short factual questions ("what is my rating?") | 2,048 | 900 | 5k / 2.5k tokens | 1 |
-| standard | everything else | 8,192 | 2,400 | 12k / 4.5k tokens | 2 |
-| deep | code, debugging, proofs, plans, links, attachments | `COACH_MAX_OUTPUT_TOKENS` | 8,192 | 36k / 9k tokens | `COACH_AGENT_MAX_STEPS` |
+| Tier | Chosen when | Output ceiling | Local / production context budget | Agent steps |
+| ---- | ----------- | -------------- | --------------------------------- | ----------- |
+| quick | short factual questions ("what is my rating?") | 1,024 (local 600) | 1.8k / 5k tokens | 1 |
+| standard | everything else | `COACH_MAX_OUTPUT_TOKENS` (local 1,200) | 3.2k / 12k tokens | 2 |
+| deep | code, debugging, proofs, plans, links, attachments | `SOLUTION_MAX_OUTPUT_TOKENS` (local 2,000) | 5.5k / 90k tokens | `COACH_AGENT_MAX_STEPS` |
 
-Only deep turns use the configured thinking level. On Groq the context and
-answer budgets together stay inside `GROQ_TOKENS_PER_MINUTE` (default 6,000),
-and `GROQ_MAX_COMPLETION_TOKENS` (default 8,192) is only an upper bound. When a
-Groq answer still stops at the length limit on a standard or deep turn, it is
-continued once instead of being cut off. Tool results are capped per tier
-(6k, 14k and 30k characters).
+Only deep turns use the configured high reasoning level. Local context is kept
+inside the 16K Ollama window. The newest conversation turns get a fifth of the
+input budget; a turn too long to fit (a long answer before a follow-up) is
+shortened rather than dropped with everything older.
+
+#### Local model tuning (2026-09-25)
+
+Measured on a 16 GB laptop, `qwen3:8b-q4_K_M` reads about 220 and writes about
+15 tokens a second, and its default "thinking" made answers roughly ten times
+slower. Local mode therefore:
+
+- answers with thinking off (`LOCAL_AI_THINKING=off`; `deep` lets only the
+  deepest requests think), except short general-knowledge questions ("Who won
+  the 2022 World Cup?"), which reason first because the model misremembers
+  plain facts without it (about 250 extra tokens) and are answered without
+  commentary on the learner's data;
+- answers Coach turns in one call over prefetched workspace data
+  (`LOCAL_AI_SINGLE_CALL=true`) instead of a multi-step tool agent;
+- keeps the chat model loaded (`LOCAL_AI_KEEP_ALIVE_MINUTES`, refreshed through
+  Ollama's native `/api/generate`, since its OpenAI endpoint ignores
+  `keep_alive`) and loads the embedding model once per process, in the
+  background at startup (the first load takes about 12 s; a warm query embeds
+  in 0.03 s);
+- raises unset timeouts to 300 s (requests), 280 s (Coach) and 480 s (mentor
+  tools);
+- asks mentor tools for schema-constrained JSON (`json_schema`) instead of
+  function calling. With tool calls the small model escapes long programs in
+  the arguments itself, and one bad escape made Ollama drop the whole reply
+  (Solution Explorer failed after minutes); constrained JSON always parses and
+  needs fewer input tokens. Failures log only their shape
+  (`mentor_structured_invalid`: finish reason, tool-call count, failing
+  fields).
+
+Measured locally after these changes: Coach data answers 25–40 s, small talk
+2 s, a world-fact answer 25 s; Doubt Helper turns about 40 s; a contest
+pattern report 93 s; a progress narrative 54 s; a recommendation ranking of 40
+candidates 25–37 s; a full Solution Explorer exploration about 150 s and a
+follow-up 19 s.
+
+Grounding checks run after a local answer: practice recommendations for a weak
+area are prefetched for the weakest tag (ranked by failed submissions per
+solve, platform-name tags excluded); an answer that lists recommended problems
+missing from the learner's workspace is rewritten once against the trusted
+list; and pool problems listed without IDs still get their problem card. Production keeps ordinary packed context bounded
+and selects the huge-context role only above the configured 100K threshold.
+Tool results are capped per tier (6k, 14k and 30k characters).
 
 The context is packed to the turn's input budget: governing fields
 (instructions, excluded topics, preferences, linked problems, coaching
@@ -1881,15 +1943,15 @@ tools.
 
 Express sends a bounded candidate set and structured learner context to the
 internal ranking endpoint. FastAPI verifies the internal service token, invokes
-the configured Gemini model through LangChain, and returns structured candidate
+the routed model through LangChain, and returns structured candidate
 IDs, scores, reasons, fallback state, measured latency, and optional token/cost
 metadata.
-The `ai-gemini-rag-v2` request also includes up to 25 per-topic counts of
+The `ai-provider-router-v3` request also includes up to 25 per-topic counts of
 unique observed attempted and solved problems derived from owner-scoped manual
 statuses and permitted provider observations. These are lower bounds, not a
 mastery score or complete cross-provider history. Duplicate submissions do not
 inflate counts, manual status remains authoritative, and unknown or explicitly
-excluded topics are omitted. These history counts are sent to Gemini under the
+excluded topics are omitted. These history counts are sent to AI under the
 current always-on `personalized-coaching-rag-v2` policy. A policy or evidence
 change invalidates a cached recommendation batch so ranking can react
 appropriately.
@@ -1910,9 +1972,10 @@ expected picks are valid model choices, the whole ranking falls back to
 `invalid_output`. Unsafe text therefore never reaches Express, and a single
 malformed item no longer discards an otherwise useful AI ranking. CSES
 candidates are accepted by the ranking contract. `AI_RANKING_TIMEOUT_MS`
-defaults to 25 seconds: measured ranking latency on Flash-Lite is roughly 9 s
-at the median and 40 s at the 90th percentile, and the previous 8-second
-default silently turned most rankings into deterministic fallbacks.
+defaults to 60 seconds: the local `qwen3:8b-q4_K_M` ranks 40 candidates in
+about 25 s on a 16 GB laptop (2,500 input and 500 output tokens), and shorter
+limits (the earlier 8 s and 25 s) silently turned most rankings into
+deterministic fallbacks. Batches rotate once a day, so the wait is paid once.
 
 ### Fallback behavior
 
@@ -1997,7 +2060,7 @@ confidence/strength thresholds, retrieval limits, and learner-controlled
 archive/restore/delete actions.
 
 The evaluation harnesses validate ranking scenarios and memory retrieval locally;
-they do not prove production Gemini quality, billing, latency, or browser auth.
+they do not prove production model quality, billing, latency, or browser auth.
 
 ---
 
@@ -2109,7 +2172,7 @@ LEETCODE_CATALOG_MAX_PAGES=10
 PROVIDER_ACTIVITY_MIN_REFRESH_INTERVAL_MS=900000
 AI_API_URL=http://localhost:8000
 CORE_API_URL=http://localhost:3001
-AI_RANKING_TIMEOUT_MS=25000
+AI_RANKING_TIMEOUT_MS=60000
 INTERNAL_SERVICE_TOKEN=
 PROGRESS_ENABLED=true
 MEMORY_GENERATION_ENABLED=true
@@ -2128,36 +2191,41 @@ WEB_ORIGIN=http://localhost:5173
 DATABASE_URL=postgresql+psycopg://algomemtor:algomemtor_local@127.0.0.1:5433/algomemtor
 SUPABASE_URL=
 SUPABASE_JWT_ISSUER=
-LLM_API_KEY=
-LLM_MODEL=gemini-3.5-flash-lite
-LLM_TIMEOUT_SECONDS=90
-LLM_MAX_OUTPUT_TOKENS=4096
+AI_PROVIDER=local
+AI_DEVELOPMENT_ALLOW_CLOUD_FALLBACK=false
+LOCAL_AI_BASE_URL=http://127.0.0.1:11434/v1
+LOCAL_AI_MODEL=qwen3:8b-q4_K_M
+LOCAL_AI_CONTEXT_TOKENS=16384
+LOCAL_AI_THINKING=off
+LOCAL_AI_KEEP_ALIVE_MINUTES=60
+LOCAL_AI_SINGLE_CALL=true
+LOCAL_EMBEDDING_MODEL=Qwen/Qwen3-Embedding-0.6B
+LOCAL_EMBEDDING_DIMENSIONS=1024
 COACH_THINKING_LEVEL=high
-COACH_MAX_OUTPUT_TOKENS=24576
+COACH_MAX_OUTPUT_TOKENS=4096
 COACH_AGENT_ENABLED=true
 COACH_AGENT_MAX_STEPS=4
-# Optional: a coach-only model and its prices (blank = LLM_MODEL / LLM_* prices)
-COACH_LLM_MODEL=
-COACH_INPUT_PRICE_PER_MILLION_USD=
-COACH_OUTPUT_PRICE_PER_MILLION_USD=
 # Optional: coach model requests per minute for this process (0 = no cap)
 COACH_MODEL_REQUESTS_PER_MINUTE=0
 COACH_RESPONSE_TIMEOUT_SECONDS=140
-LLM_INPUT_PRICE_PER_MILLION_USD=0.30
-LLM_OUTPUT_PRICE_PER_MILLION_USD=2.50
-LLM_PRICING_VERSION=gemini-3.5-flash-lite-standard-2026-09
-AI_RANKING_VERSION=ai-gemini-rag-v2
-COACH_VERSION=coach-gemini-rag-v2
-CONSENT_POLICY_VERSION=personalized-coaching-rag-v2
+OPENROUTER_API_KEY=
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+AI_FAST_MODEL=openai/gpt-oss-20b
+AI_STRONG_MODEL=openai/gpt-oss-120b
+AI_HUGE_CONTEXT_MODEL=qwen/qwen3.8-flash
+AI_EMBEDDING_MODEL=qwen/qwen3-embedding-8b
+AI_EMBEDDING_DIMENSIONS=1024
+AI_WEB_SEARCH_MODEL=openai/gpt-oss-20b
+AI_WEB_SEARCH_ENGINE=parallel
+AI_BUDGET_TRACKING_ENABLED=true
+AI_MONTHLY_SOFT_BUDGET_USD=5.00
+AI_BUDGET_WARNING_PERCENT=80
 INTERNAL_SERVICE_TOKEN=
 # Coach live platform refresh (blank URL disables it) and agent time budget
 CORE_API_URL=http://localhost:3001
 COACH_LIVE_REFRESH_TIMEOUT_SECONDS=30
 COACH_AGENT_TIMEOUT_SECONDS=75
-EMBEDDING_MODEL=gemini-embedding-001
-EMBEDDING_DIMENSIONS=768
-EMBEDDING_TIMEOUT_SECONDS=4
-MEMORY_GENERATION_VERSION=memory-gemini-v1
+EMBEDDING_TIMEOUT_SECONDS=30
 MEMORY_MIN_CONFIDENCE=0.75
 MEMORY_MIN_EVIDENCE_STRENGTH=0.75
 MEMORY_SIMILARITY_THRESHOLD=0.75
@@ -2169,27 +2237,17 @@ COACH_KNOWLEDGE_RAG_ENABLED=true
 COACH_WEB_GROUNDING_ENABLED=true
 COACH_WEB_GROUNDING_TIMEOUT_SECONDS=20
 INTERNAL_RATE_LIMIT_PER_MINUTE=120
-# Mentor tools. Blank provider: Gemini when LLM_API_KEY is set, else Groq
-# (capped by GROQ_MAX_COMPLETION_TOKENS). Blank model: LLM_MODEL/COACH_GROQ_MODEL.
-MENTOR_LLM_PROVIDER=
-MENTOR_MODEL=
 MENTOR_THINKING_LEVEL=low
 MENTOR_MAX_OUTPUT_TOKENS=16384
 MENTOR_TIMEOUT_SECONDS=110
-# Solution Explorer model (blank = MENTOR_MODEL) and thinking depth.
-SOLUTION_MODEL=
+# Solution Explorer thinking depth.
 SOLUTION_THINKING_LEVEL=medium
 # Page reading for links; blocked pages are read once through the reader.
 WEB_READER_PROXY_URL=https://r.jina.ai/
 WEB_READER_PROXY_API_KEY=
 WEB_READER_TIMEOUT_SECONDS=10
 WEB_READER_CACHE_SECONDS=1800
-# Web search fallback when Gemini grounding is out of quota (uses GROQ_API_KEY).
-WEB_SEARCH_GROQ_MODEL=openai/gpt-oss-20b
 WEB_SEARCH_TIMEOUT_SECONDS=40
-# Coach answer ceiling on Groq and the per-minute allowance budgets fit into.
-GROQ_MAX_COMPLETION_TOKENS=8192
-GROQ_TOKENS_PER_MINUTE=6000
 ```
 
 `INTERNAL_SERVICE_TOKEN` must match between core and AI when HTTP ranking is
@@ -2316,15 +2374,14 @@ docker compose -f docker-compose.prod.yml up -d --build
   `http://core-api:3001`). `AI_API_URL` accepts HTTPS, HTTP loopback, or HTTP
   to a single-label private service name only.
 - Browser-safe values (`SUPABASE_URL`, the publishable key, `PUBLIC_SITE_URL`)
-  are build arguments; secrets (`LLM_API_KEY`, `GROQ_API_KEY`,
+  are build arguments; secrets (`OPENROUTER_API_KEY`,
   `INTERNAL_SERVICE_TOKEN`, the database password) are runtime environment only
   and never enter an image. Filled-in `.env` and `deploy/*.env` files are
   git-ignored.
 - Containers run as non-root users and expose `/health` (`/healthz` for web)
   health checks; the workers depend on healthy APIs, and migrations must
   complete before either API starts.
-- Use a paid Gemini tier (and optionally `COACH_HYBRID_ENABLED` with a Groq key)
-  in production. Free-tier daily limits are the main cause of
+- Fund the OpenRouter account in production. Provider limits are a common cause of
   “Coach is unavailable” turns; set `COACH_MODEL_REQUESTS_PER_MINUTE` to the
   project's RPM quota.
 - Add the production `/dashboard` callback to the Supabase URL allowlist.
@@ -2449,7 +2506,7 @@ history is not inferred from public task pages.
 
 ### AI recommendations fall back
 
-Check `AI_API_URL`, matching `INTERNAL_SERVICE_TOKEN`, FastAPI health, Gemini
+Check `AI_API_URL`, matching `INTERNAL_SERVICE_TOKEN`, FastAPI health, AI provider
 configuration, timeout settings, and audit/database availability. Fallback is a
 supported product state, not a data-loss condition.
 
@@ -2642,10 +2699,10 @@ integrations/provider-accounts/
 
 | Path                                                                 | Responsibility                                                                |
 | -------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `apps/ai-api/app/coach_service.py`                                   | Knowledge/memory retrieval, conditional Search grounding, Gemini flow, audits |
+| `apps/ai-api/app/coach_service.py`                                   | Knowledge/memory retrieval, conditional web search, routed AI flow, audits    |
 | `apps/ai-api/app/knowledge_base.py`                                  | Versioned original CP/DSA reference chunks and lexical fallback               |
 | `apps/ai-api/app/knowledge_repository.py`                            | Alembic knowledge index seeding and hybrid keyword/vector retrieval           |
-| `apps/ai-api/app/web_grounding.py`                                   | De-identified public query and Gemini grounding citation extraction           |
+| `apps/ai-api/app/web_grounding.py`                                   | De-identified query and OpenRouter web-search citation extraction             |
 | `apps/ai-api/app/coach_models.py`                                    | Strict coach output, citation, proposal, and safety contracts                 |
 | `apps/ai-api/app/pedagogy.py`                                        | Frustration/momentum signals, teaching modes, SM-2, mastery, prerequisites    |
 | `apps/ai-api/app/rate_limit.py`                                      | Bounded process-local protection for internal AI routes                       |

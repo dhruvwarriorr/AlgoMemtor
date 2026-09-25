@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -7,10 +8,9 @@ from uuid import UUID, uuid4
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 
+from .ai_health import ai_health
 from .auth import AuthenticatedUser, require_authenticated_user
 from .coach_models import (
-    CoachCheckInRequest,
-    CoachCheckInResponse,
     CoachRequest,
     CoachResponse,
     CoachResponseProposal,
@@ -21,6 +21,7 @@ from .coach_service import (
     CoachRateLimitedError,
     get_coach_service,
 )
+from .embedding import preload_local_embedding_model
 from .internal_auth import require_internal_service
 from .memory_models import (
     MemoryActionRequest,
@@ -72,6 +73,7 @@ from .mentor_service import (
     MentorService,
     get_mentor_service,
 )
+from .providers import keep_local_model_warm
 from .ranking_models import RankingRequest, RankingResponse
 from .ranking_service import RankingService, get_ranking_service
 from .rate_limit import InMemoryRateLimiter, rate_limit_internal_request
@@ -98,7 +100,7 @@ async def initialize_ai_resources() -> None:
         try:
             await coach.knowledge_repository.seed_default(
                 coach.embedder,
-                coach.settings.embedding_model,
+                coach.settings.active_embedding_version,
                 coach.settings.embedding_timeout_seconds,
             )
         except Exception:
@@ -114,7 +116,12 @@ async def initialize_ai_resources() -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     await initialize_ai_resources()
-    yield
+    warm = asyncio.create_task(keep_local_model_warm(get_ai_settings()))
+    preload_local_embedding_model(get_ai_settings())
+    try:
+        yield
+    finally:
+        warm.cancel()
 
 
 app = FastAPI(title="AlgoMemtor AI API", version="0.1.0", lifespan=lifespan)
@@ -126,8 +133,13 @@ async def limit_internal_requests(request, call_next):
 
 
 @app.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok", "service": "ai-api"}
+async def health() -> dict[str, object]:
+    settings = get_ai_settings()
+    return {
+        "status": "ok",
+        "service": "ai-api",
+        "ai": await ai_health(settings),
+    }
 
 
 @app.get("/api/me")
@@ -265,35 +277,6 @@ async def stream_coach_response(request: CoachRequest) -> StreamingResponse:
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
-
-@app.post(
-    "/internal/coach/check-ins/generate",
-    response_model=CoachCheckInResponse,
-    response_model_exclude_none=True,
-    dependencies=[Depends(require_internal_service)],
-)
-async def generate_coach_check_in(
-    request: CoachCheckInRequest,
-) -> CoachCheckInResponse:
-    service = get_coach_service()
-    try:
-        return await service.generate_check_in(request)
-    except CoachNotConfiguredError as error:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="The AI coach is not configured.",
-        ) from error
-    except CoachRateLimitedError as error:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="The AI coach has reached its model usage limit.",
-            headers={"Retry-After": "60"},
-        ) from error
-    except CoachGenerationError as error:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="The AI coach is temporarily unavailable.",
-        ) from error
 
 
 @app.delete(
@@ -772,6 +755,13 @@ def _raise_mentor_http_error(error: Exception) -> None:
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="The mentor model is rate limited. Try again shortly.",
         ) from error
+    # Generation errors carry a fixed reason or an exception class name,
+    # never model output or learner data.
+    logger.warning(
+        "mentor_generation_failed reason=%s cause=%s",
+        str(error)[:120],
+        type(error.__cause__).__name__ if error.__cause__ else "none",
+    )
     raise HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         detail="Mentor tools are temporarily unavailable.",

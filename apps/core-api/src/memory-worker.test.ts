@@ -248,6 +248,51 @@ describe('memory worker', () => {
     expect(payloads[0]?.note).not.toContain('secret source code')
   })
 
+  it('keeps a long coach conversation note within the AI service limit', async () => {
+    const now = () => new Date('2026-09-13T14:30:00.000Z')
+    const repository: ProgressRepository = new InMemoryProgressRepository(now)
+    const coachRepository = new InMemoryCoachRepository(now)
+    const conversation = await coachRepository.createConversation(learnerId)
+    for (const role of ['user', 'assistant', 'user'] as const) {
+      await coachRepository.appendMessage(learnerId, conversation.id, {
+        role,
+        content: `${role} message. `.repeat(80),
+        evidence: [],
+        proposals: [],
+      })
+    }
+    await coachRepository.appendMessage(learnerId, conversation.id, {
+      role: 'user',
+      content: 'Newest question about segment trees.',
+      evidence: [],
+      proposals: [],
+    })
+    const notes: string[] = []
+    const client = createClient(async (request) => {
+      if (request.note !== undefined) notes.push(request.note)
+      return { status: 'processed' }
+    })
+    const { worker } = createWorker(
+      repository,
+      client,
+      now,
+      undefined,
+      coachRepository,
+    )
+    await repository.enqueueJob({
+      authUserId: learnerId,
+      jobType: 'memory_generation',
+      evidenceType: 'coach_conversation',
+      evidenceId: conversation.id,
+      idempotencyKey: 'memory:coach-conversation-long',
+    })
+
+    expect(await worker.processOnce()).toBe(true)
+    expect(notes[0]?.length).toBeLessThanOrEqual(1_000)
+    expect(notes[0]).toMatch(/^Recent coaching conversation/)
+    expect(notes[0]).toContain('Newest question about segment trees.')
+  })
+
   it('resolves a topic-note evidence job through the coach repository', async () => {
     const now = () => new Date('2026-09-13T14:30:00.000Z')
     const repository: ProgressRepository = new InMemoryProgressRepository(now)

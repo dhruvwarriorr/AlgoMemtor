@@ -230,3 +230,31 @@ def is_complex_turn(
     if len(question) > 400:
         return True
     return bool(_COMPLEX.search(question))
+
+
+_WORLD_FACT = re.compile(
+    r"^\s*(?:who|when|where|which|what year|in what year|how many|how much|"
+    r"what is the capital|what was|who's|what's the (?:capital|population))\b",
+    re.IGNORECASE,
+)
+_CP_OR_PERSONAL = re.compile(
+    r"\b(?:my|me|i|i'm|i've|algorithm|complexity|array|graph|tree|dp|"
+    r"dynamic programming|code|coding|program|problem|contest|rating|"
+    r"codeforces|leetcode|codechef|cses|atcoder|submission|topic|solve|"
+    r"solved|data structure|sort|search|heap|queue|stack|string|bit)\b",
+    re.IGNORECASE,
+)
+
+
+def is_world_fact_question(question: str) -> bool:
+    """A short factual question about the world rather than CP or the learner.
+
+    A small local model recalls these much more reliably when it reasons
+    first, and they are short enough that reasoning stays cheap.
+    """
+    return (
+        len(question) <= 200
+        and "http" not in question.lower()
+        and bool(_WORLD_FACT.search(question))
+        and not _CP_OR_PERSONAL.search(question)
+    )

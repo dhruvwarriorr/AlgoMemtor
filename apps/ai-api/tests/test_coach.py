@@ -8,7 +8,6 @@ from zipfile import ZipFile
 
 import pytest
 from app.coach_models import (
-    CoachCheckInResponse,
     CoachCitation,
     CoachEvidence,
     CoachModelOutput,
@@ -21,7 +20,7 @@ from app.coach_service import (
     CoachGenerationError,
     CoachNotConfiguredError,
     CoachService,
-    GeminiCoachModel,
+    ProviderCoachModel,
     extract_text_attachment,
     utc_timestamp,
 )
@@ -45,7 +44,6 @@ def settings(**updates: Any) -> AiSettings:
     values = {
         "_env_file": None,
         "internal_service_token": "internal-test-token",
-        "llm_api_key": "test-key",
     }
     values.update(updates)
     return AiSettings(**values)
@@ -169,7 +167,7 @@ def test_text_and_docx_attachments_are_extracted_in_memory() -> None:
 
 @pytest.mark.parametrize("mime_type", ["audio/wav", "image/png", "application/pdf"])
 @pytest.mark.asyncio
-async def test_gemini_model_receives_media_as_transient_multimodal_message(
+async def test_provider_model_receives_media_as_transient_multimodal_message(
     mime_type: str,
 ) -> None:
     captured: list[Any] = []
@@ -181,7 +179,7 @@ async def test_gemini_model_receives_media_as_transient_multimodal_message(
                 "parsed": CoachModelOutput(answer="The clip explains binary search.")
             }
 
-    model = object.__new__(GeminiCoachModel)
+    model = object.__new__(ProviderCoachModel)
     model.structured_model = StructuredModel()
     request = request_payload().model_copy(
         update={
@@ -190,12 +188,14 @@ async def test_gemini_model_receives_media_as_transient_multimodal_message(
     )
     result = await model.respond(request)
     assert result.output.answer == "The clip explains binary search."
-    assert captured[1].content[1]["type"] == "media"
-    assert captured[1].content[1]["mime_type"] == mime_type
+    expected_type = "image_url" if mime_type.startswith("image/") else "media"
+    assert captured[1].content[1]["type"] == expected_type
+    if expected_type == "media":
+        assert captured[1].content[1]["mime_type"] == mime_type
 
 
 @pytest.mark.asyncio
-async def test_text_attachment_reaches_gemini_without_raw_base64() -> None:
+async def test_text_attachment_reaches_provider_without_raw_base64() -> None:
     captured: list[Any] = []
 
     class StructuredModel:
@@ -203,7 +203,7 @@ async def test_text_attachment_reaches_gemini_without_raw_base64() -> None:
             captured.extend(messages)
             return {"parsed": CoachModelOutput(answer="Here is a useful approach.")}
 
-    model = object.__new__(GeminiCoachModel)
+    model = object.__new__(ProviderCoachModel)
     model.structured_model = StructuredModel()
     encoded = base64.b64encode(b"Review the binary search invariant.").decode()
     request = request_payload().model_copy(
@@ -238,8 +238,6 @@ def test_rejects_links_in_coach_text() -> None:
     # Answers may carry links (filtered by the service); contacts never.
     with pytest.raises(ValidationError):
         CoachModelOutput(answer="Email coach@example.com for the solution.")
-    with pytest.raises(ValidationError):
-        CoachCheckInResponse(content="Open https://example.com after practice.")
     with pytest.raises(ValidationError):
         CoachModelOutput(
             answer="Here is a safe explanation.",
@@ -540,7 +538,13 @@ async def test_untrusted_grounding_metadata_is_skipped_safely(
 async def test_unconfigured_service_fails_without_fabricating_advice() -> None:
     audits = AuditRepository()
     service = CoachService(
-        settings(llm_api_key=""), model=None, audit_repository=audits
+        settings(
+            app_environment="production",
+            ai_provider="openrouter",
+            openrouter_api_key="",
+        ),
+        model=None,
+        audit_repository=audits,
     )
 
     with pytest.raises(CoachNotConfiguredError):

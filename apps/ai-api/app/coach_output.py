@@ -267,11 +267,15 @@ def _plain_formula(formula: str) -> str:
 def _math_replacement(match: re.Match[str]) -> str:
     formula = match.group(1) or match.group(2) or match.group(3) or ""
     # "$5 and $10" is money, not math: TeX spans hug their content and carry
-    # at least one math character.
-    if match.group(2) is not None and (
-        formula != formula.strip() or not re.search(r"[\\^_=()+*/<>a-zA-Z]", formula)
-    ):
-        return match.group(0)
+    # at least one math character. Models also pad spans ("$ O(n) $"); a
+    # padded span still counts when it holds something only TeX writes.
+    if match.group(2) is not None:
+        hugged = formula == formula.strip() and re.search(
+            r"[\\^_=()+*/<>a-zA-Z]", formula
+        )
+        padded_tex = re.search(r"[\\^_]|\bO\(", formula)
+        if not (hugged or padded_tex):
+            return match.group(0)
     return _plain_formula(formula)
 
 
@@ -428,7 +432,7 @@ def coach_output_json_schema() -> dict[str, Any]:
     """A permissive schema for the final-answer tool.
 
     Validation happens in ``coerce_coach_output``; a looser declaration keeps
-    Gemini from failing function calls over pattern constraints it cannot see.
+    providers from failing function calls over pattern constraints they cannot see.
     """
     evidence_sources = [
         "profile",

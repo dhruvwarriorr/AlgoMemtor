@@ -56,24 +56,6 @@ CoachDatasetId = Literal[
     "trusted-problems",
     "topic-comparison",
 ]
-CoachCheckInType = Literal[
-    "weekly_review",
-    "contest_result",
-    "repeated_failures",
-    "focus_transition",
-    "focus_progress",
-    "inactivity",
-    "spaced_repetition_due",
-    "goal_progress_milestone",
-    "goal_off_track",
-    "streak_risk",
-    "difficulty_plateau",
-    "topic_mastery_achieved",
-    "contest_prep_reminder",
-    "morning_warm_up",
-    "insight_of_the_day",
-]
-
 
 class CoachStrictModel(BaseModel):
     model_config = ConfigDict(
@@ -336,7 +318,7 @@ class CoachModelOutput(CoachStrictModel):
 class CoachResponseProposal(CoachProposal):
     id: UUID
     # The core API persists every accepted proposal in the shared proposal
-    # state machine. Gemini only creates new proposals, so the internal
+    # state machine. AI only creates new proposals, so the internal
     # response always starts in the proposed state.
     status: Literal["proposed"] = "proposed"
 
@@ -348,29 +330,6 @@ class CoachResponse(CoachStrictModel):
     citations: list[CoachCitation] = Field(default_factory=list, max_length=8)
     presentation: CoachPresentation | None = None
     fallback: bool = False
-
-
-class CoachCheckInRequest(CoachStrictModel):
-    requestId: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_-]+$")
-    learnerId: UUID
-    conversationId: UUID
-    type: CoachCheckInType
-    title: str = Field(min_length=1, max_length=160)
-    deterministicContent: str = Field(min_length=1, max_length=4_000)
-    evidence: list[CoachEvidence] = Field(default_factory=list, max_length=12)
-    context: dict[str, object]
-
-
-class CoachCheckInResponse(CoachStrictModel):
-    content: str = Field(min_length=1, max_length=4_000)
-    evidence: list[CoachEvidence] = Field(default_factory=list, max_length=12)
-
-    @field_validator("content")
-    @classmethod
-    def reject_unsafe_content(cls, value: str) -> str:
-        if _UNSAFE_COACH_TEXT.search(value):
-            raise ValueError("Coach check-ins cannot contain links or secrets.")
-        return value
 
 
 class CoachRequest(CoachStrictModel):

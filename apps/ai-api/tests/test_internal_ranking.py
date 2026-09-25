@@ -17,8 +17,8 @@ from app.ranking_models import (
     RankingResponse,
 )
 from app.ranking_service import (
-    GeminiRankingModel,
     ModelResult,
+    ProviderRankingModel,
     RankingService,
     get_ranking_service,
     ranking_retrieval_topics,
@@ -33,18 +33,17 @@ LEARNER_ID = "00000000-0000-4000-8000-000000000001"
 def settings(**updates: Any) -> AiSettings:
     values = {
         "internal_service_token": "internal-test-token",
-        "llm_api_key": "test-key",
         **updates,
     }
     return AiSettings(_env_file=None, **values)
 
 
-def test_blank_versioned_settings_use_documented_defaults() -> None:
-    configured = settings(llm_model="", llm_pricing_version="", ai_ranking_version="")
+def test_documented_local_settings_are_the_defaults() -> None:
+    configured = settings()
 
-    assert configured.llm_model == "gemini-3.5-flash-lite"
-    assert configured.llm_pricing_version == "gemini-3.5-flash-lite-standard-2026-09"
-    assert configured.ai_ranking_version == "ai-gemini-rag-v2"
+    assert configured.llm_model == "qwen3:8b-q4_K_M"
+    assert configured.active_embedding_dimensions == 1024
+    assert configured.ai_ranking_version == "ai-provider-router-v3"
 
 
 def test_topic_evidence_is_bounded_and_unique() -> None:
@@ -303,14 +302,14 @@ def test_requires_consistent_fallback_metadata() -> None:
     with pytest.raises(ValidationError):
         RankingResponse(
             items=[],
-            model="gemini-3.5-flash",
+            model="openai/gpt-oss-20b",
             fallback=True,
             latencyMs=1,
         )
     with pytest.raises(ValidationError):
         RankingResponse(
             items=[ranked_item("900A")],
-            model="gemini-3.5-flash",
+            model="openai/gpt-oss-20b",
             fallback=True,
             fallbackReason="provider_error",
             latencyMs=1,
@@ -318,7 +317,7 @@ def test_requires_consistent_fallback_metadata() -> None:
     with pytest.raises(ValidationError):
         RankingResponse(
             items=[],
-            model="gemini-3.5-flash",
+            model="openai/gpt-oss-20b",
             fallback=False,
             fallbackReason="provider_error",
             latencyMs=1,
@@ -330,7 +329,13 @@ async def test_returns_validated_output_with_tokens_cost_and_redacted_audit() ->
     request = ranking_request()
     audit_repository = MemoryAuditRepository()
     service = RankingService(
-        settings(), audit_repository, StaticModel(successful_result(request))
+        settings(
+            app_environment="production",
+            ai_provider="openrouter",
+            openrouter_api_key="test-key",
+        ),
+        audit_repository,
+        StaticModel(successful_result(request)),
     )
 
     response = await service.rank(request)
@@ -339,8 +344,8 @@ async def test_returns_validated_output_with_tokens_cost_and_redacted_audit() ->
     assert response.fallbackReason is None
     assert response.inputTokens == 1000
     assert response.outputTokens == 200
-    # 1,000 input and 200 output tokens at Flash-Lite rates ($0.30 / $2.50).
-    assert response.estimatedCostUsd == pytest.approx(0.0008)
+    # 1,000 input and 200 output tokens at GPT-OSS 20B list-price defaults.
+    assert response.estimatedCostUsd == pytest.approx(0.000036)
     assert response.auditId == audit_repository.audit_id
     assert len(audit_repository.saved) == 1
     audit = audit_repository.saved[0]
@@ -466,7 +471,7 @@ async def test_converts_timeout_provider_failure_and_missing_config_to_fallbacks
 ):
     request = ranking_request()
     timeout_service = RankingService(
-        settings(llm_timeout_seconds=0.001),
+        settings(ai_request_timeout_seconds=0.001),
         NullRankingAuditRepository(),
         WaitingModel(),
     )
@@ -474,7 +479,12 @@ async def test_converts_timeout_provider_failure_and_missing_config_to_fallbacks
         settings(), NullRankingAuditRepository(), StaticModel(OSError("offline"))
     )
     missing_service = RankingService(
-        settings(llm_api_key=""), NullRankingAuditRepository()
+        settings(
+            app_environment="production",
+            ai_provider="openrouter",
+            openrouter_api_key="",
+        ),
+        NullRankingAuditRepository(),
     )
 
     timeout_response, provider_response, missing_response = await asyncio.gather(
@@ -538,7 +548,7 @@ class CapturingStructuredModel:
 
 
 @pytest.mark.asyncio
-async def test_gemini_payload_excludes_service_identity_and_treats_text_as_data() -> (
+async def test_model_payload_excludes_service_identity_and_treats_text_as_data() -> (
     None
 ):
     request = ranking_request()
@@ -552,7 +562,7 @@ async def test_gemini_payload_excludes_service_identity_and_treats_text_as_data(
             )(),
         }
     )
-    model = GeminiRankingModel.__new__(GeminiRankingModel)
+    model = ProviderRankingModel.__new__(ProviderRankingModel)
     model.structured_model = structured
 
     result = await model.rank(request)

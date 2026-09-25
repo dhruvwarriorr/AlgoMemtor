@@ -4,8 +4,7 @@ import { isSafeCoachPublicUrl, MentorFeatureSchema } from './coach.js'
 import { ProviderKeySchema } from './problem-catalog.js'
 
 // Mentor tools that live outside the Coach chat: the Doubt Helper, Solution
-// Explorer, Upsolve Tracker, Contest Analysis, Progress Report and revision
-// schedule. Learner source code, compiler output and pasted statements cross
+// Explorer, Upsolve Tracker, Contest Analysis and Progress Report. Learner source code, compiler output and pasted statements cross
 // these request boundaries as transient fields and never appear in responses
 // or storage.
 
@@ -482,8 +481,19 @@ export const SolutionChatResponseSchema = z
 export type SolutionChatResponse = z.infer<typeof SolutionChatResponseSchema>
 
 // ---------------------------------------------------------------------------
-// Upsolve Tracker and revision schedule
+// Upsolve Tracker
 // ---------------------------------------------------------------------------
+
+// How the learner took part: on the rating history, live but unrated, or by
+// working on the problems right after the contest ended.
+export const ContestParticipationModeSchema = z.enum([
+  'rated',
+  'unrated',
+  'practice',
+])
+export type ContestParticipationMode = z.infer<
+  typeof ContestParticipationModeSchema
+>
 
 export const UpsolveItemSchema = z
   .object({
@@ -525,6 +535,7 @@ export const UpsolveContestSchema = z
     rank: z.number().int().positive().optional(),
     ratingChange: z.number().finite().optional(),
     solvedInContest: z.number().int().nonnegative(),
+    participation: ContestParticipationModeSchema.optional(),
     coverage: z.enum(['complete', 'partial']),
     coverageNote: nonEmptyStringSchema.max(300).optional(),
     items: z.array(UpsolveItemSchema).max(26),
@@ -532,13 +543,31 @@ export const UpsolveContestSchema = z
   .strict()
 export type UpsolveContest = z.infer<typeof UpsolveContestSchema>
 
+// Upsolve charts and totals cover contests from this many recent days.
+export const UPSOLVE_CHART_WINDOW_DAYS = 30
+
 export const UpsolveSummarySchema = z
   .object({
+    // The window the totals, history and charts cover.
+    windowDays: z.number().int().positive().max(365),
     flagged: z.number().int().nonnegative(),
     upsolved: z.number().int().nonnegative(),
     skipped: z.number().int().nonnegative(),
     pending: z.number().int().nonnegative(),
     completionRate: z.number().min(0).max(1).nullable(),
+    // Upsolved and still-open problems per platform, for the comparison chart.
+    byProvider: z
+      .array(
+        z
+          .object({
+            provider: ProviderKeySchema,
+            upsolved: z.number().int().nonnegative(),
+            open: z.number().int().nonnegative(),
+          })
+          .strict(),
+      )
+      .max(4)
+      .optional(),
     trend: z
       .array(
         z
@@ -564,6 +593,7 @@ export const UpsolveHistoryPointSchema = z
     total: z.number().int().nonnegative(),
     solvedInContest: z.number().int().nonnegative(),
     upsolved: z.number().int().nonnegative(),
+    participation: ContestParticipationModeSchema.optional(),
   })
   .strict()
 export type UpsolveHistoryPoint = z.infer<typeof UpsolveHistoryPointSchema>
@@ -578,7 +608,6 @@ export const UpsolveResponseSchema = z
         contests: z.array(UpsolveContestSchema).max(12),
         history: z.array(UpsolveHistoryPointSchema).max(12).optional(),
         summary: UpsolveSummarySchema,
-        revisionsDue: z.number().int().nonnegative(),
         linkedProviders: z.array(ProviderKeySchema).max(4),
         generatedAt: dateSchema,
       })
@@ -593,49 +622,6 @@ export const UpdateUpsolveItemRequestSchema = z
 export type UpdateUpsolveItemRequest = z.infer<
   typeof UpdateUpsolveItemRequestSchema
 >
-
-export const REVISION_INTERVAL_DAYS = [3, 7, 21, 45] as const
-
-export const RevisionItemSchema = z
-  .object({
-    id: identifierSchema,
-    provider: ProviderKeySchema,
-    externalId: nonEmptyStringSchema.max(128),
-    title: nonEmptyStringSchema.max(512),
-    canonicalUrl: publicHttpsUrlSchema,
-    topics: topicListSchema,
-    source: z.enum(['upsolve', 'doubt_helper']),
-    stage: z.number().int().min(0).max(REVISION_INTERVAL_DAYS.length),
-    dueAt: dateSchema,
-    due: z.boolean(),
-    lastReviewedAt: dateSchema.optional(),
-    completedAt: dateSchema.optional(),
-  })
-  .strict()
-export type RevisionItem = z.infer<typeof RevisionItemSchema>
-
-export const RevisionsResponseSchema = z
-  .object({
-    data: z.array(RevisionItemSchema).max(100),
-    meta: z
-      .object({
-        due: z.number().int().nonnegative(),
-        upcoming: z.number().int().nonnegative(),
-        completed: z.number().int().nonnegative(),
-      })
-      .strict(),
-  })
-  .strict()
-export type RevisionsResponse = z.infer<typeof RevisionsResponseSchema>
-
-export const ReviewRevisionRequestSchema = z
-  .object({ outcome: z.enum(['remembered', 'struggled']) })
-  .strict()
-export type ReviewRevisionRequest = z.infer<typeof ReviewRevisionRequestSchema>
-
-export const RevisionResponseSchema = z
-  .object({ data: RevisionItemSchema })
-  .strict()
 
 // ---------------------------------------------------------------------------
 // Contest Analysis
@@ -722,6 +708,11 @@ export const ContestSummarySchema = z
     ratingChange: z.number().finite().optional(),
     solvedCount: z.number().int().nonnegative(),
     attemptedCount: z.number().int().nonnegative(),
+    // For the overview charts; absent when the contest was not matched.
+    problemCount: z.number().int().nonnegative().optional(),
+    wrongSubmissions: z.number().int().nonnegative().optional(),
+    firstAcceptedMinute: z.number().nonnegative().optional(),
+    participation: ContestParticipationModeSchema.optional(),
     analyzable: z.boolean(),
     narrativeAvailable: z.boolean(),
   })

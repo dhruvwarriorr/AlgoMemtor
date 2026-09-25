@@ -1,18 +1,38 @@
 import { Link } from 'react-router-dom'
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 import type {
   ProgressInsight,
   ProgressNarrative,
   ProgressReport,
 } from '@algomemtor/shared-contracts'
 
+import { ProviderLogo } from '@/components/brand/ProviderLogo'
 import {
   ArrowRight,
+  CalendarCheck,
   CheckCircle2,
+  Crosshair,
   Flame,
+  Lightbulb,
+  Lock,
   RefreshCw,
   Sparkles,
+  Target,
   TrendingDown,
 } from '@/components/icons/algo-icons'
+import { RadialProgress } from '@/components/motion/RadialProgress'
 import { AiLoader, type AiLoaderStep } from '@/components/motion/AiLoader'
 import PageContainer from '@/components/layout/PageContainer'
 import PageHeader from '@/components/layout/PageHeader'
@@ -20,7 +40,18 @@ import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { useNotification } from '@/app/useNotification'
-import { SectionCard, StatTile } from '@/features/mentor/components/shared'
+import {
+  axisTick,
+  chartColors,
+  providerColors,
+  tooltipStyle,
+} from '@/features/mentor/chart-theme'
+import { SectionCard } from '@/features/mentor/components/shared'
+import {
+  ChartCard,
+  ChartEmpty,
+  KpiTile,
+} from '@/features/mentor/components/visuals'
 import {
   formatDateTime,
   mentorErrorMessage,
@@ -40,7 +71,7 @@ const narrativeSteps: readonly AiLoaderStep[] = [
 ]
 
 const pct = (value: number | null) =>
-  value === null ? '—' : `${Math.round(value * 100)}%`
+  value === null ? '-' : `${Math.round(value * 100)}%`
 
 const shortDate = (value: string) => {
   try {
@@ -97,82 +128,6 @@ function InsightItem({ insight }: { insight: ProgressInsight }) {
         </Link>
       ) : null}
     </li>
-  )
-}
-
-function Bars({
-  values,
-  labels,
-  format,
-  label,
-}: {
-  values: readonly (number | null)[]
-  labels: readonly string[]
-  format: (value: number | null) => string
-  label: string
-}) {
-  const max = Math.max(1e-9, ...values.map((value) => value ?? 0))
-  return (
-    <ul
-      aria-label={label}
-      className="flex min-w-0 items-end gap-1.5 overflow-x-auto pb-1"
-    >
-      {values.map((value, index) => (
-        <li
-          aria-label={`${labels[index]}: ${format(value)}`}
-          className="flex w-9 shrink-0 flex-col items-center gap-1"
-          key={labels[index] ?? index}
-        >
-          <span className="text-[0.65rem] tabular-nums text-muted-foreground">
-            {value === null ? '' : format(value)}
-          </span>
-          <div className="flex h-24 w-6 items-end overflow-hidden rounded-sm bg-secondary">
-            <div
-              className={cn(
-                'w-full',
-                value === null ? 'bg-transparent' : 'bg-primary',
-              )}
-              style={{ height: `${((value ?? 0) / max) * 100}%` }}
-            />
-          </div>
-          <span className="text-[0.65rem] text-muted-foreground">
-            {labels[index]}
-          </span>
-        </li>
-      ))}
-    </ul>
-  )
-}
-
-function Sparkline({ points }: { points: readonly { rating: number }[] }) {
-  if (points.length < 2) return null
-  const ratings = points.map((point) => point.rating)
-  const min = Math.min(...ratings)
-  const max = Math.max(...ratings)
-  const span = Math.max(1, max - min)
-  const path = ratings
-    .map((rating, index) => {
-      const x = (index / (ratings.length - 1)) * 100
-      const y = 36 - ((rating - min) / span) * 32
-      return `${index === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`
-    })
-    .join(' ')
-  return (
-    <svg
-      aria-hidden="true"
-      className="h-12 w-full text-primary"
-      preserveAspectRatio="none"
-      viewBox="0 0 100 40"
-    >
-      <path
-        d={path}
-        fill="none"
-        stroke="currentColor"
-        strokeLinejoin="round"
-        strokeWidth="1.6"
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
   )
 }
 
@@ -235,203 +190,379 @@ function NarrativeCard({
   )
 }
 
+function ReportKpis({ report }: { report: ProgressReport }) {
+  const latestAccuracy = [...report.accuracy]
+    .reverse()
+    .find((week) => week.rate !== null)
+  const hints = report.hintDependency
+  return (
+    <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+      <KpiTile
+        detail={`Longest ${report.consistency.longestStreak} days`}
+        icon={Flame}
+        label="Current streak"
+        tone="accent"
+        value={`${report.consistency.currentStreak}d`}
+      />
+      <KpiTile
+        detail="Of the last 30 days"
+        icon={CalendarCheck}
+        label="Active days"
+        tone="green"
+        value={report.consistency.activeDaysLast30}
+      />
+      <KpiTile
+        detail={
+          latestAccuracy === undefined
+            ? 'No attempts yet'
+            : `${latestAccuracy.firstTryAccepted} of ${latestAccuracy.attempted} in the latest week`
+        }
+        icon={Target}
+        label="First-try accuracy"
+        tone="sky"
+        value={pct(latestAccuracy?.rate ?? null)}
+      />
+      <KpiTile
+        detail="Doubt Helper, last 12 weeks"
+        icon={Crosshair}
+        label="Help sessions"
+        tone="sand"
+        value={hints.sessions}
+      />
+      <KpiTile
+        detail="1 nudge to 5 full solution"
+        icon={Lightbulb}
+        label="Average hint"
+        tone="sky"
+        value={hints.averageHintLevel ?? '-'}
+      />
+      <KpiTile
+        detail="Sessions that revealed the solution"
+        icon={Lock}
+        label="Full reveals"
+        tone="sand"
+        value={pct(hints.solutionRevealRate)}
+      />
+    </dl>
+  )
+}
+
 function ReportBody({ report }: { report: ProgressReport }) {
-  const weeks = report.accuracy.map((week) => shortDate(week.weekStart))
+  const accuracy = report.accuracy.map((week) => ({
+    label: shortDate(week.weekStart),
+    rate: week.rate === null ? null : Math.round(week.rate * 100),
+  }))
+  const weekly = report.consistency.weekly.map((week) => ({
+    label: shortDate(week.weekStart),
+    solved: week.solved,
+    activeDays: week.activeDays,
+  }))
+  const speed = report.solvingSpeed.map((row) => ({
+    band: row.band,
+    earlier: row.earlierMedianMinutes,
+    recent: row.recentMedianMinutes,
+  }))
+  const hints = report.hintDependency
   return (
     <>
-      <div className="grid min-w-0 gap-6 xl:grid-cols-2">
-        <SectionCard
+      <ReportKpis report={report} />
+
+      <div className="grid min-w-0 gap-4 lg:grid-cols-12">
+        <ChartCard
+          className="lg:col-span-7"
           description="Share of new problems accepted on the first submission, by week."
-          id="accuracy-heading"
           title="First-attempt accuracy"
         >
-          <Bars
-            format={pct}
-            label="First-attempt accuracy by week"
-            labels={weeks}
-            values={report.accuracy.map((week) => week.rate)}
-          />
-        </SectionCard>
-        <SectionCard
-          description="Active days and problems solved per week."
-          id="consistency-heading"
+          {accuracy.every((week) => week.rate === null) ? (
+            <ChartEmpty>
+              Accuracy appears once you attempt new problems.
+            </ChartEmpty>
+          ) : (
+            <div
+              aria-label="First-attempt accuracy by week"
+              className="h-56 w-full"
+              role="img"
+            >
+              <ResponsiveContainer height="100%" width="100%">
+                <AreaChart
+                  data={accuracy}
+                  margin={{ top: 6, right: 6, left: -22, bottom: 0 }}
+                >
+                  <defs>
+                    <linearGradient
+                      id="accuracy-fill"
+                      x1="0"
+                      x2="0"
+                      y1="0"
+                      y2="1"
+                    >
+                      <stop
+                        offset="0%"
+                        stopColor={chartColors.accent}
+                        stopOpacity={0.4}
+                      />
+                      <stop
+                        offset="100%"
+                        stopColor={chartColors.accent}
+                        stopOpacity={0}
+                      />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid
+                    stroke="var(--border)"
+                    strokeDasharray="3 3"
+                    vertical={false}
+                  />
+                  <XAxis dataKey="label" tick={axisTick} tickLine={false} />
+                  <YAxis
+                    domain={[0, 100]}
+                    tick={axisTick}
+                    tickFormatter={(value: number) => `${value}%`}
+                    tickLine={false}
+                  />
+                  <Tooltip
+                    contentStyle={tooltipStyle}
+                    formatter={(value) => [`${String(value)}%`, 'First try']}
+                  />
+                  <Area
+                    connectNulls
+                    dataKey="rate"
+                    fill="url(#accuracy-fill)"
+                    stroke={chartColors.accent}
+                    strokeWidth={2.2}
+                    type="monotone"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </ChartCard>
+        <ChartCard
+          className="lg:col-span-5"
+          description="Problems solved and active days per week."
           title="Consistency"
         >
-          <dl className="mb-4 grid grid-cols-3 gap-3">
-            <StatTile
-              label="Current streak"
-              value={`${report.consistency.currentStreak}d`}
-            />
-            <StatTile
-              label="Longest streak"
-              value={`${report.consistency.longestStreak}d`}
-            />
-            <StatTile
-              label="Active days (30d)"
-              value={report.consistency.activeDaysLast30}
-            />
-          </dl>
-          <Bars
-            format={(value) => `${value ?? 0}`}
-            label="Problems solved by week"
-            labels={weeks}
-            values={report.consistency.weekly.map((week) => week.solved)}
-          />
-        </SectionCard>
+          {weekly.length === 0 ? (
+            <ChartEmpty>Weekly activity appears once you practice.</ChartEmpty>
+          ) : (
+            <div
+              aria-label="Problems solved by week"
+              className="h-56 w-full"
+              role="img"
+            >
+              <ResponsiveContainer height="100%" width="100%">
+                <BarChart
+                  data={weekly}
+                  margin={{ top: 6, right: 6, left: -24, bottom: 0 }}
+                >
+                  <CartesianGrid
+                    stroke="var(--border)"
+                    strokeDasharray="3 3"
+                    vertical={false}
+                  />
+                  <XAxis dataKey="label" tick={axisTick} tickLine={false} />
+                  <YAxis
+                    allowDecimals={false}
+                    tick={axisTick}
+                    tickLine={false}
+                  />
+                  <Tooltip
+                    contentStyle={tooltipStyle}
+                    cursor={{ fill: 'var(--muted)', opacity: 0.4 }}
+                  />
+                  <Bar
+                    dataKey="solved"
+                    fill={chartColors.solved}
+                    name="Solved"
+                    radius={[4, 4, 0, 0]}
+                  />
+                  <Bar
+                    dataKey="activeDays"
+                    fill={chartColors.accent}
+                    name="Active days"
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </ChartCard>
       </div>
 
-      <SectionCard
-        description="Recent contest ratings, change per contest and a projection if the recent pace continues. Projections are estimates, not promises."
-        id="rating-heading"
+      <ChartCard
+        description="Rating after each recent contest, the change per contest, and a projection if the pace holds. Projections are estimates, not promises."
         title="Rating trajectory"
       >
         {report.ratingTrend.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
+          <ChartEmpty>
             No rated contests yet. Take part in one to start your trajectory.
-          </p>
+          </ChartEmpty>
         ) : (
           <ul className="grid gap-4 md:grid-cols-2">
             {report.ratingTrend.map((trend) => (
               <li
-                className="rounded-lg border border-border p-4"
+                className="rounded-xl bg-secondary/40 p-4"
                 key={trend.provider}
               >
-                <div className="flex items-baseline justify-between gap-3">
-                  <p className="text-sm font-semibold text-foreground">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <ProviderLogo
+                      className="size-5"
+                      provider={trend.provider}
+                    />
                     {providerLabels[trend.provider]}
                   </p>
-                  <p className="text-2xl font-semibold tabular-nums text-foreground">
-                    {trend.current ?? '—'}
+                  <p className="font-heading text-2xl font-bold tabular-nums text-foreground">
+                    {trend.current ?? '-'}
                   </p>
                 </div>
-                <Sparkline points={trend.points} />
+                {trend.points.length >= 2 ? (
+                  <div
+                    aria-label={`${providerLabels[trend.provider]} rating`}
+                    className="mt-2 h-28 w-full"
+                    role="img"
+                  >
+                    <ResponsiveContainer height="100%" width="100%">
+                      <LineChart
+                        data={trend.points.map((point) => ({
+                          label: shortDate(point.date.slice(0, 10)),
+                          rating: Math.round(point.rating),
+                        }))}
+                        margin={{ top: 6, right: 6, left: -18, bottom: 0 }}
+                      >
+                        <XAxis dataKey="label" hide />
+                        <YAxis
+                          domain={['dataMin - 40', 'dataMax + 40']}
+                          tick={axisTick}
+                          tickLine={false}
+                          width={48}
+                        />
+                        <Tooltip contentStyle={tooltipStyle} />
+                        <Line
+                          dataKey="rating"
+                          dot={{ r: 2.5 }}
+                          name="Rating"
+                          stroke={providerColors[trend.provider]}
+                          strokeWidth={2.2}
+                          type="monotone"
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : null}
                 <p className="mt-1 text-xs text-muted-foreground">
                   {trend.changePerContest === null
                     ? 'Needs three rated contests for a trend.'
                     : `${trend.changePerContest > 0 ? '+' : ''}${trend.changePerContest} per contest`}
                   {trend.projection90d === null
                     ? ''
-                    : ` · about ${trend.projection90d} in 90 days at this pace`}
+                    : `, about ${trend.projection90d} in 90 days at this pace`}
                 </p>
               </li>
             ))}
           </ul>
         )}
-      </SectionCard>
+      </ChartCard>
 
-      <div className="grid min-w-0 gap-6 xl:grid-cols-2">
-        <SectionCard
-          description="Median minutes per solved contest problem, earlier vs recent contests, by difficulty."
-          id="speed-heading"
+      <div className="grid min-w-0 gap-4 lg:grid-cols-12">
+        <ChartCard
+          className="lg:col-span-7"
+          description="Median minutes per solved contest problem, earlier against recent contests, by difficulty."
           title="Solving speed"
         >
-          {report.solvingSpeed.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Solving speed comes from contest submissions. Analyze a contest
-              with synced submissions to see it.
-            </p>
+          {speed.length === 0 ? (
+            <ChartEmpty>
+              Solving speed comes from contest submissions.
+            </ChartEmpty>
           ) : (
-            <table className="min-w-full text-left text-sm">
-              <thead className="text-xs text-muted-foreground">
-                <tr>
-                  <th className="py-2 font-medium" scope="col">
-                    Difficulty
-                  </th>
-                  <th className="py-2 font-medium" scope="col">
-                    Earlier
-                  </th>
-                  <th className="py-2 font-medium" scope="col">
-                    Recent
-                  </th>
-                  <th className="py-2 font-medium" scope="col">
-                    Samples
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.solvingSpeed.map((row) => (
-                  <tr className="border-t border-border" key={row.band}>
-                    <td className="py-2">{row.band}</td>
-                    <td className="py-2 tabular-nums">
-                      {row.earlierMedianMinutes === null
-                        ? '—'
-                        : `${row.earlierMedianMinutes} min`}
-                    </td>
-                    <td
-                      className={cn(
-                        'py-2 tabular-nums',
-                        row.earlierMedianMinutes !== null &&
-                          row.recentMedianMinutes !== null &&
-                          (row.recentMedianMinutes < row.earlierMedianMinutes
-                            ? 'text-go-foreground'
-                            : row.recentMedianMinutes > row.earlierMedianMinutes
-                              ? 'text-sun-foreground'
-                              : ''),
-                      )}
-                    >
-                      {row.recentMedianMinutes === null
-                        ? '—'
-                        : `${row.recentMedianMinutes} min`}
-                    </td>
-                    <td className="py-2 tabular-nums text-muted-foreground">
-                      {row.samples}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div
+              aria-label="Solving speed by difficulty"
+              className="h-56 w-full"
+              role="img"
+            >
+              <ResponsiveContainer height="100%" width="100%">
+                <BarChart
+                  data={speed}
+                  margin={{ top: 6, right: 6, left: -22, bottom: 0 }}
+                >
+                  <CartesianGrid
+                    stroke="var(--border)"
+                    strokeDasharray="3 3"
+                    vertical={false}
+                  />
+                  <XAxis dataKey="band" tick={axisTick} tickLine={false} />
+                  <YAxis tick={axisTick} tickLine={false} />
+                  <Tooltip
+                    contentStyle={tooltipStyle}
+                    cursor={{ fill: 'var(--muted)', opacity: 0.4 }}
+                  />
+                  <Bar
+                    dataKey="earlier"
+                    fill="var(--muted-foreground)"
+                    fillOpacity={0.45}
+                    name="Earlier (min)"
+                    radius={[4, 4, 0, 0]}
+                  />
+                  <Bar
+                    dataKey="recent"
+                    fill={chartColors.accent}
+                    name="Recent (min)"
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           )}
-        </SectionCard>
-        <SectionCard
-          description="How much you lean on the Doubt Helper. Falling hint levels mean growing independence."
-          id="hints-heading"
+        </ChartCard>
+        <ChartCard
+          className="lg:col-span-5"
+          description="How much you lean on the Doubt Helper. Lower hint levels mean growing independence."
           title="Hint dependency"
         >
-          <dl className="mb-4 grid grid-cols-3 gap-3">
-            <StatTile
-              label="Sessions (12w)"
-              value={report.hintDependency.sessions}
-            />
-            <StatTile
-              label="Avg hint level"
-              value={report.hintDependency.averageHintLevel ?? '—'}
-            />
-            <StatTile
-              label="Full reveals"
-              value={pct(report.hintDependency.solutionRevealRate)}
-            />
-          </dl>
-          <p className="text-xs text-muted-foreground">
-            Trend:{' '}
-            {report.hintDependency.trend === 'insufficient_data'
-              ? 'not enough sessions yet'
-              : report.hintDependency.trend}
-          </p>
-        </SectionCard>
+          <div className="flex flex-1 flex-col items-center justify-center gap-3">
+            <RadialProgress
+              className="size-36"
+              thickness={10}
+              value={(hints.averageHintLevel ?? 0) / 5}
+            >
+              <span className="text-center">
+                <span className="block font-heading text-3xl font-bold tabular-nums">
+                  {hints.averageHintLevel ?? '-'}
+                </span>
+                <span className="text-xs text-muted-foreground">of 5</span>
+              </span>
+            </RadialProgress>
+            <p className="text-center text-sm text-muted-foreground">
+              {hints.trend === 'insufficient_data'
+                ? 'Not enough sessions for a trend yet.'
+                : hints.trend === 'falling'
+                  ? 'Hint levels are falling: you need less help.'
+                  : hints.trend === 'rising'
+                    ? 'Hint levels are rising lately.'
+                    : 'Hint levels are steady.'}
+            </p>
+          </div>
+        </ChartCard>
       </div>
 
-      <SectionCard
+      <ChartCard
         description="Assessed from your provider evidence and recent practice."
-        id="topics-heading"
         title="Topic progress"
       >
         {report.topicProgress.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
+          <ChartEmpty>
             Topic progress appears once enough practice evidence is available.
-          </p>
+          </ChartEmpty>
         ) : (
-          <ul className="grid gap-3 md:grid-cols-2">
+          <ul className="grid gap-x-6 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
             {report.topicProgress.map((topic) => (
               <li className="min-w-0" key={topic.topic}>
                 <div className="flex items-baseline justify-between gap-2 text-sm">
                   <span className="truncate font-medium text-foreground">
                     {topic.name}
                   </span>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {topic.solved} solved ·{' '}
-                    {topic.recentDays === 0
-                      ? 'not recent'
-                      : `${topic.recentDays}d ago`}
+                  <span className="shrink-0 font-heading font-bold tabular-nums">
+                    {Math.round(topic.score * 100)}
                   </span>
                 </div>
                 <div
@@ -440,18 +571,24 @@ function ReportBody({ report }: { report: ProgressReport }) {
                   role="img"
                 >
                   <div
-                    className="h-full rounded-full bg-primary"
+                    className="h-full rounded-full bg-linear-to-r from-[var(--brand-a)] to-[var(--brand-b)]"
                     style={{ width: `${Math.max(3, topic.score * 100)}%` }}
                   />
                 </div>
-                <p className="mt-1 text-[0.7rem] text-muted-foreground capitalize">
-                  {topic.assessment.replaceAll('_', ' ')}
+                <p className="mt-1 text-[0.7rem] text-muted-foreground">
+                  <span className="capitalize">
+                    {topic.assessment.replaceAll('_', ' ')}
+                  </span>
+                  , {topic.solved} solved,{' '}
+                  {topic.recentDays === 0
+                    ? 'not recent'
+                    : `${topic.recentDays}d ago`}
                 </p>
               </li>
             ))}
           </ul>
         )}
-      </SectionCard>
+      </ChartCard>
     </>
   )
 }

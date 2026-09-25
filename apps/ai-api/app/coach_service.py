@@ -16,7 +16,6 @@ from uuid import UUID
 from xml.etree import ElementTree
 from zipfile import BadZipFile, ZipFile
 
-from groq import AsyncGroq
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (
     AIMessage,
@@ -24,10 +23,12 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
+from langchain_openai import ChatOpenAI
 from pydantic import ValidationError
 from pypdf import PdfReader
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from .ai_observability import AiUsage, record_usage
 from .coach_audit import (
     CoachAudit,
     CoachAuditRepository,
@@ -42,10 +43,8 @@ from .coach_context import (
     pack_context,
     plan_turn_budget,
 )
-from .coach_intent import classify_turn, is_complex_turn
+from .coach_intent import classify_turn, is_complex_turn, is_world_fact_question
 from .coach_models import (
-    CoachCheckInRequest,
-    CoachCheckInResponse,
     CoachCitation,
     CoachModelOutput,
     CoachRequest,
@@ -64,8 +63,8 @@ from .core_client import (
 from .knowledge_base import retrieve_knowledge
 from .knowledge_query import build_knowledge_query
 from .knowledge_repository import KnowledgeRepository
-from .llm import chat_model
-from .memory_model import GeminiMemoryEmbedder, MemoryEmbeddingError
+from .llm import chat_model, route_model
+from .memory_model import MemoryEmbeddingError, ProviderMemoryEmbedder
 from .page_retrieval import retrieve_public_page
 from .pedagogy import (
     bloom_prompt,
@@ -316,6 +315,12 @@ PROBLEM_IDS: comma-separated exact problem IDs you recommended, taken only from
 FOLLOW_UPS: two or three short follow-up questions separated by " | "
 """
 
+WORLD_FACT_PROMPT = """## General-knowledge question
+This question is about the world, not programming or the learner. Answer it
+directly and briefly from general knowledge. Do not mention the learner's data,
+the provided context, or what it lacks, and do not steer back to practice.
+"""
+
 CONTINUE_PROMPT = (
     "Your answer was cut off by the length limit. Continue exactly where it "
     "stopped, without repeating anything or restarting, and finish with the two "
@@ -506,7 +511,7 @@ def _human_message(
     request: CoachRequest,
     prefetched: dict[str, Any] | None = None,
     *,
-    provider: str = "gemini",
+    provider: str = "openrouter",
     budget: TurnBudget | None = None,
 ) -> HumanMessage:
     context = request.context
@@ -543,7 +548,7 @@ def _human_message(
             )
     if (
         attachment is not None
-        and provider == "groq"
+        and provider == "local"
         and attachment.mimeType == "application/pdf"
     ):
         try:
@@ -564,10 +569,10 @@ def _human_message(
     if (
         attachment is None
         or attachment.mimeType in TEXT_DOCUMENT_TYPES
-        or (provider == "groq" and attachment.mimeType == "application/pdf")
+        or (provider == "local" and attachment.mimeType == "application/pdf")
     ):
         return HumanMessage(content=text)
-    if provider == "groq" and attachment.mimeType.startswith("image/"):
+    if attachment.mimeType.startswith("image/"):
         return HumanMessage(
             content=[
                 {"type": "text", "text": text},
@@ -591,24 +596,14 @@ def _human_message(
     )
 
 
-async def _transcribe_groq_media(
-    settings: AiSettings, request: CoachRequest
-) -> CoachRequest:
+async def _prepare_local_media(request: CoachRequest) -> CoachRequest:
     attachment = request.transientMedia
-    if attachment is None or not attachment.mimeType.startswith(("audio/", "video/")):
+    if attachment is None or attachment.mimeType in TEXT_DOCUMENT_TYPES:
         return request
-    extension = attachment.mimeType.split("/", 1)[1]
-    try:
-        client = AsyncGroq(api_key=settings.groq_api_key, timeout=30, max_retries=0)
-        transcript = await client.audio.transcriptions.create(
-            file=(f"attachment.{extension}", base64.b64decode(attachment.data)),
-            model="whisper-large-v3-turbo",
-        )
-        note = f"Transient attachment audio transcript: {transcript.text[:8_000]}"
-        if attachment.mimeType.startswith("video/"):
-            note += "\nVideo frames were not available; do not infer visual details."
-    except Exception:  # noqa: BLE001
-        note = "The attached audio or video could not be transcribed; ask for text or a screenshot."
+    note = (
+        "The local development model is text-only and could not inspect the "
+        "attached media. Ask the learner to paste text or attach extracted text."
+    )
     return request.model_copy(
         update={
             "transientMedia": None,
@@ -644,23 +639,23 @@ def _usage(message: object) -> tuple[int, int]:
     return int(usage.get("input_tokens") or 0), int(usage.get("output_tokens") or 0)
 
 
-def _compact_for_groq(value: object, depth: int = 0) -> object:
+def _compact_context_value(value: object, depth: int = 0) -> object:
     """Keep retrieved evidence within a small model's per-minute token budget."""
     if isinstance(value, str):
         return value[:500]
     if depth >= 5:
         return None
     if isinstance(value, list):
-        return [_compact_for_groq(item, depth + 1) for item in value[:8]]
+        return [_compact_context_value(item, depth + 1) for item in value[:8]]
     if isinstance(value, dict):
         return {
-            str(key): _compact_for_groq(item, depth + 1)
+            str(key): _compact_context_value(item, depth + 1)
             for key, item in list(value.items())[:20]
         }
     return value
 
 
-def _groq_context(context: dict[str, object]) -> dict[str, object]:
+def _compact_context(context: dict[str, object]) -> dict[str, object]:
     """Keep governing preferences and relevant summaries; tools supply details."""
     keys = (
         "excludedTopics",
@@ -677,7 +672,9 @@ def _groq_context(context: dict[str, object]) -> dict[str, object]:
         "currentRecommendations",
         "pastedUrls",
     )
-    compact = {key: _compact_for_groq(context[key]) for key in keys if key in context}
+    compact = {
+        key: _compact_context_value(context[key]) for key in keys if key in context
+    }
     # Linked statements are the question itself; keep far more than the 500
     # characters other strings get.
     linked = [
@@ -692,7 +689,7 @@ def _groq_context(context: dict[str, object]) -> dict[str, object]:
         compact["roadmap"] = {
             "dataCompleteness": roadmap.get("dataCompleteness"),
             "topics": [
-                _compact_for_groq(
+                _compact_context_value(
                     {
                         key: topic[key]
                         for key in (
@@ -718,10 +715,10 @@ def _groq_context(context: dict[str, object]) -> dict[str, object]:
     if isinstance(retrieval, dict):
         knowledge = retrieval.get("knowledge")
         compact["retrieval"] = {
-            "knowledge": [_compact_for_groq(chunk) for chunk in knowledge[:3]]
+            "knowledge": [_compact_context_value(chunk) for chunk in knowledge[:3]]
             if isinstance(knowledge, list)
             else [],
-            "publicResearch": _compact_for_groq(retrieval.get("publicResearch")),
+            "publicResearch": _compact_context_value(retrieval.get("publicResearch")),
             "linkedPages": [
                 {**page, "text": str(page.get("text", ""))[:3_000]}
                 for page in retrieval.get("linkedPages", [])[:2]
@@ -764,12 +761,139 @@ class AgentToolServices(Protocol):
     ) -> dict[str, Any]: ...
 
 
+# A recommended problem in a list: "1. **Title** ..." or '- **"Title" (CF)**'.
+_LISTED_PROBLEM = re.compile(
+    r"^\s*(?:\d+[.)]|[-*])\s+\*\*(.{3,160}?)\*\*", re.MULTILINE
+)
+
+
+def _title_key(value: object) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value).lower())
+
+
+def _listed_title(raw: str) -> str:
+    title = raw.strip().strip('"“”')
+    # '"AND, OR and square sum" (Codeforces, rating 1700)' -> the title.
+    title = re.sub(r'["“”]?\s*\([^()]*\)\s*$', "", title).strip().strip('"“”')
+    return title.rstrip(":").strip()
+
+
+def _workspace_titles(workspace: dict[str, object]) -> set[str]:
+    titles: set[str] = set()
+    for key in ("practicePool", "solved", "attempted"):
+        rows = workspace.get(key)
+        for row in rows if isinstance(rows, list) else []:
+            if isinstance(row, dict) and isinstance(row.get("title"), str):
+                titles.add(_title_key(row["title"]))
+    return titles
+
+
+def invented_problem_titles(answer: str, workspace: dict[str, object]) -> list[str]:
+    """Problems an answer recommends that the learner's workspace never had.
+
+    Only list items are checked, so an explanation that mentions a classic
+    problem in passing is left alone.
+    """
+    known = _workspace_titles(workspace)
+    if not known:
+        return []
+    invented: list[str] = []
+    for match in _LISTED_PROBLEM.finditer(answer):
+        title = _listed_title(match.group(1))
+        key = _title_key(title)
+        # Bold section labels ("Why", "Time complexity") are not problems.
+        if len(key) < 4 or key in known or title in invented:
+            continue
+        if any(key in item or item in key for item in known if len(item) >= 6):
+            continue
+        invented.append(title)
+    # A single bold phrase is usually a heading; several unknown names in a
+    # list are recommendations.
+    return invented if len(invented) >= 2 else []
+
+
+def listed_problem_ids(answer: str, workspace: dict[str, object]) -> list[str]:
+    """IDs of practice-pool problems an answer lists by title, in order."""
+    pool = workspace.get("practicePool")
+    by_title = {
+        _title_key(row["title"]): row["id"]
+        for row in (pool if isinstance(pool, list) else [])
+        if isinstance(row, dict)
+        and isinstance(row.get("title"), str)
+        and isinstance(row.get("id"), str)
+    }
+    ids: list[str] = []
+    for match in _LISTED_PROBLEM.finditer(answer):
+        key = _title_key(_listed_title(match.group(1)))
+        found = by_title.get(key) or next(
+            (
+                problem_id
+                for title, problem_id in by_title.items()
+                if len(title) >= 6 and title in key
+            ),
+            None,
+        )
+        if found is not None and found not in ids:
+            ids.append(found)
+    return ids[:10]
+
+
+def _trusted_problems_prompt(
+    invented: list[str],
+    prefetched: dict[str, Any],
+    workspace: dict[str, object] | None,
+) -> str:
+    practice = prefetched.get("find_practice_problems")
+    rows = practice.get("items") if isinstance(practice, dict) else None
+    if not isinstance(rows, list) or not rows:
+        pool = (workspace or {}).get("practicePool")
+        rows = pool[:12] if isinstance(pool, list) else []
+    allowed = [
+        {
+            key: row[key]
+            for key in ("id", "title", "rating", "difficulty", "tags")
+            if isinstance(row, dict) and key in row
+        }
+        for row in rows[:12]
+    ]
+    return (
+        "Your answer recommended problems that are not in the learner's "
+        "trusted list: "
+        + "; ".join(invented[:6])
+        + ". Rewrite the whole answer recommending only problems from this "
+        "list, by their exact titles, and describe each one only by its listed "
+        "tags and rating or difficulty. Put their exact IDs on the PROBLEM_IDS "
+        "line.\n" + json.dumps(allowed, ensure_ascii=False)
+    )
+
+
+_WEAK_AREA = re.compile(r"\bweak(?:est|ness|nesses)?\b", re.IGNORECASE)
+
+
+def _reasoning_variant(model: BaseChatModel) -> BaseChatModel:
+    """`model` with local reasoning on, for short questions of fact.
+
+    Without reasoning the local model misremembers plain world facts; with it
+    the answer costs a few hundred extra tokens. The reasoning shares the
+    output limit, so the limit grows to leave room for the answer.
+    """
+    if not isinstance(model, ChatOpenAI):
+        return model
+    extra = dict(model.extra_body or {})
+    extra["reasoning_effort"] = "high"
+    return model.model_copy(
+        update={"extra_body": extra, "max_tokens": max(model.max_tokens or 0, 2_000)}
+    )
+
+
 def coach_chat_model(
     settings: AiSettings,
     *,
     fast: bool = False,
     light: bool = False,
+    deep: bool = False,
     max_tokens: int | None = None,
+    estimated_context_tokens: int = 0,
 ) -> BaseChatModel:
     """The coach's chat model.
 
@@ -781,21 +905,16 @@ def coach_chat_model(
     # surfaced instead of waiting out long retry-after windows.
     return chat_model(
         settings,
-        provider=settings.effective_coach_provider,
-        model=settings.effective_coach_model,
+        workload="deep_coach" if deep else "simple_coach",
         # Low temperature keeps personal facts and numbers anchored to the
         # supplied data rather than paraphrased into new values.
         temperature=0.3,
-        thinking_level=(
-            "none"
-            if settings.effective_coach_provider == "groq"
-            else "low"
-            if fast or light
-            else settings.coach_thinking_level
-        ),
+        thinking_level=("low" if fast or light else settings.coach_thinking_level),
         max_tokens=min(
             max_tokens or settings.effective_coach_max_output_tokens,
-            settings.effective_coach_max_output_tokens,
+            settings.solution_max_output_tokens
+            if deep
+            else settings.effective_coach_max_output_tokens,
         ),
         timeout=(
             min(settings.llm_timeout_seconds, 60)
@@ -803,10 +922,11 @@ def coach_chat_model(
             else settings.llm_timeout_seconds
         ),
         max_retries=0 if fast else 1,
+        estimated_context_tokens=estimated_context_tokens,
     )
 
 
-class GeminiCoachModel:
+class ProviderCoachModel:
     def __init__(
         self, settings: AiSettings, services: AgentToolServices | None = None
     ) -> None:
@@ -814,7 +934,7 @@ class GeminiCoachModel:
         self.settings = settings
         self.services = services
         self.throttle = ModelRequestThrottle(settings.coach_model_requests_per_minute)
-        self._sized_models: dict[tuple[bool, bool, int], BaseChatModel] = {}
+        self._sized_models: dict[tuple[bool, bool, int, bool], BaseChatModel] = {}
         self.base_model = model
         # Concept and quick-fact turns: same model, light reasoning.
         self.light_model = (
@@ -822,12 +942,9 @@ class GeminiCoachModel:
             if settings.coach_thinking_level == "low"
             else coach_chat_model(settings, light=True)
         )
-        # Qwen's on-demand Groq tier can have a much smaller TPM allowance
-        # than its context window. Its single-call path uses the smaller
-        # permissive schema and validates the result locally.
         output_schema = (
             {"title": "CoachModelOutput", **coach_output_json_schema()}
-            if settings.effective_coach_provider == "groq"
+            if settings.effective_coach_provider == "local"
             else CoachModelOutput
         )
         self.structured_model = model.with_structured_output(
@@ -858,7 +975,12 @@ class GeminiCoachModel:
         )
 
     def _sized_model(
-        self, budget: TurnBudget | None, *, deep: bool, fast: bool = False
+        self,
+        budget: TurnBudget | None,
+        *,
+        deep: bool,
+        fast: bool = False,
+        estimated_context_tokens: int = 0,
     ) -> BaseChatModel | None:
         """A chat model whose output ceiling matches this turn's budget."""
         settings = getattr(self, "settings", None)
@@ -866,18 +988,21 @@ class GeminiCoachModel:
             return None
         # Only instances built by __init__ own their models; an instance with
         # injected models (tests, alternative providers) keeps using them.
-        cache: dict[tuple[bool, bool, int], BaseChatModel] | None = getattr(
+        cache: dict[tuple[bool, bool, int, bool], BaseChatModel] | None = getattr(
             self, "_sized_models", None
         )
         if cache is None:
             return None
-        key = (deep, fast, budget.output_tokens)
+        huge = estimated_context_tokens >= settings.ai_huge_context_threshold_tokens
+        key = (deep, fast, budget.output_tokens, huge)
         if key not in cache:
             cache[key] = coach_chat_model(
                 settings,
                 fast=fast,
                 light=not deep,
+                deep=deep,
                 max_tokens=budget.output_tokens,
+                estimated_context_tokens=estimated_context_tokens,
             )
         return cache[key]
 
@@ -885,7 +1010,7 @@ class GeminiCoachModel:
         settings = self.settings
         output_schema = (
             {"title": "CoachModelOutput", **coach_output_json_schema()}
-            if settings.effective_coach_provider == "groq"
+            if settings.effective_coach_provider == "local"
             else CoachModelOutput
         )
         return model.with_structured_output(
@@ -895,11 +1020,15 @@ class GeminiCoachModel:
     async def respond(self, request: CoachRequest) -> CoachModelResult:
         base_model = getattr(self, "base_model", None)
         settings = getattr(self, "settings", None)
-        if settings is not None and settings.effective_coach_provider == "groq":
-            # One grounded generation avoids exhausting small TPM quotas on
-            # repeated agent tool rounds. Workspace lookups still run locally.
-            # Groq's function-calling output ends long answers early (often
-            # mid code block), so this path asks for plain Markdown instead.
+        if (
+            base_model is not None
+            and settings is not None
+            and settings.effective_coach_provider == "local"
+            and settings.local_ai_single_call
+        ):
+            # A local model answers in one call over prefetched workspace
+            # data: every extra agent step re-reads the whole context, which
+            # costs tens of seconds on laptop hardware.
             return await self._respond_plain(request)
         if (
             base_model is not None
@@ -933,20 +1062,33 @@ class GeminiCoachModel:
 
     async def _respond_plain(self, request: CoachRequest) -> CoachModelResult:
         """One plain-Markdown generation with a short machine-readable trailer."""
-        prefetched = await self._prefetch_groq(request)
-        request = await _transcribe_groq_media(self.settings, request)
+        prefetched = await self._prefetch_workspace(request)
+        request = await _prepare_local_media(request)
         budget = self._budget(request)
-        request = request.model_copy(update={"context": _groq_context(request.context)})
-        model = self._sized_model(budget, deep=False) or self.base_model
+        request = request.model_copy(
+            update={"context": _compact_context(request.context)}
+        )
+        model = (
+            self._sized_model(
+                budget,
+                deep=False,
+                estimated_context_tokens=estimate_tokens(request.context),
+            )
+            or self.base_model
+        )
+        world_fact = is_world_fact_question(request.question)
+        if world_fact:
+            model = _reasoning_variant(model)
         messages: list[Any] = [
             SystemMessage(
                 content=SYSTEM_PROMPT
                 + "\n"
                 + _guidance_prompt(request)
                 + "\n"
+                + (WORLD_FACT_PROMPT if world_fact else "")
                 + PLAIN_OUTPUT_PROMPT
             ),
-            _human_message(request, prefetched, provider="groq", budget=budget),
+            _human_message(request, prefetched, provider="local", budget=budget),
         ]
         await self._acquire_slot()
         reply = await model.ainvoke(messages)
@@ -976,6 +1118,42 @@ class GeminiCoachModel:
             input_tokens += more_in
             output_tokens += more_out
         answer, problem_ids, follow_ups = split_plain_answer(text)
+        recommending = bool(problem_ids) or "find_practice_problems" in prefetched
+        invented = (
+            invented_problem_titles(answer, request.workspace)
+            if request.workspace and recommending
+            else []
+        )
+        if invented:
+            # The answer recommends problems from memory instead of the
+            # trusted list, so its text would contradict the problem card.
+            # One rewrite against the allowed list.
+            await self._acquire_slot()
+            fixed = await model.ainvoke(
+                [
+                    *messages,
+                    AIMessage(content=text),
+                    HumanMessage(
+                        content=_trusted_problems_prompt(
+                            invented, prefetched, request.workspace
+                        )
+                    ),
+                ]
+            )
+            fixed_in, fixed_out = _usage(fixed)
+            input_tokens += fixed_in
+            output_tokens += fixed_out
+            text = _message_text(fixed)
+            finish = str(
+                (getattr(fixed, "response_metadata", None) or {}).get(
+                    "finish_reason", ""
+                )
+            )
+            answer, problem_ids, follow_ups = split_plain_answer(text)
+        if recommending and not problem_ids and request.workspace:
+            # The model named pool problems but left out their IDs; the card
+            # still shows them, with their real tags and ratings.
+            problem_ids = listed_problem_ids(answer, request.workspace)
         if finish == "length":
             answer = close_cut_answer(answer)
         output = coerce_coach_output(
@@ -1008,12 +1186,12 @@ class GeminiCoachModel:
         prefetched: dict[str, Any] | None = None
         if (
             getattr(self, "settings", None) is not None
-            and self.settings.effective_coach_provider == "groq"
+            and self.settings.effective_coach_provider == "local"
         ):
-            prefetched = await self._prefetch_groq(request)
-            request = await _transcribe_groq_media(self.settings, request)
+            prefetched = await self._prefetch_workspace(request)
+            request = await _prepare_local_media(request)
             request = request.model_copy(
-                update={"context": _groq_context(request.context)}
+                update={"context": _compact_context(request.context)}
             )
         await self._acquire_slot()
         budget = self._budget(request)
@@ -1021,6 +1199,7 @@ class GeminiCoachModel:
             budget,
             deep=budget is not None and budget.deep_reasoning and not fast,
             fast=fast,
+            estimated_context_tokens=estimate_tokens(request.context),
         )
         model = (
             self._structured(sized)
@@ -1038,7 +1217,7 @@ class GeminiCoachModel:
                     provider=(
                         self.settings.effective_coach_provider
                         if getattr(self, "settings", None) is not None
-                        else "gemini"
+                        else "openrouter"
                     ),
                     budget=budget,
                 ),
@@ -1072,13 +1251,21 @@ class GeminiCoachModel:
                 else None
             ),
             model_name=(
-                self.settings.effective_coach_model
+                route_model(
+                    self.settings,
+                    (
+                        "deep_coach"
+                        if budget is not None and budget.deep_reasoning and not fast
+                        else "simple_coach"
+                    ),
+                    estimated_context_tokens=estimate_tokens(request.context),
+                ).model
                 if getattr(self, "settings", None) is not None
                 else None
             ),
         )
 
-    async def _prefetch_groq(self, request: CoachRequest) -> dict[str, Any]:
+    async def _prefetch_workspace(self, request: CoachRequest) -> dict[str, Any]:
         if not request.workspace:
             return {}
         toolbox = WorkspaceTools(request.workspace)
@@ -1088,12 +1275,37 @@ class GeminiCoachModel:
             for name, args in prefetch_plan(request.question, limit=3)
             if name != "get_profile_overview"
         )
-        results = await asyncio.gather(
-            *(toolbox.execute(name, args) for name, args in plan)
+        results = dict(
+            zip(
+                (name for name, _ in plan),
+                await asyncio.gather(
+                    *(toolbox.execute(name, args) for name, args in plan)
+                ),
+                strict=True,
+            )
         )
+        if _WEAK_AREA.search(request.question):
+            # "Improve my weakest area": fetch practice for that area instead of
+            # an unfiltered list the model would have to force-fit to a topic.
+            breakdown = results.get("get_topic_breakdown")
+            weakest = (
+                breakdown.get("weakestTags") if isinstance(breakdown, dict) else None
+            )
+            for entry in weakest if isinstance(weakest, list) else []:
+                tag = entry.get("tag") if isinstance(entry, dict) else None
+                if not isinstance(tag, str) or "find_practice_problems" not in results:
+                    continue
+                focused = await toolbox.execute(
+                    "find_practice_problems", {"topic": tag, "limit": 6}
+                )
+                if isinstance(focused, dict) and focused.get("items"):
+                    results["find_practice_problems"] = {
+                        "forWeakestTag": tag,
+                        **focused,
+                    }
+                    break
         return {
-            name: _compact_for_groq(result)
-            for (name, _), result in zip(plan, results, strict=True)
+            name: _compact_context_value(result) for name, result in results.items()
         }
 
     async def _respond_with_tools(self, request: CoachRequest) -> CoachModelResult:
@@ -1300,7 +1512,11 @@ class GeminiCoachModel:
                 has_media=request.transientMedia is not None,
             )
         )
-        chosen_model = self._sized_model(budget, deep=deep) or (
+        chosen_model = self._sized_model(
+            budget,
+            deep=deep,
+            estimated_context_tokens=estimate_tokens(request.context),
+        ) or (
             self.base_model
             if deep
             else getattr(self, "light_model", None) or self.base_model
@@ -1344,7 +1560,11 @@ class GeminiCoachModel:
                         extra_citations=tuple(citations),
                         web_grounding_used=web_used,
                         provider=self.settings.effective_coach_provider,
-                        model_name=self.settings.effective_coach_model,
+                        model_name=route_model(
+                            self.settings,
+                            "deep_coach" if deep else "simple_coach",
+                            estimated_context_tokens=estimate_tokens(request.context),
+                        ).model,
                     )
                 if final_step:
                     break
@@ -1394,54 +1614,6 @@ class GeminiCoachModel:
         raise CoachGenerationError("The coach agent did not submit an answer.")
 
 
-def route_coach_provider(request: CoachRequest) -> str:
-    """Route by evidence volume and input modality, never by a topic answer."""
-    retrieval = request.context.get("retrieval")
-    if request.transientMedia is not None:
-        return "gemini"
-    if request.transientContext or len(request.question) > 800:
-        return "gemini"
-    if is_specific_problem_solution_request(request.question, None):
-        return "gemini"
-    # Pasted links bring long statements or pages; the small Groq context and
-    # output budget would cut them short.
-    if request.context.get("linkedProblems") or extract_urls(request.question):
-        return "gemini"
-    # Code, debugging, proofs and plans need long answers; Groq's small
-    # output-token budget would cut them short.
-    if is_complex_turn(request.question):
-        return "gemini"
-    if isinstance(retrieval, dict) and retrieval.get("publicResearch"):
-        return "gemini"
-    # Knowledge-backed concept questions stay on the fast model: its compact
-    # context keeps the top knowledge chunks, and answers arrive in ~2s.
-    if prefetch_plan(request.question, limit=2):
-        return "gemini"
-    return "groq"
-
-
-class HybridCoachModel:
-    """Use both configured providers; try the other once on a provider failure."""
-
-    def __init__(self, gemini: CoachModel, groq: CoachModel) -> None:
-        self.models = {"gemini": gemini, "groq": groq}
-
-    async def respond(
-        self, request: CoachRequest
-    ) -> CoachModelOutput | CoachModelResult:
-        preferred = route_coach_provider(request)
-        alternate = "groq" if preferred == "gemini" else "gemini"
-        try:
-            return await self.models[preferred].respond(request)
-        except asyncio.CancelledError:
-            raise
-        except Exception:  # noqa: BLE001
-            logger.warning(
-                "coach_provider_failed_trying_alternate", extra={"provider": preferred}
-            )
-            return await self.models[alternate].respond(request)
-
-
 class CoachService:
     def __init__(
         self,
@@ -1456,9 +1628,9 @@ class CoachService:
         self._smalltalk_budget = 12.0
         self.audit_repository = audit_repository or get_coach_audit_repository()
         self.embedder = None
-        if settings.llm_api_key and settings.coach_knowledge_rag_enabled:
+        if settings.generation_api_key and settings.coach_knowledge_rag_enabled:
             try:
-                self.embedder = GeminiMemoryEmbedder(settings)
+                self.embedder = ProviderMemoryEmbedder(settings)
             except MemoryEmbeddingError, RuntimeError, ValueError:
                 self.embedder = None
         self.knowledge_repository = (
@@ -1505,7 +1677,10 @@ class CoachService:
                     ):
                         query_embedding = None
                 stored = await self.knowledge_repository.search(
-                    query, limit=8, query_embedding=query_embedding
+                    query,
+                    limit=8,
+                    query_embedding=query_embedding,
+                    embedding_version=self.settings.active_embedding_version,
                 )
                 if stored:
                     return [chunk for chunk in stored if allowed(chunk)]
@@ -1522,31 +1697,9 @@ class CoachService:
     def get_model(self) -> CoachModel:
         if self.model is not None:
             return self.model
-        if (
-            self.settings.coach_hybrid_enabled
-            and self.settings.llm_api_key
-            and self.settings.groq_api_key
-        ):
-            gemini_settings = self.settings.model_copy(
-                update={
-                    "coach_llm_provider": "gemini",
-                    "coach_llm_model": self.settings.coach_gemini_model,
-                }
-            )
-            groq_settings = self.settings.model_copy(
-                update={
-                    "coach_llm_provider": "groq",
-                    "coach_llm_model": self.settings.coach_groq_model,
-                }
-            )
-            self.model = HybridCoachModel(
-                GeminiCoachModel(gemini_settings, services=self),
-                GeminiCoachModel(groq_settings, services=self),
-            )
-            return self.model
         if not self.settings.coach_api_key:
             raise CoachNotConfiguredError
-        self.model = GeminiCoachModel(self.settings, services=self)
+        self.model = ProviderCoachModel(self.settings, services=self)
         return self.model
 
     async def agent_knowledge_search(
@@ -1656,39 +1809,18 @@ class CoachService:
             await delete(learner_id)
 
     def _get_smalltalk_model(self) -> tuple[BaseChatModel | None, float]:
-        """The quickest configured model and its time budget.
-
-        Groq answers a one-line pleasantry in well under a second; Gemini can
-        take ten seconds or more, so it is only used when Groq is absent.
-        """
+        """Return the configured fast model and a bounded time budget."""
         if self.smalltalk_model is not None:
             return self.smalltalk_model, self._smalltalk_budget
         settings = self.settings
-        groq_ready = bool(settings.groq_api_key) and (
-            settings.effective_coach_provider == "groq" or settings.coach_hybrid_enabled
-        )
-        if groq_ready:
-            provider, timeout = "groq", 8.0
-            model_name = (
-                settings.effective_coach_model
-                if settings.effective_coach_provider == "groq"
-                else settings.coach_groq_model
-            )
-        elif settings.llm_api_key:
-            provider, timeout = "gemini", 20.0
-            model_name = (
-                settings.effective_coach_model
-                if settings.effective_coach_provider == "gemini"
-                else settings.coach_gemini_model
-            )
-        else:
+        if not settings.generation_api_key:
             return None, 0
+        timeout = 20.0 if settings.ai_provider == "local" else 12.0
         self.smalltalk_model = chat_model(
             settings,
-            provider=provider,
-            model=model_name,
+            workload="simple_coach",
             temperature=0.6,
-            thinking_level="none" if provider == "groq" else "low",
+            thinking_level="low",
             max_tokens=400,
             timeout=timeout,
             max_retries=0,
@@ -2097,6 +2229,29 @@ class CoachService:
             memory_retrieved=isinstance(memories, list) and len(memories) > 0,
             web_grounding_used=public_grounding is True,
         )
+        resolved_model = model_name or self.settings.effective_coach_model
+        role = (
+            "huge_context"
+            if resolved_model == self.settings.model_for_role("huge_context")
+            else "strong"
+            if resolved_model == self.settings.model_for_role("strong")
+            else "fast"
+        )
+        record_usage(
+            self.settings,
+            AiUsage(
+                provider=self.settings.ai_provider,
+                model=resolved_model,
+                role=role,
+                workload="deep_coach" if role != "fast" else "simple_coach",
+                input_tokens=input_tokens or 0,
+                output_tokens=output_tokens or 0,
+                estimated_cost_usd=estimated_cost or 0,
+                latency_ms=audit.latency_ms,
+                web_search_calls=1 if public_grounding is True else 0,
+                error_type=fallback_reason if fallback else None,
+            ),
+        )
         try:
             async with asyncio.timeout(self.settings.ai_audit_timeout_seconds):
                 await self.audit_repository.save(audit)
@@ -2105,42 +2260,6 @@ class CoachService:
         except Exception:  # noqa: BLE001
             # Audit persistence must never leak context or make coaching fail.
             return
-
-    async def generate_check_in(
-        self, request: CoachCheckInRequest
-    ) -> CoachCheckInResponse:
-        """Generate a short check-in from a bounded, deterministic seed.
-
-        Check-ins do not create a conversation or carry transient learner
-        content.  The synthetic conversation identifier is used only to keep
-        invocation audits owner-scoped and deletable with the generated job.
-        """
-        bounded_context = {
-            **request.context,
-            "checkIn": {
-                "type": request.type,
-                "title": request.title,
-                "deterministicContent": request.deterministicContent,
-                "evidence": [item.model_dump() for item in request.evidence],
-            },
-        }
-        output = await self.respond(
-            CoachRequest(
-                requestId=request.requestId,
-                learnerId=request.learnerId,
-                conversationId=request.conversationId,
-                question=(
-                    "Write a concise in-app CP/DSA coaching check-in for this "
-                    "learner. Preserve uncertainty and the supplied evidence. "
-                    "Do not propose actions or include links."
-                ),
-                context=bounded_context,
-            )
-        )
-        return CoachCheckInResponse(
-            content=output.answer[:4_000],
-            evidence=output.evidence or request.evidence,
-        )
 
 
 @lru_cache

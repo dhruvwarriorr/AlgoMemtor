@@ -1,44 +1,88 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
 from typing import Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_groq import ChatGroq
 
-from .settings import AiSettings, LlmProvider
+from .providers import get_provider
+from .settings import AiSettings, ModelRole
 
 ThinkingLevel = Literal["none", "low", "medium", "high"]
+Workload = Literal[
+    "ranking",
+    "memory_generation",
+    "upsolve_picker",
+    "reports",
+    "simple_coach",
+    "doubt_helper",
+    "solution_explorer",
+    "deep_coach",
+    "code_debugging",
+    "algorithm_derivation",
+    "correctness_reasoning",
+]
+
+STRONG_WORKLOADS: frozenset[Workload] = frozenset(
+    {
+        "doubt_helper",
+        "solution_explorer",
+        "deep_coach",
+        "code_debugging",
+        "algorithm_derivation",
+        "correctness_reasoning",
+    }
+)
+
+
+@dataclass(frozen=True)
+class ModelRoute:
+    provider: Literal["local", "openrouter"]
+    role: ModelRole
+    model: str
+    workload: Workload
+
+
+def route_model(
+    settings: AiSettings,
+    workload: Workload,
+    *,
+    estimated_context_tokens: int = 0,
+) -> ModelRoute:
+    role: ModelRole = "strong" if workload in STRONG_WORKLOADS else "fast"
+    if (
+        settings.ai_provider == "openrouter"
+        and estimated_context_tokens >= settings.ai_huge_context_threshold_tokens
+    ):
+        role = "huge_context"
+    return ModelRoute(
+        provider=settings.ai_provider,
+        role=role,
+        model=settings.model_for_role(role),
+        workload=workload,
+    )
 
 
 def chat_model(
     settings: AiSettings,
     *,
-    provider: LlmProvider,
-    model: str,
+    workload: Workload,
     temperature: float,
     thinking_level: ThinkingLevel,
     max_tokens: int,
     timeout: float,
     max_retries: int,
+    estimated_context_tokens: int = 0,
+    force_role: ModelRole | None = None,
 ) -> BaseChatModel:
-    """A text-generation model from the configured provider.
-
-    Embeddings and Google-Search grounding are Gemini-only and do not use this.
-    """
-    if provider == "groq":
-        return ChatGroq(
-            model=model,
-            api_key=settings.groq_api_key,
-            temperature=temperature,
-            # Reasoning stays out of the answer text and tool arguments.
-            reasoning_format="parsed",
-            reasoning_effort=thinking_level,
-            max_tokens=min(max_tokens, settings.groq_max_completion_tokens),
-            timeout=timeout,
-            max_retries=max_retries,
-        )
-    return ChatGoogleGenerativeAI(
+    route = route_model(
+        settings, workload, estimated_context_tokens=estimated_context_tokens
+    )
+    role = force_role or route.role
+    model = settings.model_for_role(role)
+    return get_provider(settings).chat(
         model=model,
-        api_key=settings.llm_api_key,
+        role=role,
         temperature=temperature,
         thinking_level=thinking_level,
         max_tokens=max_tokens,
@@ -50,19 +94,20 @@ def chat_model(
 def generation_model(
     settings: AiSettings,
     *,
+    workload: Workload,
     temperature: float,
     max_tokens: int,
     timeout: float,
     max_retries: int,
+    estimated_context_tokens: int = 0,
 ) -> BaseChatModel:
-    """Ranking, memory, and roadmap-note calls: LLM_PROVIDER / LLM_MODEL."""
     return chat_model(
         settings,
-        provider=settings.llm_provider,
-        model=settings.llm_model,
+        workload=workload,
         temperature=temperature,
         thinking_level="low",
         max_tokens=max_tokens,
         timeout=timeout,
         max_retries=max_retries,
+        estimated_context_tokens=estimated_context_tokens,
     )

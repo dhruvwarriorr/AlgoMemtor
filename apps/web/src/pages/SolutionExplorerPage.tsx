@@ -11,15 +11,22 @@ import {
   type SolutionStatementSource,
 } from '@algomemtor/shared-contracts'
 
+import { ProviderLogo } from '@/components/brand/ProviderLogo'
 import {
   ArrowRight,
   BookOpen,
-  Crosshair,
   Lightbulb,
   RefreshCw,
+  Route,
+  Trophy,
 } from '@/components/icons/algo-icons'
+import {
+  GradientCard,
+  type GradientTone,
+} from '@/components/motion/GradientCard'
 import { AiLoader, type AiLoaderStep } from '@/components/motion/AiLoader'
 import PageContainer from '@/components/layout/PageContainer'
+import { DoubtHelperIcon } from '@/components/icons/mentor-icons'
 import PageHeader from '@/components/layout/PageHeader'
 import { ErrorState } from '@/components/states/ErrorState'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -124,8 +131,11 @@ function ApproachCard({
   return (
     <article className="min-w-0 rounded-xl border border-border bg-card p-4 sm:p-5">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-medium text-muted-foreground">
-          Approach {index + 1} of {total}
+        <span
+          aria-label={`Approach ${index + 1} of ${total}`}
+          className="mesh-card grid size-8 place-items-center rounded-lg font-heading text-sm font-bold text-white"
+        >
+          {index + 1}
         </span>
         <span
           className={cn(
@@ -264,6 +274,54 @@ function SourceList({
         </li>
       ))}
     </ul>
+  )
+}
+
+const ladderTones: Record<SolutionApproachKind, GradientTone> = {
+  brute_force: 'sand',
+  better: 'sky',
+  alternative: 'sky',
+  mathematical: 'sky',
+  optimized: 'green',
+}
+
+// The three approaches side by side, so the complexity gain reads at a glance.
+function ComplexityLadder({
+  approaches,
+}: {
+  approaches: readonly SolutionApproach[]
+}) {
+  return (
+    <ol
+      aria-label="Approaches from brute force to optimal"
+      className="grid min-w-0 gap-3 md:grid-cols-3"
+    >
+      {approaches.map((approach, index) => (
+        <li className="relative min-w-0" key={`${approach.kind}-${index}`}>
+          <GradientCard
+            className="h-full p-4"
+            icon={approach.kind === 'optimized' ? Trophy : Route}
+            tone={ladderTones[approach.kind]}
+          >
+            <p className="text-xs font-medium opacity-75">
+              {index + 1}. {kindLabels[approach.kind]}
+            </p>
+            <p className="mt-2 truncate font-mono text-xl font-bold tabular-nums">
+              {approach.timeComplexity}
+            </p>
+            <p className="mt-1 truncate text-xs opacity-75">
+              {approach.name}, space {approach.spaceComplexity}
+            </p>
+          </GradientCard>
+          {index < approaches.length - 1 ? (
+            <ArrowRight
+              aria-hidden="true"
+              className="absolute top-1/2 -right-3 z-10 hidden size-5 -translate-y-1/2 rounded-full bg-card p-0.5 text-muted-foreground shadow-soft md:block"
+            />
+          ) : null}
+        </li>
+      ))}
+    </ol>
   )
 }
 
@@ -407,6 +465,8 @@ function ExplorationView({
           </div>
         </SectionCard>
       ) : null}
+
+      <ComplexityLadder approaches={exploration.approaches} />
 
       <section aria-label="Approaches" className="grid min-w-0 gap-4">
         {exploration.approaches.map((approach, index) => (
@@ -844,7 +904,7 @@ function SolutionExplorerPage() {
                   className={buttonVariants({ variant: 'outline' })}
                   to={mentorToolPath('doubt_helper', submittedUrl ?? undefined)}
                 >
-                  <Crosshair aria-hidden="true" /> Get a hint instead
+                  <DoubtHelperIcon aria-hidden="true" /> Get a hint instead
                 </Link>
                 <Button
                   onClick={() => run({ attemptConfirmed: true })}
@@ -904,11 +964,18 @@ function SolutionExplorerPage() {
                       {item.problem.title}
                     </span>
                     <span className="block text-xs text-muted-foreground">
-                      {item.approachCount} approaches ·{' '}
+                      {item.approachCount} approaches,{' '}
                       {formatDateTime(item.generatedAt, false)}
                     </span>
                   </span>
-                  <ProviderBadge provider={item.problem.provider ?? 'other'} />
+                  {item.problem.provider === undefined ? (
+                    <ProviderBadge provider="other" />
+                  ) : (
+                    <ProviderLogo
+                      className="size-5 shrink-0"
+                      provider={item.problem.provider}
+                    />
+                  )}
                 </button>
               </li>
             ))}

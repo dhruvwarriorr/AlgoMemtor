@@ -364,7 +364,9 @@ export class HttpAiMentorClient implements AiMentorClient {
     body: unknown,
     schema: z.ZodType<T>,
     signal?: AbortSignal,
-    timeoutMs = this.options.timeoutMs ?? 150_000,
+    // Local models take minutes for long answers; the AI service enforces
+    // its own per-call limits.
+    timeoutMs = this.options.timeoutMs ?? 500_000,
   ): Promise<T> {
     const controller = new AbortController()
     const abortFromCaller = () => controller.abort(signal?.reason)
@@ -441,7 +443,7 @@ export class HttpAiMentorClient implements AiMentorClient {
       input,
       AiSolutionResponseSchema,
       signal,
-      Math.max(this.options.timeoutMs ?? 0, 280_000),
+      Math.max(this.options.timeoutMs ?? 0, 1_200_000),
     )
   }
 
@@ -464,7 +466,7 @@ export class HttpAiMentorClient implements AiMentorClient {
       input,
       AiUpsolvePickSchema,
       signal,
-      25_000,
+      45_000,
     )
   }
 

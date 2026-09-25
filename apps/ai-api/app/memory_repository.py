@@ -94,6 +94,8 @@ learner_memories = sa.Table(
     sa.Column("learner_corrected", sa.Boolean(), nullable=False),
     sa.Column("embedding", VECTOR(768), nullable=True),
     sa.Column("embedding_model", sa.String(length=128), nullable=True),
+    sa.Column("embedding_v2", VECTOR(1024), nullable=True),
+    sa.Column("embedding_version", sa.String(length=128), nullable=True),
     sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
     sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
     sa.Column("archived_at", sa.DateTime(timezone=True), nullable=True),
@@ -521,8 +523,8 @@ class MemoryRepository:
                     status=memory.status,
                     version=1,
                     learner_corrected=False,
-                    embedding=memory.embedding,
-                    embedding_model=memory.embedding_model,
+                    embedding_v2=memory.embedding,
+                    embedding_version=memory.embedding_model,
                 )
                 memory_upsert = memory_insert.on_conflict_do_update(
                     index_elements=[
@@ -543,26 +545,26 @@ class MemoryRepository:
                         ),
                         "structured_value": memory_insert.excluded.structured_value,
                         "updated_at": sa.func.now(),
-                        "embedding": sa.case(
+                        "embedding_v2": sa.case(
                             (
                                 learner_memories.c.statement
                                 != memory_insert.excluded.statement,
-                                memory_insert.excluded.embedding,
+                                memory_insert.excluded.embedding_v2,
                             ),
                             else_=sa.func.coalesce(
-                                learner_memories.c.embedding,
-                                memory_insert.excluded.embedding,
+                                learner_memories.c.embedding_v2,
+                                memory_insert.excluded.embedding_v2,
                             ),
                         ),
-                        "embedding_model": sa.case(
+                        "embedding_version": sa.case(
                             (
                                 learner_memories.c.statement
                                 != memory_insert.excluded.statement,
-                                memory_insert.excluded.embedding_model,
+                                memory_insert.excluded.embedding_version,
                             ),
                             else_=sa.func.coalesce(
-                                learner_memories.c.embedding_model,
-                                memory_insert.excluded.embedding_model,
+                                learner_memories.c.embedding_version,
+                                memory_insert.excluded.embedding_version,
                             ),
                         ),
                     },
@@ -693,9 +695,10 @@ class MemoryRepository:
         limit: int,
         confidence_threshold: float,
         similarity_threshold: float,
+        embedding_version: str | None = None,
     ) -> list[StoredMemory]:
-        query_embedding = sa.bindparam("query_embedding", type_=VECTOR(768))
-        distance = learner_memories.c.embedding.cosine_distance(query_embedding)
+        query_embedding = sa.bindparam("query_embedding", type_=VECTOR(1024))
+        distance = learner_memories.c.embedding_v2.cosine_distance(query_embedding)
         similarity = (sa.literal(1.0) - distance).label("similarity")
         statement = (
             sa.select(learner_memories, similarity)
@@ -703,7 +706,8 @@ class MemoryRepository:
                 learner_memories.c.learner_id == learner_id,
                 learner_memories.c.status == "active",
                 learner_memories.c.confidence >= Decimal(str(confidence_threshold)),
-                learner_memories.c.embedding.is_not(None),
+                learner_memories.c.embedding_v2.is_not(None),
+                learner_memories.c.embedding_version == embedding_version,
                 similarity >= similarity_threshold,
             )
             .order_by(distance.asc(), learner_memories.c.updated_at.desc())
@@ -870,8 +874,8 @@ class MemoryRepository:
                     status="active",
                     version=max(int(row["version"]) for row in source_rows) + 1,
                     learner_corrected=False,
-                    embedding=None,
-                    embedding_model=None,
+                    embedding_v2=None,
+                    embedding_version=None,
                 )
                 .on_conflict_do_update(
                     index_elements=[
@@ -1013,8 +1017,8 @@ class MemoryRepository:
                     status=status,
                     version=1,
                     learner_corrected=False,
-                    embedding=None,
-                    embedding_model=None,
+                    embedding_v2=None,
+                    embedding_version=None,
                     created_at=now,
                     updated_at=now,
                 )
@@ -1135,8 +1139,8 @@ class MemoryRepository:
                         version=int(current["version"]) + 1,
                         supersedes_memory_id=memory_id,
                         learner_corrected=True,
-                        embedding=embedding,
-                        embedding_model=embedding_model,
+                        embedding_v2=embedding,
+                        embedding_version=embedding_model,
                     )
                     .returning(learner_memories)
                 )

@@ -54,13 +54,14 @@ class RoadmapNoteModel(Protocol):
     ) -> RoadmapNoteClassification: ...
 
 
-class GeminiRoadmapNoteModel:
+class ProviderRoadmapNoteModel:
     def __init__(self, settings: AiSettings) -> None:
         model = generation_model(
             settings,
+            workload="simple_coach",
             temperature=0.1,
             max_tokens=512,
-            timeout=min(settings.llm_timeout_seconds, 20),
+            timeout=min(settings.ai_request_timeout_seconds, 20),
             max_retries=2,
         )
         self.structured_model = model.with_structured_output(
@@ -82,7 +83,9 @@ class GeminiRoadmapNoteModel:
         )
         parsed = result.get("parsed")
         if not isinstance(parsed, RoadmapNoteClassification):
-            raise RoadmapNoteGenerationError("Gemini returned no validated output.")
+            raise RoadmapNoteGenerationError(
+                "The configured provider returned no validated output."
+            )
         return parsed
 
 
@@ -100,7 +103,7 @@ class RoadmapNoteService:
             return self.model
         if not self.settings.generation_api_key:
             raise RoadmapNoteNotConfiguredError
-        self.model = GeminiRoadmapNoteModel(self.settings)
+        self.model = ProviderRoadmapNoteModel(self.settings)
         return self.model
 
     async def classify(self, request: RoadmapNoteRequest) -> RoadmapNoteResponse:
@@ -116,7 +119,7 @@ class RoadmapNoteService:
         topic = classification.topic
         status = classification.status
         if topic is not None and topic not in allowed_slugs:
-            # Gemini named a topic outside the supplied candidates: treat as
+            # The model named a topic outside the supplied candidates: treat as
             # unresolved rather than risk writing to the wrong roadmap slug.
             topic = None
         if topic is None:

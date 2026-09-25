@@ -563,7 +563,9 @@ function buildPracticePool(
       }
     }
   }
-  // Level: typical rating of recent rated solves, else platform rating.
+  // Level: the current Codeforces rating, else the typical rating of recent
+  // rated solves. Solves skew low (practice volume on easy problems), so
+  // they only stand in when there is no rating.
   const recentRated = [...solved.values()]
     .map((row) => row as { rating?: number; provider: ProviderKey })
     .filter((row) => row.provider === 'codeforces' && row.rating !== undefined)
@@ -572,21 +574,30 @@ function buildPracticePool(
   const cfRating = input.providerProfiles.find(
     (profile) => profile.provider === 'codeforces',
   )?.rating
+  const observedLevel = cfRating ?? median(recentRated)
   const level =
-    median(recentRated) ??
-    cfRating ??
+    observedLevel ??
     (input.difficultyComfort === 'challenging'
       ? 1600
       : input.difficultyComfort === 'medium'
         ? 1200
         : 1000)
   const target = Math.round((level + 200) / 100) * 100
+  // Unrated problems (LeetCode, CSES) follow the observed level when there is
+  // one: an onboarding "new to rated problems" should not keep a 1600-rated
+  // learner on Easy problems.
   const targetDifficulties = new Set(
-    input.difficultyComfort === 'challenging'
-      ? ['medium', 'hard']
-      : input.difficultyComfort === 'medium'
-        ? ['easy', 'medium', 'hard']
-        : ['easy', 'medium'],
+    observedLevel !== undefined
+      ? observedLevel >= 1500
+        ? ['medium', 'hard']
+        : observedLevel >= 1100
+          ? ['easy', 'medium', 'hard']
+          : ['easy', 'medium']
+      : input.difficultyComfort === 'challenging'
+        ? ['medium', 'hard']
+        : input.difficultyComfort === 'medium'
+          ? ['easy', 'medium', 'hard']
+          : ['easy', 'medium'],
   )
   const byProvider = new Map<ProviderKey, ExternalProblemSummary[]>()
   for (const problem of catalogById.values()) {

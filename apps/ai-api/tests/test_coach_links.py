@@ -100,6 +100,7 @@ def test_latex_math_becomes_plain_text() -> None:
         "Map bounds (e.g., $O(N \\log N)$ vs $O(N^2)$), a_i with $a_{i} \\le 10^{9}$."
     ) == ("Map bounds (e.g., O(N log N) vs O(N²)), a_i with a_i ≤ 10⁹.")
     assert plain_math("It costs $5 and $10.") == "It costs $5 and $10."
+    assert plain_math("Time: $ O((V + E) \\log V) $.") == "Time: O((V + E) log V)."
     assert plain_math("`$x$` stays") == "`$x$` stays"
     output = coerce_coach_output({"answer": "Runs in $O(n \\cdot m)$ time."})
     assert output is not None

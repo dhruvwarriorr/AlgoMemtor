@@ -13,13 +13,10 @@ from app.coach_output import coerce_coach_output, redact_text, restrict_links
 from app.coach_service import (
     CoachRateLimitedError,
     CoachService,
-    GeminiCoachModel,
-    HybridCoachModel,
     ModelRequestThrottle,
+    ProviderCoachModel,
     _human_message,
-    _transcribe_groq_media,
     is_rate_limit_error,
-    route_coach_provider,
 )
 from app.coach_tools import WorkspaceTools, prefetch_plan, verdict_group
 from app.settings import AiSettings
@@ -159,7 +156,8 @@ def settings(**updates: Any) -> AiSettings:
     values: dict[str, Any] = {
         "_env_file": None,
         "internal_service_token": "internal-test-token",
-        "llm_api_key": "test-key",
+        # These tests exercise the multi-step agent path.
+        "local_ai_single_call": False,
     }
     values.update(updates)
     return AiSettings(**values)
@@ -288,7 +286,7 @@ def test_verdict_groups_do_not_confuse_prefixes() -> None:
 
 
 class ScriptedModel:
-    """Stands in for a tool-bound Gemini model and records every call."""
+    """Stands in for a tool-bound chat model and records every call."""
 
     def __init__(self, replies: list[AIMessage]) -> None:
         self.replies = replies
@@ -306,9 +304,9 @@ class ScriptedModel:
 
 def agent_model(
     replies: list[AIMessage], **updates: Any
-) -> tuple[GeminiCoachModel, ScriptedModel]:
+) -> tuple[ProviderCoachModel, ScriptedModel]:
     scripted = ScriptedModel(replies)
-    model = object.__new__(GeminiCoachModel)
+    model = object.__new__(ProviderCoachModel)
     model.settings = settings(**updates)
     model.services = None
     model.base_model = scripted
@@ -445,7 +443,7 @@ class RateLimitedModel(ScriptedModel):
 @pytest.mark.asyncio
 async def test_rate_limits_are_surfaced_without_a_second_model_call() -> None:
     scripted = RateLimitedModel([])
-    model = object.__new__(GeminiCoachModel)
+    model = object.__new__(ProviderCoachModel)
     model.settings = settings()
     model.services = None
     model.base_model = scripted
@@ -511,6 +509,42 @@ async def test_prefetched_rows_reach_the_first_model_step() -> None:
 
 
 @pytest.mark.asyncio
+async def test_weak_area_questions_prefetch_practice_for_the_weakest_tag() -> None:
+    workspace = {
+        **WORKSPACE,
+        "solved": [
+            {"id": f"codeforces:{index}A", "provider": "codeforces", "tags": ["dp"]}
+            for index in range(10)
+        ]
+        + [{"id": "codeforces:99A", "provider": "codeforces", "tags": ["trees"]}],
+        "submissions": [
+            {
+                "id": f"codeforces:{index}B",
+                "provider": "codeforces",
+                "verdict": "WRONG_ANSWER",
+                "accepted": False,
+                "at": "2026-09-01T00:00:00Z",
+                "tags": ["trees", "cses"],
+            }
+            for index in range(8)
+        ],
+    }
+    model = object.__new__(ProviderCoachModel)
+    prefetched = await model._prefetch_workspace(
+        request("Suggest problems to fix my weakest area.").model_copy(
+            update={"workspace": workspace}
+        )
+    )
+    breakdown = prefetched["get_topic_breakdown"]
+    assert breakdown["weakestTags"][0]["tag"] == "trees"
+    # A platform's own tag is a source, not a topic.
+    assert "cses" not in [item["tag"] for item in breakdown["weakestTags"]]
+    practice = prefetched["find_practice_problems"]
+    assert practice["forWeakestTag"] == "trees"
+    assert [item["id"] for item in practice["items"]] == ["codeforces:1900C"]
+
+
+@pytest.mark.asyncio
 async def test_throttle_waits_or_refuses_instead_of_overspending() -> None:
     throttle = ModelRequestThrottle(per_minute=1, max_wait_seconds=0.01)
     await throttle.acquire()
@@ -519,143 +553,39 @@ async def test_throttle_waits_or_refuses_instead_of_overspending() -> None:
     await ModelRequestThrottle(per_minute=0).acquire()
 
 
-def test_coach_model_and_prices_can_be_overridden() -> None:
-    configured = settings(
-        coach_llm_model="gemini-3.5-flash",
-        coach_input_price_per_million_usd="1.50",
-    )
-    assert configured.effective_coach_model == "gemini-3.5-flash"
-    assert [str(value) for value in configured.effective_coach_prices] == [
-        "1.50",
-        "2.50",
-    ]
-    assert settings().effective_coach_model == "gemini-3.5-flash-lite"
-
-
-def test_coach_can_run_on_groq_while_other_calls_stay_on_gemini() -> None:
+def test_local_provider_uses_the_single_ollama_model() -> None:
     from app.coach_service import coach_chat_model
-    from langchain_google_genai import ChatGoogleGenerativeAI
-    from langchain_groq import ChatGroq
+    from langchain_openai import ChatOpenAI
 
-    groq = settings(
-        coach_llm_provider="groq",
-        coach_llm_model="qwen/qwen3.8-27b",
-        groq_api_key="gsk-test",
+    configured = settings()
+    model = coach_chat_model(configured)
+    assert configured.effective_coach_provider == "local"
+    assert configured.effective_coach_model == "qwen3:8b-q4_K_M"
+    assert isinstance(model, ChatOpenAI)
+    assert model.model_name == "qwen3:8b-q4_K_M"
+
+
+def test_openrouter_provider_uses_the_configured_role_models() -> None:
+    from app.llm import route_model
+
+    configured = settings(
+        app_environment="production",
+        ai_provider="openrouter",
+        openrouter_api_key="test-key",
     )
-    assert groq.coach_api_key == "gsk-test"
-    assert groq.llm_api_key == "test-key"
-    # The on-demand tier accepts less than 1,000 output tokens per minute.
-    assert groq.effective_coach_max_output_tokens == 8_192
-    model = coach_chat_model(groq)
-    assert isinstance(model, ChatGroq)
-    assert model.model_name == "qwen/qwen3.8-27b"
-    assert model.reasoning_format == "parsed"
-
-    gemini = settings()
-    assert gemini.coach_api_key == "test-key"
-    assert isinstance(coach_chat_model(gemini, fast=True), ChatGoogleGenerativeAI)
-
-
-def test_groq_coach_without_a_groq_key_is_not_configured() -> None:
-    from app.coach_service import CoachNotConfiguredError, CoachService
-
-    service = CoachService(
-        settings(coach_llm_provider="groq", coach_llm_model="qwen/qwen3.8-27b")
+    assert route_model(configured, "ranking").model == "openai/gpt-oss-20b"
+    assert route_model(configured, "solution_explorer").model == "openai/gpt-oss-120b"
+    assert (
+        route_model(
+            configured,
+            "deep_coach",
+            estimated_context_tokens=100_000,
+        ).model
+        == "qwen/qwen3.8-flash"
     )
-    with pytest.raises(CoachNotConfiguredError):
-        service.get_model()
 
 
-def test_llm_provider_moves_generation_and_coach_to_groq() -> None:
-    from app.llm import generation_model
-    from langchain_groq import ChatGroq
-
-    groq = settings(
-        llm_provider="groq",
-        llm_model="qwen/qwen3.8-27b",
-        groq_api_key="gsk-test",
-        coach_llm_provider="",
-    )
-    # Blank COACH_LLM_PROVIDER follows LLM_PROVIDER.
-    assert groq.effective_coach_provider == "groq"
-    assert groq.generation_api_key == "gsk-test"
-    # The Gemini key still serves embeddings and web grounding.
-    assert groq.llm_api_key == "test-key"
-    model = generation_model(
-        groq, temperature=0.2, max_tokens=50_000, timeout=10, max_retries=0
-    )
-    assert isinstance(model, ChatGroq)
-    assert model.max_tokens == 8_192
-    assert model.reasoning_effort == "low"
-
-
-@pytest.mark.asyncio
-async def test_groq_coach_uses_one_grounded_plain_call() -> None:
-    from langchain_core.messages import AIMessage
-
-    class PlainModel:
-        def __init__(self) -> None:
-            self.calls: list[list[Any]] = []
-
-        async def ainvoke(self, messages: list[Any]) -> AIMessage:
-            self.calls.append(messages)
-            return AIMessage(
-                content=(
-                    "Review the two recent contest misses.\n\n"
-                    "PROBLEM_IDS: codeforces:1A, not-an-id\n"
-                    "FOLLOW_UPS: What went wrong in Round A? | How do I prep?"
-                ),
-                response_metadata={"finish_reason": "stop"},
-            )
-
-    scripted = PlainModel()
-    model = object.__new__(GeminiCoachModel)
-    model.settings = settings(
-        coach_llm_provider="groq",
-        coach_llm_model="qwen/qwen3.8-27b",
-        groq_api_key="gsk-test",
-    )
-    model.base_model = scripted
-    model.throttle = ModelRequestThrottle(per_minute=0)
-    result = await model.respond(request("How did my last contests go?"))
-    assert result.output.answer == "Review the two recent contest misses."
-    assert result.output.presentation is not None
-    assert result.output.presentation.problemIds == ["codeforces:1A"]
-    assert result.output.presentation.suggestedQuestions == [
-        "What went wrong in Round A?",
-        "How do I prep?",
-    ]
-    assert len(scripted.calls) == 1
-    prompt = scripted.calls[0][1].content
-    assert "Round A" in prompt
-    assert "prefetchedToolResults" in prompt
-
-
-@pytest.mark.asyncio
-async def test_groq_answer_cut_by_the_token_limit_is_closed_and_flagged() -> None:
-    from langchain_core.messages import AIMessage
-
-    class CutModel:
-        async def ainvoke(self, _messages: list[Any]) -> AIMessage:
-            return AIMessage(
-                content="Use a BIT.\n\n```cpp\nint query(int i) {",
-                response_metadata={"finish_reason": "length"},
-            )
-
-    model = object.__new__(GeminiCoachModel)
-    model.settings = settings(
-        coach_llm_provider="groq",
-        coach_llm_model="qwen/qwen3.8-27b",
-        groq_api_key="gsk-test",
-    )
-    model.base_model = CutModel()
-    model.throttle = ModelRequestThrottle(per_minute=0)
-    result = await model.respond(request("What is a Fenwick tree?"))
-    assert result.output.answer.count("```") == 2
-    assert result.output.answer.endswith("_(Answer shortened. Ask me to continue.)_")
-
-
-def test_groq_image_attachment_uses_openai_image_url_format() -> None:
+def test_image_attachment_uses_openai_image_url_format() -> None:
     attached = CoachRequest.model_validate(
         {
             **request("Explain this diagram").model_dump(),
@@ -665,12 +595,12 @@ def test_groq_image_attachment_uses_openai_image_url_format() -> None:
             },
         }
     )
-    message = _human_message(attached, provider="groq")
+    message = _human_message(attached, provider="openrouter")
     assert message.content[1]["type"] == "image_url"
     assert message.content[1]["image_url"]["url"].startswith("data:image/png;base64,")
 
 
-def test_groq_pdf_is_extracted_locally_without_sending_binary() -> None:
+def test_local_pdf_is_extracted_without_sending_binary() -> None:
     buffer = BytesIO()
     writer = PdfWriter()
     writer.add_blank_page(width=100, height=100)
@@ -682,84 +612,7 @@ def test_groq_pdf_is_extracted_locally_without_sending_binary() -> None:
             "transientMedia": {"mimeType": "application/pdf", "data": encoded},
         }
     )
-    message = _human_message(attached, provider="groq")
+    message = _human_message(attached, provider="local")
     assert isinstance(message.content, str)
     assert "No extractable text" in message.content
     assert encoded not in message.content
-
-
-@pytest.mark.asyncio
-async def test_groq_audio_is_transcribed_for_current_turn_only(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class Transcriptions:
-        async def create(self, **kwargs: Any) -> Any:
-            assert kwargs["model"] == "whisper-large-v3-turbo"
-            return type("Transcript", (), {"text": "Use breadth-first search."})()
-
-    class FakeGroq:
-        def __init__(self, **kwargs: Any) -> None:
-            self.audio = type("Audio", (), {"transcriptions": Transcriptions()})()
-
-    monkeypatch.setattr("app.coach_service.AsyncGroq", FakeGroq)
-    attached = CoachRequest.model_validate(
-        {
-            **request("What did I say?").model_dump(),
-            "transientMedia": {
-                "mimeType": "audio/webm",
-                "data": base64.b64encode(b"audio").decode(),
-            },
-        }
-    )
-    prepared = await _transcribe_groq_media(settings(groq_api_key="gsk-test"), attached)
-    assert prepared.transientMedia is None
-    assert "Use breadth-first search" in prepared.transientContext
-    assert attached.transientMedia is not None
-
-
-def test_hybrid_router_uses_context_needs_not_topic_hardcoding() -> None:
-    assert route_coach_provider(request("Explain the loop invariant")) == "groq"
-    assert route_coach_provider(request("Review my recent contests")) == "gemini"
-    assert (
-        route_coach_provider(
-            request("Explain this code").model_copy(
-                update={"transientContext": "x" * 1_000}
-            )
-        )
-        == "gemini"
-    )
-
-
-def test_hybrid_service_builds_both_models_when_both_keys_exist() -> None:
-    service = CoachService(
-        settings(
-            coach_hybrid_enabled=True,
-            coach_llm_provider="groq",
-            coach_llm_model="qwen/qwen3.8-27b",
-            groq_api_key="gsk-test",
-        )
-    )
-    assert isinstance(service.get_model(), HybridCoachModel)
-
-
-@pytest.mark.asyncio
-async def test_hybrid_coach_retries_only_with_other_provider() -> None:
-    class Provider:
-        def __init__(self, *, fails: bool) -> None:
-            self.fails = fails
-            self.calls = 0
-
-        async def respond(self, incoming: CoachRequest) -> Any:
-            self.calls += 1
-            if self.fails:
-                raise RuntimeError("429 rate limit")
-            return coerce_coach_output({"answer": "Here is the invariant."})
-
-    qwen = Provider(fails=True)
-    gemini = Provider(fails=False)
-    result = await HybridCoachModel(gemini, qwen).respond(
-        request("Explain the loop invariant")
-    )
-    assert result.answer == "Here is the invariant."
-    assert qwen.calls == 1
-    assert gemini.calls == 1

@@ -185,7 +185,11 @@ async def test_small_talk_falls_back_to_a_safe_reply_when_the_model_fails() -> N
 @pytest.mark.asyncio
 async def test_small_talk_without_any_model_reports_not_configured() -> None:
     service = CoachService(
-        settings(llm_api_key="", groq_api_key=""),
+        settings(
+            app_environment="production",
+            ai_provider="openrouter",
+            openrouter_api_key="",
+        ),
         audit_repository=AuditRepository(),
     )
 

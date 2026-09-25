@@ -1,24 +1,22 @@
 from typing import Any
 
 import pytest
-from fastapi.testclient import TestClient
-
 from app.main import app
 from app.roadmap_note_models import RoadmapNoteClassification, RoadmapNoteRequest
 from app.roadmap_note_service import (
-    GeminiRoadmapNoteModel,
+    ProviderRoadmapNoteModel,
     RoadmapNoteGenerationError,
     RoadmapNoteNotConfiguredError,
     RoadmapNoteService,
     get_roadmap_note_service,
 )
 from app.settings import AiSettings, get_ai_settings
+from fastapi.testclient import TestClient
 
 
 def settings(**updates: Any) -> AiSettings:
     values = {
         "internal_service_token": "internal-test-token",
-        "llm_api_key": "test-key",
         **updates,
     }
     return AiSettings(_env_file=None, **values)
@@ -57,7 +55,9 @@ async def test_service_returns_classification_from_the_model() -> None:
             )
         ),
     )
-    result = await service.classify(RoadmapNoteRequest.model_validate(request_payload()))
+    result = await service.classify(
+        RoadmapNoteRequest.model_validate(request_payload())
+    )
 
     assert result.topic == "sliding-window"
     assert result.status == "practiced"
@@ -69,10 +69,14 @@ async def test_service_passes_through_no_change() -> None:
     service = RoadmapNoteService(
         settings(),
         StaticModel(
-            RoadmapNoteClassification(topic=None, status="no_change", rationale="Unclear.")
+            RoadmapNoteClassification(
+                topic=None, status="no_change", rationale="Unclear."
+            )
         ),
     )
-    result = await service.classify(RoadmapNoteRequest.model_validate(request_payload()))
+    result = await service.classify(
+        RoadmapNoteRequest.model_validate(request_payload())
+    )
 
     assert result.topic is None
     assert result.status == "no_change"
@@ -88,7 +92,9 @@ async def test_service_rejects_a_topic_outside_the_candidate_list() -> None:
             )
         ),
     )
-    result = await service.classify(RoadmapNoteRequest.model_validate(request_payload()))
+    result = await service.classify(
+        RoadmapNoteRequest.model_validate(request_payload())
+    )
 
     assert result.topic is None
     assert result.status == "no_change"
@@ -99,10 +105,14 @@ async def test_service_forces_no_change_when_no_topic_is_identified() -> None:
     service = RoadmapNoteService(
         settings(),
         StaticModel(
-            RoadmapNoteClassification(topic=None, status="practiced", rationale="Bad output.")
+            RoadmapNoteClassification(
+                topic=None, status="practiced", rationale="Bad output."
+            )
         ),
     )
-    result = await service.classify(RoadmapNoteRequest.model_validate(request_payload()))
+    result = await service.classify(
+        RoadmapNoteRequest.model_validate(request_payload())
+    )
 
     assert result.topic is None
     assert result.status == "no_change"
@@ -120,7 +130,9 @@ async def test_service_redacts_an_unsafe_rationale() -> None:
             )
         ),
     )
-    result = await service.classify(RoadmapNoteRequest.model_validate(request_payload()))
+    result = await service.classify(
+        RoadmapNoteRequest.model_validate(request_payload())
+    )
 
     assert "https://" not in result.rationale
     assert result.status == "skip_for_now"
@@ -128,7 +140,13 @@ async def test_service_redacts_an_unsafe_rationale() -> None:
 
 @pytest.mark.asyncio
 async def test_service_raises_when_not_configured() -> None:
-    service = RoadmapNoteService(settings(llm_api_key=""))
+    service = RoadmapNoteService(
+        settings(
+            app_environment="production",
+            ai_provider="openrouter",
+            openrouter_api_key="",
+        )
+    )
 
     with pytest.raises(RoadmapNoteNotConfiguredError):
         await service.classify(RoadmapNoteRequest.model_validate(request_payload()))
@@ -143,7 +161,7 @@ async def test_service_wraps_model_failures() -> None:
 
 
 @pytest.mark.asyncio
-async def test_gemini_model_sends_untrusted_note_and_candidate_topics() -> None:
+async def test_provider_model_sends_untrusted_note_and_candidate_topics() -> None:
     request = RoadmapNoteRequest.model_validate(request_payload())
 
     class RecordingStructuredModel:
@@ -161,7 +179,7 @@ async def test_gemini_model_sends_untrusted_note_and_candidate_topics() -> None:
             }
 
     structured = RecordingStructuredModel()
-    model = GeminiRoadmapNoteModel.__new__(GeminiRoadmapNoteModel)
+    model = ProviderRoadmapNoteModel.__new__(ProviderRoadmapNoteModel)
     model.structured_model = structured
 
     result = await model.classify(request)
@@ -192,7 +210,9 @@ def test_internal_endpoint_requires_configured_constant_time_token() -> None:
 
     try:
         with TestClient(app) as client:
-            missing = client.post("/internal/coach/roadmap-note", json=request_payload())
+            missing = client.post(
+                "/internal/coach/roadmap-note", json=request_payload()
+            )
             wrong = client.post(
                 "/internal/coach/roadmap-note",
                 headers={"X-Internal-Service-Token": "wrong"},
@@ -216,10 +236,16 @@ def test_internal_endpoint_requires_configured_constant_time_token() -> None:
     }
 
 
-def test_internal_endpoint_is_unavailable_when_classification_is_not_configured() -> None:
+def test_internal_endpoint_is_unavailable_when_classification_is_not_configured() -> (
+    None
+):
     app.dependency_overrides[get_ai_settings] = lambda: settings()
     app.dependency_overrides[get_roadmap_note_service] = lambda: RoadmapNoteService(
-        settings(llm_api_key="")
+        settings(
+            app_environment="production",
+            ai_provider="openrouter",
+            openrouter_api_key="",
+        )
     )
 
     try:

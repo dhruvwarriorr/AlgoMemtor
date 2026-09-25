@@ -49,6 +49,8 @@ knowledge_chunks = sa.Table(
     sa.Column("content_checksum", sa.String(length=64)),
     sa.Column("embedding", VECTOR(768)),
     sa.Column("embedding_model", sa.String(length=128)),
+    sa.Column("embedding_v2", VECTOR(1024)),
+    sa.Column("embedding_version", sa.String(length=128)),
     schema="ai",
 )
 
@@ -148,8 +150,8 @@ class KnowledgeRepository:
                             content_checksum=hashlib.sha256(
                                 chunk.content.encode()
                             ).hexdigest(),
-                            embedding=None,
-                            embedding_model=None,
+                            embedding_v2=None,
+                            embedding_version=None,
                         )
                         .on_conflict_do_update(
                             index_elements=[knowledge_chunks.c.chunk_key],
@@ -187,7 +189,12 @@ class KnowledgeRepository:
                 knowledge_chunks.c.topic,
                 knowledge_chunks.c.title,
                 knowledge_chunks.c.content,
-            ).where(knowledge_chunks.c.embedding.is_(None))
+            ).where(
+                sa.or_(
+                    knowledge_chunks.c.embedding_v2.is_(None),
+                    knowledge_chunks.c.embedding_version != embedding_model,
+                )
+            )
         )
         pending = list(rows.mappings())
         if not pending:
@@ -215,7 +222,7 @@ class KnowledgeRepository:
             await connection.execute(
                 knowledge_chunks.update()
                 .where(knowledge_chunks.c.chunk_key == chunk_key)
-                .values(embedding=vector, embedding_model=embedding_model)
+                .values(embedding_v2=vector, embedding_version=embedding_model)
             )
 
     async def search(
@@ -223,6 +230,7 @@ class KnowledgeRepository:
         query: str,
         limit: int = 8,
         query_embedding: list[float] | None = None,
+        embedding_version: str | None = None,
     ) -> list[KnowledgeChunk]:
         result: list[KnowledgeChunk] = []
         async with self.engine.connect() as connection:
@@ -234,12 +242,16 @@ class KnowledgeRepository:
             ]
             distance = None
             if query_embedding is not None:
-                distance = knowledge_chunks.c.embedding.cosine_distance(
-                    sa.bindparam("query_embedding", type_=VECTOR(768))
+                distance = knowledge_chunks.c.embedding_v2.cosine_distance(
+                    sa.bindparam("query_embedding", type_=VECTOR(1024))
                 ).label("distance")
                 columns.append(distance)
             statement = sa.select(*columns)
             if distance is not None:
+                statement = statement.where(
+                    knowledge_chunks.c.embedding_v2.is_not(None),
+                    knowledge_chunks.c.embedding_version == embedding_version,
+                )
                 statement = statement.order_by(distance.asc().nulls_last())
             else:
                 statement = statement.order_by(

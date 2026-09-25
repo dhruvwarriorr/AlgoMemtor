@@ -4,11 +4,11 @@ import {
   ProblemHelpSessionResponseSchema,
   ProblemHelpSessionsResponseSchema,
   ProgressReportResponseSchema,
-  RevisionsResponseSchema,
   SolutionAccessResponseSchema,
   SolutionExplorationsResponseSchema,
   StartProblemHelpRequestSchema,
   ProblemHelpTurnRequestSchema,
+  UPSOLVE_CHART_WINDOW_DAYS,
   UpsolveResponseSchema,
   type ProblemHelpSession,
   type ProblemHelpTurn,
@@ -206,6 +206,7 @@ export const mentorHandlers: RequestHandler[] = [
           queue: [],
           contests: [],
           summary: {
+            windowDays: UPSOLVE_CHART_WINDOW_DAYS,
             flagged: 0,
             upsolved: 0,
             skipped: 0,
@@ -213,7 +214,6 @@ export const mentorHandlers: RequestHandler[] = [
             completionRate: null,
             trend: [],
           },
-          revisionsDue: 0,
           linkedProviders: [],
           generatedAt: now(),
         },
@@ -223,14 +223,6 @@ export const mentorHandlers: RequestHandler[] = [
   http.put(
     '/api/upsolve/items/:provider/:externalId',
     () => new HttpResponse(null, { status: 204 }),
-  ),
-  http.get('/api/revisions', () =>
-    HttpResponse.json(
-      RevisionsResponseSchema.parse({
-        data: [],
-        meta: { due: 0, upcoming: 0, completed: 0 },
-      }),
-    ),
   ),
   http.get('/api/contest-analysis', () =>
     HttpResponse.json(

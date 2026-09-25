@@ -5,14 +5,16 @@ import type {
 
 import {
   BarChart3,
-  BookOpen,
-  Crosshair,
-  Swords,
-  Trophy,
-  TrendingUp,
   Lightbulb,
   type IconComponent,
 } from '@/components/icons/algo-icons-line'
+import {
+  ContestAnalysisIcon,
+  DoubtHelperIcon,
+  ProgressReportIcon,
+  SolutionExplorerIcon,
+  UpsolveIcon,
+} from '@/components/icons/mentor-icons'
 
 export type MentorTool = {
   feature: MentorFeature
@@ -30,35 +32,35 @@ export const mentorTools: Record<MentorFeature, MentorTool> = {
     label: 'Doubt Helper',
     path: '/doubt-helper',
     description: 'Layered hints and bug diagnosis for a specific problem.',
-    icon: Crosshair,
+    icon: DoubtHelperIcon,
   },
   solution_explorer: {
     feature: 'solution_explorer',
     label: 'Solution Explorer',
     path: '/solutions',
     description: 'Brute force, optimized and alternative approaches.',
-    icon: BookOpen,
+    icon: SolutionExplorerIcon,
   },
   upsolve: {
     feature: 'upsolve',
     label: 'Upsolve',
     path: '/upsolve',
     description: 'Your prioritized queue of missed contest problems.',
-    icon: Swords,
+    icon: UpsolveIcon,
   },
   contest_analysis: {
     feature: 'contest_analysis',
     label: 'Contest analysis',
     path: '/contest-analysis',
     description: 'Time use, panic signals and strategy per contest.',
-    icon: Trophy,
+    icon: ContestAnalysisIcon,
   },
   progress_report: {
     feature: 'progress_report',
     label: 'Progress report',
     path: '/progress/report',
     description: 'Accuracy, speed, rating trajectory and hint reliance.',
-    icon: TrendingUp,
+    icon: ProgressReportIcon,
   },
 }
 

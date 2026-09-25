@@ -1,5 +1,6 @@
 import {
   ProgressReportSchema,
+  UPSOLVE_CHART_WINDOW_DAYS,
   type ContestMetrics,
   type ImprovementTopic,
   type ProblemHelpSession,
@@ -114,7 +115,6 @@ export function buildProgressReport(input: {
   helpSessions: readonly ProblemHelpSession[]
   metadata: ReadonlyMap<string, ProblemMeta>
   upsolvePending: number
-  revisionsDue: number
   timeZone: string
   now: Date
 }): ProgressReport {
@@ -200,17 +200,31 @@ export function buildProgressReport(input: {
   }
   const todayNumber = dayNumber(today)
   const activeNumbers = [...activeDays].map(dayNumber).sort((a, b) => a - b)
-  const activeSet = new Set(activeNumbers)
+  // Streaks count days with a solve, as on the Progress page; active days
+  // (any submission) still drive the activity counts below.
+  const solveDays = new Set<string>()
+  for (const submission of activity.submissions) {
+    if (submission.isAccepted) {
+      solveDays.add(dayKey(submission.occurredAt, timeZone))
+    }
+  }
+  for (const solved of activity.solved) {
+    if (solved.occurredAt !== undefined) {
+      solveDays.add(dayKey(solved.occurredAt, timeZone))
+    }
+  }
+  const solveNumbers = [...solveDays].map(dayNumber).sort((a, b) => a - b)
+  const solveSet = new Set(solveNumbers)
   let currentStreak = 0
-  let cursor = activeSet.has(todayNumber) ? todayNumber : todayNumber - 1
-  while (activeSet.has(cursor)) {
+  let cursor = solveSet.has(todayNumber) ? todayNumber : todayNumber - 1
+  while (solveSet.has(cursor)) {
     currentStreak += 1
     cursor -= 1
   }
   let longestStreak = 0
   let run = 0
   let previous: number | undefined
-  for (const value of activeNumbers) {
+  for (const value of solveNumbers) {
     run = previous !== undefined && value === previous + 1 ? run + 1 : 1
     longestStreak = Math.max(longestStreak, run)
     previous = value
@@ -435,7 +449,7 @@ export function buildProgressReport(input: {
     insights.push({
       id: 'stale-topic',
       tone: 'warning',
-      text: `You have not practiced ${stale.name} in ${stale.evidence.recentDays} days. A revision session is recommended before your next contest.`,
+      text: `You have not practiced ${stale.name} in ${stale.evidence.recentDays} days. A short review session is recommended before your next contest.`,
       link: { target: 'recommendations', label: 'Get practice problems' },
     })
   }
@@ -516,15 +530,7 @@ export function buildProgressReport(input: {
     insights.push({
       id: 'upsolve-pending',
       tone: 'neutral',
-      text: `${input.upsolvePending} contest ${input.upsolvePending === 1 ? 'problem is' : 'problems are'} waiting in your upsolve queue.`,
-      link: { target: 'upsolve', label: 'Open upsolve queue' },
-    })
-  }
-  if (input.revisionsDue > 0) {
-    insights.push({
-      id: 'revisions-due',
-      tone: 'neutral',
-      text: `${input.revisionsDue} ${input.revisionsDue === 1 ? 'revision is' : 'revisions are'} due. Revisit ${input.revisionsDue === 1 ? 'it' : 'them'} to make the learning stick.`,
+      text: `${input.upsolvePending} ${input.upsolvePending === 1 ? 'problem' : 'problems'} from your last ${UPSOLVE_CHART_WINDOW_DAYS} days of contests ${input.upsolvePending === 1 ? 'is' : 'are'} still open to upsolve.`,
       link: { target: 'upsolve', label: 'Open upsolve queue' },
     })
   }

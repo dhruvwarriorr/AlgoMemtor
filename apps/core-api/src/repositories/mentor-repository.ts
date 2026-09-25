@@ -3,7 +3,6 @@ import { randomUUID } from 'node:crypto'
 import {
   ProblemHelpSessionSchema,
   ProblemHelpTurnSchema,
-  RevisionItemSchema,
   type ProblemHelpBugCategory,
   type ProblemHelpDoubtType,
   type ProblemHelpProblem,
@@ -13,7 +12,6 @@ import {
   type ProblemHelpTurn,
   type ProblemHelpTurnKind,
   type ProviderKey,
-  type RevisionItem,
 } from '@algomemtor/shared-contracts'
 import { z } from 'zod'
 
@@ -64,7 +62,16 @@ export type ActivityParticipation = {
   newRating?: number
   attendedAt?: Date
   completeness: string
+  // rated: on the rating history. unrated: submitted live without a rating
+  // change (e.g. Div. 3 above its limit). practice: worked on the contest's
+  // problems shortly after it ended.
+  mode?: ContestParticipationMode
+  // For practice: the learner's own sitting on the contest, which stands in
+  // for the contest window (problems solved in it are not upsolves).
+  session?: { start: Date; end: Date }
 }
+
+export type ContestParticipationMode = 'rated' | 'unrated' | 'practice'
 
 export type ActivityRatingChange = {
   provider: ProviderKey
@@ -173,23 +180,6 @@ export type StoredReport = {
   generatedAt: Date
 }
 
-export type NewRevision = {
-  provider: ProviderKey
-  externalId: string
-  title: string
-  canonicalUrl: string
-  topics: string[]
-  source: 'upsolve' | 'doubt_helper'
-  dueAt: Date
-}
-
-export type RevisionPatch = {
-  stage: number
-  dueAt: Date
-  lastReviewedAt: Date
-  completedAt?: Date
-}
-
 export interface MentorRepository {
   loadActivity(authUserId: string): Promise<LearnerActivity>
   listContests(
@@ -258,51 +248,6 @@ export interface MentorRepository {
     externalId: string,
     state: UpsolveState | null,
   ): Promise<void>
-
-  listRevisions(authUserId: string): Promise<RevisionItem[]>
-  ensureRevision(authUserId: string, input: NewRevision): Promise<void>
-  updateRevision(
-    authUserId: string,
-    id: string,
-    patch: RevisionPatch,
-  ): Promise<RevisionItem | null>
-}
-
-const revisionFromRow = (
-  row: {
-    id: string
-    provider: string
-    externalId: string
-    title: string
-    canonicalUrl: string
-    topics: string[]
-    source: string
-    stage: number
-    dueAt: Date
-    lastReviewedAt: Date | null
-    completedAt: Date | null
-  },
-  now: Date,
-): RevisionItem | null => {
-  const parsed = RevisionItemSchema.safeParse({
-    id: row.id,
-    provider: row.provider,
-    externalId: row.externalId,
-    title: row.title,
-    canonicalUrl: row.canonicalUrl,
-    topics: row.topics.slice(0, 12),
-    source: row.source,
-    stage: row.stage,
-    dueAt: row.dueAt.toISOString(),
-    due: row.completedAt === null && row.dueAt.getTime() <= now.getTime(),
-    ...(row.lastReviewedAt === null
-      ? {}
-      : { lastReviewedAt: row.lastReviewedAt.toISOString() }),
-    ...(row.completedAt === null
-      ? {}
-      : { completedAt: row.completedAt.toISOString() }),
-  })
-  return parsed.success ? parsed.data : null
 }
 
 type SessionRow = {
@@ -994,65 +939,6 @@ export class PrismaMentorRepository implements MentorRepository {
       update: { state },
     })
   }
-
-  async listRevisions(authUserId: string) {
-    const userId = await this.userId(authUserId)
-    if (userId === null) return []
-    const rows = await this.prisma.revisionItem.findMany({
-      where: { userId },
-      orderBy: [{ completedAt: 'asc' }, { dueAt: 'asc' }],
-      take: 100,
-    })
-    const now = this.now()
-    return rows.flatMap((row) => {
-      const item = revisionFromRow(row, now)
-      return item === null ? [] : [item]
-    })
-  }
-
-  async ensureRevision(authUserId: string, input: NewRevision) {
-    const userId = await this.ensureUserId(authUserId)
-    await this.prisma.revisionItem.upsert({
-      where: {
-        userId_provider_externalId: {
-          userId,
-          provider: input.provider,
-          externalId: input.externalId,
-        },
-      },
-      create: {
-        userId,
-        provider: input.provider,
-        externalId: input.externalId,
-        title: input.title.slice(0, 512),
-        canonicalUrl: input.canonicalUrl,
-        topics: input.topics.slice(0, 12),
-        source: input.source,
-        dueAt: input.dueAt,
-      },
-      update: {},
-    })
-  }
-
-  async updateRevision(authUserId: string, id: string, patch: RevisionPatch) {
-    if (!z.uuid().safeParse(id).success) return null
-    const userId = await this.userId(authUserId)
-    if (userId === null) return null
-    const updated = await this.prisma.revisionItem.updateMany({
-      where: { id, userId },
-      data: {
-        stage: patch.stage,
-        dueAt: patch.dueAt,
-        lastReviewedAt: patch.lastReviewedAt,
-        completedAt: patch.completedAt ?? null,
-      },
-    })
-    if (updated.count === 0) return null
-    const row = await this.prisma.revisionItem.findFirst({
-      where: { id, userId },
-    })
-    return row === null ? null : revisionFromRow(row, this.now())
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1077,10 +963,6 @@ export class InMemoryMentorRepository implements MentorRepository {
   private readonly sessions: MemorySession[] = []
   private readonly reports = new Map<string, StoredReport & { key: string }>()
   private readonly upsolve = new Map<string, Map<string, UpsolveState>>()
-  private readonly revisions = new Map<
-    string,
-    Parameters<typeof revisionFromRow>[0][]
-  >()
   contests: CatalogContest[] = []
   catalog: ProblemMeta[] = []
 
@@ -1323,52 +1205,5 @@ export class InMemoryMentorRepository implements MentorRepository {
     if (state === null) states.delete(problemRef(provider, externalId))
     else states.set(problemRef(provider, externalId), state)
     this.upsolve.set(authUserId, states)
-  }
-
-  async listRevisions(authUserId: string) {
-    const now = this.now()
-    return (this.revisions.get(authUserId) ?? []).flatMap((row) => {
-      const item = revisionFromRow(row, now)
-      return item === null ? [] : [item]
-    })
-  }
-
-  async ensureRevision(authUserId: string, input: NewRevision) {
-    const rows = this.revisions.get(authUserId) ?? []
-    if (
-      rows.some(
-        (row) =>
-          row.provider === input.provider &&
-          row.externalId === input.externalId,
-      )
-    ) {
-      return
-    }
-    rows.push({
-      id: randomUUID(),
-      provider: input.provider,
-      externalId: input.externalId,
-      title: input.title,
-      canonicalUrl: input.canonicalUrl,
-      topics: input.topics,
-      source: input.source,
-      stage: 0,
-      dueAt: input.dueAt,
-      lastReviewedAt: null,
-      completedAt: null,
-    })
-    this.revisions.set(authUserId, rows)
-  }
-
-  async updateRevision(authUserId: string, id: string, patch: RevisionPatch) {
-    const row = (this.revisions.get(authUserId) ?? []).find(
-      (item) => item.id === id,
-    )
-    if (row === undefined) return null
-    row.stage = patch.stage
-    row.dueAt = patch.dueAt
-    row.lastReviewedAt = patch.lastReviewedAt
-    row.completedAt = patch.completedAt ?? null
-    return revisionFromRow(row, this.now())
   }
 }

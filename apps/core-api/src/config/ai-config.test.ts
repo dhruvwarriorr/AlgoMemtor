@@ -7,7 +7,7 @@ describe('AI recommendation configuration', () => {
     expect(readAiRecommendationConfig({})).toEqual({
       baseUrl: 'http://localhost:8000/',
       internalServiceToken: '',
-      timeoutMs: 25_000,
+      timeoutMs: 60_000,
       configured: false,
     })
   })
@@ -43,7 +43,7 @@ describe('AI recommendation configuration', () => {
     expect(
       readAiRecommendationConfig({ AI_RANKING_TIMEOUT_MS: 'invalid' })
         .timeoutMs,
-    ).toBe(25_000)
+    ).toBe(60_000)
   })
 
   it('allows plain HTTP only to a private container service name', () => {

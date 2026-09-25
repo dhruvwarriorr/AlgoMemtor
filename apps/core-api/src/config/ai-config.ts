@@ -50,7 +50,7 @@ export const readAiRecommendationConfig = (
     internalServiceToken,
     // Ranking p50 is ~9s and p90 ~40s on Flash-Lite; a short timeout silently
     // turns most AI rankings into deterministic fallbacks.
-    timeoutMs: positiveInteger(25_000).parse(environment.AI_RANKING_TIMEOUT_MS),
+    timeoutMs: positiveInteger(60_000).parse(environment.AI_RANKING_TIMEOUT_MS),
     configured: internalServiceToken.length > 0,
   }
 }

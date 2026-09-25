@@ -207,6 +207,36 @@ describe('coach workspace', () => {
     expect(JSON.stringify(workspace)).not.toContain('https://')
   })
 
+  it('keeps unrated practice at the observed level, not the onboarding comfort', () => {
+    const leetcode = (
+      externalId: string,
+      difficulty: 'easy' | 'medium',
+    ): ExternalProblemSummary => ({
+      provider: 'leetcode',
+      externalId,
+      title: `Problem ${externalId}`,
+      canonicalUrl: `https://leetcode.com/problems/${externalId}/`,
+      providerDifficulty: difficulty === 'easy' ? 'Easy' : 'Medium',
+      normalizedDifficulty: difficulty,
+      providerTags: ['tree'],
+      topics: ['trees'],
+      fetchedAt: now.toISOString(),
+    })
+    const { workspace } = build({
+      solved: [],
+      providerProfiles: [{ ...profile, rating: 1650 }],
+      difficultyComfort: 'new_to_rated_problems',
+      catalog: [
+        ...catalog,
+        leetcode('same-tree', 'easy'),
+        leetcode('path-sum-iii', 'medium'),
+      ],
+    })
+    const ids = workspace.practicePool.map((item) => item.id)
+    expect(ids).toContain('leetcode:path-sum-iii')
+    expect(ids).not.toContain('leetcode:same-tree')
+  })
+
   it('treats a manual unsolved status as authoritative over provider evidence', () => {
     const { workspace } = build({
       statuses: new Map([['codeforces:1000A', 'unsolved']]),

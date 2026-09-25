@@ -1,19 +1,23 @@
 import {
   BarChart3,
-  BookOpen,
   Bookmark,
   Brain,
-  Crosshair,
   LayoutGrid,
   Lightbulb,
   ListChecks,
   Settings,
   Sparkles,
-  Swords,
   TrendingUp,
   Trophy,
   type IconComponent,
 } from '@/components/icons/algo-icons-line'
+import {
+  ContestAnalysisIcon,
+  DoubtHelperIcon,
+  ProgressReportIcon,
+  SolutionExplorerIcon,
+  UpsolveIcon,
+} from '@/components/icons/mentor-icons'
 
 export type AppNavItem = {
   label: string
@@ -49,31 +53,31 @@ export const accountMenuGroups: ReadonlyArray<{
       {
         label: 'Doubt Helper',
         to: '/doubt-helper',
-        icon: Crosshair,
+        icon: DoubtHelperIcon,
         chip: 'bg-[#f97316] text-[#2a1203]',
       },
       {
         label: 'Solution Explorer',
         to: '/solutions',
-        icon: BookOpen,
+        icon: SolutionExplorerIcon,
         chip: 'bg-[#a78bfa] text-[#1e1038]',
       },
       {
         label: 'Upsolve',
         to: '/upsolve',
-        icon: Swords,
+        icon: UpsolveIcon,
         chip: 'bg-[#f43f5e] text-[#2b050d]',
       },
       {
         label: 'Contest analysis',
         to: '/contest-analysis',
-        icon: Trophy,
+        icon: ContestAnalysisIcon,
         chip: 'bg-[#facc15] text-[#2a2203]',
       },
       {
         label: 'Progress report',
         to: '/progress/report',
-        icon: TrendingUp,
+        icon: ProgressReportIcon,
         chip: 'bg-[#14b8a6] text-[#032522]',
       },
     ],

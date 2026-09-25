@@ -20,13 +20,11 @@ import {
   fetchHelpSession,
   fetchHelpSessions,
   fetchProgressReport,
-  fetchRevisions,
   fetchSolutionAccess,
   fetchUpsolve,
   generateContestNarrative,
   generateContestPatterns,
   generateProgressNarrative,
-  reviewRevision,
   sendHelpTurn,
   startHelpSession,
   updateUpsolveItem,
@@ -90,9 +88,6 @@ export function useHelpTurn(id: string | null) {
       void queryClient.invalidateQueries({
         queryKey: [...key, 'help-sessions'],
       })
-      if (response.data.stage === 'completed') {
-        void queryClient.invalidateQueries({ queryKey: [...key, 'revisions'] })
-      }
     },
     onError: () => {
       // A stale version or failed generation keeps the stored state; reload it.
@@ -145,7 +140,7 @@ export function useSolutionChat() {
   })
 }
 
-// Upsolve and revisions ----------------------------------------------------
+// Upsolve ------------------------------------------------------------------
 
 export function useUpsolve() {
   const { key, enabled } = useMentorKey()
@@ -153,6 +148,18 @@ export function useUpsolve() {
     queryKey: [...key, 'upsolve'],
     queryFn: ({ signal }) => fetchUpsolve({ signal }),
     enabled,
+  })
+}
+
+// Pulls fresh platform data, then replaces the cached upsolve view.
+export function useRefreshUpsolve() {
+  const { key } = useMentorKey()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => fetchUpsolve({ refresh: true }),
+    onSuccess: (data) => {
+      queryClient.setQueryData([...key, 'upsolve'], data)
+    },
   })
 }
 
@@ -174,28 +181,6 @@ export function useUpdateUpsolveItem() {
   })
 }
 
-export function useRevisions() {
-  const { key, enabled } = useMentorKey()
-  return useQuery({
-    queryKey: [...key, 'revisions'],
-    queryFn: ({ signal }) => fetchRevisions({ signal }),
-    enabled,
-  })
-}
-
-export function useReviewRevision() {
-  const { key } = useMentorKey()
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (input: { id: string; outcome: 'remembered' | 'struggled' }) =>
-      reviewRevision(input.id, { outcome: input.outcome }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: [...key, 'revisions'] })
-      void queryClient.invalidateQueries({ queryKey: [...key, 'upsolve'] })
-    },
-  })
-}
-
 // Contest analysis ---------------------------------------------------------
 
 export function useContestOverview() {
@@ -204,6 +189,18 @@ export function useContestOverview() {
     queryKey: [...key, 'contest-overview'],
     queryFn: ({ signal }) => fetchContestOverview({ signal }),
     enabled,
+  })
+}
+
+export function useRefreshContestOverview() {
+  const { key } = useMentorKey()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => fetchContestOverview({ refresh: true }),
+    onSuccess: (data) => {
+      queryClient.setQueryData([...key, 'contest-overview'], data)
+      void queryClient.invalidateQueries({ queryKey: [...key, 'contest'] })
+    },
   })
 }
 

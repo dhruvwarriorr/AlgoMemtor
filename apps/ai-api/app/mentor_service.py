@@ -11,13 +11,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 from functools import lru_cache
 from typing import Any, Protocol, TypeVar
 from urllib.parse import urlparse
 
 from langchain_core.language_models.chat_models import BaseChatModel
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from .coach_output import plain_math, redact_text
 from .coach_service import is_rate_limit_error
@@ -65,7 +66,7 @@ from .mentor_prompts import (
     phase_instructions,
 )
 from .page_retrieval import retrieve_public_page
-from .settings import AiSettings, LlmProvider, get_ai_settings
+from .settings import AiSettings, get_ai_settings
 from .web_grounding import PublicCitation, ground_public_question
 from .web_reader import WebPage, WebReadError
 from .web_search import search_public_web
@@ -131,6 +132,9 @@ class MentorNotConfiguredError(RuntimeError):
     pass
 
 
+logger = logging.getLogger(__name__)
+
+
 class MentorGenerationError(RuntimeError):
     pass
 
@@ -173,39 +177,37 @@ class LangchainMentorModel:
         self,
         settings: AiSettings,
         *,
-        model_name: str = "",
         thinking_level: str | None = None,
     ) -> None:
         self.settings = settings
-        self.model_name = model_name.strip()
         self.thinking_level = thinking_level or settings.mentor_thinking_level
-        self._models: dict[tuple[str, str, int], BaseChatModel] = {}
+        self._models: dict[tuple[str, int], BaseChatModel] = {}
 
-    @property
-    def provider(self) -> LlmProvider:
-        configured = self.settings.mentor_llm_provider
-        if configured is not None:
-            return configured
-        return "gemini" if self.settings.llm_api_key else "groq"
-
-    def _model(self, max_tokens: int) -> BaseChatModel:
-        provider = self.provider
-        model_name = (
-            self.model_name
-            or self.settings.mentor_model.strip()
-            or (
-                self.settings.coach_groq_model
-                if provider == "groq"
-                else self.settings.llm_model
+    @staticmethod
+    def _workload(system: str) -> str:
+        if system.startswith(
+            (
+                UPSOLVE_PICK_SYSTEM,
+                CONTEST_ANALYSIS_SYSTEM,
+                CONTEST_PATTERNS_SYSTEM,
+                PROGRESS_NARRATIVE_SYSTEM,
             )
-        )
+        ):
+            return "reports"
+        if system.startswith(SOLUTION_EXPLORER_SYSTEM):
+            return "solution_explorer"
+        if system.startswith((CODE_REPAIR_SYSTEM, SOLUTION_CHAT_SYSTEM)):
+            return "code_debugging"
+        return "doubt_helper"
+
+    def _model(self, max_tokens: int, system: str) -> BaseChatModel:
+        workload = self._workload(system)
         tokens = min(max_tokens, self.settings.mentor_max_output_tokens)
-        key = (provider, model_name, tokens)
+        key = (workload, tokens)
         if key not in self._models:
             self._models[key] = chat_model(
                 self.settings,
-                provider=provider,
-                model=model_name,
+                workload=workload,  # type: ignore[arg-type]
                 temperature=0.3,
                 thinking_level=self.thinking_level,  # type: ignore[arg-type]
                 max_tokens=tokens,
@@ -215,7 +217,7 @@ class LangchainMentorModel:
         return self._models[key]
 
     async def generate_text(self, system: str, human: str, max_tokens: int) -> str:
-        result = await self._model(max_tokens).ainvoke(
+        result = await self._model(max_tokens, system).ainvoke(
             [("system", system), ("human", human)]
         )
         return _message_text(result)
@@ -227,16 +229,35 @@ class LangchainMentorModel:
         human: str,
         max_tokens: int,
     ) -> StructuredT:
-        structured = self._model(max_tokens).with_structured_output(
-            schema, method="function_calling", include_raw=True
+        # Locally, Ollama constrains the reply to the JSON schema. With
+        # function calling the small model has to escape long programs inside
+        # tool arguments itself, and a single bad escape drops the whole call
+        # (an empty reply after minutes of generation).
+        method = (
+            "json_schema"
+            if self.settings.ai_provider == "local"
+            else "function_calling"
+        )
+        structured = self._model(max_tokens, system).with_structured_output(
+            schema, method=method, include_raw=True
         )
         result = await structured.ainvoke([("system", system), ("human", human)])
         parsed = result.get("parsed") if isinstance(result, dict) else None
         if isinstance(parsed, schema):
             return parsed
+        raw = result.get("raw") if isinstance(result, dict) else None
+        content = getattr(raw, "content", None)
+        if method == "json_schema" and isinstance(content, str) and content.strip():
+            # A reply a little over a length bound still parses as JSON; clip
+            # it to the schema instead of discarding it.
+            try:
+                recovered = coerce_to_schema(schema, json.loads(content))
+            except ValueError:
+                recovered = None
+            if recovered is not None:
+                return recovered
         # Models often overshoot a length limit by a little; clip the raw
         # arguments to the schema's bounds instead of discarding the answer.
-        raw = result.get("raw") if isinstance(result, dict) else None
         for call in getattr(raw, "tool_calls", None) or []:
             args = call.get("args") if isinstance(call, dict) else None
             if not isinstance(args, dict):
@@ -244,6 +265,28 @@ class LangchainMentorModel:
             recovered = coerce_to_schema(schema, args)
             if recovered is not None:
                 return recovered
+        error = result.get("parsing_error") if isinstance(result, dict) else None
+        locations = (
+            sorted(
+                {
+                    ".".join(str(part) for part in item["loc"][:3])
+                    for item in error.errors()
+                }
+            )[:8]
+            if isinstance(error, ValidationError)
+            else []
+        )
+        # Shape only (never content), so a failing schema can be diagnosed.
+        logger.warning(
+            "mentor_structured_invalid schema=%s finish=%s tool_calls=%d "
+            "content_chars=%d error=%s fields=%s",
+            schema.__name__,
+            (getattr(raw, "response_metadata", None) or {}).get("finish_reason"),
+            len(getattr(raw, "tool_calls", None) or []),
+            len(str(getattr(raw, "content", "") or "")),
+            type(error).__name__ if error is not None else "none",
+            ",".join(locations),
+        )
         raise MentorGenerationError("The model returned no validated output.")
 
 
@@ -259,7 +302,7 @@ def _clip_value(value: Any, node: dict[str, Any], defs: dict[str, Any]) -> Any:
             node = defs.get(node["$ref"].rsplit("/", 1)[-1], {})
     if isinstance(value, str):
         limit = node.get("maxLength")
-        return value[:limit].rstrip() if isinstance(limit, int) else value
+        return shorten_text(value, limit) if isinstance(limit, int) else value
     if isinstance(value, list):
         limit = node.get("maxItems")
         items = value[:limit] if isinstance(limit, int) else value
@@ -377,13 +420,33 @@ def keep_teaching_links(answer: str, problem_url: str | None = None) -> str:
     )
 
 
+def shorten_text(value: str, limit: int) -> str:
+    """`value` within `limit` characters, cut where a reader expects a cut.
+
+    A hard slice left headlines ending mid-word ("...topics like"). Prefer
+    the last full sentence; otherwise end on a word with an ellipsis.
+    """
+    if len(value) <= limit:
+        return value
+    if limit < 2:
+        return value[:limit]
+    cut = value[: limit - 1]
+    sentence_end = max(cut.rfind(mark) for mark in (". ", "! ", "? ", ".\n"))
+    if sentence_end >= limit // 2:
+        return cut[: sentence_end + 1].rstrip()
+    space = cut.rfind(" ")
+    if space >= limit // 2:
+        cut = cut[:space]
+    return cut.rstrip(" ,;:-–—") + "…"
+
+
 def _clean_text(value: str, limit: int) -> str:
     text = plain_math(redact_text(value, keep_urls=True))
-    return text[:limit].rstrip()
+    return shorten_text(text, limit).rstrip()
 
 
 def _clean_item(value: str, limit: int) -> str:
-    return " ".join(plain_math(redact_text(value)).split())[:limit].rstrip()
+    return shorten_text(" ".join(plain_math(redact_text(value)).split()), limit)
 
 
 def _clean_list(values: list[str], limit: int) -> list[str]:
@@ -613,7 +676,7 @@ class MentorService:
     def get_model(self) -> MentorModel:
         if self.model is not None:
             return self.model
-        if not (self.settings.llm_api_key or self.settings.groq_api_key):
+        if not self.settings.generation_api_key:
             raise MentorNotConfiguredError
         self.model = LangchainMentorModel(self.settings)
         return self.model
@@ -693,11 +756,10 @@ class MentorService:
         if self.model is not None:
             return self.model
         if self.solution_model is None:
-            if not (self.settings.llm_api_key or self.settings.groq_api_key):
+            if not self.settings.generation_api_key:
                 raise MentorNotConfiguredError
             self.solution_model = LangchainMentorModel(
                 self.settings,
-                model_name=self.settings.solution_model,
                 thinking_level=self.settings.solution_thinking_level,
             )
         return self.solution_model

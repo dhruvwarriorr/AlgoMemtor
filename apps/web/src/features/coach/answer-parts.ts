@@ -176,6 +176,8 @@ function plainFormula(formula: string) {
 // The chat renders Markdown without a math engine, so "$O(N \log N)$" would
 // show dollar signs and backslashes. Code is left untouched, and "$5 and $10"
 // stays money: TeX spans hug their content and carry a math character.
+// Models also pad spans ("$ O(n) $"); a padded span still counts when it
+// holds something only TeX writes.
 export function plainMath(content: string) {
   return content
     .split(/(```[\s\S]*?```|`[^`\n]*`)/)
@@ -186,11 +188,11 @@ export function plainMath(content: string) {
             /\$\$([^$]{1,400})\$\$|\$([^$\n]{1,200})\$|\\\((.{1,200}?)\\\)/g,
             (match, block?: string, inline?: string, paren?: string) => {
               const formula = block ?? inline ?? paren ?? ''
-              if (
-                inline !== undefined &&
-                (formula !== formula.trim() ||
-                  !/[\\^_=()+*/<>a-zA-Z]/.test(formula))
-              ) {
+              const hugged =
+                formula === formula.trim() &&
+                /[\\^_=()+*/<>a-zA-Z]/.test(formula)
+              const paddedTex = /[\\^_]|\bO\(/.test(formula)
+              if (inline !== undefined && !hugged && !paddedTex) {
                 return match
               }
               return plainFormula(formula)

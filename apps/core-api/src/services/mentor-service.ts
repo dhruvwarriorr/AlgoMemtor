@@ -7,7 +7,6 @@ import {
   ContestPatternsReportSchema,
   PROBLEM_HELP_MAX_GUIDED_LEVEL,
   ProgressNarrativeSchema,
-  REVISION_INTERVAL_DAYS,
   SOLUTION_CHAT_HISTORY_LIMIT,
   UPSOLVE_QUEUE_SIZE,
   SolutionExplorationSchema,
@@ -30,8 +29,6 @@ import {
   type ProgressNarrative,
   type ProgressReportResponse,
   type ProviderKey,
-  type RevisionItem,
-  type RevisionsResponse,
   type SolutionAccess,
   type SolutionChatRequest,
   type SolutionExploration,
@@ -60,6 +57,7 @@ import {
 import {
   problemKeyFor,
   problemRef,
+  type ActivityParticipation,
   type CatalogContest,
   type HelpSessionDetail,
   type LearnerActivity,
@@ -74,6 +72,7 @@ import {
 } from './coach-links.js'
 import {
   buildContestMetrics,
+  codeforcesContestsFromSubmissions,
   contestPatterns,
   contestSubmissions,
   matchContest,
@@ -96,18 +95,27 @@ const ANALYZED_CONTEST_LIMIT = 12
 const STATEMENT_LIMIT = 18_000
 const PLATFORM_SOLUTIONS_BUDGET_MS = 20_000
 const UNREADABLE_TTL_MS = 15 * 60_000
-const CONTEST_PROBLEMS_BUDGET_MS = 20_000
+const PLATFORM_REFRESH_BUDGET_MS = 35_000
+const CONTEST_PROBLEMS_BUDGET_MS = 25_000
+const PLATFORM_CONTEST_LIST_LIMIT = 10
 const UPSOLVE_POOL_LIMIT = 24
 
 const ratingHint = (rating: number | undefined) =>
   rating === undefined ? {} : { rating }
 
-const UPSOLVE_QUEUE_VERSION = 3
+// 5: queues saved while a contest's problem list was missing are rebuilt.
+const UPSOLVE_QUEUE_VERSION = 5
+// A finished contest's problem list never changes, so a list that loaded
+// once is reused; a platform timeout then cannot empty it.
+const CONTEST_PROBLEMS_CACHE_LIMIT = 200
 
 const StoredUpsolveQueueSchema = z
   .object({
     version: z.literal(UPSOLVE_QUEUE_VERSION),
     ids: z.array(z.string().max(200)).max(UPSOLVE_QUEUE_SIZE),
+    // The newest contest when the queue was built; a newer contest starts a
+    // fresh queue from its first unsolved problems.
+    anchor: z.string().max(200),
     reasons: z.record(z.string(), z.string().max(240)),
   })
   .strict()
@@ -122,7 +130,6 @@ export type MentorErrorCode =
   | 'SOLUTION_LOCKED'
   | 'CONTEST_NOT_FOUND'
   | 'NOT_ENOUGH_CONTEST_DATA'
-  | 'REVISION_NOT_FOUND'
   | 'MENTOR_AI_UNAVAILABLE'
   | 'MENTOR_AI_RATE_LIMITED'
 
@@ -136,7 +143,6 @@ const statusByCode: Record<MentorErrorCode, number> = {
   SOLUTION_LOCKED: 409,
   CONTEST_NOT_FOUND: 404,
   NOT_ENOUGH_CONTEST_DATA: 422,
-  REVISION_NOT_FOUND: 404,
   MENTOR_AI_UNAVAILABLE: 503,
   MENTOR_AI_RATE_LIMITED: 429,
 }
@@ -175,6 +181,8 @@ export type MentorServiceOptions = {
     contestCode: string,
     hint: ContestProblemsHint,
   ) => Promise<ContestProblemLink[]>
+  // Pulls the learner's newest data from every linked platform.
+  refreshPlatforms?: (authUserId: string) => Promise<void>
   logger: StructuredLogger
   now?: () => Date
 }
@@ -241,6 +249,7 @@ const pastedProblem = (title: string): ResolvedProblem => ({
 
 export class MentorService {
   private readonly unreadableUntil = new Map<string, number>()
+  private readonly contestProblemCache = new Map<string, ProblemMeta[]>()
 
   constructor(private readonly options: MentorServiceOptions) {}
 
@@ -907,32 +916,7 @@ export class MentorService {
         )
       }
       case 'complete': {
-        const result = await commit(
-          { stage: 'completed', completedAt: this.now() },
-          [],
-        )
-        const { problem } = session
-        if (
-          problem.provider !== undefined &&
-          problem.externalId !== undefined &&
-          problem.canonicalUrl !== undefined
-        ) {
-          await this.options.repository
-            .ensureRevision(authUserId, {
-              provider: problem.provider,
-              externalId: problem.externalId,
-              title: problem.title,
-              canonicalUrl: problem.canonicalUrl,
-              topics: problem.topics,
-              source: 'doubt_helper',
-              dueAt: new Date(
-                this.now().getTime() +
-                  (REVISION_INTERVAL_DAYS[0] ?? 3) * DAY_MS,
-              ),
-            })
-            .catch(() => undefined)
-        }
-        return result
+        return commit({ stage: 'completed', completedAt: this.now() }, [])
       }
       case 'abandon':
         return commit({ stage: 'abandoned', completedAt: this.now() }, [])
@@ -1297,12 +1281,20 @@ export class MentorService {
   private async analyzeContests(
     activity: LearnerActivity,
     limit = ANALYZED_CONTEST_LIMIT,
+    options: { practice?: boolean } = {},
   ): Promise<{
     contests: AnalyzedContest[]
     metadata: Map<string, ProblemMeta>
   }> {
-    const participations = activity.participations
-      .filter((item) => item.attendedAt !== undefined)
+    const derived = await this.derivedParticipations(activity)
+    const participations = [
+      ...activity.participations
+        .filter((item) => item.attendedAt !== undefined)
+        .map((item) => ({ ...item, mode: item.mode ?? ('rated' as const) })),
+      ...derived.filter(
+        (item) => options.practice !== false || item.mode !== 'practice',
+      ),
+    ]
       .sort(
         (left, right) =>
           (right.attendedAt?.getTime() ?? 0) -
@@ -1323,27 +1315,32 @@ export class MentorService {
       ratings.set(change.provider, Math.round(change.newRating))
     }
     const matched = await Promise.all(
-      participations.map(async (participation) => {
+      participations.map(async (participation, index) => {
         const contest = matchContest(participation, catalog)
         const contestProblems =
           contest === undefined
             ? []
-            : participation.provider === 'codeforces'
-              ? await this.options.repository
-                  .listContestProblems('codeforces', participation.contestId)
-                  .catch(() => [])
-              : await this.platformContestProblems(
-                  participation.provider,
-                  contest,
-                  {
-                    submittedKeys: contestSubmissions(
-                      participation,
-                      contest,
-                      activity.submissions,
-                    ).map((submission) => submission.problemKey),
-                    ...ratingHint(ratings.get(participation.provider)),
-                  },
-                )
+            : participation.provider !== 'codeforces' &&
+                index >= PLATFORM_CONTEST_LIST_LIMIT
+              ? // Older platform contests keep the submitted problems only;
+                // fetching every list would slow the page down.
+                []
+              : participation.provider === 'codeforces'
+                ? await this.options.repository
+                    .listContestProblems('codeforces', participation.contestId)
+                    .catch(() => [])
+                : await this.platformContestProblems(
+                    participation.provider,
+                    contest,
+                    {
+                      submittedKeys: contestSubmissions(
+                        participation,
+                        contest,
+                        activity.submissions,
+                      ).map((submission) => submission.problemKey),
+                      ...ratingHint(ratings.get(participation.provider)),
+                    },
+                  )
         return { participation, contest, contestProblems }
       }),
     )
@@ -1408,6 +1405,34 @@ export class MentorService {
     return { contests, metadata }
   }
 
+  // Codeforces contests missing from the rating history: live unrated
+  // rounds and contests practised right after they ended.
+  private async derivedParticipations(
+    activity: LearnerActivity,
+  ): Promise<ActivityParticipation[]> {
+    if (!activity.submissions.some((item) => item.provider === 'codeforces')) {
+      return []
+    }
+    const now = this.now()
+    const catalog = await this.options.repository
+      .listContests(
+        ['codeforces'],
+        new Date(now.getTime() - 150 * DAY_MS),
+        new Date(now.getTime() + DAY_MS),
+      )
+      .catch(() => [])
+    return codeforcesContestsFromSubmissions({
+      submissions: activity.submissions,
+      known: new Set(
+        activity.participations
+          .filter((item) => item.provider === 'codeforces')
+          .map((item) => item.contestId),
+      ),
+      catalog,
+      now,
+    })
+  }
+
   private async platformContestProblems(
     provider: ProviderKey,
     contest: CatalogContest,
@@ -1421,6 +1446,9 @@ export class MentorService {
           ? (leetcodeContestSlug(contest.canonicalUrl) ?? contest.externalId)
           : undefined
     if (read === undefined || code === undefined) return []
+    const cacheKey = `${provider}:${code}`
+    const cached = this.contestProblemCache.get(cacheKey)
+    if (cached !== undefined) return cached
     try {
       const links = await Promise.race([
         read(provider, code, hint),
@@ -1428,7 +1456,7 @@ export class MentorService {
           setTimeout(() => resolve([]), CONTEST_PROBLEMS_BUDGET_MS).unref?.(),
         ),
       ])
-      return links
+      const problems = links
         .filter((link) => isSafeCoachPublicUrl(link.canonicalUrl))
         .map((link) => ({
           provider,
@@ -1440,6 +1468,14 @@ export class MentorService {
           topics: [],
           position: link.position,
         }))
+      if (problems.length > 0) {
+        if (this.contestProblemCache.size >= CONTEST_PROBLEMS_CACHE_LIMIT) {
+          const oldest = this.contestProblemCache.keys().next().value
+          if (oldest !== undefined) this.contestProblemCache.delete(oldest)
+        }
+        this.contestProblemCache.set(cacheKey, problems)
+      }
+      return problems
     } catch {
       this.options.logger.warn('mentor_contest_problems_unavailable', {
         provider,
@@ -1452,11 +1488,26 @@ export class MentorService {
     return `${provider}:${contestId}`.slice(0, 256)
   }
 
+  private async refreshPlatforms(authUserId: string) {
+    const refresh = this.options.refreshPlatforms
+    if (refresh === undefined) return
+    await Promise.race([
+      refresh(authUserId).catch(() => undefined),
+      new Promise((resolve) =>
+        setTimeout(resolve, PLATFORM_REFRESH_BUDGET_MS).unref?.(),
+      ),
+    ])
+  }
+
   async contestOverview(
     authUserId: string,
+    options: { refresh?: boolean } = {},
   ): Promise<ContestAnalysisOverviewResponse['data']> {
+    if (options.refresh === true) await this.refreshPlatforms(authUserId)
     const activity = await this.options.repository.loadActivity(authUserId)
-    const { contests } = await this.analyzeContests(activity, 30)
+    const { contests } = await this.analyzeContests(activity, 30, {
+      practice: false,
+    })
     const [narratives, patternsReport] = await Promise.all([
       this.options.repository.listReports(authUserId, 'contest_analysis', 100),
       this.options.repository.getReport(
@@ -1491,6 +1542,18 @@ export class MentorService {
           : { ratingChange: item.participation.ratingChange }),
         solvedCount: item.metrics?.solvedCount ?? 0,
         attemptedCount: item.metrics?.attemptedCount ?? 0,
+        ...(item.metrics === undefined
+          ? {}
+          : {
+              problemCount: item.metrics.problems.length,
+              wrongSubmissions: item.metrics.wrongSubmissions,
+              ...(item.metrics.firstAcceptedMinute === undefined
+                ? {}
+                : { firstAcceptedMinute: item.metrics.firstAcceptedMinute }),
+            }),
+        ...(item.participation.mode === undefined
+          ? {}
+          : { participation: item.participation.mode }),
         analyzable:
           item.metrics !== undefined && item.metrics.submissionCount > 0,
         narrativeAvailable: narrativeKeys.has(
@@ -1513,7 +1576,9 @@ export class MentorService {
     contestId: string,
   ) {
     const activity = await this.options.repository.loadActivity(authUserId)
-    const { contests } = await this.analyzeContests(activity, 30)
+    const { contests } = await this.analyzeContests(activity, 30, {
+      practice: false,
+    })
     const index = contests.findIndex(
       (item) =>
         item.participation.provider === provider &&
@@ -1684,7 +1749,7 @@ export class MentorService {
   }
 
   // ---------------------------------------------------------------------
-  // Upsolve Tracker and revision schedule.
+  // Upsolve Tracker.
   // ---------------------------------------------------------------------
 
   private async computeUpsolve(authUserId: string, activity: LearnerActivity) {
@@ -1699,32 +1764,25 @@ export class MentorService {
       states,
       now: this.now(),
     })
-    // Upsolved problems enter the spaced revision schedule.
-    for (const problem of result.upsolved) {
-      await this.options.repository
-        .ensureRevision(authUserId, {
-          provider: problem.provider,
-          externalId: problem.externalId,
-          title: problem.title,
-          canonicalUrl: problem.canonicalUrl,
-          topics: problem.topics,
-          source: 'upsolve',
-          dueAt: new Date(
-            problem.upsolvedAt.getTime() +
-              (REVISION_INTERVAL_DAYS[0] ?? 3) * DAY_MS,
-          ),
-        })
-        .catch(() => undefined)
-    }
     return { result, contests }
   }
 
-  async upsolve(authUserId: string): Promise<UpsolveResponse['data']> {
+  async upsolve(
+    authUserId: string,
+    options: { refresh?: boolean } = {},
+  ): Promise<UpsolveResponse['data']> {
+    if (options.refresh === true) await this.refreshPlatforms(authUserId)
     const activity = await this.options.repository.loadActivity(authUserId)
     const { result } = await this.computeUpsolve(authUserId, activity)
-    const [revisions, queue] = await Promise.all([
-      this.options.repository.listRevisions(authUserId),
-      this.selectUpsolveQueue(authUserId, result.candidates, result.incomplete),
+    const [queue] = await Promise.all([
+      this.selectUpsolveQueue(
+        authUserId,
+        result.candidates,
+        result.incomplete,
+        result.history[0] === undefined
+          ? ''
+          : `${result.history[0].provider}:${result.history[0].contestId}`,
+      ),
     ])
     // The most recent contest on each platform.
     const seen = new Set<ProviderKey>()
@@ -1738,7 +1796,6 @@ export class MentorService {
       contests: latest,
       history: result.history,
       summary: result.summary,
-      revisionsDue: revisions.filter((item) => item.due).length,
       linkedProviders: activity.linkedProviders,
       generatedAt: this.now().toISOString(),
     }
@@ -1766,13 +1823,15 @@ export class MentorService {
     authUserId: string,
     candidates: readonly UpsolveCandidate[],
     incomplete = false,
+    anchor = '',
   ): Promise<UpsolveItem[]> {
     const byId = new Map(candidates.map((item) => [item.id, item]))
     const stored = await this.options.repository
       .getReport(authUserId, 'upsolve_queue', 'current')
       .catch(() => null)
     const parsed = StoredUpsolveQueueSchema.safeParse(stored?.payload)
-    const previous = parsed.success ? parsed.data.ids : []
+    const previous =
+      parsed.success && parsed.data.anchor === anchor ? parsed.data.ids : []
     const kept = keptQueue(previous, candidates, UPSOLVE_QUEUE_SIZE)
     const reasons: Record<string, string> = parsed.success
       ? { ...parsed.data.reasons }
@@ -1783,7 +1842,7 @@ export class MentorService {
     const fresh = kept.length === 0
     const pool = fresh
       ? []
-      : replacementPool(candidates, kept).slice(0, UPSOLVE_POOL_LIMIT)
+      : replacementPool(candidates, kept, need).slice(0, UPSOLVE_POOL_LIMIT)
     const picked: string[] = fresh
       ? initialQueue(candidates, UPSOLVE_QUEUE_SIZE)
       : []
@@ -1844,13 +1903,19 @@ export class MentorService {
         reasons[id] === undefined ? [] : [[id, reasons[id].slice(0, 240)]],
       ),
     )
-    // A fresh queue built while a contest's problem list is missing is shown
-    // but not kept, so the next load can include that contest.
-    if (ids.join('|') !== previous.join('|') && !(fresh && incomplete)) {
+    // A queue built while a contest's problem list is missing is shown but
+    // not kept: that contest's queued problems only look finished, and the
+    // next load should get them back.
+    const anchorChanged = !parsed.success || parsed.data.anchor !== anchor
+    if (
+      (anchorChanged || ids.join('|') !== previous.join('|')) &&
+      !incomplete
+    ) {
       await this.options.repository
         .saveReport(authUserId, 'upsolve_queue', 'current', hash(ids), {
           version: UPSOLVE_QUEUE_VERSION,
           ids,
+          anchor,
           reasons: shown,
         })
         .catch(() => undefined)
@@ -1869,77 +1934,18 @@ export class MentorService {
     })
   }
 
-  async revisions(authUserId: string): Promise<RevisionsResponse> {
-    const items = await this.options.repository.listRevisions(authUserId)
-    const active = items.filter((item) => item.completedAt === undefined)
-    return {
-      data: items,
-      meta: {
-        due: active.filter((item) => item.due).length,
-        upcoming: active.filter((item) => !item.due).length,
-        completed: items.length - active.length,
-      },
-    }
-  }
-
-  async reviewRevision(
-    authUserId: string,
-    id: string,
-    outcome: 'remembered' | 'struggled',
-  ): Promise<RevisionItem> {
-    const items = await this.options.repository.listRevisions(authUserId)
-    const item = items.find((candidate) => candidate.id === id)
-    if (item === undefined) {
-      throw new MentorError(
-        'REVISION_NOT_FOUND',
-        'This revision was not found.',
-      )
-    }
-    const now = this.now()
-    const stage =
-      outcome === 'remembered'
-        ? Math.min(item.stage + 1, REVISION_INTERVAL_DAYS.length)
-        : 0
-    const completed = stage >= REVISION_INTERVAL_DAYS.length
-    const days =
-      outcome === 'struggled'
-        ? 1
-        : (REVISION_INTERVAL_DAYS[
-            Math.min(stage, REVISION_INTERVAL_DAYS.length - 1)
-          ] ?? 7)
-    const updated = await this.options.repository.updateRevision(
-      authUserId,
-      id,
-      {
-        stage,
-        dueAt: new Date(now.getTime() + days * DAY_MS),
-        lastReviewedAt: now,
-        ...(completed ? { completedAt: now } : {}),
-      },
-    )
-    if (updated === null) {
-      throw new MentorError(
-        'REVISION_NOT_FOUND',
-        'This revision was not found.',
-      )
-    }
-    return updated
-  }
-
   // ---------------------------------------------------------------------
   // Progress Report.
   // ---------------------------------------------------------------------
 
   async progressReport(authUserId: string): Promise<ProgressReportResponse> {
     const activity = await this.options.repository.loadActivity(authUserId)
-    const [profile, roadmap, sessions, upsolveData, revisions] =
-      await Promise.all([
-        this.options.learnerProfile(authUserId).catch(() => null),
-        this.options.roadmap(authUserId).catch(() => null),
-        this.options.repository.listHelpSessions(authUserId, 100),
-        this.computeUpsolve(authUserId, activity),
-        this.options.repository.listRevisions(authUserId),
-      ])
+    const [profile, roadmap, sessions, upsolveData] = await Promise.all([
+      this.options.learnerProfile(authUserId).catch(() => null),
+      this.options.roadmap(authUserId).catch(() => null),
+      this.options.repository.listHelpSessions(authUserId, 100),
+      this.computeUpsolve(authUserId, activity),
+    ])
     const since = this.now().getTime() - 60 * DAY_MS
     const refs = [
       ...new Map(
@@ -1961,13 +1967,16 @@ export class MentorService {
     const report = buildProgressReport({
       activity,
       roadmapTopics: roadmap?.topics ?? [],
+      // A practice sitting starts at its first submission, so its timings
+      // would read as instant solves; only real contest windows are timed.
       contests: upsolveData.contests.flatMap((item) =>
-        item.metrics === undefined ? [] : [item.metrics],
+        item.metrics === undefined || item.participation.mode === 'practice'
+          ? []
+          : [item.metrics],
       ),
       helpSessions: sessions,
       metadata,
       upsolvePending: upsolveData.result.summary.pending,
-      revisionsDue: revisions.filter((item) => item.due).length,
       timeZone,
       now: this.now(),
     })
@@ -2019,12 +2028,18 @@ export class MentorService {
           accuracy: report.accuracy,
           consistency: report.consistency,
           solvingSpeed: report.solvingSpeed,
-          hintDependency: {
-            sessions: report.hintDependency.sessions,
-            averageHintLevel: report.hintDependency.averageHintLevel,
-            solutionRevealRate: report.hintDependency.solutionRevealRate,
-            trend: report.hintDependency.trend,
-          },
+          // A handful of Doubt Helper sessions says nothing about reliance on
+          // hints; the model would still draw a conclusion from it.
+          ...(report.hintDependency.trend === 'insufficient_data'
+            ? {}
+            : {
+                hintDependency: {
+                  sessions: report.hintDependency.sessions,
+                  averageHintLevel: report.hintDependency.averageHintLevel,
+                  solutionRevealRate: report.hintDependency.solutionRevealRate,
+                  trend: report.hintDependency.trend,
+                },
+              }),
           insights: report.insights.map((insight) => insight.text),
         },
       })

@@ -1,12 +1,11 @@
 """Per-turn token budgets and relevance-ranked context packing for the Coach.
 
 Sending the whole learner context and one fixed output ceiling on every turn
-made simple questions slow and let long answers run out of room on Groq. Each
+made simple questions slow and let long answers run out of room. Each
 turn now gets:
 
 - a tier (quick, standard, deep) from deterministic signals in the question;
-- an output budget and reasoning depth sized for that tier, kept inside the
-  provider's per-minute token allowance on Groq;
+- an output budget and reasoning depth sized for that tier;
 - an input budget, filled with the context sections that matter for this
   question. List items (topics, memories, recommendations, turns, knowledge)
   are ranked by relevance to the question, with the vector-ranked knowledge
@@ -25,19 +24,21 @@ from .coach_intent import is_complex_turn
 from .settings import AiSettings
 
 Tier = Literal["quick", "standard", "deep"]
-Provider = Literal["gemini", "groq"]
+Provider = Literal["local", "openrouter"]
 
 # Characters per token for compact JSON and English prose; deliberately a
 # little pessimistic so a packed context does not overshoot the budget.
 _CHARS_PER_TOKEN = 3.6
 
 _OUTPUT_TOKENS: dict[Provider, dict[Tier, int]] = {
-    "gemini": {"quick": 2_048, "standard": 8_192, "deep": 65_536},
-    "groq": {"quick": 900, "standard": 2_400, "deep": 8_192},
+    # A laptop model writes about 15 tokens a second and reads about 220:
+    # local budgets keep a deep answer near two minutes.
+    "local": {"quick": 600, "standard": 1_200, "deep": 2_000},
+    "openrouter": {"quick": 1_024, "standard": 4_096, "deep": 16_384},
 }
 _INPUT_TOKENS: dict[Provider, dict[Tier, int]] = {
-    "gemini": {"quick": 5_000, "standard": 12_000, "deep": 36_000},
-    "groq": {"quick": 2_500, "standard": 4_500, "deep": 9_000},
+    "local": {"quick": 1_800, "standard": 3_200, "deep": 5_500},
+    "openrouter": {"quick": 5_000, "standard": 12_000, "deep": 90_000},
 }
 _AGENT_STEPS: dict[Tier, int] = {"quick": 1, "standard": 2, "deep": 12}
 _TOOL_RESULT_CHARS: dict[Tier, int] = {
@@ -150,16 +151,17 @@ def plan_turn_budget(
     )
     output = _OUTPUT_TOKENS[provider][tier]
     input_budget = _INPUT_TOKENS[provider][tier]
-    if provider == "groq":
-        output = min(output, settings.groq_max_completion_tokens)
-        # Groq's on-demand tier meters input and output together per
-        # minute. Keep one request inside that allowance, giving the answer
-        # at least a third of it.
-        allowance = settings.groq_tokens_per_minute - 300
-        input_budget = min(input_budget, max(1_200, allowance * 2 // 3))
-        output = max(600, min(output, allowance - input_budget))
-    else:
-        output = min(output, settings.coach_max_output_tokens)
+    output_limit = (
+        settings.solution_max_output_tokens
+        if tier == "deep"
+        else settings.coach_max_output_tokens
+    )
+    output = min(output, output_limit)
+    if provider == "local":
+        input_budget = min(
+            input_budget,
+            max(1_200, settings.local_ai_context_tokens - output - 800),
+        )
     return TurnBudget(
         tier=tier,
         output_tokens=output,
@@ -290,6 +292,19 @@ def _take(items: list[Any], budget: int) -> tuple[list[Any], int]:
     return kept, used
 
 
+def _trimmed_turn(turn: object, budget: int) -> object | None:
+    """`turn` with its content cut to fit `budget` tokens, if worth keeping."""
+    if budget < 60 or not isinstance(turn, dict):
+        return None
+    content = turn.get("content")
+    if not isinstance(content, str):
+        return None
+    chars = int((budget - estimate_tokens({**turn, "content": ""})) * _CHARS_PER_TOKEN)
+    if chars < 160:
+        return None
+    return {**turn, "content": content[: chars - 1].rstrip() + "…"}
+
+
 def pack_context(
     context: dict[str, object], question: str, budget_tokens: int
 ) -> dict[str, object]:
@@ -356,7 +371,15 @@ def pack_context(
     if isinstance(recent, list) and recent:
         # Newest turns matter most for follow-ups; keep them in order.
         newest_first = list(reversed(recent))
-        kept, cost = _take(newest_first, int(budget_tokens * 0.2))
+        allowance = int(budget_tokens * 0.2)
+        kept, cost = _take(newest_first, allowance)
+        if len(kept) < len(newest_first):
+            # A long answer must not cost the follow-up its whole history:
+            # the turn that did not fit is kept with its content shortened.
+            trimmed = _trimmed_turn(newest_first[len(kept)], allowance - cost)
+            if trimmed is not None:
+                kept.append(trimmed)
+                cost += estimate_tokens(trimmed)
         packed["recentTurns"] = list(reversed(kept))
         used += cost
         if len(kept) < len(recent):

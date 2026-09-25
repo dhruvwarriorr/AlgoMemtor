@@ -239,8 +239,16 @@ class FakeMemoryRepository:
         limit: int,
         confidence_threshold: float,
         similarity_threshold: float,
+        embedding_version: str | None = None,
     ) -> list[StoredMemory]:
-        del learner_id, embedding, limit, confidence_threshold, similarity_threshold
+        del (
+            learner_id,
+            embedding,
+            limit,
+            confidence_threshold,
+            similarity_threshold,
+            embedding_version,
+        )
         self.vector_calls += 1
         if self.failure_on_vector:
             raise RuntimeError("vector extension unavailable")

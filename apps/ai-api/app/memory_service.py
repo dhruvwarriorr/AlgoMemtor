@@ -11,6 +11,7 @@ from decimal import Decimal
 from time import perf_counter
 from uuid import UUID
 
+from .ai_observability import AiUsage, record_usage
 from .memory_audit import (
     MemoryAudit,
     MemoryAuditRepository,
@@ -20,11 +21,11 @@ from .memory_audit import (
 )
 from .memory_consolidation import decayed_confidence
 from .memory_model import (
-    GeminiMemoryEmbedder,
-    GeminiMemoryGenerationModel,
     MemoryEmbedder,
     MemoryEmbeddingError,
     MemoryGenerationModel,
+    ProviderMemoryEmbedder,
+    ProviderMemoryGenerationModel,
     validate_model_result,
 )
 from .memory_models import (
@@ -170,15 +171,15 @@ class MemoryService:
             return self.model
         if not self.settings.generation_api_key:
             raise MemoryNotConfiguredError
-        self.model = GeminiMemoryGenerationModel(self.settings)
+        self.model = ProviderMemoryGenerationModel(self.settings)
         return self.model
 
     def get_embedder(self) -> MemoryEmbedder:
         if self.embedder is not None:
             return self.embedder
-        if not self.settings.llm_api_key:
+        if not self.settings.generation_api_key:
             raise MemoryNotConfiguredError
-        self.embedder = GeminiMemoryEmbedder(self.settings)
+        self.embedder = ProviderMemoryEmbedder(self.settings)
         return self.embedder
 
     def fallback_output(
@@ -524,7 +525,9 @@ class MemoryService:
                     confidence=item.memory.confidence,
                     embedding=embedding,
                     embedding_model=(
-                        self.settings.embedding_model if embedding is not None else None
+                        self.settings.active_embedding_version
+                        if embedding is not None
+                        else None
                     ),
                     status=(
                         "active"
@@ -605,6 +608,22 @@ class MemoryService:
             memory_ids=[str(memory_id) for memory_id in persisted.memory_ids],
             input_hash=input_hash,
             output_hash=output_hash,
+        )
+        record_usage(
+            self.settings,
+            AiUsage(
+                provider=self.settings.ai_provider,
+                model=self.settings.llm_model,
+                role="fast",
+                workload="memory_generation",
+                input_tokens=batch.input_tokens or 0,
+                output_tokens=batch.output_tokens or 0,
+                estimated_cost_usd=float(
+                    self.estimated_cost(batch.input_tokens, batch.output_tokens) or 0
+                ),
+                latency_ms=latency_ms,
+                error_type=batch.fallback_reason if batch.fallback else None,
+            ),
         )
         audit_id = await self.save_audit(audit, request_id)
         return MemoryProcessResponse(
@@ -705,6 +724,7 @@ class MemoryService:
                         limit=bounded_limit,
                         confidence_threshold=self.settings.memory_min_confidence,
                         similarity_threshold=self.settings.memory_similarity_threshold,
+                        embedding_version=self.settings.active_embedding_version,
                     )
                     keyword_items: list[StoredMemory] = []
                     search_sql = getattr(self.repository, "search_sql", None)
@@ -946,7 +966,7 @@ class MemoryService:
             confidence=request.confidence,
             embedding=corrected_embedding,
             embedding_model=(
-                self.settings.embedding_model
+                self.settings.active_embedding_version
                 if not embedding_fallback and corrected_embedding is not None
                 else None
             ),

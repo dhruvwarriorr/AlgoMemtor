@@ -67,9 +67,9 @@ function OnboardingPage() {
           Personalized coaching is part of AlgoMemtor
         </p>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          AlgoMemtor uses Google Gemini to turn your profile, progress, and
-          eligible learner notes into coaching and memory suggestions. It never
-          sends passwords or credentials.
+          AlgoMemtor uses AI models to turn your profile, progress, and eligible
+          learner notes into coaching and memory suggestions. It never sends
+          passwords or credentials.
         </p>
       </aside>
     </PageContainer>

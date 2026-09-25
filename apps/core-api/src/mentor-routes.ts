@@ -10,9 +10,6 @@ import {
   ProgressNarrativeResponseSchema,
   ProgressReportResponseSchema,
   ProviderKeySchema,
-  ReviewRevisionRequestSchema,
-  RevisionResponseSchema,
-  RevisionsResponseSchema,
   SolutionAccessResponseSchema,
   SolutionChatRequestSchema,
   SolutionChatResponseSchema,
@@ -34,7 +31,7 @@ import { z } from 'zod'
 import { MentorError, type MentorService } from './services/mentor-service.js'
 
 // Mentor tools live outside the Coach chat: Doubt Helper sessions, the
-// Solution Explorer, the Upsolve Tracker and revisions, Contest Analysis and
+// Solution Explorer, the Upsolve Tracker, Contest Analysis and
 // the Progress Report. Every route is owner-scoped by the verified subject.
 
 type MentorRouteDependencies = {
@@ -51,6 +48,9 @@ const apiError = (code: string, message: string, retryable?: boolean) =>
       ...(retryable === undefined ? {} : { retryable }),
     },
   })
+
+// `?refresh=true` pulls the learner's newest platform data first.
+const wantsRefresh = (request: Request) => request.query.refresh === 'true'
 
 const invalidInput = (response: Response, message: string, issues?: unknown) =>
   response.status(400).json(
@@ -259,15 +259,17 @@ export function registerMentorRoutes(
     }),
   )
 
-  // --- Upsolve Tracker and revisions --------------------------------------
+  // --- Upsolve Tracker ---------------------------------------------------
 
   app.get(
     '/api/upsolve',
     requireAuthenticated,
-    handle(async (_request, response) => {
+    handle(async (request, response) => {
       response.json(
         UpsolveResponseSchema.parse({
-          data: await service.upsolve(subject(response)),
+          data: await service.upsolve(subject(response), {
+            refresh: wantsRefresh(request),
+          }),
         }),
       )
     }),
@@ -300,47 +302,14 @@ export function registerMentorRoutes(
   )
 
   app.get(
-    '/api/revisions',
-    requireAuthenticated,
-    handle(async (_request, response) => {
-      response.json(
-        RevisionsResponseSchema.parse(
-          await service.revisions(subject(response)),
-        ),
-      )
-    }),
-  )
-
-  app.post(
-    '/api/revisions/:revisionId/review',
-    requireAuthenticated,
-    handle(async (request, response) => {
-      const input = ReviewRevisionRequestSchema.safeParse(request.body)
-      if (!input.success) {
-        invalidInput(response, 'Choose remembered or struggled.')
-        return
-      }
-      response.json(
-        RevisionResponseSchema.parse({
-          data: await service.reviewRevision(
-            subject(response),
-            param(request, 'revisionId'),
-            input.data.outcome,
-          ),
-        }),
-      )
-    }),
-  )
-
-  // --- Contest Analysis ---------------------------------------------------
-
-  app.get(
     '/api/contest-analysis',
     requireAuthenticated,
-    handle(async (_request, response) => {
+    handle(async (request, response) => {
       response.json(
         ContestAnalysisOverviewResponseSchema.parse({
-          data: await service.contestOverview(subject(response)),
+          data: await service.contestOverview(subject(response), {
+            refresh: wantsRefresh(request),
+          }),
         }),
       )
     }),

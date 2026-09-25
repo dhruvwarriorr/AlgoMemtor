@@ -13,6 +13,7 @@ from uuid import UUID
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from .ai_observability import AiUsage, record_usage
 from .knowledge_base import retrieve_knowledge
 from .knowledge_repository import KnowledgeRepository
 from .llm import generation_model
@@ -124,13 +125,14 @@ class RankingNotConfiguredError(RuntimeError):
     pass
 
 
-class GeminiRankingModel:
+class ProviderRankingModel:
     def __init__(self, settings: AiSettings) -> None:
         model = generation_model(
             settings,
+            workload="ranking",
             temperature=0.3,
-            max_tokens=settings.llm_max_output_tokens,
-            timeout=settings.llm_timeout_seconds,
+            max_tokens=settings.ranking_max_output_tokens,
+            timeout=settings.ai_request_timeout_seconds,
             max_retries=2,
         )
         self.structured_model = model.with_structured_output(
@@ -175,7 +177,9 @@ class GeminiRankingModel:
         )
         parsed = result.get("parsed")
         if not isinstance(parsed, ModelRankingOutput):
-            raise TypeError("Gemini returned no validated ranking output.")
+            raise TypeError(
+                "The configured provider returned no validated ranking output."
+            )
         raw = result.get("raw")
         usage = getattr(raw, "usage_metadata", None) or {}
         return ModelResult(
@@ -205,7 +209,7 @@ class RankingService:
             return self.model
         if not self.settings.generation_api_key:
             raise RankingNotConfiguredError
-        self.model = GeminiRankingModel(self.settings)
+        self.model = ProviderRankingModel(self.settings)
         return self.model
 
     def reason_is_safe(
@@ -382,6 +386,20 @@ class RankingService:
             ),
             preference_hash=preference_hash,
         )
+        record_usage(
+            self.settings,
+            AiUsage(
+                provider=self.settings.ai_provider,
+                model=response.model,
+                role="fast",
+                workload="ranking",
+                input_tokens=response.inputTokens or 0,
+                output_tokens=response.outputTokens or 0,
+                estimated_cost_usd=response.estimatedCostUsd or 0,
+                latency_ms=response.latencyMs,
+                error_type=response.fallbackReason if response.fallback else None,
+            ),
+        )
         try:
             async with asyncio.timeout(self.settings.ai_audit_timeout_seconds):
                 audit_result = await asyncio.gather(
@@ -435,7 +453,7 @@ class RankingService:
                     }
                     for chunk in chunks
                 ]
-        except (OSError, RuntimeError, TypeError, ValueError):
+        except OSError, RuntimeError, TypeError, ValueError:
             knowledge = []
         if not knowledge:
             knowledge = [

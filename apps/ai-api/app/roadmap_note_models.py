@@ -29,7 +29,7 @@ class RoadmapNoteRequest(StrictModel):
 
 
 class RoadmapNoteClassification(StrictModel):
-    """Gemini's structured-output shape for a free-text learning-plan note."""
+    """Structured-output shape for a free-text learning-plan note."""
 
     topic: Topic | None = None
     status: TopicStatusOrNoChange

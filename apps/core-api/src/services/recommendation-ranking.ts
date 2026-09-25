@@ -30,6 +30,9 @@ type RatingBand = {
 
 export type NormalizedRankingProfile = {
   focusTopics: string[]
+  // Topics the learner explicitly asked to practise (recommendation
+  // steering); they outrank every other focus topic.
+  priorityTopics?: string[]
   preferredTopics: string[]
   ratingBand: RatingBand
   preferredProviders: ProviderKey[]
@@ -315,6 +318,13 @@ const topicMatch = (
   const preferredMatch =
     matchingTopic(problem, profile.preferredTopics) !== undefined
 
+  if (
+    profile.priorityTopics !== undefined &&
+    matchingTopic(problem, profile.priorityTopics) !== undefined
+  ) {
+    return 1.5
+  }
+
   if (weakMatch) {
     return 1
   }
@@ -427,7 +437,12 @@ const reasonFor = (
   const difficulty = difficultyMatch(problem, profile)
   const revision = revisionMatch(problem, history)
 
-  if (topic === 1) {
+  if (topic === 1.5) {
+    const topic = matchingTopic(problem, profile.priorityTopics ?? [])
+    if (topic !== undefined) {
+      reasons.push(`Practises ${topic}, as you asked.`)
+    }
+  } else if (topic === 1) {
     const topic = matchingTopic(problem, profile.focusTopics)
     if (topic !== undefined) {
       reasons.push(`Practises your focus topic: ${topic}.`)

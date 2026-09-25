@@ -48,6 +48,9 @@ describe('plainMath', () => {
       ),
     ).toBe('Map input bounds (e.g., O(N log N) vs O(N²)) and a_i ≤ 10⁹.')
     expect(plainMath('It costs $5 and $10.')).toBe('It costs $5 and $10.')
+    expect(plainMath('Time: $ O((V + E) \\log V) $.')).toBe(
+      'Time: O((V + E) log V).',
+    )
     expect(plainMath('Keep `$x$` and\n```\n$y$\n```')).toBe(
       'Keep `$x$` and\n```\n$y$\n```',
     )
