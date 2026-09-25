@@ -110,6 +110,8 @@ export type ProblemMeta = {
   rating?: number
   tags: string[]
   topics: string[]
+  // Contest position label (Q1, P2) for contest problem lists.
+  position?: string
 }
 
 export const problemKeyFor = (
@@ -123,6 +125,9 @@ export const problemKeyFor = (
   }
   return provider === 'leetcode' ? externalId.toLowerCase() : externalId
 }
+
+// Learner-set upsolve states: skipped, or marked solved by the learner.
+export type UpsolveState = 'skipped' | 'solved'
 
 export const problemRef = (provider: string, key: string) =>
   `${provider}:${key}`
@@ -246,12 +251,12 @@ export interface MentorRepository {
     payload: unknown,
   ): Promise<void>
 
-  listUpsolveStates(authUserId: string): Promise<Map<string, 'skipped'>>
+  listUpsolveStates(authUserId: string): Promise<Map<string, UpsolveState>>
   setUpsolveState(
     authUserId: string,
     provider: ProviderKey,
     externalId: string,
-    state: 'skipped' | null,
+    state: UpsolveState | null,
   ): Promise<void>
 
   listRevisions(authUserId: string): Promise<RevisionItem[]>
@@ -954,13 +959,16 @@ export class PrismaMentorRepository implements MentorRepository {
 
   async listUpsolveStates(authUserId: string) {
     const userId = await this.userId(authUserId)
-    const states = new Map<string, 'skipped'>()
+    const states = new Map<string, UpsolveState>()
     if (userId === null) return states
     const rows = await this.prisma.upsolveItemState.findMany({
-      where: { userId, state: 'skipped' },
+      where: { userId, state: { in: ['skipped', 'solved'] } },
     })
     for (const row of rows) {
-      states.set(problemRef(row.provider, row.externalId), 'skipped')
+      states.set(
+        problemRef(row.provider, row.externalId),
+        row.state === 'solved' ? 'solved' : 'skipped',
+      )
     }
     return states
   }
@@ -969,7 +977,7 @@ export class PrismaMentorRepository implements MentorRepository {
     authUserId: string,
     provider: ProviderKey,
     externalId: string,
-    state: 'skipped' | null,
+    state: UpsolveState | null,
   ) {
     const userId = await this.ensureUserId(authUserId)
     if (state === null) {
@@ -1068,7 +1076,7 @@ export class InMemoryMentorRepository implements MentorRepository {
   private readonly activity = new Map<string, LearnerActivity>()
   private readonly sessions: MemorySession[] = []
   private readonly reports = new Map<string, StoredReport & { key: string }>()
-  private readonly upsolve = new Map<string, Map<string, 'skipped'>>()
+  private readonly upsolve = new Map<string, Map<string, UpsolveState>>()
   private readonly revisions = new Map<
     string,
     Parameters<typeof revisionFromRow>[0][]
@@ -1309,7 +1317,7 @@ export class InMemoryMentorRepository implements MentorRepository {
     authUserId: string,
     provider: ProviderKey,
     externalId: string,
-    state: 'skipped' | null,
+    state: UpsolveState | null,
   ) {
     const states = this.upsolve.get(authUserId) ?? new Map()
     if (state === null) states.delete(problemRef(provider, externalId))

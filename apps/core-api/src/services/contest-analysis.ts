@@ -183,6 +183,7 @@ export function buildContestMetrics(input: {
       externalId: problem.externalId,
       label:
         codeforcesIndex(participation.contestId, problem.externalId) ||
+        problem.position ||
         `#${index + 1}`,
       title: problem.title,
       ...(problem.rating === undefined ? {} : { rating: problem.rating }),
@@ -312,9 +313,9 @@ export function buildContestMetrics(input: {
       'No submissions from this contest were found in your synced activity. Sync your platform to analyze it.',
     )
   }
-  if (provider !== 'codeforces') {
+  if (provider !== 'codeforces' && input.contestProblems.length === 0) {
     notes.push(
-      'Only problems you submitted to are listed, in the order you first submitted; this provider does not publish the contest problem list here.',
+      'Only problems you submitted to are listed, in the order you first submitted; the contest problem list could not be loaded.',
     )
   }
   if (participation.completeness !== 'complete') {
@@ -353,9 +354,9 @@ export function buildContestMetrics(input: {
       : { firstAcceptedMinute: firstAccepted }),
     rapidWrongResubmits,
     coverage:
-      provider === 'codeforces' &&
-      inContest.length > 0 &&
-      participation.completeness === 'complete'
+      (provider === 'codeforces'
+        ? participation.completeness === 'complete'
+        : input.contestProblems.length > 0) && inContest.length > 0
         ? 'complete'
         : 'partial',
     coverageNotes: notes.slice(0, 4),

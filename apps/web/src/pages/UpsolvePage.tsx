@@ -1,7 +1,12 @@
 import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import type { UpsolveContest, UpsolveItem } from '@algomemtor/shared-contracts'
+import {
+  UPSOLVE_QUEUE_SIZE,
+  type UpsolveContest,
+  type UpsolveHistoryPoint,
+  type UpsolveItem,
+} from '@algomemtor/shared-contracts'
 
 import {
   ArrowUpRight,
@@ -24,7 +29,6 @@ import {
   ProviderBadge,
   ProviderProblemLink,
   SectionCard,
-  StatTile,
 } from '@/features/mentor/components/shared'
 import {
   formatDateTime,
@@ -36,19 +40,6 @@ import { mentorToolPath } from '@/features/mentor/feature-routes'
 import { useUpdateUpsolveItem, useUpsolve } from '@/features/mentor/hooks'
 import { useSetProblemStatus } from '@/features/progress/hooks/useProgress'
 import { cn } from '@/lib/utils'
-
-const QUEUE_PREVIEW = 8
-
-function monthLabel(value: string) {
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      month: 'short',
-      year: '2-digit',
-    }).format(new Date(`${value}-01T00:00:00Z`))
-  } catch {
-    return value
-  }
-}
 
 function ItemActions({
   item,
@@ -63,7 +54,13 @@ function ItemActions({
   onSolved: () => void
   pending: boolean
 }) {
-  const canMarkSolved = item.provider !== 'leetcode'
+  if (item.status === 'solved_in_contest') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-md bg-secondary px-2 py-1 text-xs font-medium text-secondary-foreground">
+        <Check aria-hidden="true" className="size-3.5" /> Solved in contest
+      </span>
+    )
+  }
   if (item.status === 'upsolved') {
     return (
       <span className="inline-flex items-center gap-1 rounded-md bg-go-soft px-2 py-1 text-xs font-medium text-go-foreground">
@@ -112,17 +109,15 @@ function ItemActions({
       >
         <BookOpen aria-hidden="true" /> Approaches
       </Link>
-      {canMarkSolved ? (
-        <Button
-          disabled={pending}
-          onClick={onSolved}
-          size="sm"
-          type="button"
-          variant="ghost"
-        >
-          <Check aria-hidden="true" /> Mark solved
-        </Button>
-      ) : null}
+      <Button
+        disabled={pending}
+        onClick={onSolved}
+        size="sm"
+        type="button"
+        variant="ghost"
+      >
+        <Check aria-hidden="true" /> Mark solved
+      </Button>
       <Button
         aria-label={`Skip ${item.title}`}
         disabled={pending}
@@ -141,24 +136,32 @@ function ItemRow({
   item,
   showContest,
   actions,
+  rank,
 }: {
   item: UpsolveItem
   showContest: boolean
   actions: ReactNode
+  rank?: number
 }) {
   return (
     <li
       className={cn(
         'flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-card p-4 lg:flex-row lg:items-center lg:justify-between',
         item.status !== 'pending' && 'opacity-80',
+        rank !== undefined && 'animate-rise motion-reduce:animate-none',
       )}
     >
       <div className="flex min-w-0 gap-3">
         <span
           aria-hidden="true"
-          className="grid size-9 shrink-0 place-items-center rounded-lg bg-secondary font-mono text-sm font-semibold text-secondary-foreground"
+          className={cn(
+            'grid size-9 shrink-0 place-items-center rounded-lg font-mono text-sm font-semibold',
+            rank === undefined
+              ? 'bg-secondary text-secondary-foreground'
+              : 'bg-primary/10 text-primary',
+          )}
         >
-          {item.position ?? '•'}
+          {rank === undefined ? (item.position ?? '•') : rank}
         </span>
         <div className="min-w-0">
           <ProviderProblemLink
@@ -169,7 +172,10 @@ function ItemRow({
           <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
             <ProviderBadge provider={item.provider} />
             {showContest ? (
-              <span className="truncate">{item.contest.name}</span>
+              <span className="truncate">
+                {item.contest.name}
+                {item.position ? ` · ${item.position}` : ''}
+              </span>
             ) : null}
             {item.rating !== undefined ? (
               <span>Rated {item.rating}</span>
@@ -197,6 +203,78 @@ function ItemRow({
   )
 }
 
+const providerShort = {
+  codeforces: 'CF',
+  codechef: 'CC',
+  leetcode: 'LC',
+  cses: 'CSES',
+} as const
+
+function ContestHistoryChart({
+  history,
+}: {
+  history: readonly UpsolveHistoryPoint[]
+}) {
+  const points = [...history].reverse()
+  const max = Math.max(1, ...points.map((point) => point.total))
+  return (
+    <SectionCard
+      description="Each bar is one recent contest: solved during it, upsolved after, and still open."
+      id="upsolve-history"
+      title="Recent contests"
+    >
+      <ul className="flex min-w-0 items-end gap-2 overflow-x-auto pb-1">
+        {points.map((point) => {
+          const open = Math.max(
+            0,
+            point.total - point.solvedInContest - point.upsolved,
+          )
+          return (
+            <li
+              aria-label={`${point.name}: ${point.solvedInContest} solved in contest, ${point.upsolved} upsolved, ${open} open`}
+              className="flex w-12 shrink-0 flex-col items-center gap-1"
+              key={`${point.provider}:${point.contestId}`}
+              title={point.name}
+            >
+              <div className="flex h-20 w-6 flex-col justify-end overflow-hidden rounded bg-secondary">
+                <div
+                  className="w-full bg-border"
+                  style={{ height: `${(open / max) * 100}%` }}
+                />
+                <div
+                  className="w-full bg-primary"
+                  style={{ height: `${(point.upsolved / max) * 100}%` }}
+                />
+                <div
+                  className="w-full bg-go"
+                  style={{ height: `${(point.solvedInContest / max) * 100}%` }}
+                />
+              </div>
+              <span className="text-[0.7rem] tabular-nums text-foreground">
+                {point.solvedInContest + point.upsolved}/{point.total}
+              </span>
+              <span className="text-[0.65rem] text-muted-foreground">
+                {providerShort[point.provider]}
+              </span>
+            </li>
+          )
+        })}
+      </ul>
+      <p className="mt-2 flex flex-wrap gap-3 text-[0.7rem] text-muted-foreground">
+        <span className="inline-flex items-center gap-1">
+          <span className="size-2 rounded-sm bg-go" /> Solved in contest
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="size-2 rounded-sm bg-primary" /> Upsolved
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="size-2 rounded-sm bg-border" /> Open
+        </span>
+      </p>
+    </SectionCard>
+  )
+}
+
 function UpsolvePage() {
   const { notify } = useNotification()
   const { user } = useAuth()
@@ -204,7 +282,7 @@ function UpsolvePage() {
   const upsolveQuery = useUpsolve()
   const updateItem = useUpdateUpsolveItem()
   const setStatus = useSetProblemStatus()
-  const [showAll, setShowAll] = useState(false)
+  const [working, setWorking] = useState<string | null>(null)
 
   const header = (
     <PageHeader
@@ -225,7 +303,7 @@ function UpsolvePage() {
           Refresh
         </Button>
       }
-      description="Every problem you missed in your recent contests, ordered by what will teach you most. Get level-appropriate hints, read the editorial, explore approaches, and track how consistently you follow through."
+      description="Your next five problems from recent contests: the first unsolved ones of your latest contest and the ones worth revisiting from earlier contests. Solve or skip one and the next best problem, picked for your level, takes its place."
       title="Upsolve"
     />
   )
@@ -254,7 +332,7 @@ function UpsolvePage() {
     )
   }
 
-  const { queue, contests, summary, revisionsDue, linkedProviders } =
+  const { queue, contests, history, revisionsDue, linkedProviders } =
     upsolveQuery.data.data
   const pending = updateItem.isPending || setStatus.isPending
 
@@ -277,11 +355,21 @@ function UpsolvePage() {
       },
     )
 
-  const markSolved = (item: UpsolveItem) =>
-    setStatus.mutate(
-      {
+  const markSolved = (item: UpsolveItem) => {
+    setWorking(item.id)
+    // The upsolve state works on every platform; where the progress record
+    // takes this problem ID, the self-reported solve is recorded there too.
+    if (item.provider !== 'leetcode') {
+      setStatus.mutate({
         problem: { provider: item.provider, externalId: item.externalId },
         input: { status: 'solved', sourceContext: 'upsolve' },
+      })
+    }
+    updateItem.mutate(
+      {
+        provider: item.provider,
+        externalId: item.externalId,
+        state: 'solved',
       },
       {
         onSuccess: () => {
@@ -290,7 +378,7 @@ function UpsolvePage() {
           })
           notify({
             title: 'Marked solved',
-            description: `${item.title} is recorded as self-reported and added to your revision schedule.`,
+            description: `${item.title} is recorded as solved by you and added to your revision schedule. The next problem joins your queue.`,
             tone: 'success',
           })
         },
@@ -300,8 +388,10 @@ function UpsolvePage() {
             description: mentorErrorMessage(error, 'Try again shortly.'),
             tone: 'error',
           }),
+        onSettled: () => setWorking(null),
       },
     )
+  }
 
   const actionsFor = (item: UpsolveItem) => (
     <ItemActions
@@ -309,7 +399,7 @@ function UpsolvePage() {
       onRestore={() => skip(item, 'pending')}
       onSkip={() => skip(item, 'skipped')}
       onSolved={() => markSolved(item)}
-      pending={pending}
+      pending={pending || working === item.id}
     />
   )
 
@@ -340,45 +430,9 @@ function UpsolvePage() {
     )
   }
 
-  const trendMax = Math.max(1, ...summary.trend.map((point) => point.flagged))
-  const visibleQueue = showAll ? queue : queue.slice(0, QUEUE_PREVIEW)
-
   return (
     <PageContainer>
       {header}
-
-      <dl className="grid min-w-0 grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile
-          hint="Across your last contests"
-          label="Flagged problems"
-          value={summary.flagged}
-        />
-        <StatTile
-          hint="Solved after the contest"
-          label="Upsolved"
-          tone="positive"
-          value={summary.upsolved}
-        />
-        <StatTile
-          hint="Waiting in your queue"
-          label="Pending"
-          value={summary.pending}
-        />
-        <StatTile
-          hint={`${summary.skipped} skipped`}
-          label="Completion rate"
-          tone={
-            summary.completionRate !== null && summary.completionRate >= 0.5
-              ? 'positive'
-              : 'warning'
-          }
-          value={
-            summary.completionRate === null
-              ? '—'
-              : `${Math.round(summary.completionRate * 100)}%`
-          }
-        />
-      </dl>
 
       {revisionsDue > 0 ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/30 bg-primary/5 p-4">
@@ -392,74 +446,32 @@ function UpsolvePage() {
       ) : null}
 
       <SectionCard
-        description="The highest-value problems to upsolve next."
+        description={`${UPSOLVE_QUEUE_SIZE} problems at a time. Solve or skip one and the next best one, chosen for your level, joins at the bottom.`}
         id="upsolve-queue"
         title="Up next"
       >
         {queue.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Your queue is clear. Every flagged problem is upsolved or skipped.
+            Your queue is clear: every open problem from your recent contests is
+            solved or skipped.
           </p>
         ) : (
-          <>
-            <ol className="grid gap-2">
-              {visibleQueue.map((item) => (
-                <ItemRow
-                  actions={actionsFor(item)}
-                  item={item}
-                  key={item.id}
-                  showContest
-                />
-              ))}
-            </ol>
-            {queue.length > QUEUE_PREVIEW ? (
-              <button
-                className="mt-3 text-sm font-medium text-primary underline-offset-4 hover:underline"
-                onClick={() => setShowAll((value) => !value)}
-                type="button"
-              >
-                {showAll ? 'Show fewer' : `Show all ${queue.length}`}
-              </button>
-            ) : null}
-          </>
+          <ol className="grid gap-2">
+            {queue.map((item, index) => (
+              <ItemRow
+                actions={actionsFor(item)}
+                item={item}
+                key={item.id}
+                rank={index + 1}
+                showContest
+              />
+            ))}
+          </ol>
         )}
       </SectionCard>
 
-      {summary.trend.length > 0 ? (
-        <SectionCard
-          description="Problems flagged each month and how many you went back and solved."
-          id="upsolve-trend"
-          title="Follow-through over time"
-        >
-          <ul className="flex min-w-0 items-end gap-3 overflow-x-auto pb-1">
-            {summary.trend.map((point) => (
-              <li
-                aria-label={`${monthLabel(point.month)}: ${point.upsolved} of ${point.flagged} upsolved`}
-                className="flex w-14 shrink-0 flex-col items-center gap-1.5"
-                key={point.month}
-              >
-                <div className="flex h-28 w-8 flex-col justify-end overflow-hidden rounded-md bg-secondary">
-                  <div
-                    className="w-full bg-primary/35"
-                    style={{
-                      height: `${((point.flagged - point.upsolved) / trendMax) * 100}%`,
-                    }}
-                  />
-                  <div
-                    className="w-full bg-primary"
-                    style={{ height: `${(point.upsolved / trendMax) * 100}%` }}
-                  />
-                </div>
-                <span className="text-xs tabular-nums text-foreground">
-                  {point.upsolved}/{point.flagged}
-                </span>
-                <span className="text-[0.7rem] text-muted-foreground">
-                  {monthLabel(point.month)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </SectionCard>
+      {history !== undefined && history.length > 0 ? (
+        <ContestHistoryChart history={history} />
       ) : null}
 
       <section
@@ -470,13 +482,16 @@ function UpsolvePage() {
           className="text-lg font-semibold text-foreground"
           id="by-contest-heading"
         >
-          By contest
+          Latest contests
         </h2>
+        <p className="-mt-1 text-sm text-muted-foreground">
+          Your most recent contest on each platform. Open one to see all of its
+          problems.
+        </p>
         {contests.map((contest: UpsolveContest) => (
           <details
             className="group min-w-0 rounded-xl border border-border bg-card"
             key={`${contest.provider}:${contest.contestId}`}
-            open={contest === contests[0]}
           >
             <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 p-4">
               <span className="min-w-0">
@@ -499,10 +514,13 @@ function UpsolvePage() {
               </span>
               <span className="text-xs text-muted-foreground">
                 {
-                  contest.items.filter((item) => item.status === 'upsolved')
-                    .length
+                  contest.items.filter(
+                    (item) =>
+                      item.status === 'upsolved' ||
+                      item.status === 'solved_in_contest',
+                  ).length
                 }
-                /{contest.items.length} upsolved
+                /{contest.items.length} solved
               </span>
             </summary>
             <div className="border-t border-border p-4">
@@ -513,7 +531,8 @@ function UpsolvePage() {
               ) : null}
               {contest.items.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  Nothing to upsolve from this contest.
+                  The problems of this contest could not be loaded. Sync your
+                  platform or try again later.
                 </p>
               ) : (
                 <ol className="grid gap-2">

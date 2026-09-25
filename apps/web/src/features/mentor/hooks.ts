@@ -6,6 +6,7 @@ import type {
   ProviderKey,
   SolutionChatRequest,
   StartProblemHelpRequest,
+  UpdateUpsolveItemRequest,
 } from '@algomemtor/shared-contracts'
 
 import { useAuth } from '@/features/auth/useAuth'
@@ -162,7 +163,7 @@ export function useUpdateUpsolveItem() {
     mutationFn: (input: {
       provider: ProviderKey
       externalId: string
-      state: 'skipped' | 'pending'
+      state: UpdateUpsolveItemRequest['state']
     }) =>
       updateUpsolveItem(input.provider, input.externalId, {
         state: input.state,

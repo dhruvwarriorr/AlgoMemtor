@@ -44,6 +44,9 @@ from .mentor_models import (
     SolutionModelOutput,
     SolutionRequest,
     SolutionResponse,
+    UpsolvePick,
+    UpsolvePickOutput,
+    UpsolvePickRequest,
 )
 from .mentor_prompts import (
     BUG_CATEGORIES,
@@ -58,6 +61,7 @@ from .mentor_prompts import (
     SOLUTION_CHAT_SYSTEM,
     SOLUTION_EXPLORER_SYSTEM,
     STATEMENT_SEARCH_INSTRUCTION,
+    UPSOLVE_PICK_SYSTEM,
     phase_instructions,
 )
 from .page_retrieval import retrieve_public_page
@@ -88,6 +92,7 @@ _APPROACH_ORDER = {
     "optimized": 2,
 }
 REPORT_TOKEN_BUDGET = 4_096
+UPSOLVE_TOKEN_BUDGET = 2_048
 
 # Links a hint may keep clickable: teaching references and the problem sites.
 TEACHING_HOSTS = frozenset(
@@ -1092,6 +1097,30 @@ class MentorService:
             ratingChangeCauses=_clean_list(output.ratingChangeCauses, 400),
             strategy=_clean_list(output.strategy, 400) or ["Review this contest."],
         )
+
+    async def upsolve_pick(self, request: UpsolvePickRequest) -> UpsolvePickOutput:
+        model = self.get_model()
+        payload = request.model_dump(
+            mode="json", exclude={"requestId", "learnerId"}, exclude_none=True
+        )
+        output = await self._call(
+            model.generate_structured(
+                UpsolvePickOutput,
+                UPSOLVE_PICK_SYSTEM,
+                _compact_json(payload),
+                UPSOLVE_TOKEN_BUDGET,
+            )
+        )
+        allowed = {candidate.id for candidate in request.candidates}
+        picks: list[UpsolvePick] = []
+        for pick in output.picks:
+            if pick.id not in allowed or any(item.id == pick.id for item in picks):
+                continue
+            reason = _clean_item(pick.reason, 240) or "A good next step for you."
+            picks.append(UpsolvePick(id=pick.id, reason=reason))
+            if len(picks) == request.count:
+                break
+        return UpsolvePickOutput(picks=picks)
 
     async def contest_patterns(
         self, request: ContestPatternsRequest

@@ -497,7 +497,8 @@ export const UpsolveItemSchema = z
     tags: topicListSchema,
     contestOutcome: z.enum(['attempted', 'unattempted']),
     contestWrongAttempts: z.number().int().nonnegative(),
-    status: z.enum(['pending', 'upsolved', 'skipped']),
+    // solved_in_contest appears only in a contest's full problem list.
+    status: z.enum(['pending', 'upsolved', 'skipped', 'solved_in_contest']),
     statusSource: z.enum(['provider', 'manual']).optional(),
     upsolvedAt: dateSchema.optional(),
     priority: z.number().min(0).max(100),
@@ -553,12 +554,29 @@ export const UpsolveSummarySchema = z
   .strict()
 export type UpsolveSummary = z.infer<typeof UpsolveSummarySchema>
 
+// One recent contest for the small follow-through chart.
+export const UpsolveHistoryPointSchema = z
+  .object({
+    provider: ProviderKeySchema,
+    contestId: nonEmptyStringSchema.max(128),
+    name: nonEmptyStringSchema.max(512),
+    startsAt: dateSchema.optional(),
+    total: z.number().int().nonnegative(),
+    solvedInContest: z.number().int().nonnegative(),
+    upsolved: z.number().int().nonnegative(),
+  })
+  .strict()
+export type UpsolveHistoryPoint = z.infer<typeof UpsolveHistoryPointSchema>
+
+export const UPSOLVE_QUEUE_SIZE = 5
+
 export const UpsolveResponseSchema = z
   .object({
     data: z
       .object({
         queue: z.array(UpsolveItemSchema).max(30),
         contests: z.array(UpsolveContestSchema).max(12),
+        history: z.array(UpsolveHistoryPointSchema).max(12).optional(),
         summary: UpsolveSummarySchema,
         revisionsDue: z.number().int().nonnegative(),
         linkedProviders: z.array(ProviderKeySchema).max(4),
@@ -570,7 +588,7 @@ export const UpsolveResponseSchema = z
 export type UpsolveResponse = z.infer<typeof UpsolveResponseSchema>
 
 export const UpdateUpsolveItemRequestSchema = z
-  .object({ state: z.enum(['skipped', 'pending']) })
+  .object({ state: z.enum(['skipped', 'pending', 'solved']) })
   .strict()
 export type UpdateUpsolveItemRequest = z.infer<
   typeof UpdateUpsolveItemRequestSchema

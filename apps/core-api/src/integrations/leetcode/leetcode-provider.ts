@@ -6,6 +6,13 @@ import {
 } from '@algomemtor/shared-contracts'
 
 import {
+  LeetCodeContestSchema,
+  leetcodeContestProblems,
+  leetcodeContestQuery,
+  type ContestProblemLink,
+  type ContestProblemsHint,
+} from '../providers/contest-problems.js'
+import {
   LeetCodeSolutionsEnvelopeSchema,
   leetcodeCommunitySolutions,
   leetcodeLanguageTag,
@@ -219,6 +226,53 @@ export class LeetCodeProvider implements ProblemProvider {
       }
     }
     return result
+  }
+
+  private readonly contestProblemCache = new Map<
+    string,
+    { problems: ContestProblemLink[]; expiresAtMs: number }
+  >()
+
+  async contestProblems(
+    contestCode: string,
+    _hint: ContestProblemsHint,
+    request: ProblemProviderRequest = {},
+  ): Promise<ContestProblemLink[]> {
+    const cached = this.contestProblemCache.get(contestCode)
+    if (cached !== undefined && cached.expiresAtMs > Date.now()) {
+      return cached.problems
+    }
+    const body = await fetchProviderJson({
+      provider: this.key,
+      url: this.endpoint,
+      allowedHostname: 'leetcode.com',
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        referer: `https://leetcode.com/contest/${contestCode}/`,
+      },
+      body: JSON.stringify({
+        query: leetcodeContestQuery,
+        variables: { contestSlug: contestCode },
+      }),
+      requestGate: this.requestGate,
+      fetchImpl: this.fetchImpl,
+      timeoutMs: this.timeoutMs,
+      maxAttempts: 1,
+      maxResponseBytes: 200_000,
+      ...(request.signal === undefined ? {} : { signal: request.signal }),
+      ...(request.requestId === undefined
+        ? {}
+        : { requestId: request.requestId }),
+    } satisfies ProviderHttpRequest)
+    const parsed = LeetCodeContestSchema.safeParse(body)
+    if (!parsed.success || parsed.data.errors?.length) return []
+    const problems = leetcodeContestProblems(parsed.data)
+    this.contestProblemCache.set(contestCode, {
+      problems,
+      expiresAtMs: Date.now() + 6 * 3_600_000,
+    })
+    return problems
   }
 
   async communitySolutions(

@@ -8,6 +8,10 @@ import type {
 } from '@algomemtor/shared-contracts'
 
 import type { CommunitySolutionLink } from './community-solutions.js'
+import type {
+  ContestProblemLink,
+  ContestProblemsHint,
+} from './contest-problems.js'
 
 export type ProblemProviderRequest = {
   signal?: AbortSignal
@@ -48,4 +52,10 @@ export interface ProblemProvider {
     language: string,
     request?: ProblemProviderRequest,
   ): Promise<CommunitySolutionLink[]>
+  // Every problem of one contest in contest order, for upsolving.
+  contestProblems?(
+    contestCode: string,
+    hint: ContestProblemsHint,
+    request?: ProblemProviderRequest,
+  ): Promise<ContestProblemLink[]>
 }

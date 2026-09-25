@@ -281,6 +281,45 @@ class SolutionChatResponse(StrictModel):
     answer: str = Field(min_length=1, max_length=16_000)
 
 
+# --- Upsolve queue ---------------------------------------------------------
+
+
+class UpsolveCandidate(StrictModel):
+    id: str = Field(min_length=1, max_length=200)
+    title: str = Field(min_length=1, max_length=512)
+    provider: str = Field(min_length=1, max_length=32)
+    contestName: str = Field(min_length=1, max_length=512)
+    daysAgo: int = Field(ge=0)
+    position: str | None = Field(default=None, max_length=16)
+    rating: int | None = Field(default=None, ge=0, le=5_000)
+    tags: list[Tag] = Field(default_factory=list, max_length=12)
+    attempted: bool
+    wrongAttempts: int = Field(ge=0)
+    # 0 and 1 are the first two unsolved problems of their contest.
+    frontierRank: int = Field(ge=0, le=10)
+    score: int = Field(ge=0, le=100)
+
+
+class UpsolvePickRequest(StrictModel):
+    requestId: str = Field(min_length=1, max_length=160)
+    learnerId: UUID
+    learner: LearnerSnapshot
+    count: int = Field(ge=1, le=5)
+    candidates: list[UpsolveCandidate] = Field(min_length=1, max_length=24)
+    alreadyQueued: list[Annotated[str, Field(max_length=512)]] = Field(
+        default_factory=list, max_length=5
+    )
+
+
+class UpsolvePick(StrictModel):
+    id: str = Field(min_length=1, max_length=200)
+    reason: str = Field(min_length=1, max_length=240)
+
+
+class UpsolvePickOutput(StrictModel):
+    picks: list[UpsolvePick] = Field(default_factory=list, max_length=5)
+
+
 # --- Contest analysis -------------------------------------------------------
 
 

@@ -331,6 +331,9 @@ source, tests, and `git status` before relying on it.
   the Doubt Helper's ask/attempt actions live in a bottom-right panel. Coach
   turns get per-tier token budgets and relevance-packed context
   (`coach_context.py`). Pathway and check-ins are removed; do not re-add them.
+  Upsolve keeps a stable five-problem queue (fixed rule first, AI-picked
+  replacements), loads full CodeChef/LeetCode contest problem lists, and has
+  no reminders.
 
 Important: this snapshot describes the working tree, which currently contains
 uncommitted Week 10 work. It is context, not permission to commit or rewrite it.

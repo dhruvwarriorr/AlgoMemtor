@@ -519,16 +519,30 @@ doubt and question) rather than taken by confidence alone.
   (`POST /api/solutions/chat`; the conversation stays in the browser).
   Explorations are cached per learner, problem and language; explorations
   written before the problem explanation existed are regenerated.
-- **Upsolve Tracker** (`/upsolve`). Uses the learner's last 12 matched contests.
-  A problem is flagged when it was attempted without acceptance during the
-  contest, or (Codeforces, where the contest problem list is known) when it is
-  one of the next two positions after the highest solve or rated at most 300
-  above the learner's level. Items are prioritized by contest attempt, rating
-  fit and recency, and link to hints, the editorial and the Solution Explorer.
-  A later accepted submission or solved observation marks an item upsolved
-  (provider evidence); a manual `solved` status marks it "marked solved by
-  you". The page shows completion rate and a monthly follow-through trend.
-  Upsolved problems enter a spaced revision schedule (3, 7, 21 and 45 days).
+- **Upsolve Tracker** (`/upsolve`). Uses the learner's last 12 matched
+  contests with their full problem lists: Codeforces from the catalog, CodeChef
+  from the public contest API (the Starters division whose problems the learner
+  submitted to, scored problems ordered by solves), LeetCode from the public
+  `contestQuestionList` GraphQL query. Lists are cached for six hours. "Up next"
+  always holds five problems. A fresh queue follows a fixed rule: the first two
+  unsolved problems of each contest, newest contest first. Problems then stay
+  in place until solved or skipped; each freed slot is filled at the bottom by
+  the AI mentor (`POST /internal/mentor/upsolve-pick`), which chooses between
+  the top-two unsolved problems of earlier contests and the next two unsolved
+  problems of the latest contest from the learner's rating, topic evidence and
+  contest attempts (score order when the AI is unavailable). Candidate scores
+  combine recency (e^(-days/30)), rating fit (a Gaussian around rating + 100,
+  sigma 300), contest attempts and the top-two position. The queue order is
+  stored in `core.mentor_reports` (`upsolve_queue`); a fresh queue built while a
+  recent contest's problem list is missing is shown but not stored. Every row
+  can be marked solved on every platform (`upsolve_item_states.state =
+  'solved'`; Codeforces and CodeChef also record a self-reported progress
+  status). A small chart shows, per recent contest, problems solved during it,
+  upsolved after and still open. "Latest contests" shows the most recent
+  contest on each platform; opening it lists all of its problems with their
+  status. Accepted submissions after the contest or solved observations mark a
+  problem upsolved (provider evidence). Upsolved problems enter the spaced
+  revision schedule (3, 7, 21 and 45 days). There are no reminders.
 - **Contest Analysis** (`/contest-analysis`). Contests are matched to the
   provider schedule (Codeforces ID, LeetCode slug, name/number tokens, or a
   unique time window). Metrics come from submission timestamps inside the
@@ -1362,7 +1376,7 @@ exposed to the browser.
 | `POST` | `/api/solutions/explore`                        | Generate or reuse an exploration (optional `transientStatement`) |
 | `POST` | `/api/solutions/chat`                           | Answer a follow-up question with the cached exploration as context |
 | `GET`  | `/api/upsolve`                                  | Queue, contests, completion summary, revisions due |
-| `PUT`  | `/api/upsolve/items/:provider/:externalId`      | Skip or restore a queue item |
+| `PUT`  | `/api/upsolve/items/:provider/:externalId`      | Skip, restore or mark solved (`skipped`, `pending`, `solved`) |
 | `GET`  | `/api/revisions`                                | Revision schedule |
 | `POST` | `/api/revisions/:revisionId/review`             | `remembered` advances the interval; `struggled` resets it |
 | `GET`  | `/api/contest-analysis`                         | Contest list and cross-contest pattern metrics |
@@ -1380,6 +1394,7 @@ Stable errors: `PROBLEM_HELP_SESSION_NOT_FOUND` (404),
 (404), `MENTOR_AI_RATE_LIMITED` (429) and `MENTOR_AI_UNAVAILABLE` (503).
 Internal FastAPI endpoints: `POST /internal/mentor/problem-help`,
 `/internal/mentor/solutions`, `/internal/mentor/solution-chat`,
+`/internal/mentor/upsolve-pick`,
 `/internal/mentor/contest-analysis`,
 `/internal/mentor/contest-patterns` and `/internal/mentor/progress-narrative`.
 

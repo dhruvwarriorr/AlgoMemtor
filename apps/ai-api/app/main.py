@@ -61,6 +61,8 @@ from .mentor_models import (
     SolutionChatResponse,
     SolutionRequest,
     SolutionResponse,
+    UpsolvePickOutput,
+    UpsolvePickRequest,
 )
 from .mentor_service import (
     MentorGenerationError,
@@ -828,6 +830,22 @@ async def mentor_solution_chat(
 ) -> SolutionChatResponse:
     try:
         return await service.solution_chat(request)
+    except _MENTOR_ERRORS as error:
+        _raise_mentor_http_error(error)
+        raise AssertionError("Mentor error handler did not raise.") from error
+
+
+@app.post(
+    "/internal/mentor/upsolve-pick",
+    response_model=UpsolvePickOutput,
+    dependencies=[Depends(require_internal_service)],
+)
+async def mentor_upsolve_pick(
+    request: UpsolvePickRequest,
+    service: Annotated[MentorService, Depends(get_mentor_service)],
+) -> UpsolvePickOutput:
+    try:
+        return await service.upsolve_pick(request)
     except _MENTOR_ERRORS as error:
         _raise_mentor_http_error(error)
         raise AssertionError("Mentor error handler did not raise.") from error

@@ -13,6 +13,8 @@ from app.mentor_models import (
     SolutionChatRequest,
     SolutionModelOutput,
     SolutionRequest,
+    UpsolvePickOutput,
+    UpsolvePickRequest,
 )
 from app.mentor_prompts import phase_instructions
 from app.mentor_service import (
@@ -504,6 +506,48 @@ def test_list_items_are_split_and_leaked_fields_dropped() -> None:
         400,
         5,
     ) == ["Heights shift by one.", "Sections keep a[i] - i.", "n = 1"]
+
+
+@pytest.mark.asyncio
+async def test_upsolve_picks_keep_only_known_candidates() -> None:
+    candidate = {
+        "title": "Problem",
+        "provider": "codeforces",
+        "contestName": "Round 1",
+        "daysAgo": 3,
+        "attempted": False,
+        "wrongAttempts": 0,
+        "frontierRank": 0,
+        "score": 70,
+    }
+    model = ScriptedModel(
+        UpsolvePickOutput.model_validate(
+            {
+                "picks": [
+                    {"id": "codeforces:1A", "reason": "You are ready for it."},
+                    {"id": "codeforces:1A", "reason": "Duplicate."},
+                    {"id": "invented:9", "reason": "Unknown."},
+                    {"id": "codeforces:1B", "reason": "Next one."},
+                ]
+            }
+        )
+    )
+    service = MentorService(settings(), model)
+    output = await service.upsolve_pick(
+        UpsolvePickRequest.model_validate(
+            {
+                "requestId": "r",
+                "learnerId": str(uuid4()),
+                "learner": {},
+                "count": 2,
+                "candidates": [
+                    {**candidate, "id": "codeforces:1A"},
+                    {**candidate, "id": "codeforces:1B", "frontierRank": 1},
+                ],
+            }
+        )
+    )
+    assert [pick.id for pick in output.picks] == ["codeforces:1A", "codeforces:1B"]
 
 
 def test_stub_detection_and_editorial_parsing() -> None:

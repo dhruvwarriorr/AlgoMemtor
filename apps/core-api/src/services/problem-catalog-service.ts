@@ -1,3 +1,4 @@
+import type { ContestProblemsHint } from '../integrations/providers/contest-problems.js'
 import {
   ExternalProblemCatalogResponseSchema,
   ProviderFreshnessSchema,
@@ -195,6 +196,16 @@ export class ProblemCatalogService {
     return selected.getContent(externalId, {
       ...(requestId === undefined ? {} : { requestId }),
     })
+  }
+
+  async getContestProblems(
+    provider: ProviderKey,
+    contestCode: string,
+    hint: ContestProblemsHint,
+  ) {
+    const selected = this.selected(provider)[0]
+    if (selected?.contestProblems === undefined) return []
+    return selected.contestProblems(contestCode, hint)
   }
 
   async getCommunitySolutions(

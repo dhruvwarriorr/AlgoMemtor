@@ -3,6 +3,7 @@ import {
   UpsolveContestSchema,
   type ProviderKey,
   type UpsolveContest,
+  type UpsolveHistoryPoint,
   type UpsolveItem,
   type UpsolveSummary,
 } from '@algomemtor/shared-contracts'
@@ -18,7 +19,6 @@ import {
 } from './contest-analysis.js'
 
 export const UPSOLVE_CONTEST_LIMIT = 12
-const QUEUE_LIMIT = 30
 
 export type UpsolvedProblem = {
   provider: ProviderKey
@@ -49,17 +49,64 @@ export function editorialUrl(
 
 const monthKey = (date: Date) => date.toISOString().slice(0, 7)
 
+// Per contest, the first two unsolved problems and the next two are
+// candidates for the queue.
+export const CANDIDATE_DEPTH = 4
+const HISTORY_LIMIT = 8
+
+export type UpsolveCandidate = UpsolveItem & {
+  frontierRank: number
+  contestIndex: number
+  daysAgo: number
+  score: number
+}
+
+const frontierDifficulty = [0.8, 0.65, 0.45, 0.35]
+
+// Priority in the spirit of recency x difficulty fit x contest attempts:
+// recent contests, problems near the learner's stretch rating, problems
+// they fought with in the contest, and the first two unsolved problems of
+// each contest rank highest.
+export function upsolveScore(input: {
+  daysAgo: number
+  rating?: number
+  userRating?: number
+  frontierRank: number
+  attempted: boolean
+  wrongAttempts: number
+}) {
+  const recency = Math.exp(-input.daysAgo / 30)
+  const difficulty =
+    input.rating !== undefined && input.userRating !== undefined
+      ? Math.exp(
+          -((input.rating - (input.userRating + 100)) ** 2) / (2 * 300 ** 2),
+        )
+      : (frontierDifficulty[input.frontierRank] ?? 0.3)
+  const attempt = Math.min(
+    1,
+    (input.attempted ? 0.25 : 0) + 0.2 * input.wrongAttempts,
+  )
+  const frontier = input.frontierRank < 2 ? 1 : 0.4
+  return clamp(
+    100 * (0.3 * recency + 0.3 * difficulty + 0.15 * attempt + 0.25 * frontier),
+  )
+}
+
 export function buildUpsolve(input: {
   contests: readonly AnalyzedContest[]
   activity: LearnerActivity
   metadata: ReadonlyMap<string, ProblemMeta>
-  skipped: ReadonlyMap<string, 'skipped'>
+  states: ReadonlyMap<string, 'skipped' | 'solved'>
   now: Date
 }): {
-  queue: UpsolveItem[]
+  candidates: UpsolveCandidate[]
   contests: UpsolveContest[]
+  history: UpsolveHistoryPoint[]
   summary: UpsolveSummary
   upsolved: UpsolvedProblem[]
+  // A recent contest whose problem list could not be loaded; a queue built
+  // now would miss its problems.
+  incomplete: boolean
 } {
   const { activity } = input
   const latestRating = new Map<ProviderKey, number>()
@@ -73,7 +120,9 @@ export function buildUpsolve(input: {
     ]),
   )
   const upsolveContests: UpsolveContest[] = []
-  const allItems: (UpsolveItem & { contestStart?: Date })[] = []
+  const history: UpsolveHistoryPoint[] = []
+  const candidates: UpsolveCandidate[] = []
+  const unsolvedItems: (UpsolveItem & { contestStart: Date })[] = []
   const upsolved: UpsolvedProblem[] = []
   const eligible = input.contests
     .filter((item) => item.metrics !== undefined && item.contest !== undefined)
@@ -88,29 +137,16 @@ export function buildUpsolve(input: {
       contest.startsAt.getTime() +
         contestDurationMinutes(provider, contest) * 60_000,
     )
-    const userRating = latestRating.get(provider)
-    const target =
-      (userRating ?? (provider === 'codeforces' ? 1_300 : 1_500)) + 100
-    const solvedRatings = metrics.problems
-      .filter((problem) => problem.solved)
-      .map((problem) => problem.rating ?? 0)
-    const ceiling = Math.max(userRating ?? 1_200, ...solvedRatings, 0) + 300
-    const lastSolvedIndex = metrics.problems.reduce(
-      (last, problem, index) => (problem.solved ? index : last),
-      -1,
+    const daysAgo = Math.max(
+      0,
+      (input.now.getTime() - contest.startsAt.getTime()) / 86_400_000,
     )
+    const userRating = latestRating.get(provider)
     const items: UpsolveItem[] = []
-    for (const [index, problem] of metrics.problems.entries()) {
-      if (problem.solved) continue
-      const attempted = problem.attempts > 0
-      const nextAfterSolve =
-        index > lastSolvedIndex && index <= lastSolvedIndex + 2
-      const reachable =
-        attempted ||
-        (provider === 'codeforces' &&
-          (nextAfterSolve ||
-            (problem.rating !== undefined && problem.rating <= ceiling)))
-      if (!reachable) continue
+    let frontierRank = 0
+    let solvedInContest = 0
+    let upsolvedHere = 0
+    for (const problem of metrics.problems) {
       const problemKey =
         provider === 'leetcode'
           ? problem.externalId.toLowerCase()
@@ -128,6 +164,42 @@ export function buildUpsolve(input: {
       if (canonicalUrl === undefined || !isSafeCoachPublicUrl(canonicalUrl)) {
         continue
       }
+      const attempted = problem.attempts > 0
+      const tags = problem.tags.length > 0 ? problem.tags : (meta?.topics ?? [])
+      const editorial = editorialUrl(provider, problemKey, metrics.contestId)
+      const base = {
+        id: `${provider}:${problemKey}`.slice(0, 200),
+        provider,
+        externalId: problemKey,
+        title: (problem.title ?? meta?.title ?? problem.externalId).slice(
+          0,
+          512,
+        ),
+        canonicalUrl,
+        position: problem.label,
+        ...(problem.rating === undefined ? {} : { rating: problem.rating }),
+        tags: tags.slice(0, 12),
+        contestOutcome: attempted
+          ? ('attempted' as const)
+          : ('unattempted' as const),
+        contestWrongAttempts: problem.wrongAttempts,
+        ...(editorial === undefined ? {} : { editorialUrl: editorial }),
+        contest: {
+          provider,
+          contestId: metrics.contestId,
+          name: metrics.name,
+        },
+      }
+      if (problem.solved) {
+        solvedInContest += 1
+        items.push({
+          ...base,
+          status: 'solved_in_contest',
+          priority: 0,
+          priorityReason: 'Solved during the contest.',
+        })
+        continue
+      }
       const acceptedAfter = activity.submissions.find(
         (submission) =>
           submission.provider === provider &&
@@ -137,70 +209,53 @@ export function buildUpsolve(input: {
       )
       const observation = solvedObservation.get(ref)
       const status = activity.statuses.get(ref)
+      const learnerState = input.states.get(ref)
       const upsolvedAt =
         acceptedAfter?.occurredAt ??
         (observation === undefined
           ? undefined
           : (observation.occurredAt ?? input.now)) ??
-        (status?.status === 'solved' ? status.occurredAt : undefined)
+        (status?.status === 'solved' ? status.occurredAt : undefined) ??
+        (learnerState === 'solved' ? input.now : undefined)
       const statusSource: 'provider' | 'manual' | undefined =
         acceptedAfter !== undefined || observation !== undefined
           ? 'provider'
-          : status?.status === 'solved'
-            ? status.source === 'manual'
+          : status?.status === 'solved' && status.source !== 'manual'
+            ? 'provider'
+            : upsolvedAt !== undefined
               ? 'manual'
-              : 'provider'
-            : undefined
+              : undefined
       const state =
         upsolvedAt !== undefined
           ? 'upsolved'
-          : input.skipped.has(ref)
+          : learnerState === 'skipped'
             ? 'skipped'
             : 'pending'
-      let priority = 40
-      const reasons: [number, string][] = []
-      if (attempted) {
-        priority += 25 + Math.min(problem.wrongAttempts, 3) * 3
-        reasons.push([
-          30,
-          problem.wrongAttempts > 0
-            ? `You attempted this in the contest (${problem.wrongAttempts} wrong ${problem.wrongAttempts === 1 ? 'submission' : 'submissions'}); you were close.`
-            : 'You started this during the contest; finish the idea while it is fresh.',
-        ])
-      }
-      if (problem.rating !== undefined) {
-        const distance = Math.abs(problem.rating - target)
-        priority += Math.max(0, 20 - distance / 25)
-        if (problem.rating > target + 400) priority -= 15
-        if (distance <= 200) {
-          reasons.push([
-            20,
-            `Rated ${problem.rating}, right at your stretch level.`,
-          ])
-        }
-      }
-      if (nextAfterSolve) {
-        priority += 8
-        reasons.push([15, 'The next problem after your highest solve here.'])
-      }
-      priority += Math.max(0, 10 - contestIndex * 2)
-      reasons.sort((left, right) => right[0] - left[0])
-      const editorial = editorialUrl(provider, problemKey, metrics.contestId)
-      const tags = problem.tags.length > 0 ? problem.tags : (meta?.topics ?? [])
+      const rank = state === 'pending' ? frontierRank++ : -1
+      const score =
+        state === 'pending'
+          ? upsolveScore({
+              daysAgo,
+              ...(problem.rating === undefined
+                ? {}
+                : { rating: problem.rating }),
+              ...(userRating === undefined ? {} : { userRating }),
+              frontierRank: rank,
+              attempted,
+              wrongAttempts: problem.wrongAttempts,
+            })
+          : 0
+      const reason = attempted
+        ? problem.wrongAttempts > 0
+          ? `You attempted this in the contest (${problem.wrongAttempts} wrong ${problem.wrongAttempts === 1 ? 'submission' : 'submissions'}); you were close.`
+          : 'You started this during the contest; finish the idea while it is fresh.'
+        : rank === 0
+          ? 'The first problem you did not solve in this contest.'
+          : rank === 1
+            ? 'The second unsolved problem in this contest.'
+            : 'Next in line in this contest.'
       const item: UpsolveItem = {
-        id: `${provider}:${problemKey}`.slice(0, 200),
-        provider,
-        externalId: problem.externalId,
-        title: (problem.title ?? meta?.title ?? problem.externalId).slice(
-          0,
-          512,
-        ),
-        canonicalUrl,
-        position: problem.label,
-        ...(problem.rating === undefined ? {} : { rating: problem.rating }),
-        tags: tags.slice(0, 12),
-        contestOutcome: attempted ? 'attempted' : 'unattempted',
-        contestWrongAttempts: problem.wrongAttempts,
+        ...base,
         status: state,
         ...(statusSource === undefined || state !== 'upsolved'
           ? {}
@@ -208,19 +263,22 @@ export function buildUpsolve(input: {
         ...(upsolvedAt === undefined || state !== 'upsolved'
           ? {}
           : { upsolvedAt: upsolvedAt.toISOString() }),
-        priority: clamp(priority),
-        priorityReason:
-          reasons[0]?.[1] ?? 'An unsolved problem from a recent contest.',
-        ...(editorial === undefined ? {} : { editorialUrl: editorial }),
-        contest: {
-          provider,
-          contestId: metrics.contestId,
-          name: metrics.name,
-        },
+        priority: score,
+        priorityReason: reason,
       }
       items.push(item)
-      allItems.push({ ...item, contestStart: contest.startsAt })
+      unsolvedItems.push({ ...item, contestStart: contest.startsAt })
+      if (state === 'pending' && rank < CANDIDATE_DEPTH) {
+        candidates.push({
+          ...item,
+          frontierRank: rank,
+          contestIndex,
+          daysAgo: Math.round(daysAgo),
+          score,
+        })
+      }
       if (state === 'upsolved' && upsolvedAt !== undefined) {
+        upsolvedHere += 1
         upsolved.push({
           provider,
           externalId:
@@ -233,6 +291,17 @@ export function buildUpsolve(input: {
           upsolvedAt,
         })
       }
+    }
+    if (history.length < HISTORY_LIMIT) {
+      history.push({
+        provider,
+        contestId: metrics.contestId.slice(0, 128),
+        name: metrics.name.slice(0, 512),
+        startsAt: contest.startsAt.toISOString(),
+        total: items.length,
+        solvedInContest,
+        upsolved: upsolvedHere,
+      })
     }
     const parsed = UpsolveContestSchema.safeParse({
       provider,
@@ -249,34 +318,42 @@ export function buildUpsolve(input: {
       ...(metrics.coverageNotes[0] === undefined
         ? {}
         : { coverageNote: metrics.coverageNotes[0].slice(0, 300) }),
-      items: items.sort((left, right) => right.priority - left.priority),
+      // The whole contest in contest order.
+      items: items.slice(0, 26),
     })
     if (parsed.success) upsolveContests.push(parsed.data)
   }
 
-  const flagged = allItems.length
-  const upsolvedCount = allItems.filter(
+  const flagged = unsolvedItems.length
+  const upsolvedCount = unsolvedItems.filter(
     (item) => item.status === 'upsolved',
   ).length
-  const skipped = allItems.filter((item) => item.status === 'skipped').length
-  const pending = allItems.filter((item) => item.status === 'pending').length
+  const skipped = unsolvedItems.filter(
+    (item) => item.status === 'skipped',
+  ).length
+  const pending = unsolvedItems.filter(
+    (item) => item.status === 'pending',
+  ).length
   const trend = new Map<string, { flagged: number; upsolved: number }>()
-  for (const item of allItems) {
-    if (item.contestStart === undefined) continue
+  for (const item of unsolvedItems) {
     const key = monthKey(item.contestStart)
     const value = trend.get(key) ?? { flagged: 0, upsolved: 0 }
     value.flagged += 1
     if (item.status === 'upsolved') value.upsolved += 1
     trend.set(key, value)
   }
-  const queue = allItems
-    .filter((item) => item.status === 'pending')
-    .sort((left, right) => right.priority - left.priority)
-    .slice(0, QUEUE_LIMIT)
-    .map(({ contestStart: _start, ...item }) => item)
+  const incomplete = eligible
+    .slice(0, 6)
+    .some(
+      (item) =>
+        item.participation.provider !== 'codeforces' &&
+        item.contestProblems.length === 0,
+    )
   return {
-    queue,
+    incomplete,
+    candidates: candidates.sort((left, right) => right.score - left.score),
     contests: upsolveContests,
+    history,
     summary: {
       flagged,
       upsolved: upsolvedCount,
@@ -293,4 +370,69 @@ export function buildUpsolve(input: {
     },
     upsolved,
   }
+}
+
+// Problems already queued stay in place while they are still open.
+export function keptQueue(
+  previous: readonly string[],
+  candidates: readonly { id: string }[],
+  size: number,
+): string[] {
+  const open = new Set(candidates.map((item) => item.id))
+  return previous.filter((id) => open.has(id)).slice(0, size)
+}
+
+// Freed slots are filled at the bottom: the AI's picks first, then the
+// best-scored remaining candidates.
+export function fillQueue(
+  kept: readonly string[],
+  pool: readonly { id: string }[],
+  picks: readonly string[],
+  size: number,
+): string[] {
+  const ids = [...kept]
+  const allowed = new Set(pool.map((item) => item.id))
+  for (const id of [...picks, ...pool.map((item) => item.id)]) {
+    if (ids.length >= size) break
+    if (allowed.has(id) && !ids.includes(id)) ids.push(id)
+  }
+  return ids
+}
+
+const byContestThenRank = (
+  left: { contestIndex: number; frontierRank: number },
+  right: { contestIndex: number; frontierRank: number },
+) =>
+  left.contestIndex - right.contestIndex ||
+  left.frontierRank - right.frontierRank
+
+// A fresh queue: the first two unsolved problems of each contest, newest
+// contest first.
+export function initialQueue(
+  candidates: readonly UpsolveCandidate[],
+  size: number,
+): string[] {
+  return candidates
+    .filter((item) => item.frontierRank < 2)
+    .sort(byContestThenRank)
+    .slice(0, size)
+    .map((item) => item.id)
+}
+
+// What may replace a finished problem: the top-two unsolved problems of any
+// contest, or the next two unsolved problems of the latest contest that
+// still has open problems. Ordered newest contest first.
+export function replacementPool(
+  candidates: readonly UpsolveCandidate[],
+  kept: readonly string[],
+): UpsolveCandidate[] {
+  const open = candidates.filter((item) => !kept.includes(item.id))
+  const latest = Math.min(...open.map((item) => item.contestIndex))
+  return open
+    .filter(
+      (item) =>
+        item.frontierRank < 2 ||
+        (item.contestIndex === latest && item.frontierRank < CANDIDATE_DEPTH),
+    )
+    .sort(byContestThenRank)
 }

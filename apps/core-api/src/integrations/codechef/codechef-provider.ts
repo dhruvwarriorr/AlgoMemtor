@@ -22,6 +22,13 @@ import {
   isProviderHostnameAllowed,
   type ProviderHttpRequest,
 } from '../providers/provider-http-client.js'
+import {
+  CodeChefContestSchema,
+  codeChefContestProblems,
+  codeChefDivisionOrder,
+  type ContestProblemLink,
+  type ContestProblemsHint,
+} from '../providers/contest-problems.js'
 import { problemContentFromHtml } from '../providers/provider-content.js'
 import { providerHtmlToText } from '../providers/provider-html-sanitizer.js'
 import type {
@@ -189,6 +196,72 @@ export class CodeChefProvider implements ProblemProvider {
       }
     }
     return this.catalog.search(query, request)
+  }
+
+  private readonly contestProblemCache = new Map<
+    string,
+    { problems: ContestProblemLink[]; expiresAtMs: number }
+  >()
+
+  private async fetchContest(code: string, request: ProblemProviderRequest) {
+    const body = await fetchProviderJson({
+      provider: this.key,
+      url: new URL(`/api/contests/${code}`, this.endpoint),
+      allowedHostname: 'www.codechef.com',
+      requestGate: this.requestGate,
+      fetchImpl: this.fetchImpl,
+      timeoutMs: this.timeoutMs,
+      maxAttempts: 1,
+      maxResponseBytes: 3_000_000,
+      ...(request.signal === undefined ? {} : { signal: request.signal }),
+      ...(request.requestId === undefined
+        ? {}
+        : { requestId: request.requestId }),
+    } satisfies ProviderHttpRequest)
+    const parsed = CodeChefContestSchema.safeParse(body)
+    return parsed.success ? parsed.data : null
+  }
+
+  async contestProblems(
+    contestCode: string,
+    hint: ContestProblemsHint,
+    request: ProblemProviderRequest = {},
+  ): Promise<ContestProblemLink[]> {
+    const cacheKey = `${contestCode}|${[...hint.submittedKeys].sort().join(',')}`
+    const cached = this.contestProblemCache.get(cacheKey)
+    if (cached !== undefined && cached.expiresAtMs > Date.now()) {
+      return cached.problems
+    }
+    const parent = await this.fetchContest(contestCode, request)
+    if (parent === null) return []
+    let problems = codeChefContestProblems(parent)
+    // Starters split into divisions: use the one whose problems the learner
+    // submitted to, or the one matching their rating.
+    const divisions = codeChefDivisionOrder(parent, hint)
+    if (divisions.length > 0) {
+      const submitted = new Set(hint.submittedKeys)
+      let best: { list: ContestProblemLink[]; overlap: number } | undefined
+      // Divisions come rating-fit first; the most overlap with the
+      // learner's submissions wins, and the first fit breaks ties.
+      for (const code of submitted.size === 0
+        ? divisions.slice(0, 1)
+        : divisions) {
+        const division = await this.fetchContest(code, request)
+        const list = division === null ? [] : codeChefContestProblems(division)
+        const overlap = list.filter((problem) =>
+          submitted.has(problem.problemKey),
+        ).length
+        if (best === undefined || overlap > best.overlap) {
+          best = { list, overlap }
+        }
+      }
+      if (best !== undefined && best.list.length > 0) problems = best.list
+    }
+    this.contestProblemCache.set(cacheKey, {
+      problems,
+      expiresAtMs: Date.now() + 6 * 3_600_000,
+    })
+    return problems
   }
 
   async getContent(externalId: string, request: ProblemProviderRequest = {}) {
@@ -418,7 +491,8 @@ export class CodeChefProvider implements ProblemProvider {
         extractionStrategy: 'official_json',
         schemaVersion: 'codechef-problem-api-v1',
         completeness:
-          expectedCount === undefined || envelope.data.data.length >= expectedCount
+          expectedCount === undefined ||
+          envelope.data.data.length >= expectedCount
             ? 'complete'
             : 'partial',
         stale: false,
@@ -432,7 +506,8 @@ export class CodeChefProvider implements ProblemProvider {
     }
     const complete =
       invalidRecords === 0 &&
-      (expectedCount === undefined || envelope.data.data.length >= expectedCount)
+      (expectedCount === undefined ||
+        envelope.data.data.length >= expectedCount)
     const validatedProblems = problems.map((problem) => ({
       ...problem,
       completeness: complete ? ('complete' as const) : ('partial' as const),

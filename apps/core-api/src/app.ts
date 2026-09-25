@@ -5196,6 +5196,8 @@ export const createApp = (options: CreateAppOptions = {}) => {
             ?.content ?? null,
         communitySolutions: (provider, externalId, language) =>
           catalogService.getCommunitySolutions(provider, externalId, language),
+        contestProblems: (provider, contestCode, hint) =>
+          catalogService.getContestProblems(provider, contestCode, hint),
         logger,
       }),
     })

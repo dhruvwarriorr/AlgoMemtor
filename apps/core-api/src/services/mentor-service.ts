@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 
+import { z } from 'zod'
+
 import {
   ContestNarrativeSchema,
   ContestPatternsReportSchema,
@@ -7,6 +9,7 @@ import {
   ProgressNarrativeSchema,
   REVISION_INTERVAL_DAYS,
   SOLUTION_CHAT_HISTORY_LIMIT,
+  UPSOLVE_QUEUE_SIZE,
   SolutionExplorationSchema,
   activeProblemHelpStages,
   debuggingDoubtTypes,
@@ -34,6 +37,7 @@ import {
   type SolutionExploration,
   type SolutionUnlockReason,
   type StartProblemHelpRequest,
+  type UpsolveItem,
   type UpsolveResponse,
 } from '@algomemtor/shared-contracts'
 
@@ -48,8 +52,15 @@ import { AiMentorClientError } from '../integrations/ai/ai-mentor-client.js'
 import type { AiMemoryClient } from '../integrations/ai/ai-memory-client.js'
 import type { CommunitySolutionLink } from '../integrations/providers/community-solutions.js'
 import {
+  codeChefContestCode,
+  leetcodeContestSlug,
+  type ContestProblemLink,
+  type ContestProblemsHint,
+} from '../integrations/providers/contest-problems.js'
+import {
   problemKeyFor,
   problemRef,
+  type CatalogContest,
   type HelpSessionDetail,
   type LearnerActivity,
   type MentorRepository,
@@ -70,13 +81,36 @@ import {
   type AnalyzedContest,
 } from './contest-analysis.js'
 import { buildProgressReport, dayKey } from './progress-report.js'
-import { buildUpsolve, editorialUrl } from './upsolve-queue.js'
+import {
+  buildUpsolve,
+  editorialUrl,
+  fillQueue,
+  initialQueue,
+  keptQueue,
+  replacementPool,
+  type UpsolveCandidate,
+} from './upsolve-queue.js'
 
 const DAY_MS = 86_400_000
 const ANALYZED_CONTEST_LIMIT = 12
 const STATEMENT_LIMIT = 18_000
 const PLATFORM_SOLUTIONS_BUDGET_MS = 20_000
 const UNREADABLE_TTL_MS = 15 * 60_000
+const CONTEST_PROBLEMS_BUDGET_MS = 20_000
+const UPSOLVE_POOL_LIMIT = 24
+
+const ratingHint = (rating: number | undefined) =>
+  rating === undefined ? {} : { rating }
+
+const UPSOLVE_QUEUE_VERSION = 3
+
+const StoredUpsolveQueueSchema = z
+  .object({
+    version: z.literal(UPSOLVE_QUEUE_VERSION),
+    ids: z.array(z.string().max(200)).max(UPSOLVE_QUEUE_SIZE),
+    reasons: z.record(z.string(), z.string().max(240)),
+  })
+  .strict()
 
 export type MentorErrorCode =
   | 'PROBLEM_HELP_SESSION_NOT_FOUND'
@@ -135,6 +169,12 @@ export type MentorServiceOptions = {
     externalId: string,
     language: string,
   ) => Promise<CommunitySolutionLink[]>
+  // Full contest problem lists for platforms without a local catalog of them.
+  contestProblems?: (
+    provider: ProviderKey,
+    contestCode: string,
+    hint: ContestProblemsHint,
+  ) => Promise<ContestProblemLink[]>
   logger: StructuredLogger
   now?: () => Date
 }
@@ -1278,15 +1318,32 @@ export class MentorService {
       new Date(Math.min(...times) - 7 * DAY_MS),
       new Date(Math.max(...times) + DAY_MS),
     )
+    const ratings = new Map<ProviderKey, number>()
+    for (const change of activity.ratingChanges) {
+      ratings.set(change.provider, Math.round(change.newRating))
+    }
     const matched = await Promise.all(
       participations.map(async (participation) => {
         const contest = matchContest(participation, catalog)
         const contestProblems =
-          contest !== undefined && participation.provider === 'codeforces'
-            ? await this.options.repository
-                .listContestProblems('codeforces', participation.contestId)
-                .catch(() => [])
-            : []
+          contest === undefined
+            ? []
+            : participation.provider === 'codeforces'
+              ? await this.options.repository
+                  .listContestProblems('codeforces', participation.contestId)
+                  .catch(() => [])
+              : await this.platformContestProblems(
+                  participation.provider,
+                  contest,
+                  {
+                    submittedKeys: contestSubmissions(
+                      participation,
+                      contest,
+                      activity.submissions,
+                    ).map((submission) => submission.problemKey),
+                    ...ratingHint(ratings.get(participation.provider)),
+                  },
+                )
         return { participation, contest, contestProblems }
       }),
     )
@@ -1300,13 +1357,35 @@ export class MentorService {
             }),
           ),
     )
+    const platformRefs = matched.flatMap((item) =>
+      item.participation.provider === 'codeforces'
+        ? []
+        : item.contestProblems.map((problem) => ({
+            provider: problem.provider,
+            problemKey: problem.problemKey,
+          })),
+    )
     const metadata = await this.options.repository
-      .problemMetadata(refs)
+      .problemMetadata([...refs, ...platformRefs])
       .catch(() => new Map<string, ProblemMeta>())
     for (const item of matched) {
-      for (const problem of item.contestProblems) {
-        metadata.set(problemRef(problem.provider, problem.problemKey), problem)
-      }
+      item.contestProblems = item.contestProblems.map((problem) => {
+        const ref = problemRef(problem.provider, problem.problemKey)
+        const known = metadata.get(ref)
+        // Catalog metadata (rating, topics) enriches a contest list entry,
+        // while the contest keeps its own position label and link.
+        const merged: ProblemMeta =
+          known === undefined
+            ? problem
+            : {
+                ...known,
+                ...(problem.position === undefined
+                  ? {}
+                  : { position: problem.position }),
+              }
+        metadata.set(ref, merged)
+        return merged
+      })
     }
     const contests = matched.map((item): AnalyzedContest => {
       const metrics =
@@ -1327,6 +1406,46 @@ export class MentorService {
       }
     })
     return { contests, metadata }
+  }
+
+  private async platformContestProblems(
+    provider: ProviderKey,
+    contest: CatalogContest,
+    hint: ContestProblemsHint,
+  ): Promise<ProblemMeta[]> {
+    const read = this.options.contestProblems
+    const code =
+      provider === 'codechef'
+        ? codeChefContestCode(contest.canonicalUrl)
+        : provider === 'leetcode'
+          ? (leetcodeContestSlug(contest.canonicalUrl) ?? contest.externalId)
+          : undefined
+    if (read === undefined || code === undefined) return []
+    try {
+      const links = await Promise.race([
+        read(provider, code, hint),
+        new Promise<ContestProblemLink[]>((resolve) =>
+          setTimeout(() => resolve([]), CONTEST_PROBLEMS_BUDGET_MS).unref?.(),
+        ),
+      ])
+      return links
+        .filter((link) => isSafeCoachPublicUrl(link.canonicalUrl))
+        .map((link) => ({
+          provider,
+          externalId: link.externalId,
+          problemKey: link.problemKey,
+          title: link.title,
+          canonicalUrl: link.canonicalUrl,
+          tags: [],
+          topics: [],
+          position: link.position,
+        }))
+    } catch {
+      this.options.logger.warn('mentor_contest_problems_unavailable', {
+        provider,
+      })
+      return []
+    }
   }
 
   private contestKey(provider: ProviderKey, contestId: string) {
@@ -1569,7 +1688,7 @@ export class MentorService {
   // ---------------------------------------------------------------------
 
   private async computeUpsolve(authUserId: string, activity: LearnerActivity) {
-    const [{ contests, metadata }, skipped] = await Promise.all([
+    const [{ contests, metadata }, states] = await Promise.all([
       this.analyzeContests(activity),
       this.options.repository.listUpsolveStates(authUserId),
     ])
@@ -1577,7 +1696,7 @@ export class MentorService {
       contests,
       activity,
       metadata,
-      skipped,
+      states,
       now: this.now(),
     })
     // Upsolved problems enter the spaced revision schedule.
@@ -1603,10 +1722,21 @@ export class MentorService {
   async upsolve(authUserId: string): Promise<UpsolveResponse['data']> {
     const activity = await this.options.repository.loadActivity(authUserId)
     const { result } = await this.computeUpsolve(authUserId, activity)
-    const revisions = await this.options.repository.listRevisions(authUserId)
+    const [revisions, queue] = await Promise.all([
+      this.options.repository.listRevisions(authUserId),
+      this.selectUpsolveQueue(authUserId, result.candidates, result.incomplete),
+    ])
+    // The most recent contest on each platform.
+    const seen = new Set<ProviderKey>()
+    const latest = result.contests.filter((contest) => {
+      if (seen.has(contest.provider)) return false
+      seen.add(contest.provider)
+      return true
+    })
     return {
-      queue: result.queue,
-      contests: result.contests,
+      queue,
+      contests: latest,
+      history: result.history,
       summary: result.summary,
       revisionsDue: revisions.filter((item) => item.due).length,
       linkedProviders: activity.linkedProviders,
@@ -1618,14 +1748,125 @@ export class MentorService {
     authUserId: string,
     provider: ProviderKey,
     externalId: string,
-    state: 'skipped' | 'pending',
+    state: 'skipped' | 'pending' | 'solved',
   ) {
     await this.options.repository.setUpsolveState(
       authUserId,
       provider,
       provider === 'leetcode' ? externalId.toLowerCase() : externalId,
-      state === 'skipped' ? 'skipped' : null,
+      state === 'pending' ? null : state,
     )
+  }
+
+  // Five problems in a stable order: problems stay where they are until
+  // solved or skipped, and each freed slot is filled at the bottom with the
+  // best remaining candidate, chosen by the AI mentor from the learner's
+  // level and history (score order when the AI is unavailable).
+  private async selectUpsolveQueue(
+    authUserId: string,
+    candidates: readonly UpsolveCandidate[],
+    incomplete = false,
+  ): Promise<UpsolveItem[]> {
+    const byId = new Map(candidates.map((item) => [item.id, item]))
+    const stored = await this.options.repository
+      .getReport(authUserId, 'upsolve_queue', 'current')
+      .catch(() => null)
+    const parsed = StoredUpsolveQueueSchema.safeParse(stored?.payload)
+    const previous = parsed.success ? parsed.data.ids : []
+    const kept = keptQueue(previous, candidates, UPSOLVE_QUEUE_SIZE)
+    const reasons: Record<string, string> = parsed.success
+      ? { ...parsed.data.reasons }
+      : {}
+    const need = UPSOLVE_QUEUE_SIZE - kept.length
+    // A fresh queue follows the fixed rule (latest contests' first two
+    // unsolved problems); only replacements are chosen by the AI.
+    const fresh = kept.length === 0
+    const pool = fresh
+      ? []
+      : replacementPool(candidates, kept).slice(0, UPSOLVE_POOL_LIMIT)
+    const picked: string[] = fresh
+      ? initialQueue(candidates, UPSOLVE_QUEUE_SIZE)
+      : []
+    if (!fresh && need > 0 && pool.length > 0) {
+      const pick = this.options.aiMentorClient.upsolvePick
+      if (pick !== undefined && pool.length > need) {
+        try {
+          const learner = await this.learnerSnapshot(authUserId)
+          const output = await pick.call(this.options.aiMentorClient, {
+            requestId: randomUUID(),
+            learnerId: authUserId,
+            learner,
+            count: need,
+            candidates: pool.map((item) => ({
+              id: item.id,
+              title: item.title,
+              provider: item.provider,
+              contestName: item.contest.name,
+              daysAgo: item.daysAgo,
+              ...(item.position === undefined
+                ? {}
+                : { position: item.position }),
+              ...(item.rating === undefined ? {} : { rating: item.rating }),
+              tags: item.tags,
+              attempted: item.contestOutcome === 'attempted',
+              wrongAttempts: item.contestWrongAttempts,
+              frontierRank: Math.min(item.frontierRank, 10),
+              score: item.score,
+            })),
+            alreadyQueued: kept.flatMap((id) => {
+              const item = byId.get(id)
+              return item === undefined ? [] : [item.title]
+            }),
+          })
+          for (const choice of output.picks) {
+            if (
+              picked.length < need &&
+              pool.some((item) => item.id === choice.id) &&
+              !picked.includes(choice.id)
+            ) {
+              picked.push(choice.id)
+              reasons[choice.id] = choice.reason
+            }
+          }
+        } catch (error) {
+          this.options.logger.warn('mentor_upsolve_pick_unavailable', {
+            errorCode:
+              error instanceof AiMentorClientError ? error.code : 'UNKNOWN',
+          })
+        }
+      }
+    }
+    const ids = fresh
+      ? picked
+      : fillQueue(kept, pool, picked, UPSOLVE_QUEUE_SIZE)
+    const shown = Object.fromEntries(
+      ids.flatMap((id) =>
+        reasons[id] === undefined ? [] : [[id, reasons[id].slice(0, 240)]],
+      ),
+    )
+    // A fresh queue built while a contest's problem list is missing is shown
+    // but not kept, so the next load can include that contest.
+    if (ids.join('|') !== previous.join('|') && !(fresh && incomplete)) {
+      await this.options.repository
+        .saveReport(authUserId, 'upsolve_queue', 'current', hash(ids), {
+          version: UPSOLVE_QUEUE_VERSION,
+          ids,
+          reasons: shown,
+        })
+        .catch(() => undefined)
+    }
+    return ids.flatMap((id) => {
+      const item = byId.get(id)
+      if (item === undefined) return []
+      const {
+        frontierRank: _rank,
+        contestIndex: _index,
+        daysAgo: _days,
+        score: _score,
+        ...rest
+      } = item
+      return [{ ...rest, priorityReason: shown[id] ?? rest.priorityReason }]
+    })
   }
 
   async revisions(authUserId: string): Promise<RevisionsResponse> {

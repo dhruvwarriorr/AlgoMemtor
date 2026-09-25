@@ -149,6 +149,34 @@ export const AiSolutionResponseSchema = z
   .strict()
 export type AiSolutionResponse = z.infer<typeof AiSolutionResponseSchema>
 
+export type AiUpsolveCandidate = {
+  id: string
+  title: string
+  provider: string
+  contestName: string
+  daysAgo: number
+  position?: string
+  rating?: number
+  tags: string[]
+  attempted: boolean
+  wrongAttempts: number
+  frontierRank: number
+  score: number
+}
+
+export const AiUpsolvePickSchema = z
+  .object({
+    picks: z
+      .array(
+        z
+          .object({ id: shortText.max(200), reason: shortText.max(240) })
+          .strict(),
+      )
+      .max(5),
+  })
+  .strict()
+export type AiUpsolvePick = z.infer<typeof AiUpsolvePickSchema>
+
 export type AiContestMetricsInput = {
   provider: string
   name: string
@@ -249,6 +277,17 @@ export interface AiMentorClient {
     input: AiSolutionChatRequest,
     signal?: AbortSignal,
   ): Promise<AiSolutionChatResponse>
+  upsolvePick?(
+    input: {
+      requestId: string
+      learnerId: string
+      learner: LearnerSnapshot
+      count: number
+      candidates: AiUpsolveCandidate[]
+      alreadyQueued: string[]
+    },
+    signal?: AbortSignal,
+  ): Promise<AiUpsolvePick>
   contestAnalysis(
     input: {
       requestId: string
@@ -412,6 +451,20 @@ export class HttpAiMentorClient implements AiMentorClient {
       input,
       AiSolutionChatResponseSchema,
       signal,
+    )
+  }
+
+  upsolvePick(
+    input: Parameters<NonNullable<AiMentorClient['upsolvePick']>>[0],
+    signal?: AbortSignal,
+  ) {
+    // The page waits for this; a slow pick falls back to the score order.
+    return this.post(
+      '/internal/mentor/upsolve-pick',
+      input,
+      AiUpsolvePickSchema,
+      signal,
+      25_000,
     )
   }
 
