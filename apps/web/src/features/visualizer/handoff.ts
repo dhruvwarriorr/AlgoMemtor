@@ -42,12 +42,14 @@ export function visualizerLanguageFor(
   const family = programmingLanguageFamily(language)
   if (family === 'C++' || family === 'C') return 'cpp'
   if (family === 'Python') return 'python'
+  if (family === 'Java') return 'java'
   return null
 }
 
 export const mentorLanguageFor: Record<VisualizerLanguage, string> = {
   cpp: 'C++',
   python: 'Python',
+  java: 'Java',
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -64,7 +66,13 @@ export function readVisualizerHandoff(
   const raw = state.visualizer
   if (raw.source !== 'doubt_helper' && raw.source !== 'solution_explorer')
     return null
-  if (raw.language !== 'cpp' && raw.language !== 'python') return null
+  if (
+    raw.language !== 'cpp' &&
+    raw.language !== 'python' &&
+    raw.language !== 'java'
+  ) {
+    return null
+  }
   const code = text(raw.code, CODE_LIMIT)
   if (code === undefined) return null
   const handoff: VisualizerHandoff = {
@@ -136,11 +144,11 @@ export function loadDraft(): VisualizerDraft | null {
     const parsed: unknown = JSON.parse(raw)
     if (!isRecord(parsed)) return null
     const language =
-      parsed.language === 'python'
-        ? 'python'
-        : parsed.language === 'cpp'
-          ? 'cpp'
-          : null
+      parsed.language === 'python' ||
+      parsed.language === 'cpp' ||
+      parsed.language === 'java'
+        ? parsed.language
+        : null
     const code = text(parsed.code, CODE_LIMIT)
     const input = text(parsed.input, INPUT_LIMIT)
     const expected = text(parsed.expected, INPUT_LIMIT)

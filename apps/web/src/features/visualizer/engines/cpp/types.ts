@@ -5,9 +5,16 @@ export type IntBits = 8 | 16 | 32 | 64 | 128
 
 export type CType =
   | { k: 'void' }
-  | { k: 'bool' }
-  | { k: 'int'; bits: IntBits; unsigned: boolean; char?: boolean }
-  | { k: 'float'; name: 'float' | 'double' | 'long double' }
+  // `boxed` marks Java wrapper types (Integer, Long, ...), which may be null.
+  | { k: 'bool'; boxed?: boolean }
+  | {
+      k: 'int'
+      bits: IntBits
+      unsigned: boolean
+      char?: boolean
+      boxed?: boolean
+    }
+  | { k: 'float'; name: 'float' | 'double' | 'long double'; boxed?: boolean }
   | { k: 'string' }
   // Character arrays used as C strings keep the carray type.
   | { k: 'vector'; elem: CType }
@@ -45,6 +52,11 @@ export type CType =
   | { k: 'auto' }
   // Address of a variable, only for scanf("%d", &x).
   | { k: 'ptr' }
+  // A pointer to a heap object: Node*, int* from new int[n].
+  | { k: 'pointer'; to: CType }
+  // Java library classes that are not containers: Scanner, StringBuilder,
+  // StringTokenizer, PrintWriter, Random, exceptions.
+  | { k: 'jclass'; name: string }
 
 export const T = {
   void: { k: 'void' } as CType,
@@ -137,6 +149,10 @@ export function typeName(t: CType): string {
       return `bitset<${t.size}>`
     case 'ptr':
       return 'pointer'
+    case 'pointer':
+      return `${typeName(t.to)}*`
+    case 'jclass':
+      return t.name
   }
 }
 

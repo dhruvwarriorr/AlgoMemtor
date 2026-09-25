@@ -352,12 +352,20 @@ class Parser {
     while (this.accept('const') || this.accept('volatile')) {
       // Trailing qualifiers.
     }
-    if (this.is('*')) {
-      this.unsupported(
-        'Pointers are not supported by the visualizer yet. Use indexes into a vector or array instead.',
-      )
+    let type = base
+    while (this.is('*')) {
+      this.next()
+      if (this.is('*')) {
+        this.unsupported(
+          'Pointers to pointers are not supported by the visualizer yet.',
+        )
+      }
+      type = { k: 'pointer', to: type }
+      while (this.accept('const')) {
+        // Constant pointers behave the same here.
+      }
     }
-    return { type: base, isStatic }
+    return { type, isStatic }
   }
 
   private type(): CType {
@@ -1067,15 +1075,20 @@ class Parser {
     const result: Declarator[] = []
     do {
       const at = this.peek()
-      if (this.is('*')) {
-        this.unsupported(
-          'Pointers are not supported by the visualizer yet. Use indexes into a vector or array instead.',
-        )
+      // `Node *left, *right;` puts the star on each name.
+      let declaredType = result.length === 0 ? base : pointee(base)
+      while (this.accept('*')) {
+        declaredType = { k: 'pointer', to: declaredType }
       }
       let isRef = false
       if (this.accept('&') || this.accept('&&')) isRef = true
       const name = this.identifier('a variable name')
-      const declarator: Declarator = { name, type: base, isRef, line: at.line }
+      const declarator: Declarator = {
+        name,
+        type: declaredType,
+        isRef,
+        line: at.line,
+      }
       const dims: (Expr | null)[] = []
       while (this.accept('[')) {
         if (this.is(']')) dims.push(null)
@@ -1205,12 +1218,6 @@ class Parser {
         case 'try':
         case 'throw':
           this.unsupported('Exceptions are not supported by the visualizer.')
-          break
-        case 'new':
-        case 'delete':
-          this.unsupported(
-            'new and delete are not supported by the visualizer. Use vectors instead.',
-          )
           break
       }
     }
@@ -1556,13 +1563,59 @@ class Parser {
         }
         return { k: 'sizeof', line, expr: this.unary() }
       }
-      if (token.value === 'new' || token.value === 'delete') {
-        this.unsupported(
-          'new and delete are not supported by the visualizer. Use vectors instead.',
-        )
+      if (token.value === 'new') return this.newExpression()
+      if (token.value === 'delete') {
+        this.next()
+        if (this.accept('[')) this.expect(']')
+        return { k: 'delete', line, operand: this.unary() }
       }
     }
     return this.postfix(this.primary())
+  }
+
+  private newExpression(): Expr {
+    const at = this.next()
+    const type = this.type()
+    if (this.accept('[')) {
+      const arraySize = this.expression()
+      this.expect(']')
+      let zeroed = false
+      if (this.accept('(')) {
+        this.expect(')')
+        zeroed = true
+      } else if (this.is('{')) {
+        this.bracedItems()
+        zeroed = true
+      }
+      return {
+        k: 'new',
+        line: at.line,
+        type,
+        args: [],
+        braced: false,
+        arraySize,
+        zeroed,
+      }
+    }
+    if (this.is('(')) {
+      return {
+        k: 'new',
+        line: at.line,
+        type,
+        args: this.callArgs(),
+        braced: false,
+      }
+    }
+    if (this.is('{')) {
+      return {
+        k: 'new',
+        line: at.line,
+        type,
+        args: this.bracedItems(),
+        braced: true,
+      }
+    }
+    return { k: 'new', line: at.line, type, args: [], braced: false }
   }
 
   private postfix(start: Expr): Expr {
@@ -1890,4 +1943,10 @@ function numberLiteral(token: Token): Expr {
     return { k: 'int', line, value: BigInt.asUintN(64, value), type }
   }
   return { k: 'int', line, value: Number(value), type }
+}
+
+// The declared type without its outermost pointer: for `Node *a, *b` the
+// base type of the declaration is Node*, and each name adds its own star.
+function pointee(type: CType): CType {
+  return type.k === 'pointer' ? type.to : type
 }

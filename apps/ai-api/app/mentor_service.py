@@ -24,6 +24,9 @@ from .coach_output import plain_math, redact_text
 from .coach_service import is_rate_limit_error
 from .llm import chat_model
 from .mentor_models import (
+    VISUALIZER_FINDING_LIMIT,
+    VISUALIZER_FOLLOW_UP_LIMIT,
+    VISUALIZER_TEST_LIMIT,
     ApproachOutput,
     CodeRepairOutput,
     CommunityOutput,
@@ -48,6 +51,11 @@ from .mentor_models import (
     UpsolvePick,
     UpsolvePickOutput,
     UpsolvePickRequest,
+    VisualizerDebugRequest,
+    VisualizerDebugResponse,
+    VisualizerFinding,
+    VisualizerModelOutput,
+    VisualizerSuggestedTest,
 )
 from .mentor_prompts import (
     BUG_CATEGORIES,
@@ -63,6 +71,7 @@ from .mentor_prompts import (
     SOLUTION_EXPLORER_SYSTEM,
     STATEMENT_SEARCH_INSTRUCTION,
     UPSOLVE_PICK_SYSTEM,
+    VISUALIZER_DEBUG_SYSTEM,
     phase_instructions,
 )
 from .page_retrieval import retrieve_public_page
@@ -93,6 +102,7 @@ _APPROACH_ORDER = {
     "optimized": 2,
 }
 REPORT_TOKEN_BUDGET = 4_096
+VISUALIZER_TOKEN_BUDGET = 6_144
 UPSOLVE_TOKEN_BUDGET = 2_048
 
 # Links a hint may keep clickable: teaching references and the problem sites.
@@ -196,7 +206,9 @@ class LangchainMentorModel:
             return "reports"
         if system.startswith(SOLUTION_EXPLORER_SYSTEM):
             return "solution_explorer"
-        if system.startswith((CODE_REPAIR_SYSTEM, SOLUTION_CHAT_SYSTEM)):
+        if system.startswith(
+            (CODE_REPAIR_SYSTEM, SOLUTION_CHAT_SYSTEM, VISUALIZER_DEBUG_SYSTEM)
+        ):
             return "code_debugging"
         return "doubt_helper"
 
@@ -649,6 +661,137 @@ def _publisher_for(url: str) -> str:
     if host.endswith("codechef.com"):
         return "CodeChef"
     return host or "Web"
+
+
+# --- Test Case Visualizer AI Debugger ------------------------------------
+
+_LINE_BREAK = re.compile(r"\r\n|\r|\n")
+
+
+def code_lines(code: str) -> list[str]:
+    """The code's lines as the browser numbers them (a final newline adds none)."""
+    lines = _LINE_BREAK.split(code)
+    if len(lines) > 1 and lines[-1] == "":
+        lines.pop()
+    return lines
+
+
+def numbered_code(code: str) -> str:
+    lines = code_lines(code)
+    width = len(str(len(lines)))
+    return "\n".join(f"{index:>{width}}| {line}" for index, line in enumerate(lines, 1))
+
+
+def visualizer_prompt(request: VisualizerDebugRequest) -> str:
+    """The human message: facts as JSON, then the numbered code and the input."""
+    digest = request.digest.model_dump(mode="json", exclude_none=True)
+    facts: dict[str, Any] = {
+        "mode": request.mode,
+        "language": request.language,
+        "codeLines": len(code_lines(request.code)),
+        "recordedSteps": request.digest.recordedSteps,
+        "learner": request.learner.model_dump(mode="json", exclude_none=True),
+    }
+    if request.problem is not None:
+        facts["problem"] = request.problem.model_dump(mode="json", exclude_none=True)
+    sections = [
+        "Facts:\n" + _compact_json(facts),
+        "Code:\n" + numbered_code(request.code),
+        "Input:\n" + (request.input if request.input.strip() else "(empty)"),
+        "Execution digest:\n" + _compact_json(digest),
+    ]
+    if request.history:
+        sections.append(
+            "Conversation so far:\n"
+            + "\n".join(f"{turn.role}: {turn.content}" for turn in request.history)
+        )
+    if request.question is not None:
+        sections.append("Question:\n" + request.question)
+    return "\n\n".join(sections)
+
+
+def _clean_prose(value: str | None, limit: int, problem_url: str | None) -> str:
+    if value is None:
+        return ""
+    text = keep_teaching_links(
+        plain_math(redact_text(value, keep_urls=True)), problem_url
+    ).strip()
+    return shorten_text(text, limit).rstrip()
+
+
+def sanitize_visualizer_output(
+    output: VisualizerModelOutput, request: VisualizerDebugRequest
+) -> VisualizerDebugResponse:
+    """Keep only findings about real lines and recorded steps of this run."""
+    line_count = len(code_lines(request.code))
+    recorded = request.digest.recordedSteps
+    url = request.problem.url if request.problem is not None else None
+    findings: list[VisualizerFinding] = []
+    seen: set[tuple[int, str]] = set()
+    for item in output.findings:
+        if not 1 <= item.line <= line_count:
+            continue
+        title = _clean_item(item.title, 160)
+        explanation = _clean_prose(item.explanation, 1_200, url)
+        hint = _clean_prose(item.hint, 600, url)
+        key = (item.line, title.casefold())
+        if not title or not explanation or not hint or key in seen:
+            continue
+        seen.add(key)
+        end_line = (
+            min(item.endLine, line_count)
+            if item.endLine is not None and item.endLine > item.line
+            else None
+        )
+        step = (
+            item.step if item.step is not None and 1 <= item.step <= recorded else None
+        )
+        findings.append(
+            VisualizerFinding(
+                title=title,
+                line=item.line,
+                endLine=end_line,
+                step=step,
+                category=item.category,
+                severity=item.severity,
+                explanation=explanation,
+                hint=hint,
+                fix=item.fix,
+            )
+        )
+        if len(findings) == VISUALIZER_FINDING_LIMIT:
+            break
+
+    tests: list[VisualizerSuggestedTest] = []
+    for test in output.suggestedTests:
+        if test.input.strip() and all(test.input != kept.input for kept in tests):
+            tests.append(test)
+    follow_ups: list[str] = []
+    for question in output.followUps:
+        text = _clean_item(question, 160)
+        if text and text.casefold() not in {kept.casefold() for kept in follow_ups}:
+            follow_ups.append(text)
+
+    verdict = output.verdict
+    if verdict == "bug_found" and not findings:
+        # Every finding pointed outside this run; do not claim a bug.
+        verdict = "unsure"
+    if verdict == "looks_correct" and request.digest.status == "error":
+        verdict = "error_explained" if findings else "unsure"
+
+    answer = _clean_prose(output.answer, 6_000, url) if request.mode == "ask" else ""
+    summary = _clean_prose(output.summary, 2_000, url)
+    if request.mode == "ask" and not answer:
+        answer = summary
+    return VisualizerDebugResponse(
+        verdict=verdict,
+        headline=_clean_item(output.headline, 200) or "Here is what the run shows.",
+        summary=summary or "No clear diagnosis from this run.",
+        findings=findings,
+        answer=answer or None,
+        suggestedTests=tests[:VISUALIZER_TEST_LIMIT],
+        followUps=follow_ups[:VISUALIZER_FOLLOW_UP_LIMIT],
+    )
 
 
 class MentorService:
@@ -1229,6 +1372,22 @@ class MentorService:
             concerns=_clean_list(output.concerns, 400),
             nextSteps=_clean_list(output.nextSteps, 400) or ["Keep practicing."],
         )
+
+    # --- Test Case Visualizer -------------------------------------------------
+
+    async def visualizer_debug(
+        self, request: VisualizerDebugRequest
+    ) -> VisualizerDebugResponse:
+        model = self.get_model()
+        output = await self._call(
+            model.generate_structured(
+                VisualizerModelOutput,
+                VISUALIZER_DEBUG_SYSTEM,
+                visualizer_prompt(request),
+                VISUALIZER_TOKEN_BUDGET,
+            )
+        )
+        return sanitize_visualizer_output(output, request)
 
 
 def get_mentor_service() -> MentorService:

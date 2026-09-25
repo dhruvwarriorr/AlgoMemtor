@@ -2,6 +2,7 @@
 // numbers; 64- and 128-bit integers are bigints. Containers are mutable
 // objects with a version counter that snapshots use to skip unchanged data.
 
+import type { TV } from './arith'
 import type { FunctionDef, StructDef } from './ast'
 import type { CType } from './types'
 
@@ -24,9 +25,17 @@ export type CSeq = {
   lazyRows?: { rowType: CType; make: () => CSeq }
   // Scalar locals and arrays not yet written.
   uninit?: boolean
+  // Java: the collection class (ArrayList, ArrayDeque, Stack, ...).
+  jclass?: string
 }
 
-export type CStr = { kind: 'str'; s: string; ver: number }
+export type CStr = {
+  kind: 'str'
+  s: string
+  ver: number
+  // Java: StringBuilder (mutable) rather than an immutable String.
+  jclass?: string
+}
 
 export type CTuple = {
   kind: 'tuple'
@@ -56,6 +65,7 @@ export type CMap = {
   index: Map<string, CTuple> | null
   compare: Comparator
   ver: number
+  jclass?: string
 }
 
 export type CSet = {
@@ -65,6 +75,7 @@ export type CSet = {
   index: Map<string, number> | null
   compare: Comparator
   ver: number
+  jclass?: string
 }
 
 export type CHeap = {
@@ -74,6 +85,7 @@ export type CHeap = {
   items: Value[]
   compare: Comparator
   ver: number
+  jclass?: string
 }
 
 export type CBitset = { kind: 'bitset'; bits: boolean[]; ver: number }
@@ -111,6 +123,18 @@ export type Stream = { kind: 'stream'; name: 'cin' | 'cout' | 'cerr' }
 // A pointer only for scanf("%d", &x).
 export type Pointer = { kind: 'ptr'; ref: Ref }
 
+// Java library objects that are not containers: Scanner, StringTokenizer,
+// PrintWriter, exceptions and comparator objects. `call` makes the object
+// usable as a function value (comparators, method references).
+export type JObj = {
+  kind: 'jobj'
+  cls: string
+  ver: number
+  state: Record<string, unknown>
+  describe(): string
+  call?: (args: TV[]) => TV
+}
+
 // A braced list such as {a, b} before it is converted to its target type.
 export type InitList = { kind: 'initlist'; items: { t: CType; v: Value }[] }
 
@@ -134,6 +158,7 @@ export type Value =
   | Pointer
   | Manipulator
   | InitList
+  | JObj
   | null
 
 export type Comparator = (a: Value, b: Value) => number

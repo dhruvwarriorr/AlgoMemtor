@@ -1,5 +1,8 @@
 // Turns runtime values into interned TraceValues. Identical values share an
-// id; containers are cached by version so unchanged data is not walked again.
+// id; flat containers are cached by version so unchanged data is not walked
+// again. Heap objects get a stable object id so the UI can draw aliasing,
+// linked lists and trees; an object met again inside the same value (a cycle
+// or a shared node) becomes a `ref`.
 
 import type { SequenceShape, TraceValue } from '../../trace'
 import { formatFloat } from './format'
@@ -7,6 +10,10 @@ import { typeName, type CType } from './types'
 import type { CSeq, Value } from './values'
 
 const MAX_DEPTH = 4
+// Linked structures (trees, lists) nest far deeper than containers do; they
+// are bounded by a node budget per value instead.
+const MAX_RECORD_DEPTH = 160
+const RECORD_BUDGET = 240
 const MAX_ITEMS = 256
 const SMALL_SEQUENCE = 64
 const MAX_ENTRIES = 128
@@ -14,15 +21,40 @@ const MAX_TEXT = 400
 
 type Cached = { ver: number; id: number; touched?: number }
 
+export type RecorderDialect = {
+  nullText: string
+  typeName: (type: CType, value?: Value) => string
+  floatText: (value: number) => string
+  // Characters are 8-bit in C++ and 16-bit in Java.
+  wideChars: boolean
+}
+
+export const cppDialect: RecorderDialect = {
+  nullText: 'nullptr',
+  typeName: (type) => typeName(type),
+  floatText: cppFloatText,
+  wideChars: false,
+}
+
 export class Recorder {
   readonly values: TraceValue[] = []
   private readonly ids = new Map<string, number>()
   private readonly cache = new WeakMap<object, Cached>()
+  private readonly objectIds = new WeakMap<object, number>()
+  private nextObjectId = 1
+  // Objects being serialized right now, for cycle detection.
+  private readonly active = new Set<object>()
+  private recordsLeft = RECORD_BUDGET
 
   private readonly heapOrder: (items: Value[], value: Value) => Value[]
+  readonly dialect: RecorderDialect
 
-  constructor(heapOrder: (items: Value[], value: Value) => Value[]) {
+  constructor(
+    heapOrder: (items: Value[], value: Value) => Value[],
+    dialect: RecorderDialect = cppDialect,
+  ) {
     this.heapOrder = heapOrder
+    this.dialect = dialect
   }
 
   private intern(key: string, value: TraceValue): number {
@@ -34,6 +66,15 @@ export class Recorder {
     return id
   }
 
+  objectId(object: object): number {
+    const existing = this.objectIds.get(object)
+    if (existing !== undefined) return existing
+    const id = this.nextObjectId
+    this.nextObjectId += 1
+    this.objectIds.set(object, id)
+    return id
+  }
+
   unset(): number {
     return this.intern('u', { kind: 'unset' })
   }
@@ -42,7 +83,14 @@ export class Recorder {
     return this.intern(`o${type}|${text}`, { kind: 'opaque', type, text })
   }
 
-  id(value: Value, type: CType, depth = 0): number {
+  // Entry point for one variable: resets the per-value node budget.
+  root(value: Value, type: CType): number {
+    this.recordsLeft = RECORD_BUDGET
+    this.active.clear()
+    return this.id(value, type, 0, 0)
+  }
+
+  id(value: Value, type: CType, depth = 0, recordDepth = 0): number {
     if (typeof value === 'boolean') {
       return this.intern(value ? 'b1' : 'b0', { kind: 'bool', value })
     }
@@ -55,20 +103,24 @@ export class Recorder {
         const code = Number(value)
         return this.intern(`c${code}`, {
           kind: 'char',
-          text: charText(code),
+          text: charText(code, this.dialect.wideChars),
           code,
         })
       }
       if (type.k === 'float') {
-        const text = floatText(Number(value))
+        const text = this.dialect.floatText(Number(value))
         return this.intern(`f${text}`, { kind: 'number', text })
       }
       const text = String(value)
       return this.intern(`n${text}`, { kind: 'number', text })
     }
-    if (value === null)
-      return this.intern('null', { kind: 'none', text: 'null' })
-    if (depth > MAX_DEPTH) return this.opaque(value.kind, '…')
+    if (value === null) {
+      const text = this.dialect.nullText
+      return this.intern(`null${text}`, { kind: 'none', text })
+    }
+    if (value.kind !== 'struct' && depth > MAX_DEPTH) {
+      return this.opaque(value.kind, '…')
+    }
     switch (value.kind) {
       case 'str': {
         const cached = this.cache.get(value)
@@ -84,11 +136,16 @@ export class Recorder {
         return id
       }
       case 'seq':
-        return this.sequence(value, depth)
+        return this.sequence(value, depth, recordDepth)
       case 'tuple': {
         const fields: [string, number][] = value.items.map((item, index) => [
           value.pair ? (index === 0 ? 'first' : 'second') : String(index),
-          this.id(item, value.types[index] ?? { k: 'auto' }, depth + 1),
+          this.id(
+            item,
+            value.types[index] ?? { k: 'auto' },
+            depth + 1,
+            recordDepth,
+          ),
         ])
         const type = value.pair ? 'pair' : 'tuple'
         return this.intern(`r${type}|${fields.map((f) => f[1]).join(',')}`, {
@@ -98,6 +155,20 @@ export class Recorder {
         })
       }
       case 'struct': {
+        const objectId = this.objectId(value)
+        const typeLabel = value.def.name
+        if (this.active.has(value)) {
+          return this.intern(`R${objectId}`, {
+            kind: 'ref',
+            type: typeLabel,
+            objectId,
+          })
+        }
+        if (this.recordsLeft <= 0 || recordDepth > MAX_RECORD_DEPTH) {
+          return this.opaque(typeLabel, '…')
+        }
+        this.recordsLeft -= 1
+        this.active.add(value)
         const fields: [string, number][] = []
         for (const [name, field] of value.fields) {
           fields.push([
@@ -105,26 +176,45 @@ export class Recorder {
             this.id(
               field,
               value.fieldTypes.get(name) ?? { k: 'auto' },
-              depth + 1,
+              0,
+              recordDepth + 1,
             ),
           ])
         }
+        this.active.delete(value)
         return this.intern(
-          `r${value.def.name}|${fields.map((f) => `${f[0]}=${f[1]}`).join(',')}`,
-          { kind: 'record', type: value.def.name, fields },
+          `r${typeLabel}#${objectId}|${fields.map((f) => `${f[0]}=${f[1]}`).join(',')}`,
+          { kind: 'record', type: typeLabel, fields, objectId },
         )
       }
       case 'map': {
         const entries: [number, number][] = value.entries
           .slice(0, MAX_ENTRIES)
           .map((entry) => [
-            this.id(entry.items[0] ?? null, value.type.key, depth + 1),
-            this.id(entry.items[1] ?? null, value.type.value, depth + 1),
+            this.id(
+              entry.items[0] ?? null,
+              value.type.key,
+              depth + 1,
+              recordDepth,
+            ),
+            this.id(
+              entry.items[1] ?? null,
+              value.type.value,
+              depth + 1,
+              recordDepth,
+            ),
           ])
-        const type = typeName(value.type)
+        const type = this.dialect.typeName(value.type, value)
+        const objectId = this.objectId(value)
         return this.intern(
-          `m${type}|${value.entries.length}|${entries.map((e) => `${e[0]}:${e[1]}`).join(',')}`,
-          { kind: 'mapping', type, entries, length: value.entries.length },
+          `m${type}#${objectId}|${value.entries.length}|${entries.map((e) => `${e[0]}:${e[1]}`).join(',')}`,
+          {
+            kind: 'mapping',
+            type,
+            entries,
+            length: value.entries.length,
+            objectId,
+          },
         )
       }
       case 'set':
@@ -133,8 +223,9 @@ export class Recorder {
           value.items,
           value.type.elem,
           'set',
-          typeName(value.type),
+          this.dialect.typeName(value.type, value),
           depth,
+          recordDepth,
         )
       case 'heap': {
         const ordered = this.heapOrder(value.items, value)
@@ -143,8 +234,12 @@ export class Recorder {
           ordered,
           value.elemType,
           'heap',
-          `priority_queue<${typeName(value.elemType)}>`,
+          this.dialect.typeName(
+            { k: 'pq', elem: value.elemType, cmp: null },
+            value,
+          ),
           depth,
+          recordDepth,
         )
       }
       case 'bitset': {
@@ -185,17 +280,20 @@ export class Recorder {
         return this.opaque('pointer', '&')
       case 'manip':
         return this.opaque('manipulator', value.name)
+      case 'jobj':
+        return this.opaque(value.cls, value.describe())
       default:
         return this.opaque('value', '…')
     }
   }
 
-  private sequence(value: CSeq, depth: number): number {
+  private sequence(value: CSeq, depth: number, recordDepth: number): number {
     // Character arrays are C strings.
     if (
       value.seq === 'carray' &&
       value.elemType.k === 'int' &&
-      value.elemType.char === true
+      value.elemType.char === true &&
+      !this.dialect.wideChars
     ) {
       let text = ''
       for (const item of value.items) {
@@ -213,13 +311,10 @@ export class Recorder {
         ? 'stack'
         : value.seq === 'queue'
           ? 'queue'
-          : value.seq === 'deque'
+          : value.seq === 'deque' || value.seq === 'list'
             ? 'deque'
             : 'array'
-    const type =
-      value.seq === 'carray'
-        ? `${typeName(value.elemType)}[${value.items.length}]`
-        : `${value.seq === 'stdarray' ? 'array' : value.seq}<${typeName(value.elemType)}>`
+    const type = this.dialect.typeName(sequenceType(value), value)
     return this.flatSequence(
       value,
       value.items,
@@ -227,6 +322,7 @@ export class Recorder {
       shape,
       type,
       depth,
+      recordDepth,
       value,
     )
   }
@@ -238,6 +334,7 @@ export class Recorder {
     shape: SequenceShape,
     type: string,
     depth: number,
+    recordDepth: number,
     seq?: CSeq,
   ): number {
     const flat = isFlat(elemType)
@@ -263,15 +360,20 @@ export class Recorder {
         ids.push(this.unset())
         continue
       }
-      ids.push(this.id(item ?? null, elemType, depth + 1))
+      ids.push(this.id(item ?? null, elemType, depth + 1, recordDepth))
     }
-    const id = this.intern(`q${shape}|${type}|${length}|${ids.join(',')}`, {
-      kind: 'sequence',
-      type,
-      shape,
-      items: ids,
-      length,
-    })
+    const objectId = this.objectId(owner)
+    const id = this.intern(
+      `q${shape}|${type}#${objectId}|${length}|${ids.join(',')}`,
+      {
+        kind: 'sequence',
+        type,
+        shape,
+        items: ids,
+        length,
+        objectId,
+      },
+    )
     if (flat) {
       const entry: Cached = { ver: owner.ver, id }
       if (seq !== undefined) entry.touched = seq.touched
@@ -281,12 +383,27 @@ export class Recorder {
   }
 }
 
+function sequenceType(value: CSeq): CType {
+  switch (value.seq) {
+    case 'carray':
+      return { k: 'carray', elem: value.elemType, size: value.items.length }
+    case 'stdarray':
+      return {
+        k: 'stdarray',
+        elem: value.elemType,
+        size: value.items.length,
+      }
+    default:
+      return { k: value.seq, elem: value.elemType }
+  }
+}
+
 function isFlat(type: CType) {
   return type.k === 'int' || type.k === 'float' || type.k === 'bool'
 }
 
-export function charText(code: number): string {
-  const c = ((code % 256) + 256) % 256
+export function charText(code: number, wide = false): string {
+  const c = wide ? code & 0xffff : ((code % 256) + 256) % 256
   if (c === 10) return '\\n'
   if (c === 9) return '\\t'
   if (c === 32) return '␣'
@@ -295,8 +412,7 @@ export function charText(code: number): string {
   return String.fromCharCode(c)
 }
 
-function floatText(x: number): string {
+function cppFloatText(x: number): string {
   if (Number.isInteger(x) && Math.abs(x) < 1e15) return `${x}.0`
-  const text = formatFloat(x, 'general', 12)
-  return text
+  return formatFloat(x, 'general', 12)
 }

@@ -37,7 +37,7 @@ function valueText(trace: ExecutionTrace, id: number): string {
     case 'unset':
       return '?'
     default:
-      return value.kind === 'none' ? value.text : value.text
+      return value.kind === 'ref' ? `#${value.objectId}` : value.text
   }
 }
 
@@ -316,11 +316,51 @@ int main() {
     expect(trace.steps).toHaveLength(0)
   })
 
-  it('rejects pointers clearly', () => {
-    const trace = run(`struct Node { int v; Node* next; };
-int main() {}`)
+  it('records linked nodes with identity and cycles as references', () => {
+    const trace = finished(
+      run(`#include <bits/stdc++.h>
+using namespace std;
+struct Node { int val; Node* next; Node* prev; Node(int v): val(v), next(nullptr), prev(nullptr) {} };
+int main() {
+  Node* a = new Node(1);
+  Node* b = new Node(2);
+  a->next = b;
+  b->prev = a;
+  Node* same = a;
+  cout << same->next->val << (a == same) << (a == b) << "\\n";
+}`),
+    )
+    expect(trace.stdout).toBe('210\n')
+    const last = trace.steps.at(-1)
+    const main = last?.frames.at(-1)
+    const value = (name: string) => {
+      const id = main?.vars.find(([key]) => key === name)?.[1]
+      return id === undefined ? undefined : trace.values[id]
+    }
+    const a = value('a')
+    const same = value('same')
+    expect(a?.kind).toBe('record')
+    expect(a?.kind === 'record' ? a.objectId : -1).toBe(
+      same?.kind === 'record' ? same.objectId : -2,
+    )
+    // a.next.prev points back to a: drawn as a reference, not an endless tree.
+    const refs = trace.values.filter((item) => item.kind === 'ref')
+    expect(refs.length).toBeGreaterThan(0)
+  })
+
+  it('reports following a null pointer', () => {
+    const trace = run(`struct Node { int val; Node* next; };
+int main() {
+  Node* head = nullptr;
+  return head->val;
+}`)
+    expect(trace.error?.title).toBe('Null pointer')
+    expect(trace.error?.line).toBe(4)
+  })
+
+  it('rejects pointers to pointers clearly', () => {
+    const trace = run(`int main() { int** grid; }`)
     expect(trace.error?.kind).toBe('unsupported')
-    expect(trace.error?.message).toContain('Pointers')
   })
 
   it('stops infinite loops at the time limit and keeps the recorded steps', () => {

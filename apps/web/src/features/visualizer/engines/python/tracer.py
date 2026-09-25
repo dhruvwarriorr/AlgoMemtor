@@ -24,6 +24,11 @@ MAX_ENTRIES = 128
 MAX_FIELDS = 32
 MAX_TEXT = 400
 MAX_DEPTH = 4
+# Objects (class instances) nest much deeper than containers: a linked list
+# of 100 nodes is 100 levels deep. A node budget per variable keeps a step
+# small; objects already being drawn become references (cycles, shared nodes).
+MAX_RECORD_DEPTH = 160
+RECORD_BUDGET = 240
 INNERMOST_FRAMES = 16
 OUTERMOST_FRAMES = 3
 MAX_ACCESSES = 24
@@ -367,6 +372,11 @@ class Tracer:
         self.error_step = None
         self.error_details = None
         self.hidden_globals = set()
+        # Stable identity for mutable objects: id() -> (objectId, object). The
+        # object is kept so its id() is never reused by another object.
+        self.object_ids = {}
+        self.drawing = set()
+        self.budget = RECORD_BUDGET
 
     # ---- values ----------------------------------------------------------------
 
@@ -379,7 +389,64 @@ class Tracer:
         self.value_ids[key] = ident
         return ident
 
-    def value_id(self, value, depth=0, shape=None):
+    def object_id(self, value):
+        found = self.object_ids.get(id(value))
+        if found is not None and found[1] is value:
+            return found[0]
+        ident = len(self.object_ids) + 1
+        self.object_ids[id(value)] = (ident, value)
+        return ident
+
+    def is_node(self, value):
+        kind = type(value)
+        if getattr(kind, "__module__", "") == "builtins":
+            return False
+        if isinstance(value, HIDDEN_TYPES) or isinstance(value, tuple):
+            return False
+        return isinstance(getattr(value, "__dict__", None), dict) or isinstance(
+            getattr(kind, "__slots__", None), (tuple, list)
+        )
+
+    def node_value(self, value, depth, nest):
+        kind = type(value)
+        oid = self.object_id(value)
+        if id(value) in self.drawing:
+            return self.intern(
+                ("ref", kind.__name__, oid),
+                {"kind": "ref", "type": kind.__name__, "objectId": oid},
+            )
+        if depth > MAX_RECORD_DEPTH or self.budget <= 0:
+            return self.opaque(kind.__name__, "…")
+        self.budget -= 1
+        self.drawing.add(id(value))
+        try:
+            fields_source = getattr(value, "__dict__", None)
+            if isinstance(fields_source, dict):
+                fields = tuple(
+                    (name, self.value_id(item, depth + 1, None, nest))
+                    for name, item in itertools.islice(
+                        fields_source.items(), MAX_FIELDS
+                    )
+                    if not name.startswith("__")
+                )
+            else:
+                fields = tuple(
+                    (name, self.value_id(getattr(value, name, None), depth + 1, None, nest))
+                    for name in kind.__slots__[:MAX_FIELDS]
+                )
+        finally:
+            self.drawing.discard(id(value))
+        return self.intern(
+            ("r", kind.__name__, oid, fields),
+            {
+                "kind": "record",
+                "type": kind.__name__,
+                "fields": [list(field) for field in fields],
+                "objectId": oid,
+            },
+        )
+
+    def value_id(self, value, depth=0, shape=None, nest=0):
         kind = type(value)
         if value is None:
             return self.intern(("none",), {"kind": "none", "text": "None"})
@@ -402,11 +469,14 @@ class Tracer:
                 ("s", len(value), text),
                 {"kind": "string", "text": text, "length": len(value)},
             )
-        if depth > MAX_DEPTH:
+        if self.is_node(value):
+            return self.node_value(value, depth, nest)
+        if nest > MAX_DEPTH:
             return self.opaque(kind.__name__, "…")
+        nest += 1
         if isinstance(value, tuple) and hasattr(value, "_fields"):
             fields = tuple(
-                (name, self.value_id(getattr(value, name), depth + 1))
+                (name, self.value_id(getattr(value, name), depth + 1, None, nest))
                 for name in value._fields[:MAX_FIELDS]
             )
             return self.record_value(kind.__name__, fields)
@@ -414,7 +484,7 @@ class Tracer:
             length = len(value)
             visible = length if length <= SMALL_SEQUENCE else min(length, MAX_ITEMS)
             items = tuple(
-                self.value_id(item, depth + 1)
+                self.value_id(item, depth + 1, None, nest)
                 for item in itertools.islice(value, visible)
             )
             if isinstance(value, tuple):
@@ -424,48 +494,56 @@ class Tracer:
             else:
                 seq_shape = shape or "array"
             type_name = kind.__name__
-            return self.intern(
-                ("q", seq_shape, type_name, length, items),
-                {
-                    "kind": "sequence",
-                    "type": type_name,
-                    "shape": seq_shape,
-                    "items": list(items),
-                    "length": length,
-                },
-            )
+            oid = None if isinstance(value, tuple) else self.object_id(value)
+            entry = {
+                "kind": "sequence",
+                "type": type_name,
+                "shape": seq_shape,
+                "items": list(items),
+                "length": length,
+            }
+            if oid is not None:
+                entry["objectId"] = oid
+            return self.intern(("q", seq_shape, type_name, length, items, oid), entry)
         if isinstance(value, (set, frozenset)):
             try:
                 ordered = sorted(value)
             except TypeError:
                 ordered = list(value)
             items = tuple(
-                self.value_id(item, depth + 1) for item in ordered[:MAX_ITEMS]
+                self.value_id(item, depth + 1, None, nest)
+                for item in ordered[:MAX_ITEMS]
             )
             type_name = kind.__name__
-            return self.intern(
-                ("q", "set", type_name, len(value), items),
-                {
-                    "kind": "sequence",
-                    "type": type_name,
-                    "shape": "set",
-                    "items": list(items),
-                    "length": len(value),
-                },
-            )
+            oid = self.object_id(value) if kind is set else None
+            entry = {
+                "kind": "sequence",
+                "type": type_name,
+                "shape": "set",
+                "items": list(items),
+                "length": len(value),
+            }
+            if oid is not None:
+                entry["objectId"] = oid
+            return self.intern(("q", "set", type_name, len(value), items, oid), entry)
         if isinstance(value, dict):
             entries = tuple(
-                (self.value_id(key, depth + 1), self.value_id(item, depth + 1))
+                (
+                    self.value_id(key, depth + 1, None, nest),
+                    self.value_id(item, depth + 1, None, nest),
+                )
                 for key, item in itertools.islice(value.items(), MAX_ENTRIES)
             )
             type_name = kind.__name__
+            oid = self.object_id(value)
             return self.intern(
-                ("m", type_name, len(value), entries),
+                ("m", type_name, len(value), entries, oid),
                 {
                     "kind": "mapping",
                     "type": type_name,
                     "entries": [list(entry) for entry in entries],
                     "length": len(value),
+                    "objectId": oid,
                 },
             )
         if isinstance(value, (bytes, bytearray)):
@@ -480,21 +558,6 @@ class Tracer:
             return self.opaque(kind.__name__, repr(value))
         if isinstance(value, HIDDEN_TYPES):
             return self.opaque("function", getattr(value, "__name__", kind.__name__))
-        fields_source = getattr(value, "__dict__", None)
-        if isinstance(fields_source, dict):
-            fields = tuple(
-                (name, self.value_id(item, depth + 1))
-                for name, item in itertools.islice(fields_source.items(), MAX_FIELDS)
-                if not name.startswith("__")
-            )
-            return self.record_value(kind.__name__, fields)
-        slots = getattr(kind, "__slots__", None)
-        if isinstance(slots, (tuple, list)):
-            fields = tuple(
-                (name, self.value_id(getattr(value, name, None), depth + 1))
-                for name in slots[:MAX_FIELDS]
-            )
-            return self.record_value(kind.__name__, fields)
         module = getattr(kind, "__module__", "")
         if module in ("builtins", "decimal", "fractions"):
             try:
@@ -533,6 +596,7 @@ class Tracer:
             if isinstance(value, (*HIDDEN_TYPES, StopRun, Stdin, Stdout)):
                 continue
             shape = "heap" if name in heaps and type(value) is list else None
+            self.budget = RECORD_BUDGET
             variables.append([name, self.value_id(value, 0, shape)])
         return variables
 
@@ -788,6 +852,7 @@ class Tracer:
                 )
                 step = {"event": "return", "line": line}
                 if self.recording:
+                    self.budget = RECORD_BUDGET
                     step["value"] = self.value_id(arg)
                 self.record(step, frame, line)
             del self.active[frame]

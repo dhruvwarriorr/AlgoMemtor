@@ -64,6 +64,8 @@ from .mentor_models import (
     SolutionResponse,
     UpsolvePickOutput,
     UpsolvePickRequest,
+    VisualizerDebugRequest,
+    VisualizerDebugResponse,
 )
 from .mentor_service import (
     MentorGenerationError,
@@ -276,7 +278,6 @@ async def stream_coach_response(request: CoachRequest) -> StreamingResponse:
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
-
 
 
 @app.delete(
@@ -820,6 +821,23 @@ async def mentor_solution_chat(
 ) -> SolutionChatResponse:
     try:
         return await service.solution_chat(request)
+    except _MENTOR_ERRORS as error:
+        _raise_mentor_http_error(error)
+        raise AssertionError("Mentor error handler did not raise.") from error
+
+
+@app.post(
+    "/internal/mentor/visualizer-debug",
+    response_model=VisualizerDebugResponse,
+    response_model_exclude_none=True,
+    dependencies=[Depends(require_internal_service)],
+)
+async def mentor_visualizer_debug(
+    request: VisualizerDebugRequest,
+    service: Annotated[MentorService, Depends(get_mentor_service)],
+) -> VisualizerDebugResponse:
+    try:
+        return await service.visualizer_debug(request)
     except _MENTOR_ERRORS as error:
         _raise_mentor_http_error(error)
         raise AssertionError("Mentor error handler did not raise.") from error

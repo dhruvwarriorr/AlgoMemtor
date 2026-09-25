@@ -2,11 +2,12 @@
 // visualizer UI. Engines record what the program actually did; nothing here is
 // inferred by a model.
 
-export type VisualizerLanguage = 'cpp' | 'python'
+export type VisualizerLanguage = 'cpp' | 'python' | 'java'
 
 export const visualizerLanguageLabels: Record<VisualizerLanguage, string> = {
   cpp: 'C++',
   python: 'Python',
+  java: 'Java',
 }
 
 // How a sequence is drawn: plain cells, a set of chips, a stack (top last),
@@ -16,6 +17,11 @@ export type SequenceShape =
 
 // Values are interned: identical values share one id, so "changed" is an id
 // comparison and a long trace stays small. Container items are value ids.
+// Objects that live on the heap (Java and Python objects, C++ structs and
+// anything behind a pointer) carry an `objectId`, stable for the whole run,
+// so two variables that point to the same object can be drawn as such. A
+// `ref` stands in for an object already drawn in the same value (shared nodes
+// and cycles such as a doubly linked list).
 export type TraceValue =
   | { kind: 'number'; text: string }
   | { kind: 'bool'; value: boolean }
@@ -30,14 +36,22 @@ export type TraceValue =
       items: number[]
       // Total length; items may hold only the visible prefix.
       length: number
+      objectId?: number
     }
   | {
       kind: 'mapping'
       type: string
       entries: [number, number][]
       length: number
+      objectId?: number
     }
-  | { kind: 'record'; type: string; fields: [string, number][] }
+  | {
+      kind: 'record'
+      type: string
+      fields: [string, number][]
+      objectId?: number
+    }
+  | { kind: 'ref'; type: string; objectId: number }
   | { kind: 'opaque'; type: string; text: string }
 
 export type TraceVariable = [name: string, value: number]

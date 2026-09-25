@@ -646,18 +646,21 @@ Memory page (correct, archive, delete, add) and full data reset.
 
 ### 4.14 Test Case Visualizer
 
-`/visualizer` runs the learner's own C++ or Python program on a test input
-they provide and records every step, so they can see what the program
-actually did. Nothing is generated or guessed by AI; the trace comes from
-running the code.
+`/visualizer` runs the learner's own C++, Java or Python program on a test
+input they provide, records every step and draws it: the program's own
+arrays, pointers, stacks, queues, heaps, maps, sets, graphs, trees, linked
+lists, grids, 3D tables and recursive calls move as the code runs. The trace
+always comes from running the code. An optional AI Debugger (below) explains
+a recorded run on request; it never produces the trace.
 
 - **Where code runs.** Only in the learner's browser, in a dedicated Web
   Worker (`features/visualizer/worker/visualizer.worker.ts`). The worker has no
   access to the session token, and removes `fetch`, `XMLHttpRequest`,
   `WebSocket`, `importScripts` and storage APIs once its runtime has loaded.
-  Code, input and expected output are never sent to AlgoMemtor's servers by
-  the visualizer and never stored server-side; the current draft stays in
-  this tab's `sessionStorage`.
+  Running never sends code anywhere. Code, input and a digest of the run
+  leave the browser only when the learner presses an AI Debugger action, and
+  are never stored server-side; the current draft stays in this tab's
+  `sessionStorage`.
 - **Python** runs real CPython 3.14 through Pyodide (`pyodide` npm package,
   self-hosted under `/pyodide/<version>/`, never from a CDN). The tracer
   (`engines/python/tracer.py`) uses `sys.settrace` and AST analysis for
@@ -671,31 +674,92 @@ running the code.
   and multi), `pair`/`tuple`, structs with methods, constructors and
   operators, lambdas (including recursive ones), templates as `auto`,
   iterators, `<algorithm>`, `cin`/`cout` formatting, `scanf`/`printf` and
-  `getline`. Unsupported features (pointers, `new`/`delete`, inheritance,
-  exceptions, namespaces, random engines) stop with a clear "not supported"
-  message and line. Undefined behaviour that would corrupt a real run is
+  `getline`, pointers to structs and arrays (`new`/`delete`, `nullptr`,
+  `->`, linked nodes; following a null pointer stops the run), `try`/`catch`
+  and `throw`. Unsupported features (pointers to pointers, inheritance,
+  namespaces, random engines) stop with a clear "not supported" message and
+  line. Undefined behaviour that would corrupt a real run is
   reported instead of hidden: an out-of-range index stops the run with the
   index, size and valid range; signed overflow, unsigned wrap-around,
   narrowing conversions and reads of unset locals are step warnings.
   Recursion is executed with generators and an explicit call stack, so depth
   is limited to 20,000 calls rather than by the JavaScript stack. Unordered
   containers iterate in insertion order, and `long` is 64-bit (LP64).
+- **Java** runs in a TypeScript interpreter built on the C++ one
+  (`engines/java/*`) for single-file Java 21: classes, static nested classes,
+  interfaces with default methods, inheritance with `super`, enums, records,
+  generics, `instanceof` patterns, lambdas, method references, anonymous
+  classes, labelled `break`/`continue`, arrow `switch`, exceptions with their
+  Java class hierarchy (`try`/`catch`/`finally`, `throw`, uncaught exceptions
+  and `StackOverflowError`), reference semantics, 32/64-bit wrap-around,
+  `String`/`StringBuilder`, `Scanner`, `BufferedReader`/`StringTokenizer`,
+  `PrintWriter` (unflushed output is lost and warned about), `Math`,
+  wrappers, `Arrays`, `Collections`, `ArrayList`, `LinkedList`, `ArrayDeque`,
+  `Stack`, `PriorityQueue` (Java's heap layout), `HashMap`/`HashSet` (Java's
+  bucket iteration order, including head insertion by `merge`/`compute`),
+  `LinkedHashMap`, `TreeMap`/`TreeSet` navigation, `Comparator` combinators
+  and a `Stream` subset. `Set.of`/`Map.of` use HashMap order rather than
+  Java's randomised order.
+- **Correctness corpus.** `engines/corpus/{cpp,java,python}` holds programs
+  with inputs and the outputs real g++ 15, OpenJDK 25 and CPython 3.14
+  printed; every engine must match them exactly. Every gallery example
+  (`examples.ts`) is also run in all its languages by `examples.test.ts`.
+- **Object identity.** All three engines give heap objects a stable
+  `objectId` and record an object already being drawn as a `ref`, so shared
+  nodes and cycles (doubly linked lists) are drawn once and every variable
+  pointing at a node is shown as a label on it.
 - **Limits.** 10,000 recorded steps (the program keeps running unrecorded so
   the final output is still correct), a 5-second run budget, 200,000
   characters of output and bounded container sizes. A worker that does not
   answer within the budget plus 8 seconds is terminated.
-- **What the learner sees.** The code with the current line, breakpoints and
-  per-line hit counts; Previous/Next/Play/Pause/Restart, a scrubber, speed,
-  an important-steps filter and jumps (next change, branch, iteration, call,
-  output, breakpoint, watched variable, warning, first wrong output, error);
-  a plain-language description of each step; the call stack with changed
-  values and their previous value; arrays with index pointers, a window
-  between pointer pairs and read/write highlights; grids, stacks, queues,
-  deques, heaps, sets and maps; consumed input, output so far and a
-  whitespace-insensitive expected-output comparison that locates the step that
-  printed the first wrong token; and a virtualised timeline that collapses the
-  middle of long loops.
-- **Doubt Helper.** Active sessions in C++ or Python show "Visualize a test
+- **What the learner sees.** A visualization-first page
+  (`pages/TestCaseVisualizerPage.tsx`, `features/visualizer/stage/*`):
+  - three tabs: **Code** (the default: language, Run and Ctrl+Enter in a
+    toolbar above the editor, with test input and expected output beside it),
+    **Examples** (runnable programs by topic: pointers, sorting, stacks and
+    queues, linked lists and trees, graphs, recursion and DP, and "find the
+    bug", each in C++, Java and/or Python) and **Visualization** (enabled after
+    a run, with its verdict, "Edit code & input" and "Run again" in one row);
+  - a steady layout while stepping: cards and variables keep the order in
+    which the variables first appeared, card width depends only on the kind of
+    structure, and cards, the variable row and the card grid grow but never
+    shrink during a run (`stage/sticky.ts`);
+  - a narration bar per step with the program's values put into the source it
+    evaluates (`a[mid] < target` → `23 < 40`, true/false, loop iteration,
+    call, return, input, output, warning, error);
+  - variable chips that flip when they change and pause playback when
+    watched;
+  - one card per structure, chosen from the recorded shape
+    (`scene/build.ts`): arrays as cells or bars with sliding pointers and a
+    window between pointer pairs, strings as characters, 2D grids as heat maps
+    or mazes with row/column pointers, 3D arrays as an isometric cube or
+    layers, stacks with a Top arrow, queues as a pipe, priority queues as their real binary heap (tree with array indexes, the backing array, min/max-heap, pushed and popped items and the order items will come out; C++ pops follow libstdc++'s `pop_heap`, so the layout matches g++), maps
+    and sets, adjacency lists/matrices/edge lists as graphs (visited, current,
+    neighbour, frontier and per-node values such as `dist[v]`), linked objects
+    as binary trees (in-order layout), n-ary trees or linked lists, and a
+    recursion tree of every call with its return value. Items keep stable keys
+    across steps so a swap slides and a pop leaves (`scene/keys.ts`);
+  - the code with the current line, breakpoints, hit counts and AI-flagged
+    lines; consumed input, output so far and a whitespace-insensitive
+    comparison with the expected output that finds the first wrong step;
+  - a sticky playback bar with a scrubber marked with calls, output,
+    warnings, errors, breakpoints and AI findings, speeds from 0.5 to 16
+    steps a second, "only changes", and jumps. Motion respects the reduced
+    motion setting.
+- **AI Debugger.** A side panel (`features/visualizer/ai/*`) with "Find my
+  bug" / "Check my logic" and a chat about the current step. It posts
+  `POST /api/visualizer/debug` (contract `VisualizerDebugRequestSchema` in
+  `packages/shared-contracts/src/visualizer.ts`) with the code, the input and
+  a digest built in the browser (`ai/digest.ts`: status, error, output,
+  expected output, first mismatch, warnings and up to 60 recorded moments
+  with their variables, plus the step being looked at). Express forwards it to
+  `POST /internal/mentor/visualizer-debug` (FastAPI, `code_debugging`
+  workload), and both services drop findings whose line is outside the code
+  or whose step is outside the recording. The answer has a verdict, findings
+  pinned to a line and a step (hint first, the fix revealed on request),
+  suggested test inputs the learner can run with one click, and follow-up
+  questions. Nothing is stored or logged.
+- **Doubt Helper.** Active sessions in C++, Java or Python show "Visualize a test
   case", which opens the visualizer with the session's problem and the code
   attached in that tab. From the visualizer, "Ask Doubt Helper about this
   step" opens the session's Ask dock with a question built from the recorded
@@ -703,7 +767,7 @@ running the code.
   the existing transient `transientCode`; the learner reviews and sends it.
   Without a session, "Get help with this step" pre-fills a new Doubt Helper
   intake instead.
-- **Solution Explorer.** Every approach with a program in C++ or Python has
+- **Solution Explorer.** Every approach with a program in C++, Java or Python has
   "Visualize with a test case", which opens that program in the visualizer.
 
 #### Decision: the Test Case Visualizer runs learner code in the browser (2026-09-25)
@@ -728,6 +792,26 @@ running the code.
   own sandboxed worker.
 - **Review triggers:** any request to run code on a server, to store runs or
   code, to support more languages, or a security finding about the worker.
+
+#### Decision: Java support and an AI Debugger in the visualizer (2026-09-25)
+
+- **Context:** the project owner asked for Java, a visualization-first page
+  instead of an IDE-like one, and AI that finds where the learner's code goes
+  wrong, with no project-level restrictions for this feature.
+- **Decision:** Java runs in the browser like C++, as a dialect of the same
+  interpreter. The AI Debugger sends code, input and a digest of the recorded
+  run to the AI service only when the learner presses an AI action; it never
+  runs code and never replaces the recorded trace. Code and digests are
+  transient request fields, not stored or logged.
+- **Alternatives:** a JVM in WebAssembly (tens of megabytes and no
+  variable-level tracing), sending the full trace (too large and noisy for a
+  model), or asking the model to simulate the program (rejected: it can be
+  wrong).
+- **Consequences:** Java covers a documented subset and HashMap order
+  follows Java only for the operations simulated; AI answers are advisory and
+  bounded to the lines and steps of the run.
+- **Review triggers:** storing AI conversations, sending code without an
+  explicit action, or supporting more languages.
 
 ---
 
@@ -2505,9 +2589,12 @@ npm run test:core
 ```
 
 The Test Case Visualizer engines are covered by
-`apps/web/src/features/visualizer/**/*.test.ts`: the C++ interpreter against
-contest programs, and the Python tracer inside real Pyodide under Node (the
-first run loads the runtime from `node_modules`, a few seconds).
+`apps/web/src/features/visualizer/**/*.test.ts`: the C++ and Java interpreters
+against contest programs, a differential corpus checked against real g++,
+OpenJDK and CPython output, every gallery example in every language, the scene
+model (views, keys, graphs, trees, narration), and the Python tracer inside
+real Pyodide under Node (the first run loads the runtime from `node_modules`,
+a few seconds).
 
 ### Python service
 
@@ -2648,12 +2735,12 @@ destructive reset against a shared database.
 11. Google sign-in and "Connect Google" require the Google provider (and manual
     identity linking) to be enabled in the Supabase Dashboard, with
     `/dashboard`, `/settings` and `/reset-password` on the redirect allowlist.
-12. The Test Case Visualizer runs C++ in an interpreter for a contest subset
-    (no pointers, inheritance, exceptions or custom namespaces; unordered
-    containers iterate in insertion order) and supports only C++ and Python.
-    Plan items not built yet: comparing two runs, graph/tree/DP-table
-    drawings, named test cases and AI explanations inside the visualizer
-    (questions go through the Doubt Helper).
+12. The Test Case Visualizer runs C++ and Java in interpreters for documented
+    subsets (C++: no pointers to pointers, inheritance or custom namespaces,
+    unordered containers iterate in insertion order; Java: single file, a
+    library subset, `Set.of`/`Map.of` not randomised). Not built yet:
+    comparing two runs and named test cases. The AI Debugger has not been
+    checked against a live model.
 
 ### Safe next work
 
@@ -2836,8 +2923,13 @@ integrations/provider-accounts/
 | `apps/web/src/features/coach/components/CoachRichContent.tsx`  | Accessible charts, tables, timelines, trusted problems, citations, follow-ups |
 | `apps/web/src/features/coach/*`                                | Coach API calls and TanStack Query state                                      |
 | `apps/web/src/mocks/handlers.ts`                               | MSW implementation of the same normalized API shape                           |
-| `apps/web/src/pages/TestCaseVisualizerPage.tsx`                | Visualizer editor, playback, panels, and mentor handoffs                      |
-| `apps/web/src/features/visualizer/trace.ts`                    | Execution-trace format shared by both engines and the UI                      |
+| `apps/web/src/pages/TestCaseVisualizerPage.tsx`                | Visualizer landing, stage, playback, AI panel, and mentor handoffs            |
+| `apps/web/src/features/visualizer/scene/*`                     | Scene model: views per variable, stable keys, layouts, narration, call tree   |
+| `apps/web/src/features/visualizer/stage/*`                     | Animated views, gallery, composer, drawer, and playback bar                   |
+| `apps/web/src/features/visualizer/ai/*`                        | AI Debugger panel, API client, and run digest                                 |
+| `apps/web/src/features/visualizer/engines/java/*`              | Java lexer, parser, interpreter dialect, and standard library subset          |
+| `apps/web/src/features/visualizer/engines/corpus/*`            | Programs with outputs from real g++, OpenJDK and CPython                      |
+| `apps/web/src/features/visualizer/trace.ts`                    | Execution-trace format shared by the engines and the UI                       |
 | `apps/web/src/features/visualizer/engines/cpp/*`               | Contest C++ preprocessor, parser, interpreter, library, and snapshots         |
 | `apps/web/src/features/visualizer/engines/python/*`            | Pyodide tracer (`tracer.py`) and its TypeScript wrapper                       |
 | `apps/web/src/features/visualizer/worker/*`                    | Web Worker that runs both engines off the main thread                         |

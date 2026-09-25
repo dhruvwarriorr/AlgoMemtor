@@ -15,6 +15,16 @@ const cppTypes = new Set(
     ' ',
   ),
 )
+const javaKeywords = new Set(
+  'if else for while do return break continue switch case default class interface enum record extends implements public private protected static final abstract new this super try catch finally throw throws import package instanceof true false null var void synchronized'.split(
+    ' ',
+  ),
+)
+const javaTypes = new Set(
+  'int long short byte char boolean float double String Integer Long Double Character Boolean Object List ArrayList LinkedList Map HashMap TreeMap LinkedHashMap Set HashSet TreeSet Queue Deque ArrayDeque Stack PriorityQueue Arrays Collections Math Scanner StringBuilder System Comparator Iterator Optional'.split(
+    ' ',
+  ),
+)
 const pythonKeywords = new Set(
   'if elif else for while return break continue def class import from as in not and or is None True False pass lambda with try except finally raise global nonlocal yield del assert'.split(
     ' ',
@@ -33,12 +43,22 @@ export function highlightLine(
   language: VisualizerLanguage,
 ): CodeToken[] {
   const tokens: CodeToken[] = []
-  const keywords = language === 'cpp' ? cppKeywords : pythonKeywords
-  const types = language === 'cpp' ? cppTypes : pythonTypes
+  const keywords =
+    language === 'cpp'
+      ? cppKeywords
+      : language === 'java'
+        ? javaKeywords
+        : pythonKeywords
+  const types =
+    language === 'cpp'
+      ? cppTypes
+      : language === 'java'
+        ? javaTypes
+        : pythonTypes
   if (language === 'cpp' && /^\s*#/.test(line))
     return [{ text: line, kind: 'directive' }]
   const pattern =
-    language === 'cpp'
+    language !== 'python'
       ? /(\/\/.*$|\/\*.*?\*\/|"(?:[^"\\]|\\.)*"?|'(?:[^'\\]|\\.)*'?|\b\d[\d.eE']*[uUlLfF]*\b|0x[0-9a-fA-F]+|[A-Za-z_]\w*)/g
       : /(#.*$|"""|'''|"(?:[^"\\]|\\.)*"?|'(?:[^'\\]|\\.)*'?|\b\d[\d._eEjJ]*\b|[A-Za-z_]\w*)/g
   let last = 0

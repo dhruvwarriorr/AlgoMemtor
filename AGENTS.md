@@ -74,8 +74,10 @@ learner profile
   verdict storage.
 - Exception (decision of 2026-09-25): the Test Case Visualizer runs the
   learner's own code on their own input only inside the learner's browser
-  (a Web Worker with network APIs removed; Pyodide for Python, a TypeScript
-  interpreter for contest C++). No server endpoint executes code and no run
+  (a Web Worker with network APIs removed; Pyodide for Python, TypeScript
+  interpreters for contest C++ and Java). Its AI Debugger sends the code,
+  input and a run digest to the AI service only on an explicit learner
+  action. No server endpoint executes code and no run
   or code is stored server-side. Traces come from execution, never from AI.
 - Use official or explicitly permitted provider APIs or feeds for catalog data.
   The public solved-count and activity behavior in the project documentation permits the backend to
@@ -368,6 +370,14 @@ source, tests, and `git status` before relying on it.
   state; "Ask Doubt Helper about this step" pre-fills the session's Ask dock.
   Code moves only through browser history state and this tab's
   `sessionStorage`.
+- 2026-09-25 (visualizer revamp): the visualizer is visualization-first
+  (`scene/*` picks views from recorded shapes, `stage/*` animates them with
+  Motion) and also runs Java (`engines/java`, a dialect of the C++
+  interpreter). All engines record `objectId`/`ref` for objects. The AI
+  Debugger (`POST /api/visualizer/debug` → `/internal/mentor/visualizer-debug`,
+  contract in `shared-contracts/src/visualizer.ts`) sends code, input and a run
+  digest only when the learner asks; nothing is stored. Engine output is
+  checked against real toolchains in `engines/corpus`.
 
 Important: this snapshot describes the working tree, which currently contains
 uncommitted Week 10 work. It is context, not permission to commit or rewrite it.

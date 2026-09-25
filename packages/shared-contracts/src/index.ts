@@ -434,10 +434,7 @@ export {
   type VerdictGroup,
 } from './learner-activity.js'
 
-export {
-  languageFamilyCounts,
-  programmingLanguageFamily,
-} from './languages.js'
+export { languageFamilyCounts, programmingLanguageFamily } from './languages.js'
 
 export {
   TRANSIENT_CODE_LIMIT,
@@ -555,3 +552,38 @@ export {
   type ProgressReportResponse,
   ProgressNarrativeResponseSchema,
 } from './mentor.js'
+export {
+  VISUALIZER_DEBUG_CODE_LIMIT,
+  VISUALIZER_DEBUG_INPUT_LIMIT,
+  VISUALIZER_DEBUG_OUTPUT_LIMIT,
+  VISUALIZER_DEBUG_MOMENT_LIMIT,
+  VISUALIZER_DEBUG_HISTORY_LIMIT,
+  VISUALIZER_DEBUG_FINDING_LIMIT,
+  VisualizerLanguageSchema,
+  type VisualizerDebugLanguage,
+  VisualizerDebugModeSchema,
+  type VisualizerDebugMode,
+  VisualizerTraceEventSchema,
+  VisualizerTraceMomentSchema,
+  type VisualizerTraceMoment,
+  VisualizerTraceErrorSchema,
+  VisualizerOutputMismatchSchema,
+  VisualizerTraceWarningSchema,
+  VisualizerTraceDigestSchema,
+  type VisualizerTraceDigest,
+  VisualizerDebugTurnSchema,
+  type VisualizerDebugTurn,
+  VisualizerDebugRequestSchema,
+  type VisualizerDebugRequest,
+  VisualizerFindingCategorySchema,
+  type VisualizerFindingCategory,
+  VisualizerFindingSchema,
+  type VisualizerFinding,
+  VisualizerDebugVerdictSchema,
+  type VisualizerDebugVerdict,
+  VisualizerSuggestedTestSchema,
+  VisualizerDebugResultSchema,
+  type VisualizerDebugResult,
+  VisualizerDebugResponseSchema,
+  type VisualizerDebugResponse,
+} from './visualizer.js'

@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 DoubtType = Literal[
     "understand_problem",
@@ -417,3 +417,204 @@ class ProgressNarrativeOutput(StrictModel):
     wins: list[ShortText] = Field(default_factory=list, max_length=4)
     concerns: list[ShortText] = Field(default_factory=list, max_length=4)
     nextSteps: list[ShortText] = Field(min_length=1, max_length=5)
+
+
+# --- Test Case Visualizer AI Debugger --------------------------------------
+#
+# Mirrors `packages/shared-contracts/src/visualizer.ts`. The learner's program
+# ran in their browser; Express forwards the code, the input and a digest of
+# the recorded execution. They are used for this request only.
+
+VISUALIZER_CODE_LIMIT = 12_000
+VISUALIZER_INPUT_LIMIT = 20_000
+VISUALIZER_OUTPUT_LIMIT = 4_000
+VISUALIZER_MOMENT_LIMIT = 60
+VISUALIZER_HISTORY_LIMIT = 10
+VISUALIZER_FINDING_LIMIT = 6
+VISUALIZER_TEST_LIMIT = 3
+VISUALIZER_FOLLOW_UP_LIMIT = 4
+
+VisualizerLanguage = Literal["cpp", "python", "java"]
+VisualizerMode = Literal["diagnose", "ask"]
+VisualizerVerdict = Literal[
+    "bug_found", "error_explained", "looks_correct", "needs_expected_output", "unsure"
+]
+VisualizerCategory = Literal[
+    "logic",
+    "off_by_one",
+    "overflow",
+    "boundary",
+    "initialization",
+    "wrong_condition",
+    "input_output",
+    "runtime_error",
+    "complexity",
+    "other",
+]
+VisualizerSeverity = Literal["bug", "risk", "note"]
+TraceLine = Annotated[int, Field(ge=1, le=100_000)]
+TraceStep = Annotated[int, Field(ge=1, le=1_000_000)]
+
+
+class VerbatimModel(BaseModel):
+    """Keeps whitespace: code, input and output are compared and numbered as-is."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class VisualizerTraceMoment(StrictModel):
+    step: TraceStep
+    line: TraceLine
+    event: Literal["line", "call", "return", "error"]
+    summary: str = Field(min_length=1, max_length=300)
+    variables: str | None = Field(default=None, max_length=600)
+
+
+class VisualizerTraceError(StrictModel):
+    kind: str = Field(min_length=1, max_length=40)
+    title: str = Field(min_length=1, max_length=120)
+    message: str = Field(max_length=600)
+    line: TraceLine | None = None
+    step: TraceStep | None = None
+    details: list[Annotated[str, Field(max_length=300)]] | None = Field(
+        default=None, max_length=6
+    )
+
+
+class VisualizerOutputMismatch(VerbatimModel):
+    token: int = Field(ge=1)
+    expected: str | None = Field(max_length=200)
+    actual: str | None = Field(max_length=200)
+    step: TraceStep | None = None
+
+
+class VisualizerTraceWarning(StrictModel):
+    step: TraceStep
+    line: TraceLine
+    message: str = Field(min_length=1, max_length=300)
+
+
+class VisualizerFocus(StrictModel):
+    step: TraceStep
+    line: TraceLine
+    description: str = Field(min_length=1, max_length=1_500)
+
+
+class VisualizerTraceDigest(VerbatimModel):
+    status: Literal["finished", "error"]
+    recordedSteps: int = Field(ge=0)
+    totalSteps: int = Field(ge=0)
+    truncated: bool
+    error: VisualizerTraceError | None = None
+    stdout: str = Field(max_length=VISUALIZER_OUTPUT_LIMIT)
+    expected: str | None = Field(default=None, max_length=VISUALIZER_OUTPUT_LIMIT)
+    mismatch: VisualizerOutputMismatch | None = None
+    warnings: list[VisualizerTraceWarning] = Field(max_length=12)
+    moments: list[VisualizerTraceMoment] = Field(max_length=VISUALIZER_MOMENT_LIMIT)
+    focus: VisualizerFocus | None = None
+
+
+class VisualizerDebugTurn(StrictModel):
+    role: Literal["learner", "mentor"]
+    content: str = Field(min_length=1, max_length=6_000)
+
+
+class VisualizerProblem(StrictModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    url: str | None = Field(default=None, max_length=2_048)
+
+
+class VisualizerDebugRequest(VerbatimModel):
+    requestId: str = Field(min_length=1, max_length=160)
+    learnerId: UUID
+    learner: LearnerSnapshot
+    mode: VisualizerMode
+    language: VisualizerLanguage
+    code: str = Field(min_length=1, max_length=VISUALIZER_CODE_LIMIT)
+    input: str = Field(max_length=VISUALIZER_INPUT_LIMIT)
+    question: str | None = Field(default=None, min_length=1, max_length=2_000)
+    history: list[VisualizerDebugTurn] = Field(
+        default_factory=list, max_length=VISUALIZER_HISTORY_LIMIT
+    )
+    problem: VisualizerProblem | None = None
+    digest: VisualizerTraceDigest
+
+    @model_validator(mode="after")
+    def _check_text(self) -> VisualizerDebugRequest:
+        if not self.code.strip():
+            raise ValueError("code must not be blank")
+        if self.question is not None:
+            self.question = self.question.strip()
+            if not self.question:
+                raise ValueError("question must not be blank")
+        if self.mode == "ask" and self.question is None:
+            raise ValueError("ask mode needs a question")
+        return self
+
+
+class VisualizerFix(VerbatimModel):
+    code: str = Field(min_length=1, max_length=2_000)
+    explanation: str = Field(min_length=1, max_length=600)
+
+
+class VisualizerFinding(StrictModel):
+    title: str = Field(min_length=1, max_length=160)
+    line: TraceLine
+    endLine: TraceLine | None = None
+    step: TraceStep | None = None
+    category: VisualizerCategory
+    severity: VisualizerSeverity
+    explanation: str = Field(min_length=1, max_length=1_200)
+    hint: str = Field(min_length=1, max_length=600)
+    fix: VisualizerFix | None = None
+
+
+class VisualizerSuggestedTest(StrictModel):
+    input: str = Field(max_length=2_000)
+    reason: str = Field(min_length=1, max_length=300)
+
+
+class VisualizerDebugResponse(StrictModel):
+    verdict: VisualizerVerdict
+    headline: str = Field(min_length=1, max_length=200)
+    summary: str = Field(min_length=1, max_length=2_000)
+    findings: list[VisualizerFinding] = Field(
+        default_factory=list, max_length=VISUALIZER_FINDING_LIMIT
+    )
+    answer: str | None = Field(default=None, min_length=1, max_length=6_000)
+    suggestedTests: list[VisualizerSuggestedTest] = Field(
+        default_factory=list, max_length=VISUALIZER_TEST_LIMIT
+    )
+    followUps: list[Annotated[str, Field(min_length=1, max_length=160)]] = Field(
+        default_factory=list, max_length=VISUALIZER_FOLLOW_UP_LIMIT
+    )
+
+
+class VisualizerModelFinding(StrictModel):
+    """A finding as the model writes it; lines and steps are checked afterwards."""
+
+    title: str = Field(min_length=1, max_length=160)
+    line: int
+    endLine: int | None = None
+    step: int | None = None
+    category: VisualizerCategory
+    severity: VisualizerSeverity
+    explanation: str = Field(min_length=1, max_length=1_200)
+    hint: str = Field(min_length=1, max_length=600)
+    fix: VisualizerFix | None = None
+
+
+class VisualizerModelOutput(StrictModel):
+    verdict: VisualizerVerdict
+    headline: str = Field(min_length=1, max_length=200)
+    summary: str = Field(min_length=1, max_length=2_000)
+    findings: list[VisualizerModelFinding] = Field(
+        default_factory=list, max_length=VISUALIZER_FINDING_LIMIT
+    )
+    answer: str | None = Field(default=None, max_length=6_000)
+    suggestedTests: list[VisualizerSuggestedTest] = Field(
+        default_factory=list, max_length=VISUALIZER_TEST_LIMIT
+    )
+    followUps: list[Annotated[str, Field(max_length=160)]] = Field(
+        default_factory=list, max_length=VISUALIZER_FOLLOW_UP_LIMIT
+    )

@@ -57,9 +57,11 @@ The MVP will support:
 - a protected `/coach` workspace with saved conversations, progressive CP/DSA
   tutoring, an adaptive improvement roadmap, optional practice sets, and
   in-app check-ins; and
-- a Test Case Visualizer (`/visualizer`) that runs the learner's own C++ or
-  Python code on their own input inside the browser and shows it step by step
-  (see section 4.14 of `docs/PROJECT_DOCUMENTATION.md`); and
+- a Test Case Visualizer (`/visualizer`) that runs the learner's own C++,
+  Java or Python code on their own input inside the browser, animates its data
+  structures step by step, and has an AI Debugger that points at the line and
+  step where it goes wrong (see section 4.14 of
+  `docs/PROJECT_DOCUMENTATION.md`); and
 - graceful provider and AI failure states.
 
 The MVP will not include:

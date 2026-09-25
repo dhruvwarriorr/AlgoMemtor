@@ -38,6 +38,35 @@ export type Expr =
   | { k: 'scoped'; line: number; scope: string; name: string; type?: CType }
   // An already evaluated operand (used when calls are evaluated first).
   | { k: 'preval'; line: number; ref: Ref }
+  // new T(args), new T{...}, new T[n]
+  | {
+      k: 'new'
+      line: number
+      type: CType
+      args: Expr[]
+      braced: boolean
+      arraySize?: Expr
+      // new int[n]() value-initializes.
+      zeroed?: boolean
+      // Java enum constant: RED, GREEN(0x00ff00)
+      enumConst?: { name: string; ordinal: number }
+      // Java library class named after new (LinkedHashMap, ArrayDeque).
+      className?: string
+    }
+  | { k: 'delete'; line: number; operand: Expr }
+  // Java: new int[n][m], new int[n][], new int[]{1, 2}
+  | {
+      k: 'newarray'
+      line: number
+      elem: CType
+      dims: Expr[]
+      extraDims: number
+      init?: Expr
+    }
+  // Java: Integer::compare, Math::max, String::length
+  | { k: 'methodref'; line: number; target: string; name: string }
+  // Java: shape instanceof Circle, shape instanceof Circle c
+  | { k: 'instanceof'; line: number; operand: Expr; type: CType; bind?: string }
 
 export type Declarator = {
   name: string
@@ -79,7 +108,14 @@ export type Stmt =
       else?: Stmt
       elseIf: boolean
     }
-  | { k: 'while'; line: number; endLine: number; cond: Expr | Stmt; body: Stmt }
+  | {
+      k: 'while'
+      line: number
+      endLine: number
+      cond: Expr | Stmt
+      body: Stmt
+      label?: string
+    }
   | {
       k: 'do'
       line: number
@@ -87,6 +123,7 @@ export type Stmt =
       whileLine: number
       cond: Expr
       body: Stmt
+      label?: string
     }
   | {
       k: 'for'
@@ -96,11 +133,13 @@ export type Stmt =
       cond?: Expr
       update?: Expr
       body: Stmt
+      label?: string
     }
   | {
       k: 'rangefor'
       line: number
       endLine: number
+      label?: string
       // A single variable or a structured binding.
       name?: string
       names?: string[]
@@ -110,15 +149,30 @@ export type Stmt =
       body: Stmt
     }
   | { k: 'return'; line: number; value?: Expr }
-  | { k: 'break'; line: number }
-  | { k: 'continue'; line: number }
+  | { k: 'break'; line: number; label?: string }
+  | { k: 'continue'; line: number; label?: string }
   | {
       k: 'switch'
       line: number
       endLine: number
       value: Expr
       cases: { values: Expr[] | null; line: number; body: Stmt[] }[]
+      label?: string
     }
+  // Java exceptions.
+  | {
+      k: 'try'
+      line: number
+      block: Stmt & { k: 'block' }
+      catches: {
+        types: string[]
+        name: string
+        line: number
+        body: Stmt & { k: 'block' }
+      }[]
+      finally?: Stmt & { k: 'block' }
+    }
+  | { k: 'throw'; line: number; value: Expr }
   | { k: 'empty'; line: number }
   | { k: 'local-struct'; line: number; def: StructDef }
 

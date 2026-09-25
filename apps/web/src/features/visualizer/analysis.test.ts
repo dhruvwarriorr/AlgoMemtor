@@ -167,7 +167,8 @@ describe('handoff', () => {
     expect(visualizerLanguageFor('C++')).toBe('cpp')
     expect(visualizerLanguageFor('C')).toBe('cpp')
     expect(visualizerLanguageFor('PyPy 3-64')).toBe('python')
-    expect(visualizerLanguageFor('Java 21')).toBeNull()
+    expect(visualizerLanguageFor('Java 21')).toBe('java')
+    expect(visualizerLanguageFor('Rust')).toBeNull()
   })
 
   it('accepts only well-formed handoffs from history state', () => {

@@ -52,6 +52,8 @@ function formatTraceValue(
       return 'unset'
     case 'opaque':
       return value.text
+    case 'ref':
+      return `→ ${value.type} #${value.objectId}`
     case 'sequence': {
       if (depth > 2) return '[…]'
       const shown = value.items

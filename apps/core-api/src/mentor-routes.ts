@@ -18,6 +18,8 @@ import {
   StartProblemHelpRequestSchema,
   UpdateUpsolveItemRequestSchema,
   UpsolveResponseSchema,
+  VisualizerDebugRequestSchema,
+  VisualizerDebugResponseSchema,
 } from '@algomemtor/shared-contracts'
 import type {
   Express,
@@ -31,8 +33,9 @@ import { z } from 'zod'
 import { MentorError, type MentorService } from './services/mentor-service.js'
 
 // Mentor tools live outside the Coach chat: Doubt Helper sessions, the
-// Solution Explorer, the Upsolve Tracker, Contest Analysis and
-// the Progress Report. Every route is owner-scoped by the verified subject.
+// Solution Explorer, the Test Case Visualizer's AI Debugger, the Upsolve
+// Tracker, Contest Analysis and the Progress Report. Every route is
+// owner-scoped by the verified subject.
 
 type MentorRouteDependencies = {
   requireAuthenticated: RequestHandler
@@ -254,6 +257,34 @@ export function registerMentorRoutes(
       response.json(
         SolutionChatResponseSchema.parse({
           data: await service.solutionChat(subject(response), input.data),
+        }),
+      )
+    }),
+  )
+
+  // --- Test Case Visualizer AI Debugger ---------------------------------
+
+  app.post(
+    '/api/visualizer/debug',
+    requireAuthenticated,
+    handle(async (request, response) => {
+      const input = VisualizerDebugRequestSchema.safeParse(request.body)
+      if (!input.success) {
+        // Issues name the invalid fields, never the submitted code or input.
+        invalidInput(
+          response,
+          input.error.issues[0]?.message ?? 'The debug request is invalid.',
+          input.error.issues.map(({ code, path, message }) => ({
+            code,
+            path,
+            message,
+          })),
+        )
+        return
+      }
+      response.json(
+        VisualizerDebugResponseSchema.parse({
+          data: await service.visualizerDebug(subject(response), input.data),
         }),
       )
     }),

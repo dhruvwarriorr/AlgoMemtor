@@ -15,14 +15,19 @@ from app.mentor_models import (
     SolutionRequest,
     UpsolvePickOutput,
     UpsolvePickRequest,
+    VisualizerDebugRequest,
+    VisualizerDebugResponse,
+    VisualizerModelOutput,
 )
 from app.mentor_prompts import phase_instructions
 from app.mentor_service import (
     UNREADABLE_PROBLEM_ANSWER,
+    LangchainMentorModel,
     MentorGenerationError,
     MentorProblemUnavailableError,
     MentorService,
     clean_points,
+    code_lines,
     coerce_to_schema,
     disclosure_violation,
     editorial_excerpt,
@@ -30,6 +35,7 @@ from app.mentor_service import (
     get_mentor_service,
     is_stub_code,
     keep_teaching_links,
+    numbered_code,
     split_category,
 )
 from app.settings import AiSettings, get_ai_settings
@@ -612,5 +618,231 @@ def test_mentor_endpoint_requires_the_internal_token_and_maps_errors() -> None:
             headers={"x-internal-service-token": "internal-test-token"},
         )
         assert failed.status_code == 503
+    finally:
+        app.dependency_overrides.clear()
+
+
+# --- Test Case Visualizer AI Debugger --------------------------------------
+
+VISUALIZER_CODE = (
+    "#include <bits/stdc++.h>\n"
+    "int main() {\n"
+    "  int n; std::cin >> n;\n"
+    "  int sum = 0;\n"
+    "  for (int i = 1; i < n; i++) sum += i;\n"
+    "  std::cout << sum;\n"
+    "}"
+)
+
+
+def visualizer_request(**updates: Any) -> VisualizerDebugRequest:
+    values: dict[str, Any] = {
+        "requestId": "vis-1",
+        "learnerId": str(uuid4()),
+        "learner": {"experience": "beginner"},
+        "mode": "diagnose",
+        "language": "cpp",
+        "code": VISUALIZER_CODE,
+        "input": "3\n",
+        "digest": {
+            "status": "finished",
+            "recordedSteps": 12,
+            "totalSteps": 12,
+            "truncated": False,
+            "stdout": "3",
+            "expected": "6",
+            "mismatch": {"token": 1, "expected": "6", "actual": "3", "step": 11},
+            "warnings": [],
+            "moments": [
+                {
+                    "step": 9,
+                    "line": 5,
+                    "event": "line",
+                    "summary": "Loop ends with i = 3",
+                    "variables": "i=3, sum=3",
+                }
+            ],
+        },
+    }
+    values.update(updates)
+    return VisualizerDebugRequest.model_validate(values)
+
+
+def visualizer_output(**updates: Any) -> VisualizerModelOutput:
+    values: dict[str, Any] = {
+        "verdict": "bug_found",
+        "headline": "The loop stops one number early.",
+        "summary": "At step 9 the loop ends with i = 3, so 3 is never added.",
+        "findings": [
+            {
+                "title": "Loop skips n",
+                "line": 5,
+                "step": 9,
+                "category": "off_by_one",
+                "severity": "bug",
+                "explanation": "The condition i < n stops before adding n.",
+                "hint": "Which values of i does the loop visit for n = 3?",
+                "fix": {
+                    "code": "for (int i = 1; i <= n; i++) sum += i;",
+                    "explanation": "Include n in the loop.",
+                },
+            }
+        ],
+        "suggestedTests": [{"input": "1\n", "reason": "Smallest n."}],
+        "followUps": ["Why does i < n skip n?"],
+    }
+    values.update(updates)
+    return VisualizerModelOutput.model_validate(values)
+
+
+def test_numbered_code_matches_browser_line_numbers() -> None:
+    code = "\nint x;\r\nint y;\n"
+    assert code_lines(code) == ["", "int x;", "int y;"]
+    assert numbered_code(code).splitlines()[1] == "2| int x;"
+
+
+@pytest.mark.asyncio
+async def test_visualizer_diagnose_sends_numbered_code_and_digest() -> None:
+    model = ScriptedModel(visualizer_output())
+    service = MentorService(settings(), model)
+    response = await service.visualizer_debug(visualizer_request())
+    assert response.verdict == "bug_found"
+    assert response.findings[0].line == 5
+    assert response.findings[0].step == 9
+    assert response.findings[0].fix is not None
+    assert response.answer is None
+    call = model.calls[0]
+    assert call["schema"] is VisualizerModelOutput
+    assert "digest is a real recording" in call["system"]
+    assert "5|   for (int i = 1; i < n; i++) sum += i;" in call["human"]
+    assert '"codeLines":7' in call["human"]
+    assert '"recordedSteps":12' in call["human"]
+    assert "Loop ends with i = 3" in call["human"]
+    assert "vis-1" not in call["human"]
+    assert LangchainMentorModel._workload(call["system"]) == "code_debugging"
+
+
+@pytest.mark.asyncio
+async def test_visualizer_ask_mode_uses_history_and_returns_an_answer() -> None:
+    model = ScriptedModel(
+        visualizer_output(
+            verdict="unsure",
+            findings=[],
+            answer="At step 9, `i` is 3 and the condition `i < n` is false.",
+        )
+    )
+    service = MentorService(settings(), model)
+    response = await service.visualizer_debug(
+        visualizer_request(
+            mode="ask",
+            question="Why did the loop stop here?",
+            history=[
+                {"role": "learner", "content": "What is sum at the end?"},
+                {"role": "mentor", "content": "It is 3."},
+            ],
+        )
+    )
+    assert response.answer is not None and "step 9" in response.answer
+    assert response.findings == []
+    human = model.calls[0]["human"]
+    assert "Why did the loop stop here?" in human
+    assert "mentor: It is 3." in human
+
+
+@pytest.mark.asyncio
+async def test_visualizer_ask_mode_falls_back_to_the_summary() -> None:
+    model = ScriptedModel(visualizer_output(answer=None))
+    service = MentorService(settings(), model)
+    response = await service.visualizer_debug(
+        visualizer_request(mode="ask", question="Where is the bug?")
+    )
+    assert response.answer == response.summary
+
+
+@pytest.mark.asyncio
+async def test_visualizer_drops_lines_and_steps_outside_the_run() -> None:
+    finding = visualizer_output().findings[0].model_dump()
+    model = ScriptedModel(
+        visualizer_output(
+            findings=[
+                {**finding, "line": 40, "title": "Invented line"},
+                {**finding, "line": 0, "title": "Line zero"},
+                {**finding, "step": 99, "endLine": 80},
+                {**finding, "step": 99},
+                {**finding, "line": 4, "endLine": 3, "title": "Sum start"},
+            ],
+            answer="Not used in diagnose mode.",
+        )
+    )
+    service = MentorService(settings(), model)
+    response = await service.visualizer_debug(visualizer_request())
+    assert [item.line for item in response.findings] == [5, 4]
+    first, second = response.findings
+    assert first.step is None
+    assert first.endLine == 7
+    assert second.endLine is None
+    assert response.answer is None
+
+
+@pytest.mark.asyncio
+async def test_visualizer_bug_verdict_without_valid_findings_becomes_unsure() -> None:
+    finding = visualizer_output().findings[0].model_dump()
+    model = ScriptedModel(visualizer_output(findings=[{**finding, "line": 50}]))
+    service = MentorService(settings(), model)
+    response = await service.visualizer_debug(visualizer_request())
+    assert response.findings == []
+    assert response.verdict == "unsure"
+
+
+def test_visualizer_request_limits() -> None:
+    with pytest.raises(ValueError):
+        visualizer_request(mode="ask")
+    with pytest.raises(ValueError):
+        visualizer_request(code="x" * 12_001)
+    with pytest.raises(ValueError):
+        visualizer_request(code="   \n")
+    kept = visualizer_request(code="\n\nint main() {}\n")
+    assert kept.code.startswith("\n\n")
+
+
+def test_visualizer_endpoint_requires_the_token_and_validates() -> None:
+    class Service:
+        async def visualizer_debug(
+            self, request: VisualizerDebugRequest
+        ) -> VisualizerDebugResponse:
+            return VisualizerDebugResponse(
+                verdict="looks_correct",
+                headline="Looks right.",
+                summary="The output matches.",
+            )
+
+    class FailingService:
+        async def visualizer_debug(self, request: VisualizerDebugRequest) -> None:
+            raise MentorGenerationError("boom")
+
+    app.dependency_overrides[get_ai_settings] = lambda: settings()
+    app.dependency_overrides[get_mentor_service] = lambda: Service()
+    token = {"x-internal-service-token": "internal-test-token"}
+    path = "/internal/mentor/visualizer-debug"
+    try:
+        client = TestClient(app)
+        body = visualizer_request().model_dump(mode="json", exclude_none=True)
+        assert client.post(path, json=body).status_code == 401
+        invalid = client.post(path, json={**body, "mode": "ask"}, headers=token)
+        assert invalid.status_code == 422
+        extra = client.post(path, json={**body, "extra": 1}, headers=token)
+        assert extra.status_code == 422
+        ok = client.post(path, json=body, headers=token)
+        assert ok.status_code == 200
+        assert ok.json() == {
+            "verdict": "looks_correct",
+            "headline": "Looks right.",
+            "summary": "The output matches.",
+            "findings": [],
+            "suggestedTests": [],
+            "followUps": [],
+        }
+        app.dependency_overrides[get_mentor_service] = lambda: FailingService()
+        assert client.post(path, json=body, headers=token).status_code == 503
     finally:
         app.dependency_overrides.clear()

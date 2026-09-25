@@ -51,7 +51,7 @@ import {
   targetLength,
   tv,
 } from './runtime'
-import { Recorder } from './snapshot'
+import { Recorder, type RecorderDialect } from './snapshot'
 import { intRange, sizeOf, T, typeName, type CType } from './types'
 import {
   bump,
@@ -82,6 +82,10 @@ export class RuntimeFailure extends Error {
   readonly kind: TraceErrorKind
   readonly title: string
   readonly details: string[] | undefined
+  // Java: the exception object a catch block receives.
+  thrown?: Value
+  // The error step, captured before the stack unwinds to look for a catch.
+  captured?: TraceStep
 
   constructor(
     kind: TraceErrorKind,
@@ -164,7 +168,7 @@ export class Interpreter {
   readonly stdin: string
   inPos = 0
   inFail = false
-  private readonly outChunks: string[] = []
+  protected readonly outChunks: string[] = []
   outLength = 0
   err = ''
   readonly coutState = {
@@ -180,29 +184,38 @@ export class Interpreter {
   quiet = 0
   totalSteps = 0
   truncated = false
-  private recording = true
-  private ops = 0
-  private readonly deadline: number
-  private nextFrame = 1
-  private pendingReads: TraceAccess[] = []
-  private pendingWrites: TraceAccess[] = []
-  private pendingNotes: string[] = []
-  private readonly warningKeys = new Set<string>()
-  private readonly staticSlots = new Map<Declarator, Slot>()
+  protected recording = true
+  protected ops = 0
+  protected readonly deadline: number
+  protected nextFrame = 1
+  protected pendingReads: TraceAccess[] = []
+  protected pendingWrites: TraceAccess[] = []
+  protected pendingNotes: string[] = []
+  protected readonly warningKeys = new Set<string>()
+  protected readonly staticSlots = new Map<Declarator, Slot>()
   cells = 0
   randState = 1
+  // A labelled break/continue travelling out to its loop.
+  protected pendingLabel: string | null = null
+  // Active try blocks; with none, an error ends the run where it happened.
+  protected tryDepth = 0
 
   readonly program: Program
   readonly limits: TraceLimits
 
-  constructor(program: Program, input: string, limits: TraceLimits) {
+  constructor(
+    program: Program,
+    input: string,
+    limits: TraceLimits,
+    dialect?: RecorderDialect,
+  ) {
     this.program = program
     this.limits = limits
     this.stdin = input
     this.deadline = now() + limits.timeMs
-    this.recorder = new Recorder((items, heap) =>
-      [...items].sort((a, b) => (heap as CHeap).compare(b, a)),
-    )
+    // Heaps are recorded in their real array layout (item i has children
+    // 2i+1 and 2i+2), so the visualizer can draw the actual tree.
+    this.recorder = new Recorder((items) => items, dialect)
     const globalActivation: Activation = {
       id: 0,
       name: 'global',
@@ -260,7 +273,12 @@ export class Interpreter {
         }
         if (failure.details !== undefined) error.details = failure.details
         this.quiet = 0
-        this.pushStep('error', this.line, {})
+        if (failure.captured !== undefined) {
+          error.line = failure.captured.line
+          this.steps.push(failure.captured)
+        } else {
+          this.pushStep('error', this.line, {})
+        }
       }
     }
     const result: ReturnType<Interpreter['run']> = {
@@ -277,7 +295,7 @@ export class Interpreter {
     return result
   }
 
-  private toFailure(caught: unknown): RuntimeFailure {
+  protected toFailure(caught: unknown): RuntimeFailure {
     if (caught instanceof RuntimeFailure) return caught
     if (caught instanceof ArithmeticError) {
       const zero = caught.message.includes('zero')
@@ -343,13 +361,13 @@ export class Interpreter {
     this.pushStep(event, line, extra)
   }
 
-  private clearPending() {
+  protected clearPending() {
     this.pendingReads = []
     this.pendingWrites = []
     this.pendingNotes = []
   }
 
-  private pushStep(event: TraceEvent, line: number, extra: StepExtra) {
+  protected pushStep(event: TraceEvent, line: number, extra: StepExtra) {
     const step: TraceStep = {
       event,
       line,
@@ -361,7 +379,7 @@ export class Interpreter {
     if (extra.cond !== undefined) step.cond = extra.cond
     if (extra.loop !== undefined) step.loop = extra.loop
     if (extra.value !== undefined && extra.value.t.k !== 'void') {
-      step.value = this.recorder.id(extra.value.v, extra.value.t)
+      step.value = this.recorder.root(extra.value.v, extra.value.t)
     }
     if (this.pendingReads.length > 0) step.reads = this.pendingReads
     if (this.pendingWrites.length > 0) step.writes = this.pendingWrites
@@ -375,7 +393,7 @@ export class Interpreter {
     this.clearPending()
   }
 
-  private addWarning(
+  protected addWarning(
     line: number,
     message: string,
     stepIndex = this.steps.length - 1,
@@ -387,7 +405,8 @@ export class Interpreter {
     this.warnings.push({ step: Math.max(0, stepIndex), line, message })
   }
 
-  note(message: string) {
+  note(raw: string) {
+    const message = this.decorateNote(raw)
     if (this.quiet > 0 && this.pendingNotes.length > 0) return
     if (
       this.pendingNotes.length < MAX_NOTES &&
@@ -398,7 +417,7 @@ export class Interpreter {
     if (!this.recording) this.addWarning(this.line, message)
   }
 
-  private track(list: TraceAccess[], origin: Origin | undefined) {
+  protected track(list: TraceAccess[], origin: Origin | undefined) {
     if (origin === undefined || origin.path.length === 0 || this.quiet > 0)
       return
     if (list.length >= MAX_ACCESSES) return
@@ -428,7 +447,7 @@ export class Interpreter {
     this.track(this.pendingWrites, origin)
   }
 
-  private snapshotFrames(line: number): TraceFrame[] {
+  protected snapshotFrames(line: number): TraceFrame[] {
     const frames: TraceFrame[] = []
     const top = this.stack.length - 1
     const globalVars = this.scopeVariables(this.globals, 0)
@@ -470,11 +489,11 @@ export class Interpreter {
     return frames
   }
 
-  private globalLine(): number {
+  protected globalLine(): number {
     return this.stack[0].line
   }
 
-  private scopeVariables(scope: Scope, frame: number): TraceVariable[] {
+  protected scopeVariables(scope: Scope, frame: number): TraceVariable[] {
     const vars: TraceVariable[] = []
     for (const slot of scope.vars.values()) {
       if (slot.frame !== frame) continue
@@ -483,7 +502,7 @@ export class Interpreter {
     return vars
   }
 
-  private activationVariables(activation: Activation): TraceVariable[] {
+  protected activationVariables(activation: Activation): TraceVariable[] {
     const scopes: Scope[] = []
     let scope: Scope | null = activation.scope
     while (scope !== null && scope.frame === activation.id) {
@@ -494,7 +513,7 @@ export class Interpreter {
     if (activation.self !== null) {
       byName.set(
         'this',
-        this.recorder.id(activation.self, {
+        this.recorder.root(activation.self, {
           k: 'struct',
           name: activation.self.def.name,
         }),
@@ -508,10 +527,10 @@ export class Interpreter {
     return [...byName.entries()]
   }
 
-  private slotSnapshot(slot: Slot): number {
+  protected slotSnapshot(slot: Slot): number {
     if (slot.uninit === true) return this.recorder.unset()
     const value = slot.ref !== undefined ? slot.ref.peek() : slot.value
-    return this.recorder.id(value, slot.type)
+    return this.recorder.root(value, slot.type)
   }
 
   // ---- failures ------------------------------------------------------------------
@@ -539,7 +558,7 @@ export class Interpreter {
 
   // ---- scopes and variables --------------------------------------------------------
 
-  private pushScope() {
+  protected pushScope() {
     this.current.scope = {
       vars: new Map(),
       parent: this.current.scope,
@@ -547,12 +566,12 @@ export class Interpreter {
     }
   }
 
-  private popScope() {
+  protected popScope() {
     const parent = this.current.scope.parent
     if (parent !== null) this.current.scope = parent
   }
 
-  private setLine(line: number) {
+  protected setLine(line: number) {
     this.line = line
     this.current.line = line
   }
@@ -738,22 +757,60 @@ export class Interpreter {
 
   drive<R>(root: Gen<R>): R {
     const stack: Gen<unknown>[] = [root]
+    // Activation depth when each generator started, to unwind on a throw.
+    const depths: number[] = [this.stack.length]
     let input: TV | undefined
+    let thrown: unknown = undefined
+    let throwing = false
     for (;;) {
       const top = stack[stack.length - 1]
-      const result = top.next(input as TV)
+      let result: IteratorResult<CallRequest, unknown>
+      try {
+        result = throwing ? top.throw(thrown) : top.next(input as TV)
+        throwing = false
+      } catch (error) {
+        // Without a try block anywhere, the run ends here with the stack
+        // intact, so the error step shows where it happened.
+        if (!(error instanceof RuntimeFailure) || this.tryDepth === 0) {
+          throw error
+        }
+        if (error.captured === undefined) error.captured = this.errorStep()
+        const depth = depths[depths.length - 1] ?? 0
+        this.stack.length = Math.max(1, depth)
+        this.current = this.stack[this.stack.length - 1]
+        stack.pop()
+        depths.pop()
+        if (stack.length === 0) throw error
+        thrown = error
+        throwing = true
+        continue
+      }
       if (result.done === true) {
         stack.pop()
+        depths.pop()
         if (stack.length === 0) return result.value as R
         input = result.value as TV
       } else {
+        depths.push(this.stack.length)
         stack.push(this.runFunction(result.value))
         input = undefined
       }
     }
   }
 
-  private *programG(): Gen<TV> {
+  // The error step for the current position (before any unwinding).
+  protected errorStep(): TraceStep {
+    return {
+      event: 'error',
+      line: this.line,
+      frames: this.snapshotFrames(this.line),
+      out: this.outLength,
+      err: this.err.length,
+      in: this.inPos,
+    }
+  }
+
+  protected *programG(): Gen<TV> {
     for (const declaration of this.program.globals)
       yield* this.execG(declaration)
     const main = this.program.functions.get('main')?.[0]
@@ -767,7 +824,7 @@ export class Interpreter {
     return yield { fn: main, slots: [], self: null, env: null, name: 'main' }
   }
 
-  private *runFunction(request: CallRequest): Gen<TV> {
+  protected *runFunction(request: CallRequest): Gen<TV> {
     const { fn, slots, self, env, name } = request
     if (this.stack.length > MAX_DEPTH) {
       this.failKind(
@@ -843,7 +900,11 @@ export class Interpreter {
     return result
   }
 
-  private returnResult(fn: FunctionDef, name: string, returned: TV | null): TV {
+  protected returnResult(
+    fn: FunctionDef,
+    name: string,
+    returned: TV | null,
+  ): TV {
     if (fn.returnType.k === 'void' || fn.isCtor === true)
       return tv(T.void, null)
     if (returned === null) {
@@ -861,7 +922,7 @@ export class Interpreter {
     return tv(type, this.coerce(returned, type))
   }
 
-  private *execG(stmt: Stmt): Gen<Completion> {
+  protected *execG(stmt: Stmt): Gen<Completion> {
     this.tick()
     switch (stmt.k) {
       case 'block':
@@ -914,11 +975,18 @@ export class Interpreter {
       case 'break':
         this.setLine(stmt.line)
         this.step('line', stmt.line)
+        this.pendingLabel = stmt.label ?? null
         return BREAK
       case 'continue':
         this.setLine(stmt.line)
         this.step('line', stmt.line)
+        this.pendingLabel = stmt.label ?? null
         return CONTINUE
+      case 'try':
+        return yield* this.execTryG(stmt)
+      case 'throw':
+        this.setLine(stmt.line)
+        return this.throwValue(yield* this.evalG(stmt.value))
       case 'switch':
         return yield* this.execSwitchG(stmt)
       case 'empty':
@@ -927,11 +995,179 @@ export class Interpreter {
     }
   }
 
-  private copied(value: TV): TV {
-    return { t: value.t, v: copyValue(value.v) }
+  protected copied(value: TV): TV {
+    return { t: value.t, v: this.storeCopy(value.v) }
   }
 
-  private *execBlockG(body: Stmt[]): Gen<Completion> {
+  // ---- dialect hooks (the Java interpreter overrides these) ----------------
+
+  // Storing a value into a variable, element or parameter: C++ copies
+  // aggregates, Java and pointers share the object.
+  protected storeCopy(value: Value): Value {
+    return copyValue(value)
+  }
+
+  // An explicit cast narrows silently: the programmer asked for it.
+  protected castValue(value: TV, type: CType): Value {
+    const v = value.v
+    if (
+      (type.k === 'int' || type.k === 'float' || type.k === 'bool') &&
+      (typeof v === 'number' || typeof v === 'bigint' || typeof v === 'boolean')
+    ) {
+      return convertScalar(v, value.t, type)
+    }
+    return this.coerce(value, type)
+  }
+
+  // The value of a variable or field declared without an initializer.
+  protected zeroValue(type: CType): Value {
+    return this.defaultValue(type)
+  }
+
+  // Extra scope a method of this object sees (Java anonymous classes).
+  protected methodEnv(object: CStruct): Scope | null {
+    void object
+    return null
+  }
+
+  protected coerceNull(type: CType): Value {
+    return this.defaultValue(type)
+  }
+
+  protected dispatchMethod(
+    ref: Ref,
+    object: Value,
+    name: string,
+    args: Expr[],
+    call: Expr & { k: 'call' },
+  ): MethodResult {
+    return callMethod(this, ref, object, name, args, call)
+  }
+
+  protected dispatchLibrary(
+    name: string,
+    args: Expr[],
+    call: Expr & { k: 'call' },
+  ): MethodResult | undefined {
+    return callLibrary(this, name, args, call)
+  }
+
+  protected dispatchScopedCall(
+    callee: Expr & { k: 'scoped' },
+    args: Expr[],
+    call: Expr & { k: 'call' },
+  ): MethodResult {
+    return scopedCall(this, callee, args, call)
+  }
+
+  protected dispatchScopedValue(expr: Expr & { k: 'scoped' }): TV {
+    return scopedValue(this, expr)
+  }
+
+  protected dispatchConstant(name: string): TV | undefined {
+    return libraryConstant(this, name)
+  }
+
+  protected isLibraryName(name: string): boolean {
+    return isLibraryFunction(name)
+  }
+
+  protected switchMatches(value: TV, candidate: TV): boolean {
+    return compareArith('==', value, candidate)
+  }
+
+  protected decorateNote(message: string): string {
+    if (message.startsWith('Signed overflow')) {
+      return message.replace(/\.$/, ' (undefined behaviour in C++).')
+    }
+    return message
+  }
+
+  // What a loop does after its body completes: keep looping, or leave with a
+  // completion (labelled break/continue aimed at an outer loop propagate).
+  protected afterBody(
+    completion: Completion,
+    label: string | undefined,
+  ): Completion | null {
+    if (completion === NORMAL) return null
+    if (completion === RETURN) return RETURN
+    const target = this.pendingLabel
+    if (target !== null && target !== label) return completion
+    this.pendingLabel = null
+    return completion === BREAK ? NORMAL : null
+  }
+
+  protected *execTryG(stmt: Stmt & { k: 'try' }): Gen<Completion> {
+    const activation = this.current
+    const scope = activation.scope
+    const stackDepth = this.stack.length
+    let completion: Completion = NORMAL
+    let pending: unknown = null
+    this.tryDepth += 1
+    let inTry = true
+    try {
+      completion = yield* this.execBlockG(stmt.block.body)
+    } catch (error) {
+      this.tryDepth -= 1
+      inTry = false
+      this.stack.length = stackDepth
+      this.current = activation
+      activation.scope = scope
+      const handler =
+        error instanceof RuntimeFailure
+          ? stmt.catches.find((item) =>
+              item.types.some((type) => this.catches(type, error)),
+            )
+          : undefined
+      if (handler === undefined || !(error instanceof RuntimeFailure)) {
+        pending = error
+      } else {
+        this.pushScope()
+        this.current.scope.vars.set(handler.name, {
+          name: handler.name,
+          type: { k: 'struct', name: error.title },
+          value: this.exceptionValue(error),
+          frame: this.current.id,
+        })
+        this.setLine(handler.line)
+        this.note(`Caught ${error.title}: ${error.message}`)
+        this.step('line', handler.line)
+        try {
+          completion = yield* this.execBlockG(handler.body.body)
+        } catch (inner) {
+          pending = inner
+        }
+        this.popScope()
+      }
+    } finally {
+      if (inTry) this.tryDepth -= 1
+    }
+    if (stmt.finally !== undefined) {
+      const finalCompletion = yield* this.execBlockG(stmt.finally.body)
+      if (finalCompletion !== NORMAL) return finalCompletion
+    }
+    // eslint-disable-next-line @typescript-eslint/only-throw-error -- rethrows what the try block threw
+    if (pending !== null) throw pending
+    return completion
+  }
+
+  // Whether `catch (type e)` handles this failure. Only the Java dialect
+  // produces try statements.
+  protected catches(type: string, failure: RuntimeFailure): boolean {
+    void failure
+    return type === 'Exception' || type === 'Throwable'
+  }
+
+  protected exceptionValue(failure: RuntimeFailure): Value {
+    return { kind: 'str', s: failure.message, ver: 0 }
+  }
+
+  protected throwValue(value: TV): never {
+    void value
+    this.unsupported('throw is not supported here.')
+  }
+
+  protected *execBlockG(body: Stmt[]): Gen<Completion> {
     this.pushScope()
     for (const stmt of body) {
       const result = yield* this.execG(stmt)
@@ -944,7 +1180,7 @@ export class Interpreter {
     return NORMAL
   }
 
-  private *conditionG(cond: Expr | Stmt): Gen<boolean> {
+  protected *conditionG(cond: Expr | Stmt): Gen<boolean> {
     if ('declarators' in cond) {
       const declaration = cond
       for (const declarator of declaration.declarators) {
@@ -968,7 +1204,7 @@ export class Interpreter {
     return truthy(v)
   }
 
-  private *execIfG(stmt: Stmt & { k: 'if' }): Gen<Completion> {
+  protected *execIfG(stmt: Stmt & { k: 'if' }): Gen<Completion> {
     const scoped = stmt.init !== undefined || !isExprNode(stmt.cond)
     if (scoped) this.pushScope()
     if (stmt.init !== undefined) yield* this.execQuietG(stmt.init)
@@ -982,7 +1218,7 @@ export class Interpreter {
     return completion
   }
 
-  private *execQuietG(stmt: Stmt): Gen<void> {
+  protected *execQuietG(stmt: Stmt): Gen<void> {
     if (stmt.k === 'decl') {
       for (const declarator of stmt.declarators) {
         yield* this.declareG(declarator, stmt.isStatic, false)
@@ -994,7 +1230,7 @@ export class Interpreter {
     }
   }
 
-  private *execWhileG(stmt: Stmt & { k: 'while' }): Gen<Completion> {
+  protected *execWhileG(stmt: Stmt & { k: 'while' }): Gen<Completion> {
     let iteration = 0
     for (;;) {
       this.setLine(stmt.line)
@@ -1012,17 +1248,17 @@ export class Interpreter {
       }
       const completion = yield* this.execG(stmt.body)
       if (declared) this.popScope()
-      if (completion === BREAK) return NORMAL
-      if (completion === RETURN) return RETURN
+      const exit = this.afterBody(completion, stmt.label)
+      if (exit !== null) return exit
     }
   }
 
-  private *execDoG(stmt: Stmt & { k: 'do' }): Gen<Completion> {
+  protected *execDoG(stmt: Stmt & { k: 'do' }): Gen<Completion> {
     let iteration = 1
     for (;;) {
       const completion = yield* this.execG(stmt.body)
-      if (completion === BREAK) return NORMAL
-      if (completion === RETURN) return RETURN
+      const exit = this.afterBody(completion, stmt.label)
+      if (exit !== null) return exit
       this.setLine(stmt.whileLine)
       const result = this.truth(yield* this.evalG(stmt.cond))
       if (result) iteration += 1
@@ -1034,7 +1270,7 @@ export class Interpreter {
     }
   }
 
-  private *execForG(stmt: Stmt & { k: 'for' }): Gen<Completion> {
+  protected *execForG(stmt: Stmt & { k: 'for' }): Gen<Completion> {
     this.pushScope()
     this.setLine(stmt.line)
     if (stmt.init !== undefined) yield* this.execQuietG(stmt.init)
@@ -1055,17 +1291,17 @@ export class Interpreter {
       })
       if (!result) break
       const completion = yield* this.execG(stmt.body)
-      if (completion === BREAK) break
-      if (completion === RETURN) {
+      const exit = this.afterBody(completion, stmt.label)
+      if (exit !== null) {
         this.popScope()
-        return RETURN
+        return exit
       }
     }
     this.popScope()
     return NORMAL
   }
 
-  private iterationRefs(
+  protected iterationRefs(
     container: Value,
     origin?: Origin,
   ): { count: number; at: (i: number) => Ref } {
@@ -1142,7 +1378,7 @@ export class Interpreter {
     }
   }
 
-  private bindStructured(names: string[], byRef: boolean, source: Ref) {
+  protected bindStructured(names: string[], byRef: boolean, source: Ref) {
     const value = source.get()
     const refs: Ref[] = []
     if (typeof value === 'object' && value !== null) {
@@ -1170,12 +1406,17 @@ export class Interpreter {
       const type = this.decay(ref.type, ref.peek())
       const slot: Slot = byRef
         ? { name, type, value: null, ref, frame: this.current.id }
-        : { name, type, value: copyValue(ref.get()), frame: this.current.id }
+        : {
+            name,
+            type,
+            value: this.storeCopy(ref.get()),
+            frame: this.current.id,
+          }
       this.current.scope.vars.set(name, slot)
     })
   }
 
-  private *execRangeForG(stmt: Stmt & { k: 'rangefor' }): Gen<Completion> {
+  protected *execRangeForG(stmt: Stmt & { k: 'rangefor' }): Gen<Completion> {
     this.setLine(stmt.line)
     const iterableRef = yield* this.evalRefG(stmt.iterable)
     const container = iterableRef.get()
@@ -1215,8 +1456,8 @@ export class Interpreter {
       })
       const completion = yield* this.execG(stmt.body)
       this.popScope()
-      if (completion === BREAK) return NORMAL
-      if (completion === RETURN) return RETURN
+      const exit = this.afterBody(completion, stmt.label)
+      if (exit !== null) return exit
     }
     this.setLine(stmt.line)
     this.step('line', stmt.line, {
@@ -1226,7 +1467,7 @@ export class Interpreter {
     return NORMAL
   }
 
-  private *execSwitchG(stmt: Stmt & { k: 'switch' }): Gen<Completion> {
+  protected *execSwitchG(stmt: Stmt & { k: 'switch' }): Gen<Completion> {
     this.setLine(stmt.line)
     const value = yield* this.evalG(stmt.value)
     this.step('line', stmt.line)
@@ -1239,7 +1480,7 @@ export class Interpreter {
         continue
       }
       for (const expr of item.values) {
-        if (compareArith('==', value, this.eval(expr))) {
+        if (this.switchMatches(value, this.eval(expr))) {
           start = index
           break
         }
@@ -1253,6 +1494,10 @@ export class Interpreter {
         const completion = yield* this.execG(inner)
         if (completion === BREAK) {
           this.popScope()
+          if (this.pendingLabel !== null && this.pendingLabel !== stmt.label) {
+            return BREAK
+          }
+          this.pendingLabel = null
           return NORMAL
         }
         if (completion !== NORMAL) {
@@ -1267,7 +1512,7 @@ export class Interpreter {
 
   // ---- expressions that may call user code ---------------------------------------------
 
-  private hasCall(expr: Expr): boolean {
+  protected hasCall(expr: Expr): boolean {
     const cached = callCache.get(expr)
     if (cached !== undefined) return cached
     const result = containsCall(expr)
@@ -1275,11 +1520,11 @@ export class Interpreter {
     return result
   }
 
-  private preval(ref: Ref, line: number): Expr {
+  protected preval(ref: Ref, line: number): Expr {
     return { k: 'preval', line, ref }
   }
 
-  private *prevalG(expr: Expr): Gen<Expr> {
+  protected *prevalG(expr: Expr): Gen<Expr> {
     if (!this.hasCall(expr)) return expr
     return this.preval(yield* this.evalRefG(expr), expr.line)
   }
@@ -1383,13 +1628,13 @@ export class Interpreter {
     }
   }
 
-  private *prevalArgsG(args: Expr[]): Gen<Expr[]> {
+  protected *prevalArgsG(args: Expr[]): Gen<Expr[]> {
     const result: Expr[] = []
     for (const arg of args) result.push(yield* this.prevalG(arg))
     return result
   }
 
-  private *callG(expr: Expr & { k: 'call' }): Gen<MethodResult> {
+  protected *callG(expr: Expr & { k: 'call' }): Gen<MethodResult> {
     const callee = expr.callee
     if (callee.k === 'member') {
       if (callee.object.k === 'this') {
@@ -1421,7 +1666,7 @@ export class Interpreter {
         return yield* this.structMethodG(object, callee.name, expr.args)
       }
       const args = yield* this.prevalArgsG(expr.args)
-      return callMethod(this, objectRef, object, callee.name, args, {
+      return this.dispatchMethod(objectRef, object, callee.name, args, {
         ...expr,
         args,
       })
@@ -1446,7 +1691,7 @@ export class Interpreter {
         return yield* this.userCallG(fn, expr.args, null, null, name)
       }
       const args = yield* this.prevalArgsG(expr.args)
-      const library = callLibrary(this, name, args, { ...expr, args })
+      const library = this.dispatchLibrary(name, args, { ...expr, args })
       if (library !== undefined) return library
       this.line = expr.line
       throw new RuntimeFailure(
@@ -1457,13 +1702,17 @@ export class Interpreter {
     }
     if (callee.k === 'scoped') {
       const args = yield* this.prevalArgsG(expr.args)
-      return scopedCall(this, callee, args, { ...expr, args })
+      return this.dispatchScopedCall(callee, args, { ...expr, args })
     }
     const value = yield* this.evalG(callee)
     return yield* this.callValueG(value.v, expr.args, 'function')
   }
 
-  private *structMethodG(object: CStruct, name: string, args: Expr[]): Gen<TV> {
+  protected *structMethodG(
+    object: CStruct,
+    name: string,
+    args: Expr[],
+  ): Gen<TV> {
     const overloads = object.def.methods.get(name)
     if (overloads === undefined) {
       this.fail(
@@ -1480,12 +1729,12 @@ export class Interpreter {
       fn,
       args,
       object,
-      null,
+      this.methodEnv(object),
       `${object.def.name}.${name}`,
     )
   }
 
-  private *callValueG(value: Value, args: Expr[], name: string): Gen<TV> {
+  protected *callValueG(value: Value, args: Expr[], name: string): Gen<TV> {
     if (typeof value === 'object' && value !== null) {
       if (value.kind === 'func') {
         return yield* this.userCallG(
@@ -1503,7 +1752,7 @@ export class Interpreter {
     return this.callValueWithExprs(value, prepared, name)
   }
 
-  private *userCallG(
+  protected *userCallG(
     fn: FunctionDef,
     args: Expr[],
     self: CStruct | null,
@@ -1543,7 +1792,7 @@ export class Interpreter {
     return yield { fn, slots, self, env, name }
   }
 
-  private *declareG(
+  protected *declareG(
     d: Declarator,
     isStatic: boolean,
     isGlobal: boolean,
@@ -1583,7 +1832,7 @@ export class Interpreter {
 
   // ---- declarations -------------------------------------------------------------------
 
-  private declare(
+  protected declare(
     d: Declarator,
     isStatic: boolean,
     isGlobal: boolean,
@@ -1614,11 +1863,14 @@ export class Interpreter {
         d.type.k === 'auto' ? this.decay(ref.type, ref.peek()) : d.type
       slot = { name: d.name, type, value: null, ref, frame: scope.frame }
     } else if (d.init === undefined) {
-      const value = this.defaultValue(d.type)
+      const value = this.zeroValue(d.type)
       slot = { name: d.name, type: d.type, value, frame: scope.frame }
       if (
         !zeroed &&
-        (d.type.k === 'int' || d.type.k === 'float' || d.type.k === 'bool')
+        (d.type.k === 'int' ||
+          d.type.k === 'float' ||
+          d.type.k === 'bool' ||
+          d.type.k === 'pointer')
       ) {
         slot.uninit = true
       }
@@ -1655,7 +1907,7 @@ export class Interpreter {
         slot = {
           name: d.name,
           type: this.decay(first.t, first.v),
-          value: copyValue(first.v),
+          value: this.storeCopy(first.v),
           frame: scope.frame,
         }
       } else {
@@ -1729,7 +1981,7 @@ export class Interpreter {
     }
   }
 
-  private makeCArray(
+  protected makeCArray(
     base: CType,
     dims: (Expr | null)[],
     init: Declarator['init'],
@@ -1782,9 +2034,9 @@ export class Interpreter {
         const items: Value[] = new Array<Value>(size)
         const scalar =
           base.k === 'int' || base.k === 'float' || base.k === 'bool'
-        const fill = scalar ? this.defaultValue(base) : null
+        const fill = scalar ? this.zeroValue(base) : null
         for (let i = 0; i < size; i += 1)
-          items[i] = scalar ? fill : this.defaultValue(base)
+          items[i] = scalar ? fill : this.zeroValue(base)
         return {
           kind: 'seq',
           seq: 'carray',
@@ -1816,7 +2068,7 @@ export class Interpreter {
     return { value, type: types[0] }
   }
 
-  private allocate(count: number, line: number) {
+  protected allocate(count: number, line: number) {
     this.cells += count
     if (this.cells > MAX_CELLS) {
       this.line = line
@@ -1829,7 +2081,7 @@ export class Interpreter {
     }
   }
 
-  private fillArray(seq: CSeq, init: NonNullable<Declarator['init']>) {
+  protected fillArray(seq: CSeq, init: NonNullable<Declarator['init']>) {
     if (init.form === 'assign') {
       const value = this.eval(init.expr)
       const text =
@@ -1883,6 +2135,8 @@ export class Interpreter {
 
   defaultValue(type: CType): Value {
     switch (type.k) {
+      case 'pointer':
+        return null
       case 'int':
         return type.bits >= 64 ? 0n : 0
       case 'float':
@@ -2003,7 +2257,7 @@ export class Interpreter {
     return defaultCompare(a, b, (x, y) => this.structLess(x, y))
   }
 
-  private structLess(a: CStruct, b: CStruct): boolean {
+  protected structLess(a: CStruct, b: CStruct): boolean {
     const method = a.def.methods
       .get('operator<')
       ?.find((fn) => fn.params.length === 1)
@@ -2107,7 +2361,10 @@ export class Interpreter {
         const self = this.current.self
         if (self === null)
           this.fail('No this', 'this is only available inside a struct method.')
-        return tv({ k: 'struct', name: self.def.name }, self)
+        return tv(
+          { k: 'pointer', to: { k: 'struct', name: self.def.name } },
+          self,
+        )
       }
       case 'binary':
         return this.evalBinary(expr)
@@ -2161,7 +2418,7 @@ export class Interpreter {
       case 'cast': {
         const value = this.eval(expr.expr)
         if (expr.type.k === 'auto') return value
-        return tv(expr.type, this.coerce(value, expr.type))
+        return tv(expr.type, this.castValue(value, expr.type))
       }
       case 'construct':
         return tv(
@@ -2191,10 +2448,64 @@ export class Interpreter {
         return tv(T.ull, BigInt(this.sizeOfValue(value)))
       }
       case 'scoped':
-        return scopedValue(this, expr)
+        return this.dispatchScopedValue(expr)
       case 'preval':
         return tv(expr.ref.type, expr.ref.get())
+      case 'new':
+        return this.evalNew(expr)
+      case 'delete':
+        this.eval(expr.operand)
+        return tv(T.void, null)
+      case 'newarray':
+      case 'methodref':
+      case 'instanceof':
+        return this.evalDialect(expr)
     }
+  }
+
+  // Expressions only another dialect produces.
+  protected evalDialect(expr: Expr): TV {
+    this.unsupported(`This ${expr.k} expression is not supported here.`)
+  }
+
+  // new allocates on the heap; the pointer is the object itself, so every
+  // copy of the pointer refers to the same object.
+  protected evalNew(expr: Expr & { k: 'new' }): TV {
+    const pointer: CType = { k: 'pointer', to: expr.type }
+    if (expr.arraySize !== undefined) {
+      const size = this.toIndex(this.eval(expr.arraySize), 'Array size')
+      if (size < 0) {
+        this.fail('Invalid array size', `new cannot allocate ${size} elements.`)
+      }
+      if (size > MAX_CONTAINER) this.containerTooLarge()
+      this.allocate(size, expr.line)
+      const items: Value[] = []
+      for (let i = 0; i < size; i += 1) items.push(this.defaultValue(expr.type))
+      const seq: CSeq = {
+        kind: 'seq',
+        seq: 'carray',
+        elemType: expr.type,
+        items,
+        ver: 0,
+        touched: 0,
+        fixed: true,
+      }
+      return tv(pointer, seq)
+    }
+    const args = expr.args.map((arg) => this.eval(arg))
+    const value = this.construct(expr.type, args, expr.braced)
+    if (isAggregate(value) && value.kind === 'struct') return tv(pointer, value)
+    // new int(5): a one-element box, so *p and p[0] both work.
+    const box: CSeq = {
+      kind: 'seq',
+      seq: 'carray',
+      elemType: expr.type,
+      items: [value],
+      ver: 0,
+      touched: 1,
+      fixed: true,
+    }
+    return tv(pointer, box)
   }
 
   sizeOfValue(value: TV): number {
@@ -2215,7 +2526,7 @@ export class Interpreter {
     return sizeOf(value.t)
   }
 
-  private evalIdent(expr: Expr & { k: 'ident' }): TV {
+  protected evalIdent(expr: Expr & { k: 'ident' }): TV {
     const slot = this.findSlot(expr.name)
     if (slot !== undefined) {
       const ref = this.slotRef(slot)
@@ -2238,9 +2549,9 @@ export class Interpreter {
         self: null,
       })
     }
-    const constant = libraryConstant(this, expr.name)
+    const constant = this.dispatchConstant(expr.name)
     if (constant !== undefined) return constant
-    if (isLibraryFunction(expr.name)) {
+    if (this.isLibraryName(expr.name)) {
       return tv(T.function, { kind: 'builtin', name: expr.name })
     }
     this.line = expr.line
@@ -2326,7 +2637,7 @@ export class Interpreter {
     return text
   }
 
-  private outOfRange(
+  protected outOfRange(
     origin: Origin | undefined,
     index: number,
     size: number,
@@ -2347,9 +2658,12 @@ export class Interpreter {
     )
   }
 
-  private indexRef(expr: Expr & { k: 'index' }): Ref {
+  protected indexRef(expr: Expr & { k: 'index' }): Ref {
     const baseRef = this.evalRef(expr.object)
     const container = baseRef.get()
+    if (container === null && baseRef.type.k !== 'int') {
+      this.nullDereference(this.describeOrigin(baseRef.origin, 'an array'))
+    }
     if (typeof container !== 'object' || container === null) {
       this.fail(
         'Cannot index',
@@ -2512,7 +2826,7 @@ export class Interpreter {
     )
   }
 
-  private memberRef(expr: Expr & { k: 'member' }): Ref {
+  protected memberRef(expr: Expr & { k: 'member' }): Ref {
     if (expr.object.k === 'this') {
       const self = this.current.self
       if (self === null)
@@ -2534,6 +2848,9 @@ export class Interpreter {
       baseRef = this.deref(tv(T.iterator, object))
       object = baseRef.get()
     }
+    if (object === null) {
+      this.nullDereference(this.describeOrigin(baseRef.origin, 'a pointer'))
+    }
     if (typeof object === 'object' && object !== null) {
       if (object.kind === 'tuple') {
         if (object.pair && (expr.name === 'first' || expr.name === 'second')) {
@@ -2552,7 +2869,23 @@ export class Interpreter {
 
   deref(value: TV): Ref {
     const v = value.v
+    if (v === null && (value.t.k === 'pointer' || value.t.k === 'ptr')) {
+      this.nullDereference()
+    }
     if (typeof v === 'object' && v !== null) {
+      if (v.kind === 'struct') {
+        const object = v
+        return {
+          type: { k: 'struct', name: object.def.name },
+          get: () => object,
+          peek: () => object,
+          set: (next: Value) => {
+            if (isAggregate(next) && next.kind === 'struct') {
+              Object.assign(object, copyValue(next), { ver: object.ver + 1 })
+            }
+          },
+        }
+      }
       if (v.kind === 'iter') return this.iterRef(v)
       if (v.kind === 'seq' && v.seq === 'carray') {
         if (v.items.length === 0) this.outOfRange(undefined, 0, 0)
@@ -2563,6 +2896,21 @@ export class Interpreter {
     this.unsupported(
       'Dereferencing with * only works on iterators here; pointers are not supported.',
     )
+  }
+
+  nullDereference(what = 'a pointer'): never {
+    this.fail(
+      'Null pointer',
+      `The program followed ${what} that is ${this.nullName()}.`,
+      [
+        `It points to nothing, so there is no object to read or change.`,
+        'Check for null before using it (for example at the end of a list or a missing child).',
+      ],
+    )
+  }
+
+  nullName(): string {
+    return 'nullptr'
   }
 
   iterRef(iter: Iter): Ref {
@@ -2614,7 +2962,7 @@ export class Interpreter {
     }
   }
 
-  private increment(ref: Ref, delta: 1 | -1) {
+  protected increment(ref: Ref, delta: 1 | -1) {
     const current = ref.get()
     if (
       typeof current === 'object' &&
@@ -2641,7 +2989,7 @@ export class Interpreter {
     )
   }
 
-  private evalAssign(expr: Expr & { k: 'assign' }): Ref {
+  protected evalAssign(expr: Expr & { k: 'assign' }): Ref {
     const ref = this.evalRef(expr.target)
     if (ref.readonly === true)
       this.fail('Cannot assign', 'This value is read-only.')
@@ -2701,8 +3049,10 @@ export class Interpreter {
       ref.type.k === 'auto' ? this.decay(value.t, value.v) : ref.type,
     )
     const current = ref.peek()
-    // Keep container identity so references to it stay valid.
+    // Keep container identity so references to it stay valid. A pointer (or
+    // any reference-semantics variable) is re-pointed instead.
     if (
+      !this.rebinds(ref.type) &&
       isAggregate(current) &&
       isAggregate(next) &&
       current.kind === next.kind &&
@@ -2715,6 +3065,11 @@ export class Interpreter {
       return
     }
     ref.set(next)
+  }
+
+  // Assignment re-points (rather than copies into) values of this type.
+  protected rebinds(type: CType): boolean {
+    return type.k === 'pointer'
   }
 
   stringOf(value: TV): string {
@@ -2732,7 +3087,7 @@ export class Interpreter {
     this.fail('Not a string', `Expected text but got ${typeName(value.t)}.`)
   }
 
-  private evalBinary(expr: Expr & { k: 'binary' }): TV {
+  protected evalBinary(expr: Expr & { k: 'binary' }): TV {
     const left = this.eval(expr.left)
     const lv = left.v
     if (typeof lv === 'object' && lv !== null && lv.kind === 'stream') {
@@ -2748,6 +3103,12 @@ export class Interpreter {
     const right = this.eval(expr.right)
     const rv = right.v
     const op = expr.op
+    if (
+      (op === '==' || op === '!=') &&
+      (left.t.k === 'pointer' || right.t.k === 'pointer')
+    ) {
+      return tv(T.bool, (lv === rv) === (op === '=='))
+    }
     // Iterators and arrays decaying to pointers.
     if (op === '+' || op === '-') {
       const leftIter = asIter(lv)
@@ -2842,7 +3203,7 @@ export class Interpreter {
     return result.value
   }
 
-  private stringBinary(op: string, left: TV, right: TV): TV {
+  protected stringBinary(op: string, left: TV, right: TV): TV {
     if (op === '+') {
       return tv(T.string, {
         kind: 'str',
@@ -2869,7 +3230,7 @@ export class Interpreter {
     this.fail('Invalid operator', `Operator ${op} cannot be used with strings.`)
   }
 
-  private aggregateCompare(op: string, a: Value, b: Value): TV {
+  protected aggregateCompare(op: string, a: Value, b: Value): TV {
     switch (op) {
       case '==':
         return tv(T.bool, valuesEqual(a, b))
@@ -2890,7 +3251,7 @@ export class Interpreter {
     )
   }
 
-  private evalUnary(expr: Expr & { k: 'unary' }): TV {
+  protected evalUnary(expr: Expr & { k: 'unary' }): TV {
     switch (expr.op) {
       case '!':
         return tv(T.bool, !this.truth(this.eval(expr.operand)))
@@ -2967,7 +3328,13 @@ export class Interpreter {
         }
         return this.callStructMethod(object, callee.name, expr.args)
       }
-      return callMethod(this, objectRef, object, callee.name, expr.args, expr)
+      return this.dispatchMethod(
+        objectRef,
+        object,
+        callee.name,
+        expr.args,
+        expr,
+      )
     }
     if (callee.k === 'ident') {
       const name = callee.name
@@ -2989,7 +3356,7 @@ export class Interpreter {
         const fn = this.pickOverload(overloads, expr.args.length, name)
         return this.invokeWithExprs(fn, expr.args, null, null, name)
       }
-      const library = callLibrary(this, name, expr.args, expr)
+      const library = this.dispatchLibrary(name, expr.args, expr)
       if (library !== undefined) return library
       this.line = expr.line
       throw new RuntimeFailure(
@@ -2998,12 +3365,13 @@ export class Interpreter {
         `'${name}' was not declared.`,
       )
     }
-    if (callee.k === 'scoped') return scopedCall(this, callee, expr.args, expr)
+    if (callee.k === 'scoped')
+      return this.dispatchScopedCall(callee, expr.args, expr)
     const value = this.eval(callee)
     return this.callValueWithExprs(value.v, expr.args, 'function')
   }
 
-  private pickOverload(
+  protected pickOverload(
     overloads: FunctionDef[],
     count: number,
     name: string,
@@ -3040,7 +3408,7 @@ export class Interpreter {
       fn,
       args,
       object,
-      null,
+      this.methodEnv(object),
       `${object.def.name}.${name}`,
     )
   }
@@ -3068,7 +3436,7 @@ export class Interpreter {
       value !== null &&
       value.kind === 'builtin'
     ) {
-      const result = callLibrary(this, value.name, args, {
+      const result = this.dispatchLibrary(value.name, args, {
         k: 'call',
         line: this.line,
         callee: { k: 'ident', line: this.line, name: value.name },
@@ -3131,7 +3499,7 @@ export class Interpreter {
             })
           })
           try {
-            const result = callLibrary(this, value.name, exprs, {
+            const result = this.dispatchLibrary(value.name, exprs, {
               k: 'call',
               line: this.line,
               callee: { k: 'ident', line: this.line, name: value.name },
@@ -3153,7 +3521,7 @@ export class Interpreter {
     this.fail('Not callable', 'This value cannot be called like a function.')
   }
 
-  private invokeWithExprs(
+  protected invokeWithExprs(
     fn: FunctionDef,
     args: Expr[],
     self: CStruct | null,
@@ -3246,7 +3614,7 @@ export class Interpreter {
     }
     switch (type.k) {
       case 'auto':
-        return copyValue(v)
+        return this.storeCopy(v)
       case 'int':
       case 'float':
       case 'bool':
@@ -3282,14 +3650,24 @@ export class Interpreter {
           v.kind === 'struct' &&
           v.def.name === type.name
         ) {
-          return copyValue(v)
+          return this.storeCopy(v)
         }
+        if (v === null) return this.coerceNull(type)
         return this.construct(type, [value], false)
       case 'function':
       case 'iterator':
       case 'ptr':
       case 'stream':
         return v
+      case 'pointer':
+        if (v === null || isAggregate(v)) return v
+        if (typeof v === 'object' && v.kind === 'iter') return v
+        if (v === 0 || v === 0n) return null
+        this.fail(
+          'Type mismatch',
+          `Cannot store ${typeName(value.t)} in a pointer.`,
+        )
+        break
       case 'functor':
         return v ?? { kind: 'functor', name: type.name }
       case 'carray':
@@ -3316,8 +3694,8 @@ export class Interpreter {
       default:
         break
     }
-    if (isAggregate(v)) return copyValue(v)
-    if (v === null) return this.defaultValue(type)
+    if (isAggregate(v)) return this.storeCopy(v)
+    if (v === null) return this.coerceNull(type)
     this.fail(
       'Type mismatch',
       `Cannot convert ${typeName(value.t)} to ${typeName(type)}.`,
@@ -3616,7 +3994,7 @@ export class Interpreter {
       }
       object.fieldTypes.set(field.name, field.type)
       let value: Value
-      if (field.init === undefined) value = this.defaultValue(field.type)
+      if (field.init === undefined) value = this.zeroValue(field.type)
       else if (field.init.form === 'assign')
         value = this.coerce(this.eval(field.init.expr), field.type)
       else if (field.init.form === 'ctor')
@@ -3729,31 +4107,36 @@ export class Interpreter {
     bump(heap)
   }
 
+  // libstdc++'s pop_heap: the hole left by the top walks down to a leaf
+  // along the larger children, then the last item is pushed up from there.
+  // Matching it keeps the drawn heap identical to a real g++ run.
   heapPop(heap: CHeap): Value {
     const items = heap.items
     const top = items[0] ?? null
-    const last = items.pop() ?? null
-    if (items.length > 0) {
-      items[0] = last
-      let i = 0
-      for (;;) {
-        const left = 2 * i + 1
-        const right = left + 1
-        let best = i
-        if (
-          left < items.length &&
-          heap.compare(items[best] ?? null, items[left] ?? null) < 0
-        )
-          best = left
-        if (
-          right < items.length &&
-          heap.compare(items[best] ?? null, items[right] ?? null) < 0
-        )
-          best = right
-        if (best === i) break
-        ;[items[best], items[i]] = [items[i] ?? null, items[best] ?? null]
-        i = best
+    const value = items.pop() ?? null
+    const length = items.length
+    if (length > 0) {
+      const less = (a: Value, b: Value) => heap.compare(a, b) < 0
+      let hole = 0
+      let child = 0
+      while (child < Math.floor((length - 1) / 2)) {
+        child = 2 * (child + 1)
+        if (less(items[child] ?? null, items[child - 1] ?? null)) child -= 1
+        items[hole] = items[child] ?? null
+        hole = child
       }
+      if ((length & 1) === 0 && child === Math.floor((length - 2) / 2)) {
+        child = 2 * (child + 1)
+        items[hole] = items[child - 1] ?? null
+        hole = child - 1
+      }
+      let parent = Math.floor((hole - 1) / 2)
+      while (hole > 0 && less(items[parent] ?? null, value)) {
+        items[hole] = items[parent] ?? null
+        hole = parent
+        parent = Math.floor((hole - 1) / 2)
+      }
+      items[hole] = value
     }
     bump(heap)
     return top
@@ -3778,7 +4161,7 @@ export class Interpreter {
     }
   }
 
-  private write(stream: 'cin' | 'cout' | 'cerr', value: TV) {
+  protected write(stream: 'cin' | 'cout' | 'cerr', value: TV) {
     if (stream === 'cin')
       this.fail('Invalid output', 'Use cout << to print, not cin <<.')
     const v = value.v
@@ -3798,7 +4181,7 @@ export class Interpreter {
     this.writeText(stream, text)
   }
 
-  private applyManipulator(
+  protected applyManipulator(
     stream: 'cout' | 'cerr',
     name: string,
     arg?: number,

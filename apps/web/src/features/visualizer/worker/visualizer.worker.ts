@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 // Runs learner code off the main thread, in the learner's own browser. C++
-// runs in the TypeScript interpreter; Python runs in Pyodide, which is loaded
-// once from this app's own origin. Nothing is sent to a server.
+// and Java run in TypeScript interpreters; Python runs in Pyodide, which is
+// loaded once from this app's own origin. Nothing is sent to a server.
 
 import type { PyodideAPI } from 'pyodide'
 
@@ -71,6 +71,10 @@ async function run(request: TraceRequest): Promise<ExecutionTrace> {
     const runtime = await loadPython()
     const { runPython } = await import('../engines/python')
     return runPython(runtime, request)
+  }
+  if (request.language === 'java') {
+    const { runJava } = await import('../engines/java')
+    return runJava(request)
   }
   return runCpp(request)
 }

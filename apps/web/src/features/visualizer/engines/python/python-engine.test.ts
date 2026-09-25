@@ -245,4 +245,48 @@ print(heapq.heappop(pq), p.x)
       ),
     ).toBe(false)
   })
+
+  it('gives objects a stable identity and draws cycles as references', () => {
+    const trace = finished(
+      run(`class Node:
+    def __init__(self, val):
+        self.val = val
+        self.next = None
+        self.prev = None
+a = Node(1)
+b = Node(2)
+a.next = b
+b.prev = a
+same = a
+chain = Node(0)
+p = chain
+for i in range(1, 30):
+    p.next = Node(i)
+    p = p.next
+print(same.next.val)
+`),
+    )
+    expect(trace.stdout).toBe('2\n')
+    const vars = trace.steps.at(-1)?.frames[0]?.vars ?? []
+    const valueOf = (name: string) => {
+      const found = vars.find(([key]) => key === name)
+      return found === undefined ? undefined : trace.values[found[1]]
+    }
+    const a = valueOf('a')
+    const same = valueOf('same')
+    expect(a?.kind).toBe('record')
+    expect(a?.kind === 'record' ? a.objectId : -1).toBe(
+      same?.kind === 'record' ? same.objectId : -2,
+    )
+    expect(trace.values.some((value) => value.kind === 'ref')).toBe(true)
+    // A 30-node chain is recorded to the end, not cut after a few levels.
+    let node = valueOf('chain')
+    let length = 0
+    while (node?.kind === 'record') {
+      length += 1
+      const next = node.fields.find(([name]) => name === 'next')?.[1]
+      node = next === undefined ? undefined : trace.values[next]
+    }
+    expect(length).toBe(30)
+  })
 })

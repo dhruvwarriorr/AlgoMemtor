@@ -6,7 +6,9 @@ import {
   SolutionChatResponseSchema,
   SolutionExplorationResponseSchema,
   UpsolveResponseSchema,
+  VisualizerDebugResponseSchema,
   type ProblemContent,
+  type VisualizerFinding,
 } from '@algomemtor/shared-contracts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -17,6 +19,7 @@ import type { AiMemoryClient } from './integrations/ai/ai-memory-client.js'
 import type {
   AiMentorClient,
   AiProblemHelpRequest,
+  AiVisualizerDebugRequest,
 } from './integrations/ai/ai-mentor-client.js'
 import type { ProblemProvider } from './integrations/providers/problem-provider.js'
 import { AiMentorClientError } from './integrations/ai/ai-mentor-client.js'
@@ -148,6 +151,14 @@ const fakeMentor = () => {
     })),
     solutionChat: vi.fn(async () => ({
       answer: 'Because every path ends at the corner.',
+    })),
+    visualizerDebug: vi.fn(async () => ({
+      verdict: 'looks_correct' as const,
+      headline: 'The output matches.',
+      summary: 'Nothing looks wrong for this input.',
+      findings: [],
+      suggestedTests: [],
+      followUps: [],
     })),
     contestAnalysis: vi.fn(async () => {
       throw new Error('Not used.')
@@ -587,5 +598,191 @@ describe('Upsolve and coach redirects', () => {
       problemUrl,
     })
     expect(coach.respond).not.toHaveBeenCalled()
+  })
+})
+
+describe('Test Case Visualizer AI Debugger API', () => {
+  const code = [
+    '#include <bits/stdc++.h>',
+    'int main() {',
+    '  int n; std::cin >> n;',
+    '  int sum = 0;',
+    '  for (int i = 1; i < n; i++) sum += i;',
+    '  std::cout << sum;',
+    '}',
+    '',
+  ].join('\n')
+
+  const debugBody = (overrides: Record<string, unknown> = {}) => ({
+    mode: 'diagnose',
+    language: 'cpp',
+    code,
+    input: '3\n',
+    digest: {
+      status: 'finished',
+      recordedSteps: 12,
+      totalSteps: 12,
+      truncated: false,
+      stdout: '3',
+      expected: '6',
+      mismatch: { token: 1, expected: '6', actual: '3', step: 11 },
+      warnings: [],
+      moments: [
+        {
+          step: 9,
+          line: 5,
+          event: 'line',
+          summary: 'Loop ends with i = 3',
+          variables: 'i=3, sum=3',
+        },
+      ],
+    },
+    ...overrides,
+  })
+
+  const finding = (overrides: Partial<VisualizerFinding> = {}) => ({
+    title: 'Loop skips n',
+    line: 5,
+    step: 9,
+    category: 'off_by_one' as const,
+    severity: 'bug' as const,
+    explanation: 'The condition i < n stops before adding n.',
+    hint: 'Which values of i does the loop visit?',
+    ...overrides,
+  })
+
+  it('requires a session and a valid request', async () => {
+    const { client } = fakeMentor()
+    const baseUrl = startApp({ mentor: client })
+    const anonymous = await fetch(`${baseUrl}/api/visualizer/debug`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(debugBody()),
+    })
+    expect(anonymous.status).toBe(401)
+
+    const withoutQuestion = await post(
+      baseUrl,
+      '/api/visualizer/debug',
+      'user-a',
+      debugBody({ mode: 'ask' }),
+    )
+    expect(withoutQuestion.status).toBe(400)
+    const issue = (await withoutQuestion.json()) as {
+      error: { code: string; details?: unknown }
+    }
+    expect(issue.error.code).toBe('INVALID_MENTOR_INPUT')
+    expect(JSON.stringify(issue)).not.toContain('std::cin')
+
+    const tooLong = await post(
+      baseUrl,
+      '/api/visualizer/debug',
+      'user-a',
+      debugBody({ code: 'x'.repeat(12_001) }),
+    )
+    expect(tooLong.status).toBe(400)
+    expect(client.visualizerDebug).not.toHaveBeenCalled()
+  })
+
+  it('forwards the run and keeps only lines and steps of it', async () => {
+    const requests: AiVisualizerDebugRequest[] = []
+    const { client } = fakeMentor()
+    client.visualizerDebug = vi.fn(
+      async (request: AiVisualizerDebugRequest) => {
+        requests.push(request)
+        return {
+          verdict: 'bug_found' as const,
+          headline: 'The loop stops one number early.',
+          summary: 'At step 9 the loop ends before adding 3.',
+          findings: [
+            finding({ endLine: 40 }),
+            finding({ title: 'Invented line', line: 30 }),
+            finding({ title: 'Invented step', line: 4, step: 500 }),
+          ],
+          answer: 'Your loop stops at i = 2.',
+          suggestedTests: [{ input: '1\n', reason: 'Smallest n.' }],
+          followUps: ['Why does i < n skip n?'],
+        }
+      },
+    )
+    const baseUrl = startApp({ mentor: client })
+    const response = await post(
+      baseUrl,
+      '/api/visualizer/debug',
+      'user-a',
+      debugBody({ mode: 'ask', question: 'Why is the sum 3?' }),
+    )
+    expect(response.status).toBe(200)
+    const { data } = VisualizerDebugResponseSchema.parse(await response.json())
+    expect(data.verdict).toBe('bug_found')
+    expect(data.findings.map((item) => item.title)).toEqual([
+      'Loop skips n',
+      'Invented step',
+    ])
+    expect(data.findings[0]).toMatchObject({ line: 5, endLine: 7, step: 9 })
+    expect(data.findings[1]?.step).toBeUndefined()
+    expect(data.answer).toBe('Your loop stops at i = 2.')
+
+    expect(requests).toHaveLength(1)
+    const forwarded = requests[0]
+    expect(forwarded?.learnerId).toBe(userA)
+    expect(forwarded?.code).toBe(code)
+    expect(forwarded?.question).toBe('Why is the sum 3?')
+    expect(forwarded?.digest.recordedSteps).toBe(12)
+    expect(forwarded?.learner.memories).toEqual([])
+  })
+
+  it('drops the answer in diagnose mode and an unsupported bug verdict', async () => {
+    const { client } = fakeMentor()
+    client.visualizerDebug = vi.fn(async () => ({
+      verdict: 'bug_found' as const,
+      headline: 'A bug.',
+      summary: 'Somewhere.',
+      findings: [finding({ line: 99 })],
+      answer: 'Not asked for.',
+      suggestedTests: [],
+      followUps: [],
+    }))
+    const baseUrl = startApp({ mentor: client })
+    const response = await post(
+      baseUrl,
+      '/api/visualizer/debug',
+      'user-a',
+      debugBody(),
+    )
+    expect(response.status).toBe(200)
+    const { data } = VisualizerDebugResponseSchema.parse(await response.json())
+    expect(data.findings).toEqual([])
+    expect(data.verdict).toBe('unsure')
+    expect(data.answer).toBeUndefined()
+  })
+
+  it('maps AI failures to the stable mentor error', async () => {
+    const { client } = fakeMentor()
+    client.visualizerDebug = vi.fn(async () => {
+      throw new AiMentorClientError('AI_MENTOR_UNAVAILABLE')
+    })
+    const baseUrl = startApp({ mentor: client })
+    const unavailable = await post(
+      baseUrl,
+      '/api/visualizer/debug',
+      'user-a',
+      debugBody(),
+    )
+    expect(unavailable.status).toBe(503)
+    expect(await unavailable.json()).toMatchObject({
+      error: { code: 'MENTOR_AI_UNAVAILABLE', retryable: true },
+    })
+
+    client.visualizerDebug = vi.fn(async () => {
+      throw new AiMentorClientError('AI_MENTOR_RATE_LIMITED')
+    })
+    const limited = await post(
+      baseUrl,
+      '/api/visualizer/debug',
+      'user-a',
+      debugBody(),
+    )
+    expect(limited.status).toBe(429)
   })
 })

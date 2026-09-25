@@ -10,6 +10,7 @@ import {
   SOLUTION_CHAT_HISTORY_LIMIT,
   UPSOLVE_QUEUE_SIZE,
   SolutionExplorationSchema,
+  VisualizerDebugResultSchema,
   activeProblemHelpStages,
   debuggingDoubtTypes,
   isSafeCoachPublicUrl,
@@ -36,6 +37,8 @@ import {
   type StartProblemHelpRequest,
   type UpsolveItem,
   type UpsolveResponse,
+  type VisualizerDebugRequest,
+  type VisualizerDebugResult,
 } from '@algomemtor/shared-contracts'
 
 import type {
@@ -246,6 +249,49 @@ const pastedProblem = (title: string): ResolvedProblem => ({
   problem: { platform: 'other', title: title.slice(0, 200), topics: [] },
   context: { platform: 'other', title: title.slice(0, 200), tags: [] },
 })
+
+const codeLineBreak = /\r\n|\r|\n/
+
+// Lines as the browser numbers them; a final newline adds no line.
+export const visualizerCodeLineCount = (code: string) => {
+  const lines = code.split(codeLineBreak)
+  return lines.length > 1 && lines.at(-1) === ''
+    ? lines.length - 1
+    : lines.length
+}
+
+// The AI may only point at lines of the submitted code and steps of the
+// recorded run; anything else is dropped instead of failing the request.
+export const boundVisualizerResult = (
+  result: VisualizerDebugResult,
+  request: VisualizerDebugRequest,
+): VisualizerDebugResult => {
+  const lineCount = visualizerCodeLineCount(request.code)
+  const recordedSteps = request.digest.recordedSteps
+  const findings = result.findings.flatMap((finding) => {
+    if (finding.line > lineCount) return []
+    const { endLine, step, ...rest } = finding
+    return [
+      {
+        ...rest,
+        ...(endLine !== undefined && endLine > finding.line
+          ? { endLine: Math.min(endLine, lineCount) }
+          : {}),
+        ...(step !== undefined && step <= recordedSteps ? { step } : {}),
+      },
+    ]
+  })
+  const { answer, ...rest } = result
+  return VisualizerDebugResultSchema.parse({
+    ...rest,
+    verdict:
+      result.verdict === 'bug_found' && findings.length === 0
+        ? 'unsure'
+        : result.verdict,
+    findings,
+    ...(answer !== undefined && request.mode === 'ask' ? { answer } : {}),
+  })
+}
 
 export class MentorService {
   private readonly unreadableUntil = new Map<string, number>()
@@ -1249,6 +1295,35 @@ export class MentorService {
         history: (request.history ?? []).slice(-SOLUTION_CHAT_HISTORY_LIMIT),
         question: request.question,
       })
+    } catch (error) {
+      this.aiError(error)
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Test Case Visualizer AI Debugger. The program ran in the learner's
+  // browser; code, input, the trace digest and the question are forwarded
+  // for this request only and are never stored or logged.
+  // ---------------------------------------------------------------------
+
+  async visualizerDebug(
+    authUserId: string,
+    request: VisualizerDebugRequest,
+  ): Promise<VisualizerDebugResult> {
+    const learner = await this.learnerSnapshot(
+      authUserId,
+      undefined,
+      [],
+      request.question,
+    )
+    try {
+      const result = await this.options.aiMentorClient.visualizerDebug({
+        ...request,
+        requestId: randomUUID(),
+        learnerId: authUserId,
+        learner,
+      })
+      return boundVisualizerResult(result, request)
     } catch (error) {
       this.aiError(error)
     }

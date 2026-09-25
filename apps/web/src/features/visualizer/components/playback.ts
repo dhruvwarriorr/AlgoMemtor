@@ -1,4 +1,4 @@
-export const speeds = [1, 2, 4, 8, 16] as const
+export const speeds = [0.5, 1, 2, 4, 8, 16] as const
 export type Speed = (typeof speeds)[number]
 
 export type JumpTarget = {

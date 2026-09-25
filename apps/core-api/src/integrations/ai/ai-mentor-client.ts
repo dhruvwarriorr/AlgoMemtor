@@ -4,6 +4,9 @@ import {
   SolutionProblemExplanationSchema,
   SolutionStatementSourceSchema,
   CommunitySolutionKindSchema,
+  VisualizerDebugResultSchema,
+  type VisualizerDebugRequest,
+  type VisualizerDebugResult,
 } from '@algomemtor/shared-contracts'
 import { z } from 'zod'
 
@@ -248,6 +251,14 @@ export const AiProgressNarrativeSchema = z
   .strict()
 export type AiProgressNarrative = z.infer<typeof AiProgressNarrativeSchema>
 
+// The Test Case Visualizer's AI Debugger: the contract request plus the
+// learner snapshot. Code, input and the trace digest are transient.
+export type AiVisualizerDebugRequest = VisualizerDebugRequest & {
+  requestId: string
+  learnerId: string
+  learner: LearnerSnapshot
+}
+
 export type AiMentorErrorCode =
   | 'AI_MENTOR_NOT_CONFIGURED'
   | 'AI_MENTOR_UNAVAILABLE'
@@ -277,6 +288,10 @@ export interface AiMentorClient {
     input: AiSolutionChatRequest,
     signal?: AbortSignal,
   ): Promise<AiSolutionChatResponse>
+  visualizerDebug(
+    input: AiVisualizerDebugRequest,
+    signal?: AbortSignal,
+  ): Promise<VisualizerDebugResult>
   upsolvePick?(
     input: {
       requestId: string
@@ -333,6 +348,10 @@ export class UnavailableAiMentorClient implements AiMentorClient {
   }
 
   async solutionChat(): Promise<AiSolutionChatResponse> {
+    return this.fail()
+  }
+
+  async visualizerDebug(): Promise<VisualizerDebugResult> {
     return this.fail()
   }
 
@@ -452,6 +471,16 @@ export class HttpAiMentorClient implements AiMentorClient {
       '/internal/mentor/solution-chat',
       input,
       AiSolutionChatResponseSchema,
+      signal,
+    )
+  }
+
+  visualizerDebug(input: AiVisualizerDebugRequest, signal?: AbortSignal) {
+    // One structured diagnosis, like a Solution Explorer follow-up.
+    return this.post(
+      '/internal/mentor/visualizer-debug',
+      input,
+      VisualizerDebugResultSchema,
       signal,
     )
   }

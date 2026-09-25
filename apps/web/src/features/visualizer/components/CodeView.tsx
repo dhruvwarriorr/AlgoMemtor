@@ -19,6 +19,9 @@ export function CodeView({
   breakpoints,
   onToggleBreakpoint,
   hits,
+  flagged = new Map(),
+  focusLine: requestedLine = null,
+  className,
 }: {
   code: string
   language: VisualizerLanguage
@@ -29,6 +32,11 @@ export function CodeView({
   breakpoints: ReadonlySet<number>
   onToggleBreakpoint: (line: number) => void
   hits: ReadonlyMap<number, number>
+  // Lines the AI Debugger pointed at, with a short label.
+  flagged?: ReadonlyMap<number, string>
+  // A line to scroll to (for example one a finding points at).
+  focusLine?: number | null
+  className?: string
 }) {
   const lines = useMemo(() => code.replace(/\s+$/, '').split('\n'), [code])
   const highlighted = useMemo(
@@ -36,7 +44,7 @@ export function CodeView({
     [lines, language],
   )
   const containerRef = useRef<HTMLDivElement | null>(null)
-  const focusLine = errorLine ?? currentLine
+  const focusLine = requestedLine ?? errorLine ?? currentLine
 
   useEffect(() => {
     const container = containerRef.current
@@ -60,7 +68,10 @@ export function CodeView({
 
   return (
     <div
-      className="relative max-h-[min(34rem,62dvh)] min-w-0 overflow-auto rounded-lg border border-border bg-background font-mono text-[0.8rem] leading-6"
+      className={cn(
+        'relative max-h-[min(34rem,62dvh)] min-w-0 overflow-auto rounded-lg border border-border bg-background font-mono text-[0.8rem] leading-6',
+        className,
+      )}
       ref={containerRef}
     >
       <ol aria-label="Code" className="min-w-max py-2">
@@ -76,6 +87,7 @@ export function CodeView({
                   : 'none'
           const hitCount = hits.get(line) ?? 0
           const breakpoint = breakpoints.has(line)
+          const flag = flagged.get(line)
           return (
             <li
               aria-current={
@@ -86,7 +98,12 @@ export function CodeView({
                 state === 'current' && 'border-primary bg-primary/12',
                 state === 'error' && 'border-destructive bg-danger-soft',
                 state === 'previous' && 'border-primary/30 bg-primary/5',
-                state === 'none' && 'border-transparent',
+                state === 'none' &&
+                  (flag !== undefined
+                    ? 'border-fuchsia-500 bg-fuchsia-500/[0.07]'
+                    : 'border-transparent'),
+                requestedLine === line &&
+                  'ring-2 ring-inset ring-fuchsia-500/50',
               )}
               data-line={line}
               key={line}
@@ -129,6 +146,11 @@ export function CodeView({
                   )}
                 >
                   {condition ? 'true' : 'false'}
+                </span>
+              ) : null}
+              {flag !== undefined ? (
+                <span className="my-0.5 ml-3 inline-flex max-w-[14rem] shrink-0 items-center truncate rounded bg-fuchsia-500/15 px-1.5 font-sans text-[0.7rem] font-semibold text-fuchsia-700 dark:text-fuchsia-300">
+                  {flag}
                 </span>
               ) : null}
               {hitCount > 0 && state !== 'current' ? (

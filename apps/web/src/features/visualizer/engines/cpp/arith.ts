@@ -292,7 +292,7 @@ function overflowNote(
   if (type.unsigned) {
     return `Unsigned wrap-around in ${typeName(type)}: ${expression} became ${result}.`
   }
-  return `Signed overflow in ${typeName(type)}: ${expression} wrapped to ${result} (undefined behaviour in C++).`
+  return `Signed overflow in ${typeName(type)}: ${expression} wrapped to ${result}.`
 }
 
 function shift(op: '<<' | '>>', a: TV, b: TV): Result {

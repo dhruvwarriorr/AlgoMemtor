@@ -1,0 +1,10 @@
+parsed 42
+bad number: For input string: "4x2"
+parsed 4x2
+41
+caught bottom reached
+Index 3 out of bounds for length 3
+arith: / by zero
+npe caught
+custom
+done
