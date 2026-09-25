@@ -37,6 +37,7 @@ from .memory_models import (
     MemoryProcessResponse,
     MemoryProposalRequest,
     MemoryRetrievalResponse,
+    MemoryUserInputRequest,
     StoredMemory,
 )
 from .memory_repository import (
@@ -47,6 +48,25 @@ from .memory_repository import (
     NullMemoryRepository,
 )
 from .memory_service import MemoryNotFoundError, MemoryService, get_memory_service
+from .mentor_models import (
+    ContestAnalysisRequest,
+    ContestNarrativeOutput,
+    ContestPatternsOutput,
+    ContestPatternsRequest,
+    ProblemHelpRequest,
+    ProblemHelpResponse,
+    ProgressNarrativeOutput,
+    ProgressNarrativeRequest,
+    SolutionRequest,
+    SolutionResponse,
+)
+from .mentor_service import (
+    MentorGenerationError,
+    MentorNotConfiguredError,
+    MentorRateLimitedError,
+    MentorService,
+    get_mentor_service,
+)
 from .ranking_models import RankingRequest, RankingResponse
 from .ranking_service import RankingService, get_ranking_service
 from .rate_limit import InMemoryRateLimiter, rate_limit_internal_request
@@ -423,6 +443,24 @@ async def propose_learner_memory(
         raise AssertionError("Memory error handler did not raise.")
 
 
+@app.post(
+    "/internal/learners/{learner_id}/memories/user-input",
+    response_model=MemoryActionResponse,
+    response_model_exclude_none=True,
+    dependencies=[Depends(require_internal_service)],
+)
+async def create_user_learner_memory(
+    learner_id: UUID,
+    request: MemoryUserInputRequest,
+    service: Annotated[MemoryService, Depends(get_memory_service)],
+) -> MemoryActionResponse:
+    try:
+        return await service.create_user_input(learner_id, request)
+    except (MemoryConflictError, MemoryNotFoundError, MemoryRepositoryError) as error:
+        _raise_memory_http_error(error)
+        raise AssertionError("Memory error handler did not raise.")
+
+
 @app.patch(
     "/internal/learners/{learner_id}/memories/{memory_id}",
     response_model=MemoryActionResponse,
@@ -710,3 +748,108 @@ async def delete_learner_memory_owner(
             detail="Learner deletion requires reason=learner_deleted.",
         )
     return await _cleanup_memory_data(learner_id, cleanup_request, service)
+
+
+def _raise_mentor_http_error(error: Exception) -> None:
+    if isinstance(error, MentorNotConfiguredError):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Mentor tools are not configured.",
+        ) from error
+    if isinstance(error, MentorRateLimitedError):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="The mentor model is rate limited. Try again shortly.",
+        ) from error
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Mentor tools are temporarily unavailable.",
+    ) from error
+
+
+_MENTOR_ERRORS = (MentorNotConfiguredError, MentorGenerationError)
+
+
+@app.post(
+    "/internal/mentor/problem-help",
+    response_model=ProblemHelpResponse,
+    response_model_exclude_none=True,
+    dependencies=[Depends(require_internal_service)],
+)
+async def mentor_problem_help(
+    request: ProblemHelpRequest,
+    service: Annotated[MentorService, Depends(get_mentor_service)],
+) -> ProblemHelpResponse:
+    try:
+        return await service.problem_help(request)
+    except _MENTOR_ERRORS as error:
+        _raise_mentor_http_error(error)
+        raise AssertionError("Mentor error handler did not raise.") from error
+
+
+@app.post(
+    "/internal/mentor/solutions",
+    response_model=SolutionResponse,
+    response_model_exclude_none=True,
+    dependencies=[Depends(require_internal_service)],
+)
+async def mentor_solutions(
+    request: SolutionRequest,
+    service: Annotated[MentorService, Depends(get_mentor_service)],
+) -> SolutionResponse:
+    try:
+        return await service.solutions(request)
+    except _MENTOR_ERRORS as error:
+        _raise_mentor_http_error(error)
+        raise AssertionError("Mentor error handler did not raise.") from error
+
+
+@app.post(
+    "/internal/mentor/contest-analysis",
+    response_model=ContestNarrativeOutput,
+    response_model_exclude_none=True,
+    dependencies=[Depends(require_internal_service)],
+)
+async def mentor_contest_analysis(
+    request: ContestAnalysisRequest,
+    service: Annotated[MentorService, Depends(get_mentor_service)],
+) -> ContestNarrativeOutput:
+    try:
+        return await service.contest_analysis(request)
+    except _MENTOR_ERRORS as error:
+        _raise_mentor_http_error(error)
+        raise AssertionError("Mentor error handler did not raise.") from error
+
+
+@app.post(
+    "/internal/mentor/contest-patterns",
+    response_model=ContestPatternsOutput,
+    response_model_exclude_none=True,
+    dependencies=[Depends(require_internal_service)],
+)
+async def mentor_contest_patterns(
+    request: ContestPatternsRequest,
+    service: Annotated[MentorService, Depends(get_mentor_service)],
+) -> ContestPatternsOutput:
+    try:
+        return await service.contest_patterns(request)
+    except _MENTOR_ERRORS as error:
+        _raise_mentor_http_error(error)
+        raise AssertionError("Mentor error handler did not raise.") from error
+
+
+@app.post(
+    "/internal/mentor/progress-narrative",
+    response_model=ProgressNarrativeOutput,
+    response_model_exclude_none=True,
+    dependencies=[Depends(require_internal_service)],
+)
+async def mentor_progress_narrative(
+    request: ProgressNarrativeRequest,
+    service: Annotated[MentorService, Depends(get_mentor_service)],
+) -> ProgressNarrativeOutput:
+    try:
+        return await service.progress_narrative(request)
+    except _MENTOR_ERRORS as error:
+        _raise_mentor_http_error(error)
+        raise AssertionError("Mentor error handler did not raise.") from error

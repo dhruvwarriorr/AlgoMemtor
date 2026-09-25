@@ -10,6 +10,7 @@ vi.mock('@/features/auth/authenticated-fetch', () => ({
 
 import {
   actOnLearnerMemory,
+  createLearnerMemory,
   correctLearnerMemory,
   fetchLearnerMemories,
 } from './memories'
@@ -42,6 +43,41 @@ afterEach(() => {
 })
 
 describe('memory API adapters', () => {
+  it('sends learner-authored memory text to the core memory endpoint', async () => {
+    authenticatedFetchMock.mockResolvedValue(
+      Response.json({
+        data: {
+          id: memoryId,
+          category: 'user_instruction',
+          text: 'Prefer concise explanations.',
+          confidence: 1,
+          status: 'active',
+          version: 1,
+          learnerCorrected: false,
+          evidenceCount: 1,
+          createdAt: storedMemory.createdAt,
+          updatedAt: storedMemory.updatedAt,
+        },
+      }),
+    )
+
+    await expect(
+      createLearnerMemory({ text: 'Prefer concise explanations.' }),
+    ).resolves.toMatchObject({
+      data: {
+        category: 'user_instruction',
+        status: 'active',
+        text: 'Prefer concise explanations.',
+      },
+    })
+    expect(authenticatedFetchMock.mock.calls[0]?.[0]).toBe(
+      '/api/learner-memories',
+    )
+    expect(requestBody(authenticatedFetchMock.mock.calls[0]?.[1])).toEqual({
+      text: 'Prefer concise explanations.',
+    })
+  })
+
   it('maps the AI retrieval shape to the shared learner-memory shape', async () => {
     authenticatedFetchMock.mockResolvedValue(
       Response.json({

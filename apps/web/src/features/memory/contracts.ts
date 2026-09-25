@@ -1,5 +1,6 @@
 export {
   CorrectLearnerMemoryRequestSchema,
+  CreateLearnerMemoryRequestSchema,
   LearnerMemoryActionSchema,
   LearnerMemoriesResponseSchema,
   LearnerMemoryCategorySchema,
@@ -9,6 +10,7 @@ export {
 
 export type {
   CorrectLearnerMemoryRequest,
+  CreateLearnerMemoryRequest,
   LearnerMemoriesResponse,
   LearnerMemory,
   LearnerMemoryCategory,

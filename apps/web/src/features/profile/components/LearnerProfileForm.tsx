@@ -18,6 +18,7 @@ import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { Button } from '@/components/ui/button'
 
 import { recommendationPreferenceForRequest } from './recommendation-preference'
+import { combinedPracticeNote, splitPracticeNote } from './practice-note'
 
 type Option<T extends string> = {
   value: T
@@ -168,6 +169,7 @@ type FormState = {
   learningPreferences: LearningPreference[]
   additionalConsiderations: string
   recommendationPreference: string
+  practiceNote: string
   timezone: string
 }
 
@@ -183,6 +185,7 @@ type FormErrorKey =
   | 'learningPreferences'
   | 'additionalConsiderations'
   | 'recommendationPreference'
+  | 'practiceNote'
 
 type FormErrors = Partial<Record<FormErrorKey, string>>
 
@@ -195,6 +198,7 @@ type LearnerProfileFormProps = {
   saveError?: string | null
   successMessage?: string | null
   submitLabel: string
+  combinePracticeNotes?: boolean
   onChange?: () => void
   onRetryLoad?: () => void
   onSubmit: (profile: SaveLearnerProfileRequest) => Promise<void>
@@ -227,6 +231,7 @@ function initialFormState(profile: LearnerProfile | null): FormState {
       learningPreferences: [],
       additionalConsiderations: '',
       recommendationPreference: '',
+      practiceNote: '',
       timezone: browserTimezone,
     }
   }
@@ -248,17 +253,23 @@ function initialFormState(profile: LearnerProfile | null): FormState {
     learningPreferences: [...profile.learningPreferences],
     additionalConsiderations: profile.additionalConsiderations ?? '',
     recommendationPreference: profile.recommendationPreference ?? '',
+    practiceNote: combinedPracticeNote(profile),
     timezone: profile.timezone ?? browserTimezone,
   }
 }
 
-function buildProfileRequest(state: FormState) {
+function buildProfileRequest(state: FormState, combinePracticeNotes: boolean) {
   const ratingRangeMin = state.ratingRangeMin.trim()
   const ratingRangeMax = state.ratingRangeMax.trim()
   const hasRatingRange = Boolean(ratingRangeMin || ratingRangeMax)
-  const additionalConsiderations = state.additionalConsiderations.trim()
+  const practiceNotes = combinePracticeNotes
+    ? state.practiceNote === combinedPracticeNote(state)
+      ? state
+      : splitPracticeNote(state.practiceNote)
+    : state
+  const additionalConsiderations = practiceNotes.additionalConsiderations.trim()
   const recommendationPreference = recommendationPreferenceForRequest(
-    state.recommendationPreference,
+    practiceNotes.recommendationPreference,
   )
   return SaveLearnerProfileRequestSchema.safeParse({
     experience: state.experience,
@@ -296,8 +307,19 @@ function buildProfileRequest(state: FormState) {
   })
 }
 
-function errorKey(path: readonly PropertyKey[]): FormErrorKey {
+function errorKey(
+  path: readonly PropertyKey[],
+  combinePracticeNotes: boolean,
+): FormErrorKey {
   const section = String(path[0] ?? '')
+
+  if (
+    combinePracticeNotes &&
+    (section === 'additionalConsiderations' ||
+      section === 'recommendationPreference')
+  ) {
+    return 'practiceNote'
+  }
 
   if (section === 'experience' || section === 'difficultyComfort') {
     return section
@@ -347,12 +369,16 @@ const requiredMessages: Partial<Record<FormErrorKey, string>> = {
 
 function validationErrors(
   issues: readonly { path: readonly PropertyKey[]; message: string }[],
+  combinePracticeNotes: boolean,
 ) {
   return issues.reduce<FormErrors>((errors, issue) => {
-    const key = errorKey(issue.path)
+    const key = errorKey(issue.path, combinePracticeNotes)
 
     if (!errors[key]) {
-      errors[key] = requiredMessages[key] ?? issue.message
+      errors[key] =
+        key === 'practiceNote'
+          ? 'Keep your practice note within 1,500 characters.'
+          : (requiredMessages[key] ?? issue.message)
     }
 
     return errors
@@ -418,6 +444,7 @@ function SelectField<T extends string>({
 function LearnerProfileFormFields({
   idPrefix,
   initialProfile,
+  combinePracticeNotes = false,
   isSaving = false,
   onChange,
   onSubmit,
@@ -522,10 +549,10 @@ function LearnerProfileFormFields({
       return
     }
 
-    const result = buildProfileRequest(state)
+    const result = buildProfileRequest(state, combinePracticeNotes)
 
     if (!result.success) {
-      setErrors(validationErrors(result.error.issues))
+      setErrors(validationErrors(result.error.issues, combinePracticeNotes))
       window.requestAnimationFrame(() => validationSummaryRef.current?.focus())
       return
     }
@@ -958,87 +985,131 @@ function LearnerProfileFormFields({
           />
         </fieldset>
 
-        <div className="flex min-w-0 flex-col gap-2">
-          <label
-            className="text-sm font-medium text-foreground"
-            htmlFor={`${idPrefix}-recommendation-preference`}
-          >
-            What should we keep in mind for your next recommendations?
-          </label>
-          <textarea
-            aria-describedby={`${idPrefix}-recommendation-preference-help${
-              errors.recommendationPreference
-                ? ` ${idPrefix}-recommendation-preference-error`
-                : ''
-            }`}
-            aria-invalid={Boolean(errors.recommendationPreference)}
-            className="min-h-24 w-full min-w-0 resize-y rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 py-2 text-base text-foreground outline-none transition-shadow focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15 aria-invalid:border-destructive aria-invalid:ring-destructive/20 disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={isSaving}
-            id={`${idPrefix}-recommendation-preference`}
-            maxLength={500}
-            onChange={(event) =>
-              setField(
-                'recommendationPreference',
-                event.currentTarget.value,
-                'recommendationPreference',
-              )
-            }
-            placeholder="For example: Prefer graph problems I can finish in one focused session."
-            value={state.recommendationPreference}
-          />
-          <p
-            className="text-sm text-muted-foreground"
-            id={`${idPrefix}-recommendation-preference-help`}
-          >
-            Optional, up to 500 characters. Your structured profile choices
-            remain authoritative, and explicit topic exclusions here are
-            respected by the coach and deterministic recommendations. Do not
-            include personal or sensitive information.
-          </p>
-          <FieldError
-            id={`${idPrefix}-recommendation-preference-error`}
-            message={errors.recommendationPreference}
-          />
-        </div>
+        {combinePracticeNotes ? (
+          <div className="flex min-w-0 flex-col gap-2">
+            <label
+              className="text-sm font-medium text-foreground"
+              htmlFor={`${idPrefix}-practice-note`}
+            >
+              Practice preferences and considerations
+            </label>
+            <textarea
+              aria-describedby={`${idPrefix}-practice-note-help${
+                errors.practiceNote ? ` ${idPrefix}-practice-note-error` : ''
+              }`}
+              aria-invalid={Boolean(errors.practiceNote)}
+              className="min-h-32 w-full min-w-0 resize-y rounded-md border border-input bg-background px-3 py-2 text-base text-foreground outline-none transition-[border-color,box-shadow] focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15 aria-invalid:border-destructive aria-invalid:ring-destructive/20 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={isSaving}
+              id={`${idPrefix}-practice-note`}
+              maxLength={1500}
+              onChange={(event) =>
+                setField(
+                  'practiceNote',
+                  event.currentTarget.value,
+                  'practiceNote',
+                )
+              }
+              placeholder="For example: Avoid 800-rated problems and keep weekday sessions short."
+              value={state.practiceNote}
+            />
+            <p
+              className="text-sm text-muted-foreground"
+              id={`${idPrefix}-practice-note-help`}
+            >
+              Optional. Include preferences for recommendations and anything
+              else your coach should consider. Up to 1,500 characters. Do not
+              include personal or sensitive information.
+            </p>
+            <FieldError
+              id={`${idPrefix}-practice-note-error`}
+              message={errors.practiceNote}
+            />
+          </div>
+        ) : (
+          <>
+            <div className="flex min-w-0 flex-col gap-2">
+              <label
+                className="text-sm font-medium text-foreground"
+                htmlFor={`${idPrefix}-recommendation-preference`}
+              >
+                What should we keep in mind for your next recommendations?
+              </label>
+              <textarea
+                aria-describedby={`${idPrefix}-recommendation-preference-help${
+                  errors.recommendationPreference
+                    ? ` ${idPrefix}-recommendation-preference-error`
+                    : ''
+                }`}
+                aria-invalid={Boolean(errors.recommendationPreference)}
+                className="min-h-24 w-full min-w-0 resize-y rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 py-2 text-base text-foreground outline-none transition-shadow focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15 aria-invalid:border-destructive aria-invalid:ring-destructive/20 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={isSaving}
+                id={`${idPrefix}-recommendation-preference`}
+                maxLength={500}
+                onChange={(event) =>
+                  setField(
+                    'recommendationPreference',
+                    event.currentTarget.value,
+                    'recommendationPreference',
+                  )
+                }
+                placeholder="For example: Prefer graph problems I can finish in one focused session."
+                value={state.recommendationPreference}
+              />
+              <p
+                className="text-sm text-muted-foreground"
+                id={`${idPrefix}-recommendation-preference-help`}
+              >
+                Optional, up to 500 characters. Your structured profile choices
+                remain authoritative, and explicit topic exclusions here are
+                respected by the coach and deterministic recommendations. Do not
+                include personal or sensitive information.
+              </p>
+              <FieldError
+                id={`${idPrefix}-recommendation-preference-error`}
+                message={errors.recommendationPreference}
+              />
+            </div>
 
-        <div className="flex min-w-0 flex-col gap-2">
-          <label
-            className="text-sm font-medium text-foreground"
-            htmlFor={`${idPrefix}-considerations`}
-          >
-            Other practice considerations
-          </label>
-          <textarea
-            aria-describedby={`${idPrefix}-considerations-help${
-              errors.additionalConsiderations
-                ? ` ${idPrefix}-considerations-error`
-                : ''
-            }`}
-            aria-invalid={Boolean(errors.additionalConsiderations)}
-            className="min-h-28 w-full min-w-0 resize-y rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 py-2 text-base text-foreground outline-none transition-shadow focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15 aria-invalid:border-destructive aria-invalid:ring-destructive/20 disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={isSaving}
-            id={`${idPrefix}-considerations`}
-            maxLength={1000}
-            onChange={(event) =>
-              setField(
-                'additionalConsiderations',
-                event.currentTarget.value,
-                'additionalConsiderations',
-              )
-            }
-            value={state.additionalConsiderations}
-          />
-          <p
-            className="text-sm text-muted-foreground"
-            id={`${idPrefix}-considerations-help`}
-          >
-            Optional, up to 1,000 characters.
-          </p>
-          <FieldError
-            id={`${idPrefix}-considerations-error`}
-            message={errors.additionalConsiderations}
-          />
-        </div>
+            <div className="flex min-w-0 flex-col gap-2">
+              <label
+                className="text-sm font-medium text-foreground"
+                htmlFor={`${idPrefix}-considerations`}
+              >
+                Other practice considerations
+              </label>
+              <textarea
+                aria-describedby={`${idPrefix}-considerations-help${
+                  errors.additionalConsiderations
+                    ? ` ${idPrefix}-considerations-error`
+                    : ''
+                }`}
+                aria-invalid={Boolean(errors.additionalConsiderations)}
+                className="min-h-28 w-full min-w-0 resize-y rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 py-2 text-base text-foreground outline-none transition-shadow focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15 aria-invalid:border-destructive aria-invalid:ring-destructive/20 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={isSaving}
+                id={`${idPrefix}-considerations`}
+                maxLength={1000}
+                onChange={(event) =>
+                  setField(
+                    'additionalConsiderations',
+                    event.currentTarget.value,
+                    'additionalConsiderations',
+                  )
+                }
+                value={state.additionalConsiderations}
+              />
+              <p
+                className="text-sm text-muted-foreground"
+                id={`${idPrefix}-considerations-help`}
+              >
+                Optional, up to 1,000 characters.
+              </p>
+              <FieldError
+                id={`${idPrefix}-considerations-error`}
+                message={errors.additionalConsiderations}
+              />
+            </div>
+          </>
+        )}
 
         <div className="flex min-w-0 flex-col gap-2">
           <label

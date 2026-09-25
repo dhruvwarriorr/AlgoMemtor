@@ -4,11 +4,22 @@ import { splitCoachAnswer } from './answer-parts'
 
 type DataBlock = Exclude<
   CoachRichBlock,
-  { type: 'problem_list' } | { type: 'web_problem_list' }
+  | { type: 'problem_list' }
+  | { type: 'web_problem_list' }
+  | { type: 'feature_redirect' }
 >
 
 const isDataBlock = (block: CoachRichBlock): block is DataBlock =>
-  block.type !== 'problem_list' && block.type !== 'web_problem_list'
+  block.type !== 'problem_list' &&
+  block.type !== 'web_problem_list' &&
+  block.type !== 'feature_redirect'
+
+// Section redirects render inline in the thread, not in the details panel.
+export function featureRedirects(message: CoachMessage | undefined) {
+  return (message?.richContent?.blocks ?? []).filter(
+    (block) => block.type === 'feature_redirect',
+  )
+}
 
 export function answerDetails(message: CoachMessage | undefined) {
   const blocks = message?.richContent?.blocks ?? []

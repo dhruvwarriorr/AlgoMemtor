@@ -2,6 +2,14 @@
 
 **Status:** Planning only. No Upsolve Tracker code or migrations have been implemented by this document.
 
+> **Status update (2026-09-24):** an Upsolve Tracker is implemented at
+> `/upsolve`, scoped to contests the learner took part in (the product brief's
+> Feature 8) rather than the three newest global contests. It flags attempted
+> unsolved problems (and reachable unattempted Codeforces problems), tracks
+> completion, links hints, editorials and the Solution Explorer, and feeds a
+> spaced revision schedule. The in-app reminder bell and reminder preferences in
+> §3.3 and §6 are not implemented. See `PROJECT_DOCUMENTATION.md` §4.13.
+
 ## 1. Goal and agreed decisions
 
 AlgoMemtor will turn recent contests into a small, guided practice queue. The learner solves and submits on Codeforces, CodeChef, or LeetCode; AlgoMemtor identifies a useful next question, records self-reported or provider-observed progress, and offers a question-specific coach workspace.

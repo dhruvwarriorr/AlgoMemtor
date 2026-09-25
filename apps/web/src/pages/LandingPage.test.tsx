@@ -14,11 +14,18 @@ function renderLandingPage(status: AuthStatus) {
   const authValue: AuthContextValue = {
     user: null,
     status,
+    passwordRecovery: false,
     sessionMessage: null,
     clearSessionMessage: () => undefined,
     signIn: () => Promise.resolve(),
     signUp: () => Promise.resolve(null),
     signInWithGoogle: () => Promise.resolve(),
+    requestPasswordReset: () => Promise.resolve(),
+    updatePassword: () => Promise.resolve(),
+    changePassword: () => Promise.resolve(),
+    setPassword: () => Promise.resolve(),
+    linkGoogleAccount: () => Promise.resolve(),
+    unlinkGoogleAccount: () => Promise.resolve(),
     signOut: () => Promise.resolve(),
   }
 

@@ -313,6 +313,15 @@ source, tests, and `git status` before relying on it.
   scope manual/verified solve actions; language breakdowns group compiler
   builds by language; CSES is in provider filters; preset avatars and
   self-reported current ratings were removed from Settings/onboarding.
+- 2026-09-24 (mentor tools): the Coach is chat-only. Doubt Helper
+  (`/doubt-helper`, five-level hints, server-enforced solution reveal),
+  Solution Explorer (`/solutions`), Upsolve (`/upsolve`, revision schedule),
+  Contest Analysis (`/contest-analysis`), Progress Report (`/progress/report`)
+  and Learning Pathway (`/pathway`) are separate sections; the Coach answers
+  clear requests for them with a `feature_redirect` card and no model call.
+  New `core` tables: `problem_help_sessions`/`_turns`, `mentor_reports`,
+  `upsolve_item_states`, `revision_items`. Personalized AI is always on;
+  Settings has an Accounts section (Google connect, change password).
 
 Important: this snapshot describes the working tree, which currently contains
 uncommitted Week 10 work. It is context, not permission to commit or rewrite it.

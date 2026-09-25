@@ -15,6 +15,7 @@ from app.memory_models import (
     MemoryEvidenceDeleteRequest,
     MemoryProcessRequest,
     MemoryRetrievalResponse,
+    MemoryUserInputRequest,
     ReflectionGenerationOutput,
     StoredMemory,
 )
@@ -106,6 +107,23 @@ class FakeMemoryRepository:
         self.problem_cleanup_calls: list[tuple[UUID, str, str]] = []
         self.consistent_support = False
         self.support_calls: list[tuple[UUID, str, UUID | None]] = []
+
+    async def create_user_memory(
+        self,
+        learner_id: UUID,
+        *,
+        memory_key: str,
+        statement: str,
+        request_id: str,
+    ) -> tuple[StoredMemory, bool]:
+        del memory_key, request_id
+        memory = stored_memory(
+            learner_id=learner_id,
+            status="active",
+            statement=statement,
+        ).model_copy(update={"category": "user_instruction", "confidence": 1.0})
+        self.memories[memory.id] = memory
+        return memory, True
 
     async def record_evidence(
         self, request: MemoryProcessRequest, redacted_context: dict[str, Any]
@@ -397,6 +415,62 @@ def service_for(
         model=model,
         embedder=embedder,
     )
+
+
+@pytest.mark.asyncio
+async def test_user_input_memory_is_active_without_model_inference() -> None:
+    repository = FakeMemoryRepository()
+    audit_repository = FakeAuditRepository()
+    service = service_for(repository, audit_repository=audit_repository)
+
+    response = await service.create_user_input(
+        LEARNER_ID,
+        MemoryUserInputRequest(
+            requestId="memory-input-1",
+            statement="Prefer concise explanations.",
+        ),
+    )
+
+    assert response.action == "approve"
+    assert response.memory is not None
+    assert response.memory.status == "active"
+    assert response.memory.category == "user_instruction"
+    assert response.memory.statement == "Prefer concise explanations."
+    assert audit_repository.saved[0].action == "approve"
+
+
+def test_user_input_route_uses_internal_auth_and_returns_active_memory() -> None:
+    repository = FakeMemoryRepository()
+    service = service_for(repository)
+    app.dependency_overrides[get_ai_settings] = lambda: settings(
+        internal_service_token="internal-test-token"
+    )
+    app.dependency_overrides[get_memory_service] = lambda: service
+
+    try:
+        with TestClient(app) as client:
+            missing = client.post(
+                f"/internal/learners/{LEARNER_ID}/memories/user-input",
+                json={
+                    "requestId": "memory-input-route-1",
+                    "statement": "Prefer concise explanations.",
+                },
+            )
+            response = client.post(
+                f"/internal/learners/{LEARNER_ID}/memories/user-input",
+                headers={"X-Internal-Service-Token": "internal-test-token"},
+                json={
+                    "requestId": "memory-input-route-1",
+                    "statement": "Prefer concise explanations.",
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert missing.status_code == 401
+    assert response.status_code == 200
+    assert response.json()["action"] == "approve"
+    assert response.json()["memory"]["status"] == "active"
 
 
 @pytest.mark.asyncio

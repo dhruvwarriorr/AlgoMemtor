@@ -3,7 +3,6 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import type { SaveLearnerProfileRequest } from '@algomemtor/shared-contracts'
 import {
   ArrowUpRight,
-  Brain,
   Check,
   Database,
   Link2,
@@ -18,10 +17,12 @@ import {
 
 import type { Theme } from '@/app/theme-context'
 import { useTheme } from '@/app/useTheme'
+import { UserAvatar } from '@/components/brand/UserAvatar'
 import { Button, buttonVariants } from '@/components/ui/button'
+import { useUserIdentity } from '@/features/auth/user-identity'
 import { useAuth } from '@/features/auth/useAuth'
+import { AccountAccessSettings } from '@/features/auth/components/AccountAccessSettings'
 import { learnerProfileErrorMessage } from '@/features/profile/api/learner-profile'
-import { AiNoteConsentCard } from '@/features/profile/components/AiNoteConsentCard'
 import { DataResetDialog } from '@/features/profile/components/DataResetDialog'
 import { IdentityEditor } from '@/features/profile/components/IdentityEditor'
 import { LearnerProfileForm } from '@/features/profile/components/LearnerProfileForm'
@@ -35,42 +36,36 @@ import {
 } from '@/features/profile/hooks/useLearnerProfile'
 import { cn } from '@/lib/utils'
 
-type SectionId = 'profile' | 'platforms' | 'coach' | 'appearance' | 'data'
+type SectionId = 'profile' | 'accounts' | 'platforms' | 'appearance' | 'data'
 
 const sections: ReadonlyArray<{
   id: SectionId
   label: string
-  hint: string
   icon: IconComponent
 }> = [
   {
     id: 'profile',
     label: 'Profile and goals',
-    hint: 'What your coach knows about you',
     icon: UserRound,
+  },
+  {
+    id: 'accounts',
+    label: 'Accounts',
+    icon: ShieldCheck,
   },
   {
     id: 'platforms',
     label: 'Linked platforms',
-    hint: 'Codeforces, CodeChef, LeetCode',
     icon: Link2,
-  },
-  {
-    id: 'coach',
-    label: 'Coach and privacy',
-    hint: 'Personalization and memory',
-    icon: ShieldCheck,
   },
   {
     id: 'appearance',
     label: 'Appearance',
-    hint: 'Theme for this device',
     icon: Palette,
   },
   {
     id: 'data',
     label: 'Data and reset',
-    hint: 'Remove learner data',
     icon: Database,
   },
 ]
@@ -87,9 +82,13 @@ function SectionTitle({
   description: string
 }) {
   return (
-    <div className="border-b border-border pb-6">
-      <h2 className="text-2xl text-foreground sm:text-[1.75rem]">{title}</h2>
-      <p className="mt-1.5 max-w-2xl text-muted-foreground">{description}</p>
+    <div className="border-b border-border pb-5">
+      <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-[1.65rem]">
+        {title}
+      </h2>
+      <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-[0.95rem]">
+        {description}
+      </p>
     </div>
   )
 }
@@ -104,7 +103,7 @@ function SettingRow({
   children: ReactNode
 }) {
   return (
-    <div className="grid gap-4 border-b border-border py-8 md:grid-cols-[minmax(0,14rem)_minmax(0,1fr)] md:gap-x-10">
+    <div className="grid gap-4 border-b border-border py-8 md:grid-cols-[minmax(0,13rem)_minmax(0,1fr)] md:gap-x-10">
       <div>
         <h3 className="text-lg font-semibold text-foreground">{title}</h3>
         <p className="mt-1 text-sm text-muted-foreground">{description}</p>
@@ -210,7 +209,7 @@ function AppearanceSection() {
               return (
                 <label
                   className={cn(
-                    'group relative cursor-pointer rounded-2xl border-2 bg-card p-2 transition-[border-color,transform] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:-translate-y-0.5 has-[:focus-visible]:ring-4 has-[:focus-visible]:ring-ring/20',
+                    'group relative cursor-pointer rounded-xl border-2 bg-card p-2 transition-[border-color,transform] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:-translate-y-0.5 has-[:focus-visible]:ring-4 has-[:focus-visible]:ring-ring/20',
                     selected
                       ? 'border-primary'
                       : 'border-border hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--border))]',
@@ -256,6 +255,7 @@ function SettingPage() {
   const location = useLocation()
   const navigate = useNavigate()
   const { user } = useAuth()
+  const identity = useUserIdentity()
   const profileQuery = useLearnerProfile()
   const saveProfile = useSaveLearnerProfile()
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
@@ -281,20 +281,21 @@ function SettingPage() {
 
   return (
     <main
-      className="flex min-w-0 flex-1 flex-col lg:flex-row"
+      className="grid min-w-0 flex-1 bg-background/35 lg:grid-cols-[17.5rem_minmax(0,1fr)]"
       id="main-content"
     >
-      <aside className="border-b border-border px-5 pt-6 pb-4 sm:px-8 lg:w-[19rem] lg:shrink-0 lg:border-r lg:border-b-0 lg:px-6 lg:py-9">
+      <aside className="w-full min-w-0 border-b border-border bg-card px-5 pt-6 pb-4 sm:px-8 lg:flex lg:min-h-(--app-panel-height) lg:flex-col lg:border-r lg:border-b-0 lg:px-5 lg:py-7">
         <div className="lg:sticky lg:top-[calc(var(--app-header)+2rem)]">
-          <h1 className="text-[2.1rem] leading-none text-foreground">
+          <h1 className="text-[1.9rem] leading-none text-foreground">
             Settings
           </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Tune what your coach knows and how the app behaves.
+          <p className="mt-2 max-w-56 text-sm leading-5 text-muted-foreground">
+            Manage your learning profile, connected platforms, and app
+            preferences.
           </p>
           <nav
             aria-label="Settings sections"
-            className="-mx-1 mt-6 flex gap-1 overflow-x-auto pb-1 lg:mx-0 lg:flex-col lg:overflow-visible"
+            className="-mx-1 mt-6 flex max-w-full gap-1.5 overflow-x-auto pb-1 lg:mx-0 lg:flex-col lg:overflow-visible"
           >
             {sections.map((section) => {
               const selected = active === section.id
@@ -302,10 +303,10 @@ function SettingPage() {
                 <button
                   aria-current={selected ? 'page' : undefined}
                   className={cn(
-                    'flex shrink-0 items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition-[background-color,box-shadow] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]',
+                    'group relative flex shrink-0 items-center gap-3 rounded-lg px-3 py-2.5 text-left outline-none transition-[background-color,color,transform] duration-200 focus-visible:ring-2 focus-visible:ring-ring lg:w-full',
                     selected
-                      ? 'bg-card shadow-soft ring-1 ring-border'
-                      : 'hover:bg-card/60',
+                      ? 'bg-sky-soft text-foreground dark:bg-accent'
+                      : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
                   )}
                   key={section.id}
                   onClick={() =>
@@ -315,38 +316,45 @@ function SettingPage() {
                 >
                   <span
                     className={cn(
-                      'grid size-9 shrink-0 place-items-center rounded-xl transition-colors',
+                      'grid size-7 shrink-0 place-items-center rounded-md transition-colors',
                       selected
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-secondary text-secondary-foreground',
+                        ? 'text-primary'
+                        : 'text-muted-foreground group-hover:text-foreground',
                     )}
                   >
                     <section.icon
                       aria-hidden="true"
-                      className="size-4"
-                      strokeWidth={1.7}
+                      className="size-[1.05rem]"
+                      strokeWidth={1.8}
                     />
                   </span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold whitespace-nowrap text-foreground">
-                      {section.label}
-                    </span>
-                    <span className="hidden text-xs text-muted-foreground lg:block">
-                      {section.hint}
-                    </span>
+                  <span className="min-w-0 text-sm font-semibold whitespace-nowrap">
+                    {section.label}
                   </span>
                 </button>
               )
             })}
           </nav>
         </div>
+
+        <div className="mt-auto hidden border-t border-border pt-5 lg:flex lg:items-center lg:gap-3">
+          <UserAvatar className="size-10 shrink-0 text-sm" />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-foreground">
+              {identity.name}
+            </p>
+            <p className="truncate text-xs text-muted-foreground">
+              {user?.email ?? 'Signed in'}
+            </p>
+          </div>
+        </div>
       </aside>
 
       <div
-        className="min-w-0 flex-1 px-5 py-6 sm:px-8 lg:px-12 lg:py-9"
+        className="min-w-0 px-5 py-6 sm:px-8 lg:px-10 lg:py-8 xl:px-14 xl:py-10"
         key={active}
       >
-        <div className="animate-rise mx-auto max-w-5xl">
+        <div className="animate-rise mx-auto max-w-6xl">
           {active === 'profile' ? (
             <>
               <ProfileBanner
@@ -364,8 +372,8 @@ function SettingPage() {
               />
               <div className="mt-8">
                 <SectionTitle
-                  description="How you appear across AlgoMemtor."
-                  title="Name and avatar"
+                  description="Update the details other AlgoMemtor surfaces use to identify you."
+                  title="Personal information"
                 />
                 <div className="pt-6">
                   <IdentityEditor />
@@ -374,10 +382,11 @@ function SettingPage() {
               <div className="mt-10">
                 <SectionTitle
                   description="These answers shape every recommendation and coaching reply. Your sign-in email is managed separately by Supabase Auth."
-                  title="Profile and goals"
+                  title="Learning profile"
                 />
                 <div className="pt-6">
                   <LearnerProfileForm
+                    combinePracticeNotes
                     idPrefix="settings-profile"
                     initialProfile={profileQuery.data?.data ?? null}
                     isLoading={profileQuery.isPending}
@@ -403,6 +412,18 @@ function SettingPage() {
             </>
           ) : null}
 
+          {active === 'accounts' ? (
+            <>
+              <SectionTitle
+                description="How you sign in to AlgoMemtor: connect Google, change your password, or get a reset link."
+                title="Accounts"
+              />
+              <div className="pt-6">
+                <AccountAccessSettings />
+              </div>
+            </>
+          ) : null}
+
           {active === 'platforms' ? (
             <>
               <SectionTitle
@@ -414,41 +435,6 @@ function SettingPage() {
                 <ProviderAccountLinks idPrefix="settings" />
                 <BrowserConnectorCard idPrefix="settings" />
               </div>
-            </>
-          ) : null}
-
-          {active === 'coach' ? (
-            <>
-              <SectionTitle
-                description="Decide how much your coach may personalize, and review what it remembers."
-                title="Coach and privacy"
-              />
-              <div className="pt-8">
-                <AiNoteConsentCard existingUser />
-              </div>
-              <SettingRow
-                description="Patterns the coach has learned from your practice. Correct, archive or delete any of them."
-                title="Learner memory"
-              >
-                <div className="flex flex-col items-start gap-4 rounded-2xl border border-border bg-card p-5 sm:flex-row sm:items-center">
-                  <span
-                    aria-hidden="true"
-                    className="grid size-11 shrink-0 place-items-center rounded-md bg-sky-soft text-primary"
-                  >
-                    <Brain className="size-5" strokeWidth={1.7} />
-                  </span>
-                  <p className="flex-1 text-sm text-muted-foreground">
-                    Memory is used for future recommendations only while
-                    personalized coaching is enabled.
-                  </p>
-                  <Link
-                    className={buttonVariants({ variant: 'outline' })}
-                    to="/memory"
-                  >
-                    Review learner memory
-                  </Link>
-                </div>
-              </SettingRow>
             </>
           ) : null}
 
@@ -464,7 +450,7 @@ function SettingPage() {
                 description="Remove AlgoMemtor learner data while keeping your sign-in account."
                 title="Reset learner data"
               >
-                <div className="rounded-2xl border border-destructive/35 bg-danger-soft p-5">
+                <div className="rounded-xl border border-destructive/35 bg-danger-soft p-5">
                   <p className="max-w-2xl text-sm leading-6 text-danger-foreground">
                     This cannot be undone. The cleanup may run in the background
                     and returns you to onboarding.

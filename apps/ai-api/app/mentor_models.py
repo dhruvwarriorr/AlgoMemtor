@@ -1,0 +1,300 @@
+"""Request and response models for the mentor tools.
+
+The Doubt Helper, Solution Explorer, Contest Analysis and Progress Report run
+outside the Coach chat. Express assembles every request from trusted,
+owner-scoped data; problem statements, learner code and compiler output are
+transient fields that are never stored or logged by this service.
+"""
+
+from __future__ import annotations
+
+from typing import Annotated, Literal
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field
+
+DoubtType = Literal[
+    "understand_problem",
+    "find_approach",
+    "approach_review",
+    "compilation_error",
+    "no_output",
+    "wrong_answer",
+    "performance_tle_mle",
+    "general",
+]
+ProblemHelpPhase = Literal[
+    "first_turn", "next_hint", "attempt_feedback", "question", "full_solution"
+]
+BugCategory = Literal[
+    "logic_error",
+    "edge_case",
+    "off_by_one",
+    "overflow",
+    "wrong_algorithm",
+    "time_complexity",
+    "memory_usage",
+    "compilation",
+    "input_output",
+    "undefined_behavior",
+    "none_found",
+]
+Platform = Literal["codeforces", "codechef", "leetcode", "cses", "other"]
+
+ShortText = Annotated[str, Field(min_length=1, max_length=400)]
+Tag = Annotated[str, Field(min_length=1, max_length=64)]
+
+
+class StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+
+class TopicExposure(StrictModel):
+    name: str = Field(min_length=1, max_length=128)
+    assessment: str = Field(min_length=1, max_length=40)
+    solved: int = Field(ge=0)
+
+
+class ProviderRating(StrictModel):
+    provider: str = Field(min_length=1, max_length=32)
+    rating: int = Field(ge=0, le=5_000)
+
+
+class LearnerSnapshot(StrictModel):
+    experience: str | None = Field(default=None, max_length=40)
+    goal: str | None = Field(default=None, max_length=60)
+    learningPreferences: list[str] = Field(default_factory=list, max_length=8)
+    ratings: list[ProviderRating] = Field(default_factory=list, max_length=4)
+    topicExposure: list[TopicExposure] = Field(default_factory=list, max_length=12)
+    memories: list[Annotated[str, Field(min_length=1, max_length=400)]] = Field(
+        default_factory=list, max_length=10
+    )
+
+
+class ProblemExample(StrictModel):
+    input: str = Field(max_length=2_000)
+    output: str = Field(max_length=2_000)
+    explanation: str | None = Field(default=None, max_length=2_000)
+
+
+class ProblemContext(StrictModel):
+    platform: Platform
+    title: str = Field(min_length=1, max_length=200)
+    url: str | None = Field(default=None, max_length=2_048)
+    statement: str | None = Field(default=None, max_length=20_000)
+    constraints: list[Annotated[str, Field(max_length=600)]] = Field(
+        default_factory=list, max_length=30
+    )
+    examples: list[ProblemExample] = Field(default_factory=list, max_length=3)
+    tags: list[Tag] = Field(default_factory=list, max_length=12)
+    rating: int | None = Field(default=None, ge=0, le=5_000)
+    # A public page on a site without a provider adapter. The service reads it
+    # for this request only, through the SSRF-guarded page reader.
+    readUrl: str | None = Field(default=None, max_length=2_048)
+
+
+class PriorTurn(StrictModel):
+    role: Literal["learner", "mentor"]
+    kind: str = Field(min_length=1, max_length=16)
+    hintLevel: int | None = Field(default=None, ge=1, le=5)
+    content: str = Field(min_length=1, max_length=6_000)
+
+
+class ProblemHelpRequest(StrictModel):
+    requestId: str = Field(min_length=1, max_length=160)
+    learnerId: UUID
+    sessionId: UUID
+    phase: ProblemHelpPhase
+    hintLevel: int = Field(ge=1, le=5)
+    doubtType: DoubtType
+    language: str = Field(min_length=1, max_length=64)
+    attemptSummary: str = Field(min_length=1, max_length=1_000)
+    problem: ProblemContext
+    learner: LearnerSnapshot
+    priorTurns: list[PriorTurn] = Field(default_factory=list, max_length=12)
+    learnerMessage: str | None = Field(default=None, max_length=2_000)
+    transientCode: str | None = Field(default=None, max_length=12_000)
+    transientError: str | None = Field(default=None, max_length=4_000)
+
+
+class ProblemHelpResponse(StrictModel):
+    answer: str = Field(min_length=1, max_length=32_000)
+    bugCategory: BugCategory | None = None
+    guardRepaired: bool = False
+    problemUnavailable: bool = False
+
+
+# --- Solution Explorer -----------------------------------------------------
+
+ApproachKind = Literal["brute_force", "optimized", "alternative", "mathematical"]
+CommunityKind = Literal[
+    "editorial", "community", "discussion", "submissions", "article", "video"
+]
+
+
+class CommunitySource(StrictModel):
+    id: str = Field(min_length=1, max_length=32)
+    title: str = Field(min_length=1, max_length=200)
+    url: str = Field(min_length=1, max_length=2_048)
+    publisher: str = Field(min_length=1, max_length=100)
+    kind: CommunityKind
+    official: bool
+
+
+class SolutionRequest(StrictModel):
+    requestId: str = Field(min_length=1, max_length=160)
+    learnerId: UUID
+    language: str = Field(min_length=1, max_length=64)
+    problem: ProblemContext
+    learner: LearnerSnapshot
+    officialSources: list[CommunitySource] = Field(default_factory=list, max_length=4)
+    searchCommunity: bool = True
+
+
+class ApproachOutput(StrictModel):
+    kind: ApproachKind
+    name: str = Field(min_length=1, max_length=120)
+    idea: str = Field(min_length=1, max_length=2_400)
+    keyInsight: str = Field(min_length=1, max_length=800)
+    whyItWorks: str = Field(min_length=1, max_length=2_000)
+    limitations: str | None = Field(default=None, max_length=1_000)
+    timeComplexity: str = Field(min_length=1, max_length=80)
+    spaceComplexity: str = Field(min_length=1, max_length=80)
+    code: str | None = Field(default=None, max_length=12_000)
+
+
+class CommunityHighlight(StrictModel):
+    sourceId: str = Field(min_length=1, max_length=32)
+    highlight: str = Field(min_length=1, max_length=600)
+
+
+class SolutionModelOutput(StrictModel):
+    """Structured output requested from the model."""
+
+    summary: str = Field(min_length=1, max_length=1_200)
+    approaches: list[ApproachOutput] = Field(min_length=1, max_length=5)
+    comparison: str = Field(min_length=1, max_length=2_400)
+    thinkingLessons: list[Annotated[str, Field(min_length=1, max_length=400)]] = Field(
+        default_factory=list, max_length=5
+    )
+    communityHighlights: list[CommunityHighlight] = Field(
+        default_factory=list, max_length=8
+    )
+
+
+class CommunityOutput(StrictModel):
+    title: str = Field(min_length=1, max_length=200)
+    url: str = Field(min_length=1, max_length=2_048)
+    publisher: str = Field(min_length=1, max_length=100)
+    kind: CommunityKind
+    official: bool
+    highlight: str | None = Field(default=None, max_length=600)
+
+
+class SolutionResponse(StrictModel):
+    summary: str = Field(min_length=1, max_length=1_200)
+    approaches: list[ApproachOutput] = Field(min_length=1, max_length=5)
+    comparison: str = Field(min_length=1, max_length=2_400)
+    thinkingLessons: list[Annotated[str, Field(min_length=1, max_length=400)]] = Field(
+        default_factory=list, max_length=5
+    )
+    community: list[CommunityOutput] = Field(default_factory=list, max_length=8)
+
+
+# --- Contest analysis -------------------------------------------------------
+
+
+class ContestProblemInput(StrictModel):
+    label: str = Field(min_length=1, max_length=16)
+    title: str | None = Field(default=None, max_length=512)
+    rating: int | None = Field(default=None, ge=0, le=5_000)
+    tags: list[Tag] = Field(default_factory=list, max_length=12)
+    attempts: int = Field(ge=0)
+    wrongAttempts: int = Field(ge=0)
+    solved: bool
+    firstSubmitMinute: float | None = Field(default=None, ge=0)
+    solvedMinute: float | None = Field(default=None, ge=0)
+    minutesSpent: float | None = Field(default=None, ge=0)
+
+
+class ContestTimelineInput(StrictModel):
+    minute: float = Field(ge=0)
+    label: str = Field(min_length=1, max_length=16)
+    verdict: str = Field(min_length=1, max_length=64)
+    accepted: bool
+
+
+class ContestMetricsInput(StrictModel):
+    provider: str = Field(min_length=1, max_length=32)
+    name: str = Field(min_length=1, max_length=512)
+    durationMinutes: int = Field(gt=0)
+    rank: int | None = Field(default=None, gt=0)
+    ratingChange: float | None = None
+    oldRating: float | None = None
+    newRating: float | None = None
+    problems: list[ContestProblemInput] = Field(default_factory=list, max_length=26)
+    timeline: list[ContestTimelineInput] = Field(default_factory=list, max_length=200)
+    solvedCount: int = Field(ge=0)
+    attemptedCount: int = Field(ge=0)
+    submissionCount: int = Field(ge=0)
+    wrongSubmissions: int = Field(ge=0)
+    problemSwitches: int = Field(ge=0)
+    longestGapMinutes: float = Field(ge=0)
+    idleTailMinutes: float | None = Field(default=None, ge=0)
+    firstAcceptedMinute: float | None = Field(default=None, ge=0)
+    rapidWrongResubmits: int = Field(ge=0)
+    coverageNotes: list[ShortText] = Field(default_factory=list, max_length=4)
+
+
+class ContestAnalysisRequest(StrictModel):
+    requestId: str = Field(min_length=1, max_length=160)
+    learnerId: UUID
+    metrics: ContestMetricsInput
+    learner: LearnerSnapshot
+    recentContests: list[ContestMetricsInput] = Field(
+        default_factory=list, max_length=6
+    )
+
+
+class ContestNarrativeOutput(StrictModel):
+    headline: str = Field(min_length=1, max_length=240)
+    panicSignals: list[ShortText] = Field(default_factory=list, max_length=5)
+    timeManagement: str = Field(min_length=1, max_length=1_500)
+    weakTopics: list[Annotated[str, Field(min_length=1, max_length=200)]] = Field(
+        default_factory=list, max_length=6
+    )
+    ratingChangeCauses: list[ShortText] = Field(default_factory=list, max_length=5)
+    strategy: list[ShortText] = Field(min_length=1, max_length=6)
+
+
+class ContestPatternsRequest(StrictModel):
+    requestId: str = Field(min_length=1, max_length=160)
+    learnerId: UUID
+    learner: LearnerSnapshot
+    aggregate: dict[str, object]
+    contests: list[ContestMetricsInput] = Field(min_length=1, max_length=12)
+
+
+class ContestPatternsOutput(StrictModel):
+    headline: str = Field(min_length=1, max_length=240)
+    tendencies: list[ShortText] = Field(min_length=1, max_length=6)
+    strengths: list[ShortText] = Field(default_factory=list, max_length=4)
+    recommendations: list[ShortText] = Field(min_length=1, max_length=6)
+
+
+# --- Progress report --------------------------------------------------------
+
+
+class ProgressNarrativeRequest(StrictModel):
+    requestId: str = Field(min_length=1, max_length=160)
+    learnerId: UUID
+    learner: LearnerSnapshot
+    report: dict[str, object]
+
+
+class ProgressNarrativeOutput(StrictModel):
+    headline: str = Field(min_length=1, max_length=240)
+    summary: str = Field(min_length=1, max_length=1_600)
+    wins: list[ShortText] = Field(default_factory=list, max_length=4)
+    concerns: list[ShortText] = Field(default_factory=list, max_length=4)
+    nextSteps: list[ShortText] = Field(min_length=1, max_length=5)

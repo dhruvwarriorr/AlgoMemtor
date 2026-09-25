@@ -202,6 +202,11 @@ class MemoryProposalRequest(MemoryStrictModel):
     category: MemoryCategory
 
 
+class MemoryUserInputRequest(MemoryStrictModel):
+    requestId: str = Field(min_length=1, max_length=160, pattern=r"^\S+$")
+    statement: str = Field(min_length=1, max_length=500)
+
+
 class MemoryConsolidationRequest(MemoryStrictModel):
     requestId: str = Field(min_length=1, max_length=160, pattern=r"^\S+$")
     memoryIds: list[UUID] = Field(min_length=2, max_length=8)

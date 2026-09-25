@@ -254,6 +254,9 @@ The onboarding form captures:
 
 The structured choices are authoritative for deterministic ranking. Free-form
 notes are optional context and are bounded before they can reach Gemini.
+Settings presents the recommendation preference and other practice
+considerations in one editable note. The existing two bounded profile fields
+remain in the API so previously saved notes stay available.
 
 ### 4.3 Unified problem discovery
 
@@ -318,10 +321,10 @@ range, the rating band is centred on their latest observed Codeforces rating
 (−100/+200) instead of the onboarding estimate.
 
 The signals, the calibrated band, and the merged focus list reach the AI ranker
-only under current `personalized-coaching-rag-v2` consent; without it the model
-sees just the stated profile. FastAPI additionally retrieves the learner's
-active memories (instructions such as a topic to focus on or set aside, topic
-weaknesses, difficulty patterns) and is told to honor them, favoring stated
+under the current always-on `personalized-coaching-rag-v2` policy. FastAPI
+additionally retrieves the learner's active memories, including instructions
+such as a topic to focus on or set aside, topic weaknesses, and difficulty
+patterns, and is told to honor them, favoring stated
 focus and placing set-aside topics last. Hard exclusions still come only from
 confirmed actions: `skip_for_now` statuses (for example accepted from a coach
 proposal) and explicit profile exclusions.
@@ -453,6 +456,104 @@ profile aggregate supplies its topic distribution.
 The AI service can generate bounded memory signals from eligible learner data.
 Memory has confidence, evidence strength, lifecycle actions, retrieval limits,
 and delete/archive/restore controls. The learner can inspect and manage memory.
+The Memory page also accepts learner-written guidance ("I prefer short hints
+before full explanations") in a steering-bar style input. It is stored as an
+active `user_instruction` memory without a model call.
+
+### 4.13 Mentor tools outside the Coach chat
+
+The Coach is a chat. Problem-specific help, solution exploration, upsolving,
+contest analysis, progress evaluation and the learning pathway each have a
+dedicated section. Every mentor call receives a bounded learner snapshot
+(experience, goal, learning preferences, latest ratings, pathway topic
+exposure, and up to eight active learner memories) so hints and reports are
+calibrated to the learner.
+
+- **Doubt Helper** (`/doubt-helper`, `/doubt-helper/:sessionId`). Intake:
+  problem link (Codeforces, CodeChef, LeetCode, CSES, or any public page) or a
+  problem name plus pasted statement; language; one of eight doubt types
+  (understand the problem, find an approach, check my approach before
+  submitting, compilation error, no output, wrong answer, TLE/MLE, general); a
+  short attempt summary; transient code and compiler/verdict text. Hints follow
+  a five-level ladder: nudge, concept, structure, key code (at most 25 lines),
+  full walkthrough. Debugging doubts start with a diagnosis that names a bug
+  category (logic error, edge case, off-by-one, overflow, wrong algorithm,
+  complexity, memory, compilation, I/O, undefined behavior). The full
+  walkthrough requires `request_solution` then `confirm_solution`; Express
+  enforces `hintLevel >= 1` and the confirmation stage, and FastAPI repairs or
+  withholds code that exceeds the locked disclosure level. Sessions use
+  optimistic `expectedVersion` checks so double clicks cannot skip levels.
+  Marking a session solved adds the problem to the revision schedule. When a
+  provider statement cannot be read (for example Codeforces returning
+  `PROVIDER_BLOCKED`), the helper asks for the pasted statement instead of
+  guessing.
+- **Solution Explorer** (`/solutions?problem=`). Opens after the learner solved
+  or attempted the problem (provider evidence or manual status), worked on it
+  in the Doubt Helper, or explicitly confirms a genuine attempt. Returns 2–4
+  approaches (brute force and why it fails, the optimized insight, genuinely
+  different alternatives, mathematical/constructive solutions) with
+  complexity, correctness arguments, limitations and code in the chosen
+  language; trade-offs; transferable lessons; and attributed editorial and
+  community links. Official links are built deterministically from validated
+  identifiers (Codeforces contest page and problem status, LeetCode editorial
+  and most-voted solutions, CodeChef Discuss search); additional community
+  write-ups come from one grounded search and each gets a short "what to look
+  for" highlight. Explorations are cached per learner, problem and language.
+- **Upsolve Tracker** (`/upsolve`). Uses the learner's last 12 matched contests.
+  A problem is flagged when it was attempted without acceptance during the
+  contest, or (Codeforces, where the contest problem list is known) when it is
+  one of the next two positions after the highest solve or rated at most 300
+  above the learner's level. Items are prioritized by contest attempt, rating
+  fit and recency, and link to hints, the editorial and the Solution Explorer.
+  A later accepted submission or solved observation marks an item upsolved
+  (provider evidence); a manual `solved` status marks it "marked solved by
+  you". The page shows completion rate and a monthly follow-through trend.
+  Upsolved problems enter a spaced revision schedule (3, 7, 21 and 45 days).
+- **Contest Analysis** (`/contest-analysis`). Contests are matched to the
+  provider schedule (Codeforces ID, LeetCode slug, name/number tokens, or a
+  unique time window). Metrics come from submission timestamps inside the
+  contest window: per-problem attempts, wrong attempts, solve minute and time
+  spent, problem switches away from unsolved problems, longest gap, idle tail,
+  first accepted minute and rapid wrong resubmits (within three minutes).
+  Cross-contest patterns count slow starts, early stops, rapid-resubmit
+  contests, rating drops, recurring unsolved topics and stuck positions. An
+  optional AI narrative (per contest and across contests) explains panic
+  signals, time management, weak topics, rating-change causes and strategy.
+  Non-Codeforces contests list only submitted problems and say so.
+- **Progress Report** (`/progress/report`). Deterministic topic progress,
+  weekly first-attempt accuracy, consistency and streaks, contest solving speed
+  by difficulty band (earlier vs recent medians), rating trajectory with a
+  per-contest slope and 90-day projection, and Doubt Helper hint dependency.
+  Evidence-based insight statements link to the relevant section. An optional
+  weekly AI insight report interprets the same numbers.
+- **Learning Pathway** (`/pathway`). The roadmap lanes, manual topic status,
+  plain-language notes, refresh, and the revision schedule, moved out of the
+  Coach.
+
+#### Decision: mentor tools are separate sections; the Coach is chat-only (2026-09-24)
+
+Context: the Coach answered "help me with <problem link>" with the full key
+observation and code, and roadmap, contest analysis and progress questions
+competed with open-ended chat. Decision: each capability has its own page and
+server-owned state; a deterministic router in Express
+(`coach-feature-routing.ts`) answers clear requests for those capabilities in
+the chat with a `feature_redirect` rich block and no model call, carrying only a
+validated public problem URL. Concept questions stay in the chat. Alternatives
+considered: a Coach sidebar Doubt Helper (the earlier plan) and model-side
+routing; both keep disclosure decisions inside the chat model. Consequences:
+hint disclosure is enforced in Express and FastAPI rather than by prompt alone;
+learner code, compiler output and pasted statements remain transient; cached AI
+reports live in `core.mentor_reports`. Review if a provider starts permitting
+contest editorials through an API, or if chat-based problem help is requested
+again.
+
+#### Decision: personalized AI is always on (2026-09-24)
+
+AlgoMemtor is an AI-first product, so personalized coaching and learner memory
+are no longer optional. The Coach and privacy settings section and the consent
+card were removed; `GET /api/ai-consent` reports the always-on policy and the
+legacy `PUT` rejects `enabled=false`. Learners still control memory through the
+Memory page (correct, archive, delete, add) and full data reset.
 
 ---
 
@@ -462,6 +563,7 @@ and delete/archive/restore controls. The learner can inspect and manage memory.
 
 - `/` — landing page and product explanation.
 - `/login` — Supabase email authentication.
+- `/reset-password` — recovery-link-only password update.
 
 ### Protected routes
 
@@ -470,9 +572,15 @@ and delete/archive/restore controls. The learner can inspect and manage memory.
 - `/problems` — unified provider catalog.
 - `/problems/:provider/:externalId` — problem detail.
 - `/recommendations` — ranked practice feed.
-- `/coach` — bounded coaching workspace with saved conversations, an
-  independently scrolling message pane, rich evidence, a collapsible learning
-  plan, and in-app check-ins.
+- `/coach` — chat with saved conversations, rich evidence, in-app check-ins,
+  and redirect cards to the mentor tools. The learning plan moved to
+  `/pathway`.
+- `/pathway` — learning plan lanes, notes, refresh and revision schedule.
+- `/doubt-helper` and `/doubt-helper/:sessionId` — guided hints and debugging.
+- `/solutions` — Solution Explorer.
+- `/upsolve` — upsolve queue and completion tracking.
+- `/contest-analysis` — per-contest and cross-contest analysis.
+- `/progress/report` — progress evaluation and insight report.
 - `/contests` — contest catalog and participation with bounded “show more”
   pagination.
 - `/analytics` — unified analytics.
@@ -480,7 +588,11 @@ and delete/archive/restore controls. The learner can inspect and manage memory.
 - `/bookmarks` — saved problems.
 - `/memory` — learner memory controls.
 - `/profile` — unified provider profile.
-- `/settings` — profile, provider consent, and data reset controls.
+- `/settings` — profile and goals; **Accounts** (Google connect/disconnect,
+  change password after re-entering the current one, set a password for
+  Google-only accounts, reset-link fallback); linked platforms; appearance;
+  data reset. `/login` offers "Forgot password?" which emails a link to
+  `/reset-password`.
 
 All merged views expose provider filters and use responsive layouts. Keyboard
 navigation, semantic buttons/anchors, focus visibility, and honest loading/error
@@ -1193,6 +1305,38 @@ calls the internal `POST /internal/coach/check-ins/refresh` endpoint with the
 shared service token for durable scheduled refreshes. The endpoint is not
 exposed to the browser.
 
+### Mentor tools
+
+| Method | Path                                            | Purpose |
+| ------ | ----------------------------------------------- | ------- |
+| `GET`  | `/api/problem-help/sessions`                    | List the learner's Doubt Helper sessions |
+| `POST` | `/api/problem-help/sessions`                    | Start a session and return the first hint or diagnosis |
+| `GET`  | `/api/problem-help/sessions/:sessionId`         | Read a session and its turns |
+| `POST` | `/api/problem-help/sessions/:sessionId/turns`   | `next_hint`, `submit_attempt`, `ask`, `request_solution`, `cancel_solution`, `confirm_solution`, `complete`, `abandon` with `expectedVersion` |
+| `GET`  | `/api/solutions`                                | Recent solution explorations |
+| `GET`  | `/api/solutions/access?problemUrl=&language=`   | Learner status and unlock reason for a problem |
+| `POST` | `/api/solutions/explore`                        | Generate or reuse an exploration |
+| `GET`  | `/api/upsolve`                                  | Queue, contests, completion summary, revisions due |
+| `PUT`  | `/api/upsolve/items/:provider/:externalId`      | Skip or restore a queue item |
+| `GET`  | `/api/revisions`                                | Revision schedule |
+| `POST` | `/api/revisions/:revisionId/review`             | `remembered` advances the interval; `struggled` resets it |
+| `GET`  | `/api/contest-analysis`                         | Contest list and cross-contest pattern metrics |
+| `GET`  | `/api/contest-analysis/:provider/:contestId`    | Contest metrics and cached narrative |
+| `POST` | `/api/contest-analysis/:provider/:contestId/narrative` | Write or reuse the contest narrative |
+| `POST` | `/api/contest-analysis/patterns/report`         | Write or reuse the cross-contest report |
+| `GET`  | `/api/progress-report`                          | Deterministic progress report and this week's narrative |
+| `POST` | `/api/progress-report/narrative`                | Write or reuse the weekly insight report |
+
+Stable errors: `PROBLEM_HELP_SESSION_NOT_FOUND` (404),
+`PROBLEM_HELP_INVALID_STATE`, `PROBLEM_HELP_STALE_VERSION`,
+`PROBLEM_HELP_SOLUTION_LOCKED`, `SOLUTION_LOCKED` (409),
+`PROBLEM_CONTEXT_UNAVAILABLE`, `PROBLEM_UNRESOLVED`,
+`NOT_ENOUGH_CONTEST_DATA` (422), `CONTEST_NOT_FOUND`, `REVISION_NOT_FOUND`
+(404), `MENTOR_AI_RATE_LIMITED` (429) and `MENTOR_AI_UNAVAILABLE` (503).
+Internal FastAPI endpoints: `POST /internal/mentor/problem-help`,
+`/internal/mentor/solutions`, `/internal/mentor/contest-analysis`,
+`/internal/mentor/contest-patterns` and `/internal/mentor/progress-narrative`.
+
 ### Progress, memory, consent, and deletion
 
 | Method   | Path                                     | Purpose                       |
@@ -1200,10 +1344,11 @@ exposed to the browser.
 | `GET`    | `/api/progress/history`                  | Manual progress history       |
 | `GET`    | `/api/progress/analytics`                | Progress conversion analytics |
 | `GET`    | `/api/learner-memories`                  | List learner memories         |
+| `POST`   | `/api/learner-memories`                  | Add active learner guidance   |
 | `PATCH`  | `/api/learner-memories/:memoryId`        | Edit/archive/restore memory   |
 | `POST`   | `/api/learner-memories/:memoryId/action` | Apply memory action           |
-| `GET`    | `/api/ai-consent`                        | Read AI-note consent          |
-| `PUT`    | `/api/ai-consent`                        | Update AI-note consent        |
+| `GET`    | `/api/ai-consent`                        | Read the always-on AI policy  |
+| `PUT`    | `/api/ai-consent`                        | Legacy compatibility endpoint |
 | `GET`    | `/api/me/data/status`                    | Deletion/status information   |
 | `DELETE` | `/api/me/data`                           | Cascade-delete learner data   |
 
@@ -1267,6 +1412,15 @@ Prisma owns the `core` schema. Important tables include:
 - `core.coach_preferences` and `core.coach_check_ins` — local weekly/event
   settings and in-app nudges with event keys, fallback labels, and read/
   dismissed state.
+- `core.problem_help_sessions` and `core.problem_help_turns` — Doubt Helper
+  identity, doubt, short attempt summary, stage, hint level, bug category and
+  the saved hint/answer text. Learner code, compiler output and pasted
+  statements are never stored.
+- `core.mentor_reports` — cached AI reports keyed by learner, kind and key
+  (`solution_exploration`, `contest_analysis`, `contest_patterns`,
+  `progress_narrative`) with a source hash for regeneration.
+- `core.upsolve_item_states` — skipped upsolve items.
+- `core.revision_items` — spaced revision stage and due date per problem.
 
 All provider rows retain provider identity and provenance. Unique constraints
 prevent duplicate provider/account/problem observations. Deletion cascades from
@@ -1366,12 +1520,15 @@ history deletion or full learner deletion.
 - AI receives bounded metadata and derived features, not raw provider pages or
   credentials.
 
-### Personalized coaching and memory consent
+### Personalized coaching and memory policy
 
-The `personalized-coaching-rag-v2` policy is broader than the earlier
-`phase9-progress-memory-v1` note-sharing policy. Existing older consent is not
-silently upgraded; the learner must choose again before new coach responses,
-AI-generated summaries, or proactive check-ins can run. While enabled, Express
+On 2026-09-24 the product decision changed personalized coaching and learner
+memory from an optional Settings consent to an always-on product capability.
+The `personalized-coaching-rag-v2` policy remains the disclosure and audit
+version, but missing, legacy, and previously disabled records resolve to the
+current enabled policy. A database migration appends that effective policy for
+existing accounts, including accounts that previously opted out. The browser
+no longer exposes a Coach and privacy toggle. While enabled, Express
 sends FastAPI only a bounded snapshot: profile/goals, deterministic roadmap and
 assessments, provider completeness, recent activity/contests/ratings,
 recommendation feedback, bookmarks/dismissals, reflections, up to five
@@ -1394,14 +1551,16 @@ if it is unavailable, Qwen receives supported images as vision input,
 audio/video through a transient Whisper transcription, and PDFs through bounded
 local text extraction. The attachment is used for that
 turn only and is never saved in conversation history, embeddings, or audits.
-Attachment analysis requires the existing AI consent and is not used for
-public-web search grounding. Audits retain model/version, latency,
+Attachment analysis follows the same always-on AI disclosure and is not used
+for public-web search grounding. Audits retain model/version, latency,
 token/cost metadata, conversation/learner ownership, and a keyed context
 fingerprint, never raw prompts or context snapshots. Action proposals are
 revalidated and applied only after an authenticated, idempotent `CONFIRM`.
-Disabling consent stops new coaching/check-ins and queues the existing AI
-cleanup flow for derived summaries, embeddings, and memories; safe chats and
-roadmap data remain until explicit deletion.
+The legacy AI-consent endpoint remains compatibility-only and cannot create a
+disabled effective policy. Provider-account and provider-activity consent are
+unchanged and still require explicit learner action. Learners retain review,
+correction, archive, and delete controls for memories, plus the existing
+cascade-delete flow for all learner data.
 
 ---
 
@@ -1651,10 +1810,10 @@ unique observed attempted and solved problems derived from owner-scoped manual
 statuses and permitted provider observations. These are lower bounds, not a
 mastery score or complete cross-provider history. Duplicate submissions do not
 inflate counts, manual status remains authoritative, and unknown or explicitly
-excluded topics are omitted. These history counts are sent to Gemini only under
-current `personalized-coaching-rag-v2` consent; without it, ranking continues
-without the extra learner-history payload. A consent or evidence change
-invalidates a cached recommendation batch so ranking can react appropriately.
+excluded topics are omitted. These history counts are sent to Gemini under the
+current always-on `personalized-coaching-rag-v2` policy. A policy or evidence
+change invalidates a cached recommendation batch so ranking can react
+appropriately.
 The AI service retrieves reference knowledge for candidate-relevant focus,
 preferred, and observed-attempt topics before lower-priority catalog topics;
 it does not scatter a retrieval query across every tag in the shortlist.
@@ -1714,7 +1873,7 @@ When the content changes, `describeActivityChange` writes a short factual note
 weak or strong topics, contest results) to `core.learner_activity_changes`
 and queues a `memory_generation` outbox job with evidence type
 `provider_activity`. The first digest produces a baseline note. The memory
-worker sends the note only under the current AI consent policy, as for other
+worker sends the note under the current always-on AI policy, as for other
 evidence. FastAPI accepts `provider_activity` as automatic-memory evidence and
 the memory prompt turns it into at most three durable memories (topic
 strengths or weaknesses, mistake patterns, difficulty calibration, contest
@@ -1931,6 +2090,13 @@ COACH_KNOWLEDGE_RAG_ENABLED=true
 COACH_WEB_GROUNDING_ENABLED=true
 COACH_WEB_GROUNDING_TIMEOUT_SECONDS=20
 INTERNAL_RATE_LIMIT_PER_MINUTE=120
+# Mentor tools. Blank provider: Gemini when LLM_API_KEY is set, else Groq
+# (capped by GROQ_MAX_COMPLETION_TOKENS). Blank model: LLM_MODEL/COACH_GROQ_MODEL.
+MENTOR_LLM_PROVIDER=
+MENTOR_MODEL=
+MENTOR_THINKING_LEVEL=low
+MENTOR_MAX_OUTPUT_TOKENS=16384
+MENTOR_TIMEOUT_SECONDS=110
 ```
 
 `INTERNAL_SERVICE_TOKEN` must match between core and AI when HTTP ranking is
@@ -2016,9 +2182,13 @@ npm run dev:provider-worker
 
 ### Supabase setup
 
-Configure email/password authentication, set the site URL to the frontend
-origin, and allow the exact `/dashboard` callback for local and production
-origins. Set `SUPABASE_JWT_ISSUER` to `<SUPABASE_URL>/auth/v1` in both APIs.
+Configure email/password authentication and the Google provider, set the site
+URL to the frontend origin, and allow the exact `/dashboard`, `/settings`, and
+`/reset-password` callbacks for local and production origins. Enable manual
+identity linking in Supabase Auth so an existing signed-in learner can connect
+Google from Settings. Password reset links return to `/reset-password` and
+update the password only after Supabase establishes a recovery session. Set
+`SUPABASE_JWT_ISSUER` to `<SUPABASE_URL>/auth/v1` in both APIs.
 
 ### Production deployment (Docker)
 
@@ -2223,6 +2393,17 @@ destructive reset against a shared database.
    evidence are environment-dependent and must not be claimed from local tests.
 8. Full problem content remains capability- and permission-dependent; premium
    and private material is metadata-and-link only.
+9. Mentor tools need a readable statement. Codeforces problem pages can return
+   `PROVIDER_BLOCKED` from some networks; the Doubt Helper then asks for the
+   pasted statement, and the Solution Explorer works from title and tags only.
+10. Contest analysis infers time use from submission timestamps. Only
+    Codeforces exposes the full contest problem list, so unattempted problems
+    are flagged for Codeforces contests only.
+11. Google sign-in and "Connect Google" require the Google provider (and manual
+    identity linking) to be enabled in the Supabase Dashboard, with
+    `/dashboard`, `/settings` and `/reset-password` on the redirect allowlist.
+12. `GET /api/coach/roadmap` rebuilds the plan on every read, so the Pathway
+    page can take several seconds for learners with large histories.
 
 ### Safe next work
 
@@ -2280,7 +2461,7 @@ and tests are updated together.
 | `packages/shared-contracts/src/learner-profile.ts`  | Onboarding answers and structured learner preferences                      |
 | `packages/shared-contracts/src/recommendations.ts`  | Candidate ranking, recommendation batches, feedback, dismissal             |
 | `packages/shared-contracts/src/progress.ts`         | Manual statuses, actions, reflections, timers, progress analytics          |
-| `packages/shared-contracts/src/learner-memory.ts`   | Memory records, evidence, lifecycle actions, AI consent                    |
+| `packages/shared-contracts/src/learner-memory.ts`   | Memory records, evidence, lifecycle actions, always-on AI policy           |
 | `packages/shared-contracts/src/coach.ts`            | Coach conversations, roadmap, action proposals, citations, and rich blocks |
 | `packages/shared-contracts/src/index.ts`            | Public package exports consumed by web and core API                        |
 
@@ -2536,7 +2717,7 @@ POST /api/recommendations/steering { text }
      -> ratingRange (explicit, "around", relative "harder/easier") or difficulty
      -> excludeProblems: titles from the current batch, recorded as dismissals
   -> core.recommendation_steering row (text, directives, applied summary)
-  -> with AI consent: learner memory (user_instruction) proposed + approved
+  -> under the always-on AI policy: learner memory (user_instruction) proposed + approved
   -> feed regenerated with forceRefresh and returned with the instruction
 GET /api/recommendations/steering        -> active instructions (newest first)
 DELETE /api/recommendations/steering/:id -> soft-remove, archive its memory

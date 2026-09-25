@@ -38,6 +38,7 @@ from .memory_models import (
     MemoryProcessResponse,
     MemoryProposalRequest,
     MemoryRetrievalResponse,
+    MemoryUserInputRequest,
     ReflectionGenerationOutput,
     StoredMemory,
 )
@@ -826,6 +827,46 @@ class MemoryService:
         return MemoryActionResponse(
             requestId=request.requestId,
             action="propose",
+            idempotent=not created,
+            memory=memory,
+            auditId=audit_id,
+        )
+
+    async def create_user_input(
+        self, learner_id: UUID, request: MemoryUserInputRequest
+    ) -> MemoryActionResponse:
+        """Persist learner-authored guidance as an active memory.
+
+        This path intentionally does not call a model: the learner supplies
+        the durable text and the service only applies the shared safety checks
+        before storing it owner-scoped.
+        """
+        cleaned = redact_text(request.statement, 500)
+        if (
+            not cleaned
+            or cleaned != request.statement
+            or contains_sensitive_text(cleaned)
+        ):
+            raise MemoryConflictError(
+                "A learner memory contains text that cannot be retained safely."
+            )
+        memory, created = await self.repository.create_user_memory(
+            learner_id,
+            memory_key=memory_key("user_instruction", cleaned),
+            statement=cleaned,
+            request_id=request.requestId,
+        )
+        if memory.status != "active":
+            restored = await self.repository.restore_memory(learner_id, memory.id)
+            if restored is None:
+                raise MemoryNotFoundError
+            memory = restored
+        audit_id = await self._save_control_audit(
+            request.requestId, learner_id, memory, "approve"
+        )
+        return MemoryActionResponse(
+            requestId=request.requestId,
+            action="approve",
             idempotent=not created,
             memory=memory,
             auditId=audit_id,

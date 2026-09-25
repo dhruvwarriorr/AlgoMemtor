@@ -18,6 +18,24 @@
         "dev:web"
       ],
       "port": 5173
+    },
+    {
+      "name": "core",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:core"
+      ],
+      "port": 3003
+    },
+    {
+      "name": "ai",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:ai"
+      ],
+      "port": 8000
     }
   ]
 }

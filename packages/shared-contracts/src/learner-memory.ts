@@ -71,6 +71,15 @@ export type CorrectLearnerMemoryRequest = z.infer<
   typeof CorrectLearnerMemoryRequestSchema
 >
 
+export const CreateLearnerMemoryRequestSchema = z
+  .object({
+    text: z.string().trim().min(1).max(500),
+  })
+  .strict()
+export type CreateLearnerMemoryRequest = z.infer<
+  typeof CreateLearnerMemoryRequestSchema
+>
+
 export const LearnerMemoryActionSchema = z.enum([
   'approve',
   'archive',

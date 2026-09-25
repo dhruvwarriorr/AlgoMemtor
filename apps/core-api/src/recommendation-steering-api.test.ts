@@ -83,6 +83,7 @@ afterEach(async () => {
 
 const memoryClient = () => {
   const proposed: { learnerId: string; statement: string }[] = []
+  const created: { learnerId: string; statement: string }[] = []
   const actions: { memoryId: string; action: string }[] = []
   const client: AiMemoryClient = {
     processEvidence: async () => ({ status: 'processed' }),
@@ -118,6 +119,31 @@ const memoryClient = () => {
         auditId: undefined,
       }
     },
+    createUserMemory: async (learnerId, requestId, statement) => {
+      created.push({ learnerId, statement })
+      return {
+        requestId,
+        action: 'approve',
+        idempotent: false,
+        memory: {
+          id: '00000000-0000-4000-8000-0000000000ac',
+          learnerId,
+          category: 'user_instruction',
+          statement,
+          structuredValue: {},
+          confidence: 1,
+          status: 'active',
+          evidenceIds: ['00000000-0000-4000-8000-0000000000bd'],
+          version: 1,
+          supersedesMemoryId: undefined,
+          learnerCorrected: false,
+          similarity: undefined,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        auditId: undefined,
+      }
+    },
     actOnMemory: async (_learnerId, memoryId, action) => {
       actions.push({ memoryId, action })
       return {
@@ -129,7 +155,7 @@ const memoryClient = () => {
       }
     },
   }
-  return { client, proposed, actions }
+  return { client, proposed, created, actions }
 }
 
 const startApp = (options: { memory?: AiMemoryClient; consent?: boolean }) => {
@@ -167,6 +193,39 @@ const steer = async (baseUrl: string, token: string, text: string) =>
   })
 
 describe('recommendation steering API', () => {
+  it('persists custom learner memory as active owner-scoped guidance', async () => {
+    const memory = memoryClient()
+    const baseUrl = startApp({ memory: memory.client })
+
+    const response = await fetch(`${baseUrl}/api/learner-memories`, {
+      method: 'POST',
+      headers: headers('user-a'),
+      body: JSON.stringify({ text: 'Prefer concise explanations.' }),
+    })
+
+    expect(response.status).toBe(201)
+    expect(await response.json()).toMatchObject({
+      data: {
+        category: 'user_instruction',
+        status: 'active',
+        text: 'Prefer concise explanations.',
+      },
+    })
+    expect(memory.created).toEqual([
+      {
+        learnerId: userA,
+        statement: 'Prefer concise explanations.',
+      },
+    ])
+
+    const invalid = await fetch(`${baseUrl}/api/learner-memories`, {
+      method: 'POST',
+      headers: headers('user-a'),
+      body: JSON.stringify({ text: '' }),
+    })
+    expect(invalid.status).toBe(400)
+  })
+
   it('applies a plain-language instruction and regenerates the feed', async () => {
     const baseUrl = startApp({})
     const before = RecommendationFeedResponseSchema.parse(

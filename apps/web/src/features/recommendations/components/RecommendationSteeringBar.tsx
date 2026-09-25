@@ -67,7 +67,7 @@ export function RecommendationSteeringBar() {
               : 'Saved as guidance for how your problems are ranked.',
             steering.savedToMemory
               ? 'Also saved to your coach memory.'
-              : 'Enable personalized coaching in Settings to also save it to memory.',
+              : 'Saved as recommendation guidance for this account.',
           ].join(' '),
           tone: 'success',
         })

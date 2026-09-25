@@ -47,6 +47,10 @@ model CoreUser {
   coachCheckIns          CoachCheckIn[]
   avatar                 UserAvatar?
   recommendationSteering RecommendationSteering[]
+  problemHelpSessions    ProblemHelpSession[]
+  mentorReports          MentorReport[]
+  upsolveItemStates      UpsolveItemState[]
+  revisionItems          RevisionItem[]
 
   @@map("users")
   @@schema("core")
@@ -839,5 +843,112 @@ model CoachCheckIn {
   @@index([userId, createdAt])
   @@index([userId, read])
   @@map("coach_check_ins")
+  @@schema("core")
+}
+
+// A guided Doubt Helper session for one problem. Learner source code,
+// compiler output and pasted statements are transient request data and are
+// never stored; only the doubt, a short attempt summary and the mentor's
+// hints are kept so the learner can resume.
+model ProblemHelpSession {
+  id                 String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId             String            @map("user_id") @db.Uuid
+  platform           String            @db.VarChar(32)
+  provider           String?           @db.VarChar(32)
+  externalId         String?           @map("external_id") @db.VarChar(128)
+  problemTitle       String            @map("problem_title") @db.VarChar(200)
+  canonicalUrl       String?           @map("canonical_url") @db.VarChar(2048)
+  topics             String[]          @default([])
+  language           String            @db.VarChar(64)
+  doubtType          String            @map("doubt_type") @db.VarChar(32)
+  attemptSummary     String            @map("attempt_summary") @db.VarChar(1000)
+  source             String            @db.VarChar(16)
+  stage              String            @db.VarChar(32)
+  hintLevel          Int               @default(0) @map("hint_level")
+  bugCategory        String?           @map("bug_category") @db.VarChar(32)
+  version            Int               @default(1)
+  solutionRevealedAt DateTime?         @map("solution_revealed_at") @db.Timestamptz(3)
+  completedAt        DateTime?         @map("completed_at") @db.Timestamptz(3)
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user               CoreUser          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  turns              ProblemHelpTurn[]
+
+  @@index([userId, updatedAt])
+  @@index([userId, provider, externalId])
+  @@map("problem_help_sessions")
+  @@schema("core")
+}
+
+model ProblemHelpTurn {
+  id        String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId String             @map("session_id") @db.Uuid
+  role      String             @db.VarChar(16)
+  kind      String             @db.VarChar(16)
+  hintLevel Int?               @map("hint_level")
+  content   String             @db.Text
+  createdAt DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  session   ProblemHelpSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@map("problem_help_turns")
+  @@schema("core")
+}
+
+// Cached AI-written reports (solution explorations, contest analyses,
+// progress reports). `source_hash` detects when the evidence behind a report
+// changed so it is regenerated only when needed.
+model MentorReport {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  kind        String   @db.VarChar(32)
+  reportKey   String   @map("report_key") @db.VarChar(256)
+  sourceHash  String   @map("source_hash") @db.VarChar(64)
+  payload     Json     @db.JsonB
+  generatedAt DateTime @default(now()) @map("generated_at") @db.Timestamptz(3)
+  user        CoreUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind, reportKey])
+  @@index([userId, kind, generatedAt])
+  @@map("mentor_reports")
+  @@schema("core")
+}
+
+// A learner's choice to skip a contest problem in the upsolve queue.
+model UpsolveItemState {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  provider   String   @db.VarChar(32)
+  externalId String   @map("external_id") @db.VarChar(128)
+  state      String   @db.VarChar(16)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user       CoreUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider, externalId])
+  @@map("upsolve_item_states")
+  @@schema("core")
+}
+
+// Spaced revision of upsolved or helped problems.
+model RevisionItem {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  provider       String    @db.VarChar(32)
+  externalId     String    @map("external_id") @db.VarChar(128)
+  title          String    @db.VarChar(512)
+  canonicalUrl   String    @map("canonical_url") @db.VarChar(2048)
+  topics         String[]  @default([])
+  source         String    @db.VarChar(16)
+  stage          Int       @default(0)
+  dueAt          DateTime  @map("due_at") @db.Timestamptz(3)
+  lastReviewedAt DateTime? @map("last_reviewed_at") @db.Timestamptz(3)
+  completedAt    DateTime? @map("completed_at") @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user           CoreUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider, externalId])
+  @@index([userId, completedAt, dueAt])
+  @@map("revision_items")
   @@schema("core")
 }

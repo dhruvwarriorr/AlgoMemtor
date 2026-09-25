@@ -40,9 +40,18 @@ function requireSiteOrigin(value: string): string {
   return url.origin
 }
 
-export const authRedirectUrl = new URL(
-  '/dashboard',
-  requireSiteOrigin(siteUrl),
+const siteOrigin = requireSiteOrigin(siteUrl)
+
+export const authRedirectUrl = new URL('/dashboard', siteOrigin).toString()
+
+export const authRecoveryRedirectUrl = new URL(
+  '/reset-password',
+  siteOrigin,
+).toString()
+
+export const authSettingsRedirectUrl = new URL(
+  '/settings',
+  siteOrigin,
 ).toString()
 
 export const supabase = createClient(supabaseUrl, supabasePublishableKey)

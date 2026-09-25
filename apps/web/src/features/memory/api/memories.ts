@@ -1,5 +1,6 @@
 import {
   CorrectLearnerMemoryRequestSchema,
+  CreateLearnerMemoryRequestSchema,
   LearnerMemoriesResponseSchema,
   LearnerMemorySchema,
   type LearnerMemoriesResponse,
@@ -13,6 +14,7 @@ import {
   type LearnerMemoryAction,
 } from '../contracts'
 import type { CorrectLearnerMemoryRequest } from '../contracts'
+import type { CreateLearnerMemoryRequest } from '../contracts'
 
 type AiMemoryWire = {
   id: unknown
@@ -120,6 +122,17 @@ export function fetchLearnerMemories({
     authentication: 'required',
     schema: memoryListSchema,
     signal,
+  })
+}
+
+export function createLearnerMemory(input: CreateLearnerMemoryRequest) {
+  const validatedInput = CreateLearnerMemoryRequestSchema.parse(input)
+  return requestJson<MemoryActionResponse>('/api/learner-memories', {
+    authentication: 'required',
+    body: JSON.stringify(validatedInput),
+    headers: { 'content-type': 'application/json' },
+    method: 'POST',
+    schema: memoryActionSchema,
   })
 }
 

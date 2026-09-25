@@ -4,10 +4,14 @@ import { useAuth } from '@/features/auth/useAuth'
 
 import {
   actOnLearnerMemory,
+  createLearnerMemory,
   correctLearnerMemory,
   fetchLearnerMemories,
 } from '../api/memories'
-import type { CorrectLearnerMemoryRequest } from '../contracts'
+import type {
+  CorrectLearnerMemoryRequest,
+  CreateLearnerMemoryRequest,
+} from '../contracts'
 
 export const learnerMemoriesQueryKey = (authUserId: string) =>
   ['learner-memories', authUserId] as const
@@ -42,6 +46,16 @@ export function useLearnerMemoryAction() {
       memoryId: string
       action: 'approve' | 'archive' | 'restore' | 'delete'
     }) => actOnLearnerMemory(memoryId, action),
+    onSuccess: invalidate,
+  })
+}
+
+export function useCreateLearnerMemory() {
+  const invalidate = useInvalidateMemories()
+
+  return useMutation({
+    mutationFn: (input: CreateLearnerMemoryRequest) =>
+      createLearnerMemory(input),
     onSuccess: invalidate,
   })
 }

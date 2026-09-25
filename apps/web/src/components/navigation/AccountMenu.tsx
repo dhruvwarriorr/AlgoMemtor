@@ -164,7 +164,10 @@ function AccountMenu() {
           </div>
 
           {accountMenuGroups.map((group) => (
-            <div className="p-1" key={group.label}>
+            <div
+              className={cn('p-1', group.tall && 'sm:row-span-2')}
+              key={group.label}
+            >
               <p className="px-2.5 pt-1 pb-2 text-sm font-semibold text-foreground">
                 {group.label}
               </p>

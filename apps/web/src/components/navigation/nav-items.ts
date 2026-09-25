@@ -1,12 +1,16 @@
 import {
   BarChart3,
+  BookOpen,
   Bookmark,
   Brain,
+  Crosshair,
   LayoutGrid,
   Lightbulb,
   ListChecks,
+  Route,
   Settings,
   Sparkles,
+  Swords,
   TrendingUp,
   Trophy,
   UserRound,
@@ -28,6 +32,7 @@ export type AccountMenuItem = AppNavItem & {
 export const topNavItems: ReadonlyArray<AppNavItem> = [
   { label: 'Dashboard', to: '/dashboard', icon: LayoutGrid },
   { label: 'Coach', to: '/coach', icon: Sparkles },
+  { label: 'Pathway', to: '/pathway', icon: Route },
   { label: 'Recommendations', to: '/recommendations', icon: Lightbulb },
   { label: 'Progress', to: '/progress', icon: TrendingUp },
   { label: 'Insights', to: '/analytics', icon: BarChart3 },
@@ -36,8 +41,46 @@ export const topNavItems: ReadonlyArray<AppNavItem> = [
 // Everything else lives in the profile dropdown.
 export const accountMenuGroups: ReadonlyArray<{
   label: string
+  // Spans two rows so shorter groups stack beside it.
+  tall?: boolean
   items: ReadonlyArray<AccountMenuItem>
 }> = [
+  {
+    label: 'Mentor tools',
+    tall: true,
+    items: [
+      {
+        label: 'Doubt Helper',
+        to: '/doubt-helper',
+        icon: Crosshair,
+        chip: 'bg-[#f97316] text-[#2a1203]',
+      },
+      {
+        label: 'Solution Explorer',
+        to: '/solutions',
+        icon: BookOpen,
+        chip: 'bg-[#a78bfa] text-[#1e1038]',
+      },
+      {
+        label: 'Upsolve',
+        to: '/upsolve',
+        icon: Swords,
+        chip: 'bg-[#f43f5e] text-[#2b050d]',
+      },
+      {
+        label: 'Contest analysis',
+        to: '/contest-analysis',
+        icon: Trophy,
+        chip: 'bg-[#facc15] text-[#2a2203]',
+      },
+      {
+        label: 'Progress report',
+        to: '/progress/report',
+        icon: TrendingUp,
+        chip: 'bg-[#14b8a6] text-[#032522]',
+      },
+    ],
+  },
   {
     label: 'Keep practicing',
     items: [

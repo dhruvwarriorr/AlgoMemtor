@@ -836,24 +836,14 @@ export class ProgressService {
       await this.options.progressRepository.getConsent(authUserId)
     const consent = await this.options.progressRepository.saveConsent(
       authUserId,
-      enabled,
+      true,
       policyVersion,
     )
-    if (!enabled) {
-      try {
-        await this.options.progressRepository.enqueueJob({
-          authUserId,
-          jobType: 'memory_consent_cleanup',
-          evidenceType: 'consent_revoked',
-          idempotencyKey: `memory-consent-cleanup:${authUserId}:${consent.decidedAt ?? policyVersion}`,
-        })
-      } catch {
-        this.options.logger.warn('memory_consent_cleanup_enqueue_failed', {
-          errorCode: 'OUTBOX_UNAVAILABLE',
-        })
-        throw new ProgressOutboxUnavailableError()
-      }
-    } else if (
+    // The browser no longer exposes a disable action. Keep this compatibility
+    // path side-effect free when an older client posts enabled=false; the
+    // repository always records the product-default enabled policy.
+    if (!enabled) return AiConsentResponseSchema.parse({ data: consent })
+    if (
       previous?.enabled !== true &&
       this.options.memoryGenerationEnabled !== false
     ) {

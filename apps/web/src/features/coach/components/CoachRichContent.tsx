@@ -315,6 +315,10 @@ export function RichBlock({
       </section>
     )
   }
+  if (block.type === 'feature_redirect') {
+    // Rendered inline under the answer by the Coach thread.
+    return null
+  }
   if (block.type === 'web_problem_list') {
     return (
       <section className="rounded-lg border border-border bg-background p-4">

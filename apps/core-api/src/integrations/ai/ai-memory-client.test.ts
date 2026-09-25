@@ -66,6 +66,47 @@ describe('HTTP AI memory client', () => {
     ).resolves.toHaveLength(1)
   })
 
+  it('sends learner-authored memory input to the dedicated AI route', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json({
+          requestId: 'memory-input-1',
+          action: 'approve',
+          idempotent: false,
+          memory: {
+            ...memory,
+            category: 'user_instruction',
+            statement: 'Prefer concise explanations.',
+            confidence: 1,
+            status: 'active',
+          },
+        }),
+      ),
+    )
+
+    const response = await client().createUserMemory(
+      learnerId,
+      'memory-input-1',
+      'Prefer concise explanations.',
+    )
+
+    expect(response.memory?.status).toBe('active')
+    expect(response.memory?.category).toBe('user_instruction')
+    expect(vi.mocked(fetch).mock.calls[0]?.[0]).toEqual(
+      new URL(
+        `/internal/learners/${learnerId}/memories/user-input`,
+        'https://ai.example.com',
+      ),
+    )
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toEqual(
+      {
+        requestId: 'memory-input-1',
+        statement: 'Prefer concise explanations.',
+      },
+    )
+  })
+
   it('accepts a delete response without a memory or audit ID', async () => {
     vi.stubGlobal(
       'fetch',

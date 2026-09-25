@@ -34,6 +34,8 @@ import {
 } from './leetcode-schemas.js'
 import { createLeetCodeProblemUrl } from './leetcode-url.js'
 
+const leetcodeSlugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)+$/
+
 export type LeetCodeProviderOptions = {
   baseUrl?: string
   cacheTtlMs?: number
@@ -259,6 +261,11 @@ export class LeetCodeProvider implements ProblemProvider {
         await this.search({}, request)
         titleSlug = this.titleSlugByExternalId.get(externalId)
         isPaidOnly = this.paidOnlyByExternalId.get(externalId)
+      }
+      // Recent contest problems can be missing from the bounded catalog; a
+      // validated slug is itself a question identifier the API accepts.
+      if (titleSlug === undefined && leetcodeSlugPattern.test(externalId)) {
+        titleSlug = externalId
       }
       if (titleSlug === undefined) {
         return { content: null, freshness: this.getHealth(), warnings: [] }

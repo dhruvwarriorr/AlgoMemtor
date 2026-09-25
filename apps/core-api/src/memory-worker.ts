@@ -224,12 +224,10 @@ export class MemoryWorker {
       return
     }
     if (job.jobType === 'memory_consent_cleanup') {
-      await this.options.client.deleteLearnerData(
-        job.authUserId,
-        job.idempotencyKey,
-        'consent_revoked',
-      )
-      await this.options.aiCoachClient?.deleteLearnerAudits?.(job.authUserId)
+      // Personalized coaching is now always on. Complete cleanup jobs queued
+      // by the retired opt-out flow without deleting data after migration;
+      // learner-requested deletion still uses learner_data_deletion and is
+      // handled above.
       return
     }
     if (job.jobType === 'problem_data_deletion') {

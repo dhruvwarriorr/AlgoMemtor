@@ -330,6 +330,26 @@ body {
   border: 1px solid var(--border);
 }
 
+/* Settings/profile cover: a restrained brand field that gives the avatar a
+ * clear visual anchor without introducing a second illustration system. */
+@utility profile-cover {
+  background-color: var(--sky-deep);
+  background-image:
+    linear-gradient(115deg, rgb(2 132 199 / 0.92), rgb(3 105 161 / 0.75)),
+    radial-gradient(rgb(255 255 255 / 0.24) 1px, transparent 1px);
+  background-size:
+    auto,
+    18px 18px;
+  box-shadow: inset 0 -1px 0 rgb(255 255 255 / 0.16);
+
+  .dark & {
+    background-color: #082f49;
+    background-image:
+      linear-gradient(115deg, rgb(3 105 161 / 0.88), rgb(12 74 110 / 0.78)),
+      radial-gradient(rgb(255 255 255 / 0.16) 1px, transparent 1px);
+  }
+}
+
 /* Soft ambient glow blob used behind hero and empty states, tinted with
  * the sky accent so it reads at home on the flat surface. */
 @utility cloud {

@@ -16,6 +16,10 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 
 import { Prisma, type PrismaClient } from '../generated/prisma/client.js'
+import {
+  AI_CONSENT_POLICY_VERSION,
+  alwaysOnAiConsent,
+} from '../services/ai-consent-policy.js'
 
 const authUserIdSchema = z.uuid()
 const identifierSchema = z.uuid()
@@ -480,7 +484,11 @@ export class InMemoryProgressRepository implements ProgressRepository {
   async getConsent(authUserId: string) {
     const owner = parseAuthUserId(authUserId)
     const value = this.consents.get(owner)
-    return value === undefined ? null : AiConsentSchema.parse(value)
+    return value === undefined
+      ? alwaysOnAiConsent()
+      : alwaysOnAiConsent(
+          value.decidedAt === undefined ? undefined : new Date(value.decidedAt),
+        )
   }
 
   async saveConsent(
@@ -489,11 +497,9 @@ export class InMemoryProgressRepository implements ProgressRepository {
     policyVersion: string,
   ) {
     const owner = parseAuthUserId(authUserId)
-    const value = AiConsentSchema.parse({
-      enabled,
-      policyVersion,
-      decidedAt: this.now().toISOString(),
-    })
+    void enabled
+    void policyVersion
+    const value = alwaysOnAiConsent(this.now())
     this.consents.set(owner, value)
     return value
   }
@@ -1226,18 +1232,14 @@ export class PrismaProgressRepository implements ProgressRepository {
       where: { authUserId: owner },
       select: { id: true },
     })
-    if (user === null) return null
+    if (user === null) return alwaysOnAiConsent()
     const record = await this.prisma.learnerAiConsent.findFirst({
       where: { userId: user.id },
       orderBy: { occurredAt: 'desc' },
     })
     return record === null
-      ? null
-      : AiConsentSchema.parse({
-          enabled: record.enabled,
-          policyVersion: record.policyVersion,
-          decidedAt: record.occurredAt.toISOString(),
-        })
+      ? alwaysOnAiConsent()
+      : alwaysOnAiConsent(record.occurredAt)
   }
 
   async saveConsent(
@@ -1246,17 +1248,19 @@ export class PrismaProgressRepository implements ProgressRepository {
     policyVersion: string,
   ) {
     const owner = parseAuthUserId(authUserId)
+    void enabled
+    void policyVersion
     const record = await this.prisma.$transaction(async (transaction) => {
       const user = await databaseUser(transaction, owner)
       return transaction.learnerAiConsent.create({
-        data: { userId: user.id, enabled, policyVersion },
+        data: {
+          userId: user.id,
+          enabled: true,
+          policyVersion: AI_CONSENT_POLICY_VERSION,
+        },
       })
     })
-    return AiConsentSchema.parse({
-      enabled: record.enabled,
-      policyVersion: record.policyVersion,
-      decidedAt: record.occurredAt.toISOString(),
-    })
+    return alwaysOnAiConsent(record.occurredAt)
   }
 
   async enqueueJob(input: Parameters<ProgressRepository['enqueueJob']>[0]) {

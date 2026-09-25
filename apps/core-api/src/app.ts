@@ -10,6 +10,7 @@ import {
   DeleteAllDataResponseSchema,
   DeleteAllDataStatusResponseSchema,
   CorrectLearnerMemoryRequestSchema,
+  CreateLearnerMemoryRequestSchema,
   DisconnectProviderAccountResponseSchema,
   ExternalProblemCatalogQueryParamsSchema,
   LearnerProfileResponseSchema,
@@ -285,6 +286,13 @@ import {
   COACH_POLICY_VERSION,
 } from './services/coach-service.js'
 import { serializeProviderAccount } from './services/provider-account-service.js'
+import { MentorService } from './services/mentor-service.js'
+import { registerMentorRoutes } from './mentor-routes.js'
+import type { MentorRepository } from './repositories/mentor-repository.js'
+import {
+  UnavailableAiMentorClient,
+  type AiMentorClient,
+} from './integrations/ai/ai-mentor-client.js'
 import {
   structuredLogger,
   type StructuredLogger,
@@ -325,6 +333,11 @@ export type CreateAppOptions = {
   aiMemoryClient?: AiMemoryClient
   aiCoachClient?: AiCoachClient
   aiRoadmapNoteClient?: AiRoadmapNoteClient
+  // Mentor tools (Doubt Helper, Solution Explorer, Upsolve, Contest
+  // Analysis, Progress Report). Routes and Coach redirects to them are only
+  // enabled when a repository is supplied.
+  mentorRepository?: MentorRepository
+  aiMentorClient?: AiMentorClient
   coachRepository?: CoachRepository
   recommendationSteeringRepository?: RecommendationSteeringRepository
   internalServiceToken?: string
@@ -954,6 +967,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
     aiRoadmapNoteClient,
     logger,
     memoryGenerationEnabled: process.env.MEMORY_GENERATION_ENABLED !== 'false',
+    featureRouting: options.mentorRepository !== undefined,
     problemContent: async (provider, externalId) =>
       (await catalogService.getProblemContent(provider, externalId))?.content ??
       null,
@@ -3409,6 +3423,57 @@ export const createApp = (options: CreateAppOptions = {}) => {
     },
   )
 
+  app.post(
+    '/api/learner-memories',
+    requireAuthenticated,
+    async (request, response) => {
+      if (!progressEnabled || !memoryManagementEnabled) {
+        featureNotEnabled(response)
+        return
+      }
+      const input = CreateLearnerMemoryRequestSchema.safeParse(request.body)
+      if (!input.success) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'INVALID_MEMORY_INPUT',
+              'Learner memory text must be between 1 and 500 characters.',
+              { details: input.error.issues },
+            ),
+          )
+        return
+      }
+      const createUserMemory = aiMemoryClient.createUserMemory
+      if (createUserMemory === undefined) {
+        respondWithMemoryError(
+          new AiMemoryClientError('AI_MEMORY_NOT_CONFIGURED'),
+          response,
+        )
+        return
+      }
+      try {
+        const ownerId = authenticatedSubject(response)
+        const result = await createUserMemory.call(
+          aiMemoryClient,
+          ownerId,
+          response.locals.requestId as string,
+          input.data.text,
+        )
+        if (result.memory === undefined) {
+          throw new AiMemoryClientError('AI_MEMORY_INVALID_RESPONSE')
+        }
+        recommendationService.invalidateForLearner(ownerId)
+        await persistMemoryInvalidation(ownerId)
+        response.status(201).json({
+          data: publicLearnerMemory(result.memory, ownerId),
+        })
+      } catch (error) {
+        if (!respondWithMemoryError(error, response)) throw error
+      }
+    },
+  )
+
   app.get(
     '/api/coach/conversations',
     requireAuthenticated,
@@ -4036,21 +4101,27 @@ export const createApp = (options: CreateAppOptions = {}) => {
         )
         return
       }
+      if (!input.data.enabled) {
+        response
+          .status(400)
+          .json(
+            createApiError(
+              'AI_COACHING_ALWAYS_ON',
+              'Personalized AI coaching and learner memory are always enabled. Use the memory controls or data reset to remove learner data.',
+            ),
+          )
+        return
+      }
       if (input.data.policyVersion !== COACH_POLICY_VERSION) {
         response
           .status(400)
           .json(
             createApiError(
               'AI_CONSENT_POLICY_VERSION_REQUIRED',
-              'Review the current personalized coaching consent before enabling AI features.',
+              'The personalized coaching policy version is outdated. Refresh and try again.',
             ),
           )
         return
-      }
-      if (!input.data.enabled) {
-        await coachService.clearDerivedConversationSummaries(
-          authenticatedSubject(response),
-        )
       }
       response.json(
         await progressService.saveConsent(
@@ -5260,6 +5331,26 @@ export const createApp = (options: CreateAppOptions = {}) => {
       }
     },
   )
+
+  if (options.mentorRepository !== undefined) {
+    registerMentorRoutes(app, {
+      requireAuthenticated,
+      subject: authenticatedSubject,
+      service: new MentorService({
+        repository: options.mentorRepository,
+        aiMentorClient:
+          options.aiMentorClient ?? new UnavailableAiMentorClient(),
+        aiMemoryClient,
+        learnerProfile: (authUserId) =>
+          learnerProfileRepository.findByAuthUserId(authUserId),
+        roadmap: (authUserId) => coachService.getStoredRoadmap(authUserId),
+        problemContent: async (provider, externalId) =>
+          (await catalogService.getProblemContent(provider, externalId))
+            ?.content ?? null,
+        logger,
+      }),
+    })
+  }
 
   app.use(
     (

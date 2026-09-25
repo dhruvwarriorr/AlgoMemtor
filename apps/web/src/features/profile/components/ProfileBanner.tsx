@@ -29,33 +29,44 @@ export function ProfileBanner({
     : []
 
   return (
-    <section className="sky-surface flex flex-col gap-5 rounded-xl p-6 sm:flex-row sm:items-end sm:justify-between sm:p-8">
-      <span
+    <section className="overflow-hidden rounded-xl border border-border bg-card shadow-soft">
+      <div
         aria-hidden="true"
-        className="cloud animate-drift -top-8 right-10 w-80 opacity-80"
-      />
-      <div className="flex min-w-0 items-center gap-4 sm:gap-5">
-        <UserAvatar className="size-16 text-2xl ring-4 ring-white/70 sm:size-20 sm:text-3xl dark:ring-white/10" />
-        <div className="min-w-0">
-          <p className="truncate font-heading text-2xl font-bold tracking-[-0.01em] sm:text-3xl">
-            {identity.name}
-          </p>
-          <p className="truncate text-sm opacity-75">{email ?? 'Signed in'}</p>
-          {chips.length ? (
-            <ul className="mt-3 flex flex-wrap gap-1.5">
-              {chips.map((chip) => (
-                <li
-                  className="rounded-md bg-white/75 px-3 py-1 text-xs font-medium text-[#101012] backdrop-blur dark:bg-white/10 dark:text-[#f4f1ea]"
-                  key={chip}
-                >
-                  {chip}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
+        className="profile-cover relative h-28 overflow-hidden sm:h-36"
+      >
+        <span className="absolute -top-12 right-[8%] size-44 rounded-full border border-white/20" />
+        <span className="absolute -right-10 -bottom-28 size-56 rounded-full border border-white/15" />
       </div>
-      {action ? <div className="shrink-0">{action}</div> : null}
+
+      <div className="relative px-5 pb-6 sm:px-8 sm:pb-8">
+        <div className="-mt-10 flex flex-col gap-5 sm:-mt-12 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-end sm:gap-5">
+            <UserAvatar className="size-20 shrink-0 border-4 border-card text-3xl shadow-soft sm:size-24 sm:text-4xl" />
+            <div className="min-w-0 pb-0.5 sm:pb-1">
+              <p className="truncate font-heading text-2xl font-bold tracking-[-0.01em] text-foreground sm:text-3xl">
+                {identity.name}
+              </p>
+              <p className="mt-0.5 truncate text-sm text-muted-foreground">
+                {email ?? 'Signed in'}
+              </p>
+            </div>
+          </div>
+          {action ? <div className="shrink-0 sm:pb-1">{action}</div> : null}
+        </div>
+
+        {chips.length ? (
+          <ul className="mt-5 flex flex-wrap gap-2 border-t border-border pt-5">
+            {chips.map((chip) => (
+              <li
+                className="rounded-md border border-border bg-muted/55 px-2.5 py-1 text-xs font-medium text-foreground"
+                key={chip}
+              >
+                {chip}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
     </section>
   )
 }

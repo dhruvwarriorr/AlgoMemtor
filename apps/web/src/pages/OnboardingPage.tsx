@@ -7,7 +7,6 @@ import { useNotification } from '@/app/useNotification'
 import { learnerProfileErrorMessage } from '@/features/profile/api/learner-profile'
 import { LearnerProfileForm } from '@/features/profile/components/LearnerProfileForm'
 import { ProviderAccountLinks } from '@/features/profile/components/ProviderAccountLinks'
-import { AiNoteConsentCard } from '@/features/profile/components/AiNoteConsentCard'
 import {
   useLearnerProfile,
   useSaveLearnerProfile,
@@ -60,7 +59,19 @@ function OnboardingPage() {
         submitLabel="Complete setup"
       />
       <ProviderAccountLinks idPrefix="onboarding" />
-      <AiNoteConsentCard />
+      <aside
+        aria-label="Personalized coaching disclosure"
+        className="mt-6 rounded-xl border border-border bg-card p-4 sm:p-5"
+      >
+        <p className="text-sm font-semibold text-foreground">
+          Personalized coaching is part of AlgoMemtor
+        </p>
+        <p className="mt-1 text-sm leading-6 text-muted-foreground">
+          AlgoMemtor uses Google Gemini to turn your profile, progress, and
+          eligible learner notes into coaching and memory suggestions. It never
+          sends passwords or credentials.
+        </p>
+      </aside>
     </PageContainer>
   )
 }

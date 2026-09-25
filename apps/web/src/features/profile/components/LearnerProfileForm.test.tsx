@@ -88,6 +88,27 @@ describe('LearnerProfileForm', () => {
     expect(markup).toContain('maxLength="500"')
   })
 
+  it('shows one note field in settings and includes both saved notes', () => {
+    const profile = LearnerProfileSchema.parse({
+      ...savedProfile,
+      additionalConsiderations: 'Keep weekday practice short.',
+    })
+    const markup = renderToStaticMarkup(
+      <LearnerProfileForm
+        {...baseProps}
+        combinePracticeNotes
+        initialProfile={profile}
+      />,
+    )
+
+    expect(markup).toContain('Practice preferences and considerations')
+    expect(markup).toContain(
+      'Prefer short graph problems.\n\nKeep weekday practice short.',
+    )
+    expect(markup).not.toContain('Other practice considerations')
+    expect(markup.match(/<textarea/g)).toHaveLength(1)
+  })
+
   it('renders saving, success, and save-error feedback states', () => {
     const markup = renderToStaticMarkup(
       <LearnerProfileForm

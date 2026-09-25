@@ -461,6 +461,33 @@ export type CoachWebProblemListBlock = z.infer<
   typeof CoachWebProblemListBlockSchema
 >
 
+// Dedicated AlgoMemtor sections that live outside the Coach chat.
+export const MentorFeatureSchema = z.enum([
+  'doubt_helper',
+  'solution_explorer',
+  'upsolve',
+  'contest_analysis',
+  'progress_report',
+  'pathway',
+])
+export type MentorFeature = z.infer<typeof MentorFeatureSchema>
+
+// Sends the learner to a dedicated section. The browser maps `feature` to a
+// known in-app route; only a validated public problem URL may be carried.
+export const CoachFeatureRedirectBlockSchema = z
+  .object({
+    type: z.literal('feature_redirect'),
+    feature: MentorFeatureSchema,
+    title: nonEmptyStringSchema.max(120),
+    description: nonEmptyStringSchema.max(360),
+    actionLabel: nonEmptyStringSchema.max(60),
+    problemUrl: coachHttpsUrlSchema.optional(),
+  })
+  .strict()
+export type CoachFeatureRedirectBlock = z.infer<
+  typeof CoachFeatureRedirectBlockSchema
+>
+
 export const CoachRichBlockSchema = z.discriminatedUnion('type', [
   CoachMetricBlockSchema,
   CoachChartBlockSchema,
@@ -468,6 +495,7 @@ export const CoachRichBlockSchema = z.discriminatedUnion('type', [
   CoachComparisonTableBlockSchema,
   CoachProblemListBlockSchema,
   CoachWebProblemListBlockSchema,
+  CoachFeatureRedirectBlockSchema,
 ])
 export type CoachRichBlock = z.infer<typeof CoachRichBlockSchema>
 

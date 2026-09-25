@@ -39,6 +39,7 @@ import { RadialRings } from '@/components/motion/RadialRings'
 import PageContainer from '@/components/layout/PageContainer'
 import { CellTooltip } from '@/components/ui/cell-tooltip'
 import PageHeader from '@/components/layout/PageHeader'
+import { buttonVariants } from '@/components/ui/button'
 import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { useLearnerMemories } from '@/features/memory/hooks/useLearnerMemories'
@@ -821,6 +822,11 @@ function ProgressPage() {
   return (
     <PageContainer>
       <PageHeader
+        action={
+          <Link className={buttonVariants()} to="/progress/report">
+            Open progress report
+          </Link>
+        }
         description="Your last 30 days of practice: where, what, how well and when."
         title="Progress"
       />

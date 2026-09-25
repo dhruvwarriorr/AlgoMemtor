@@ -1,15 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import type {
-  CoachManualTopicStatus,
-  CoachRoadmapLane,
-  ImprovementTopic,
-  ProviderKey,
-  RoadmapPlatformRefresh,
-  RoadmapRefreshReason,
-} from '@algomemtor/shared-contracts'
+import type { ProviderKey } from '@algomemtor/shared-contracts'
 import {
   ArrowDown,
+  ArrowRight,
   ArrowUp,
   Bell,
   BookOpen,
@@ -19,7 +13,6 @@ import {
   Lock,
   Crosshair,
   LoaderCircle,
-  Map as MapIcon,
   MessageCircle,
   Paperclip,
   Pencil,
@@ -30,7 +23,6 @@ import {
   SlidersHorizontal,
   Sparkles,
   Trash2,
-  Trophy,
   X,
   type IconComponent,
 } from '@/components/icons/algo-icons'
@@ -40,11 +32,10 @@ import PageHeader from '@/components/layout/PageHeader'
 import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { useUserIdentity } from '@/features/auth/user-identity'
-import { Button, buttonVariants } from '@/components/ui/button'
+import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
 import { AiLoader, type AiLoaderStep } from '@/components/motion/AiLoader'
 import { useNotification } from '@/app/useNotification'
-import { useAiConsent } from '@/features/profile/hooks/useLearnerSettings'
 import {
   useCoachCheckIns,
   useCoachConversation,
@@ -55,53 +46,29 @@ import {
   useCreateCoachConversation,
   useDeleteCoachConversation,
   useMarkCoachCheckIn,
-  useRefreshCoachRoadmap,
   useRenameCoachConversation,
   useSaveCoachPreferences,
   useSendCoachMessage,
-  useSetCoachTopicStatus,
-  useSubmitCoachRoadmapNote,
 } from '@/features/coach/hooks'
-import { AI_POLICY_VERSION } from '@/features/profile/components/AiNoteConsentCard'
 import { cn } from '@/lib/utils'
 import { CoachAnswerPanel } from '@/features/coach/components/CoachAnswerPanel'
 import {
   answerDetails,
   answerDetailsSummary,
   coachCodeBlockId,
+  featureRedirects,
 } from '@/features/coach/answer-details'
+import {
+  mentorToolPath,
+  mentorTools,
+  orderedMentorTools,
+} from '@/features/mentor/feature-routes'
 import { CoachMessageContent } from '@/features/coach/components/CoachMessageContent'
 import { CoachStatStrip } from '@/features/coach/components/CoachInsights'
 import {
   useDismissProblem,
   useRecommendationDismissals,
 } from '@/features/recommendations/hooks/useRecommendations'
-
-const laneLabels: Record<CoachRoadmapLane, string> = {
-  current_focus: 'Current focus',
-  needs_more_practice: 'Needs more practice',
-  recommended_next: 'Recommended next',
-  practiced_comfortable: 'Practiced / comfortable',
-  revisit_later: 'Revisit later',
-  skipped: 'Skipped',
-}
-
-const statusLabels: Record<CoachManualTopicStatus, string> = {
-  working_on: 'Working on',
-  practiced: 'Practiced',
-  completed: 'Completed',
-  revisit: 'Revisit later',
-  skip_for_now: 'Skip for now',
-}
-
-const statusOptions = Object.keys(statusLabels) as CoachManualTopicStatus[]
-
-const providerLabels: Record<ProviderKey, string> = {
-  codeforces: 'Codeforces',
-  codechef: 'CodeChef',
-  leetcode: 'LeetCode',
-  cses: 'CSES',
-}
 
 const guidedPrompts = [
   {
@@ -115,14 +82,9 @@ const guidedPrompts = [
       'Which topics are weakest right now, and what is the smallest practice step that would help?',
   },
   {
-    label: 'Analyze my recent contests',
+    label: 'Plan my week',
     prompt:
-      'Analyze my recent contests and rating movement. What should I change before the next contest?',
-  },
-  {
-    label: 'Update my roadmap',
-    prompt:
-      'Review my roadmap and suggest an incremental update. Tell me what evidence supports it first.',
+      'Given my goals and recent activity, how should I split my practice time this week?',
   },
   {
     label: 'Explain this concept',
@@ -134,8 +96,7 @@ const guidedPrompts = [
 const promptIcons: Record<string, IconComponent> = {
   'What should I practice next?': Compass,
   'Review my weak topics': Crosshair,
-  'Analyze my recent contests': Trophy,
-  'Update my roadmap': Route,
+  'Plan my week': Route,
   'Explain this concept': BookOpen,
 }
 
@@ -219,169 +180,6 @@ function formatDate(value: string) {
   }
 }
 
-const refreshReasonText: Record<RoadmapRefreshReason, string> = {
-  stale_platform_data: 'Some of your platform data is out of date.',
-  plan_unchanged: 'Your plan has not changed in over a week.',
-}
-
-function refreshSummary(platforms: readonly RoadmapPlatformRefresh[]) {
-  const refreshed = platforms
-    .filter((item) => item.status === 'refreshed')
-    .map((item) => providerLabels[item.provider])
-  if (platforms.length === 0) {
-    return 'Rebuilt from your saved activity. Link a platform to pull new data.'
-  }
-  if (refreshed.length === 0) {
-    return 'Your platforms were refreshed recently, so the plan was rebuilt from saved data.'
-  }
-  return `Pulled your latest activity from ${refreshed.join(', ')} and rebuilt the plan.`
-}
-
-function percent(value: number) {
-  return `${Math.round(value * 100)}%`
-}
-
-function TopicCard({
-  topic,
-  onStatus,
-  statusPending,
-  onDismissProblem,
-  dismissPending,
-}: {
-  topic: ImprovementTopic
-  onStatus: (status: CoachManualTopicStatus | null) => void
-  statusPending: boolean
-  onDismissProblem: (provider: ProviderKey, externalId: string) => void
-  dismissPending: boolean
-}) {
-  return (
-    <article className="card-lift min-w-0 rounded-lg border border-border bg-card p-4">
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="break-words font-semibold text-foreground">
-            {topic.name}
-          </h3>
-          <p className="mt-1 text-xs uppercase tracking-wide text-muted-foreground">
-            {topic.assessment.replaceAll('_', ' ')} · {percent(topic.score)}{' '}
-            score · {percent(topic.confidence)} confidence
-          </p>
-        </div>
-        <label className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-          <span className="sr-only">Manual status for {topic.name}</span>
-          <select
-            aria-label={`Manual status for ${topic.name}`}
-            className="h-8 max-w-36 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            disabled={statusPending}
-            onChange={(event) =>
-              onStatus(
-                event.target.value === ''
-                  ? null
-                  : (event.target.value as CoachManualTopicStatus),
-              )
-            }
-            value={topic.manualStatus ?? ''}
-          >
-            <option value="">Use assessment</option>
-            {statusOptions.map((status) => (
-              <option key={status} value={status}>
-                {statusLabels[status]}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <button
-        className="mt-3 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
-        disabled={statusPending}
-        onClick={() =>
-          onStatus(
-            topic.manualStatus === 'skip_for_now' ? null : 'skip_for_now',
-          )
-        }
-        type="button"
-      >
-        {topic.manualStatus === 'skip_for_now'
-          ? 'Restore topic'
-          : 'Dismiss topic'}
-      </button>
-      <p className="mt-3 text-sm leading-6 text-muted-foreground">
-        {topic.reason}
-      </p>
-      <dl className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground sm:grid-cols-4">
-        <div>
-          <dt>Problems</dt>
-          <dd className="font-medium text-foreground">
-            {topic.evidence.uniqueProblems}
-          </dd>
-        </div>
-        <div>
-          <dt>Observed solves</dt>
-          <dd className="font-medium text-foreground">
-            {topic.evidence.solvedProblems}
-          </dd>
-        </div>
-        <div>
-          <dt>Submissions</dt>
-          <dd className="font-medium text-foreground">
-            {topic.evidence.totalSubmissions}
-          </dd>
-        </div>
-        <div>
-          <dt>Recent practice</dt>
-          <dd className="font-medium text-foreground">
-            {topic.evidence.recentDays === 0
-              ? 'Not observed'
-              : `${topic.evidence.recentDays}d ago`}
-          </dd>
-        </div>
-      </dl>
-      {topic.suggestions.length > 0 ? (
-        <div className="mt-4 border-t border-border pt-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Optional practice
-          </p>
-          <ul className="mt-2 space-y-2">
-            {topic.suggestions.map((suggestion) => (
-              <li
-                className="flex min-w-0 items-start justify-between gap-2 text-sm"
-                key={suggestion.id}
-              >
-                <a
-                  className="min-w-0 break-words text-primary underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  href={suggestion.problem.canonicalUrl}
-                  rel="noopener noreferrer"
-                  target="_blank"
-                >
-                  {suggestion.problem.title}
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    {suggestion.band} ·{' '}
-                    {providerLabels[suggestion.problem.provider]}
-                  </span>
-                </a>
-                <button
-                  aria-label={`Dismiss ${suggestion.problem.title}`}
-                  className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
-                  disabled={dismissPending}
-                  onClick={() =>
-                    onDismissProblem(
-                      suggestion.problem.provider,
-                      suggestion.problem.externalId,
-                    )
-                  }
-                  title="Don't recommend this problem again"
-                  type="button"
-                >
-                  Dismiss
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-    </article>
-  )
-}
-
 function EvidenceList({
   evidence,
 }: {
@@ -416,7 +214,6 @@ function EvidenceList({
 }
 
 function CoachPage() {
-  const consentQuery = useAiConsent()
   const conversationsQuery = useCoachConversations()
   const roadmapQuery = useCoachRoadmap()
   const preferencesQuery = useCoachPreferences()
@@ -425,10 +222,6 @@ function CoachPage() {
   const renameConversation = useRenameCoachConversation()
   const deleteConversation = useDeleteCoachConversation()
   const sendMessage = useSendCoachMessage()
-  const setTopicStatus = useSetCoachTopicStatus()
-  const submitRoadmapNote = useSubmitCoachRoadmapNote()
-  const refreshRoadmap = useRefreshCoachRoadmap()
-  const [roadmapNoteText, setRoadmapNoteText] = useState('')
   const dismissProblem = useDismissProblem()
   const dismissalsQuery = useRecommendationDismissals()
   const confirmAction = useConfirmCoachAction()
@@ -446,9 +239,7 @@ function CoachPage() {
   const [transientContext, setTransientContext] = useState('')
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
   const attachmentInputRef = useRef<HTMLInputElement | null>(null)
-  const [view, setView] = useState<
-    'chat' | 'plan' | 'checkins' | 'preferences'
-  >('chat')
+  const [view, setView] = useState<'chat' | 'checkins' | 'preferences'>('chat')
   const [search, setSearch] = useState('')
   const [showContext, setShowContext] = useState(false)
   const [isDraft, setIsDraft] = useState(false)
@@ -514,18 +305,6 @@ function CoachPage() {
     sendMessage.isPending,
   ])
   const roadmap = roadmapQuery.data?.data
-  const consentEnabled =
-    consentQuery.data?.data?.enabled === true &&
-    consentQuery.data.data.policyVersion === AI_POLICY_VERSION
-  const groupedTopics = useMemo(() => {
-    const groups = new Map<CoachRoadmapLane, ImprovementTopic[]>()
-    for (const topic of roadmap?.topics ?? []) {
-      const values = groups.get(topic.lane) ?? []
-      values.push(topic)
-      groups.set(topic.lane, values)
-    }
-    return groups
-  }, [roadmap?.topics])
 
   async function ensureConversation() {
     if (activeConversationId !== null) return activeConversationId
@@ -541,15 +320,6 @@ function CoachPage() {
         ? ''
         : 'Please help me with the CP/DSA content in this attachment.')
     if (!trimmed || sendMessage.isPending) return
-    if (!consentEnabled) {
-      notify({
-        title: 'Personalized coaching is disabled',
-        description:
-          'Enable it in Settings before starting a coach conversation.',
-        tone: 'error',
-      })
-      return
-    }
     // Clear the composer straight away so the question moves into the
     // thread; put it back if the send fails or is cancelled.
     const draft = {
@@ -639,8 +409,7 @@ function CoachPage() {
   if (
     conversationsQuery.isPending ||
     roadmapQuery.isPending ||
-    preferencesQuery.isPending ||
-    consentQuery.isPending
+    preferencesQuery.isPending
   ) {
     return (
       <PageContainer>
@@ -656,8 +425,7 @@ function CoachPage() {
   if (
     conversationsQuery.isError ||
     roadmapQuery.isError ||
-    preferencesQuery.isError ||
-    consentQuery.isError
+    preferencesQuery.isError
   ) {
     return (
       <PageContainer>
@@ -671,7 +439,6 @@ function CoachPage() {
             void conversationsQuery.refetch()
             void roadmapQuery.refetch()
             void preferencesQuery.refetch()
-            void consentQuery.refetch()
           }}
           title="Coach unavailable"
         />
@@ -741,17 +508,13 @@ function CoachPage() {
 
   const views = [
     { id: 'chat', label: 'Chat', icon: MessageCircle },
-    { id: 'plan', label: 'Learning plan', icon: MapIcon },
     { id: 'checkins', label: 'Check-ins', icon: Bell },
     { id: 'preferences', label: 'Preferences', icon: SlidersHorizontal },
   ] as const
 
   const composerForm = (
     <form
-      className={cn(
-        'w-full rounded-xl border border-border bg-card p-2 shadow-soft transition-[border-color,box-shadow] duration-300 focus-within:border-[color-mix(in_oklab,var(--primary)_45%,var(--border))] focus-within:ring-4 focus-within:ring-ring/10',
-        !consentEnabled && 'opacity-70',
-      )}
+      className="w-full rounded-xl border border-border bg-card p-2 shadow-soft transition-[border-color,box-shadow] duration-300 focus-within:border-[color-mix(in_oklab,var(--primary)_45%,var(--border))] focus-within:ring-4 focus-within:ring-ring/10"
       onSubmit={(event) => {
         event.preventDefault()
         void submitMessage()
@@ -762,7 +525,7 @@ function CoachPage() {
       </label>
       <textarea
         className="block max-h-48 min-h-20 w-full resize-none bg-transparent px-3 pt-2.5 text-[0.95rem] leading-6 text-foreground outline-none placeholder:text-muted-foreground"
-        disabled={!consentEnabled || sendMessage.isPending}
+        disabled={sendMessage.isPending}
         id="coach-message"
         onChange={(event) => setContent(event.target.value)}
         onKeyDown={(event) => {
@@ -778,7 +541,7 @@ function CoachPage() {
         <textarea
           aria-label="Temporary code or problem context"
           className="mx-1 mt-2 block min-h-24 w-[calc(100%-0.5rem)] resize-y rounded-xl border border-input bg-background p-3 font-mono text-xs leading-5 text-foreground outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
-          disabled={!consentEnabled || sendMessage.isPending}
+          disabled={sendMessage.isPending}
           onChange={(event) => setTransientContext(event.target.value)}
           placeholder="Paste only what is needed for this answer. It is omitted from saved history and audits."
           value={transientContext}
@@ -804,17 +567,25 @@ function CoachPage() {
               ? 'border-primary/40 bg-primary/10 text-primary'
               : 'border-border text-foreground/70 hover:bg-secondary',
           )}
-          disabled={!consentEnabled || sendMessage.isPending}
+          disabled={sendMessage.isPending}
           onClick={() => setShowContext((value) => !value)}
           type="button"
         >
           <Code2 aria-hidden="true" className="size-4" strokeWidth={1.7} />
           Code context
         </button>
+        <Link
+          className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border px-3 text-sm font-medium text-foreground/70 transition-colors hover:bg-secondary"
+          title="Step-by-step hints or debugging for a specific problem"
+          to="/doubt-helper"
+        >
+          <Crosshair aria-hidden="true" className="size-4" strokeWidth={1.7} />
+          Problem help
+        </Link>
         <button
           aria-label="Add attachment"
           className="grid size-9 place-items-center rounded-md text-foreground/65 transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-50"
-          disabled={!consentEnabled || sendMessage.isPending}
+          disabled={sendMessage.isPending}
           onClick={() => attachmentInputRef.current?.click()}
           title="Add attachment (image, document, audio or video, up to 8 MB)"
           type="button"
@@ -838,7 +609,6 @@ function CoachPage() {
           aria-label="Ask coach"
           className="coach-orb ml-auto grid size-10 place-items-center text-white transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100"
           disabled={
-            !consentEnabled ||
             (!content.trim() && attachmentFile === null) ||
             sendMessage.isPending
           }
@@ -1067,36 +837,8 @@ function CoachPage() {
                 <Sparkles aria-hidden="true" /> Details
               </Button>
             ) : null}
-            <Link
-              className={buttonVariants({ size: 'sm', variant: 'outline' })}
-              to="/settings"
-            >
-              Privacy
-            </Link>
           </div>
         </header>
-
-        {!consentEnabled ? (
-          <aside
-            className="mx-4 mt-4 rounded-2xl border border-sun/60 bg-sun-soft p-4 text-sm text-sun-foreground sm:mx-6"
-            role="status"
-          >
-            <p className="font-semibold">
-              Enable personalized AI coaching and learner memory to start a
-              conversation.
-            </p>
-            <p className="mt-1">
-              Review the updated privacy choices to let the coach use your
-              profile, progress, and connected learning activity.
-            </p>
-            <Link
-              className="mt-2 inline-flex font-medium underline underline-offset-4"
-              to="/settings"
-            >
-              Review consent in Settings
-            </Link>
-          </aside>
-        ) : null}
 
         {view === 'chat' ? (
           showGreeting ? (
@@ -1137,7 +879,7 @@ function CoachPage() {
                     return (
                       <button
                         className="group flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-4 text-left transition-[border-color,transform] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:-translate-y-0.5 hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--border))] disabled:pointer-events-none disabled:opacity-60"
-                        disabled={!consentEnabled || sendMessage.isPending}
+                        disabled={sendMessage.isPending}
                         key={item.label}
                         onClick={() => {
                           setContent(item.prompt)
@@ -1168,7 +910,7 @@ function CoachPage() {
                   {guidedPrompts.slice(3).map((item) => (
                     <button
                       className="rounded-md border border-border bg-card px-3.5 py-1.5 text-sm text-foreground/80 transition-colors hover:bg-secondary disabled:opacity-60"
-                      disabled={!consentEnabled || sendMessage.isPending}
+                      disabled={sendMessage.isPending}
                       key={item.label}
                       onClick={() => {
                         setContent(item.prompt)
@@ -1180,6 +922,35 @@ function CoachPage() {
                     </button>
                   ))}
                 </div>
+                <nav
+                  aria-label="Mentor tools"
+                  className="animate-rise mt-8 w-full border-t border-border pt-5"
+                  style={{ '--i': 5 } as CSSProperties}
+                >
+                  <p className="text-center text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                    Or jump straight to a mentor tool
+                  </p>
+                  <ul className="mt-3 flex flex-wrap justify-center gap-2">
+                    {[...orderedMentorTools, mentorTools.pathway].map(
+                      (tool) => (
+                        <li key={tool.feature}>
+                          <Link
+                            className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-sm text-foreground/85 transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            title={tool.description}
+                            to={tool.path}
+                          >
+                            <tool.icon
+                              aria-hidden="true"
+                              className="size-4 text-primary"
+                              strokeWidth={1.8}
+                            />
+                            {tool.label}
+                          </Link>
+                        </li>
+                      ),
+                    )}
+                  </ul>
+                </nav>
               </div>
             </div>
           ) : (
@@ -1260,6 +1031,42 @@ function CoachPage() {
                                   role="assistant"
                                 />
                               </div>
+                              {featureRedirects(message).map((block) => {
+                                const Icon = mentorTools[block.feature].icon
+                                return (
+                                  <Link
+                                    className="group mt-3 flex max-w-xl items-center gap-3 rounded-xl border border-[color-mix(in_oklab,var(--primary)_35%,var(--border))] bg-card p-3.5 transition-[transform,border-color] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                    key={block.feature}
+                                    to={mentorToolPath(
+                                      block.feature,
+                                      block.problemUrl,
+                                    )}
+                                  >
+                                    <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                                      <Icon
+                                        aria-hidden="true"
+                                        className="size-5"
+                                        strokeWidth={1.8}
+                                      />
+                                    </span>
+                                    <span className="min-w-0 flex-1">
+                                      <span className="block text-sm font-semibold text-foreground">
+                                        {block.title}
+                                      </span>
+                                      <span className="block text-xs leading-5 text-muted-foreground">
+                                        {block.description}
+                                      </span>
+                                    </span>
+                                    <span className="hidden shrink-0 items-center gap-1 rounded-md bg-ink px-3 py-1.5 text-xs font-medium text-ink-foreground sm:inline-flex">
+                                      {block.actionLabel}
+                                      <ArrowRight
+                                        aria-hidden="true"
+                                        className="size-3.5"
+                                      />
+                                    </span>
+                                  </Link>
+                                )
+                              })}
                               {message.fallback !== true &&
                               answerDetails(message).hasContent ? (
                                 <button
@@ -1385,187 +1192,6 @@ function CoachPage() {
               ) : null}
             </div>
           )
-        ) : null}
-
-        {view === 'plan' ? (
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-8">
-            <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <h3 className="text-2xl" id="roadmap-heading">
-                  Your learning plan
-                </h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Focus areas, next topics, and optional practice, assessed from
-                  your evidence.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-md bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
-                  {roadmap?.topics.length ?? 0} topics
-                </span>
-                <Button
-                  disabled={refreshRoadmap.isPending}
-                  onClick={() =>
-                    refreshRoadmap.mutate(undefined, {
-                      onSuccess: (result) =>
-                        notify({
-                          title: 'Learning plan refreshed',
-                          description: refreshSummary(result.meta.platforms),
-                          tone: 'success',
-                        }),
-                      onError: (error) =>
-                        notify({
-                          title: 'Could not refresh your plan',
-                          description:
-                            error instanceof Error
-                              ? error.message
-                              : 'Try again shortly.',
-                          tone: 'error',
-                        }),
-                    })
-                  }
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  <RefreshCw
-                    aria-hidden="true"
-                    className={cn(
-                      refreshRoadmap.isPending &&
-                        'animate-spin motion-reduce:animate-none',
-                    )}
-                  />
-                  {refreshRoadmap.isPending ? 'Refreshing…' : 'Refresh plan'}
-                </Button>
-              </div>
-            </div>
-            {roadmap?.lastRefreshedAt ? (
-              <p className="-mt-4 mb-4 text-xs text-muted-foreground">
-                Last refreshed {formatDate(roadmap.lastRefreshedAt)}
-              </p>
-            ) : null}
-            {roadmap?.refreshHint?.suggested && !refreshRoadmap.isPending ? (
-              <div
-                className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-sun/40 bg-sun-soft p-3 text-sm text-sun-foreground"
-                role="status"
-              >
-                <p>
-                  {roadmap.refreshHint.reasons
-                    .map((reason) => refreshReasonText[reason])
-                    .join(' ')}{' '}
-                  Refresh to pull your latest solves and rebuild it.
-                </p>
-              </div>
-            ) : null}
-            <form
-              className="mb-6 rounded-lg border border-border bg-card p-3"
-              onSubmit={(event) => {
-                event.preventDefault()
-                const trimmed = roadmapNoteText.trim()
-                if (trimmed === '' || submitRoadmapNote.isPending) return
-                submitRoadmapNote.mutate(trimmed, {
-                  onSuccess: (result) => {
-                    setRoadmapNoteText('')
-                    notify({
-                      title:
-                        result.data.statusChanged && result.data.status !== null
-                          ? `Updated ${
-                              roadmap?.topics.find(
-                                (item) => item.topic === result.data.topic,
-                              )?.name ?? result.data.topic
-                            }: ${statusLabels[result.data.status]}`
-                          : 'Note saved',
-                      description: result.data.rationale,
-                      tone: 'success',
-                    })
-                  },
-                  onError: (error) => {
-                    notify({
-                      title: 'Could not save your note',
-                      description:
-                        error instanceof Error
-                          ? error.message
-                          : 'Try again shortly.',
-                      tone: 'error',
-                    })
-                  },
-                })
-              }}
-            >
-              <label className="sr-only" htmlFor="roadmap-note">
-                Tell your coach about your learning plan
-              </label>
-              <textarea
-                className="block min-h-16 w-full resize-y rounded-md border border-border bg-background p-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                disabled={submitRoadmapNote.isPending}
-                id="roadmap-note"
-                maxLength={500}
-                onChange={(event) => setRoadmapNoteText(event.target.value)}
-                placeholder="Tell your coach about a topic, e.g. I'm pretty good at sliding window now, no need to keep suggesting it."
-                value={roadmapNoteText}
-              />
-              <div className="mt-2 flex justify-end">
-                <button
-                  className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50"
-                  disabled={
-                    submitRoadmapNote.isPending || roadmapNoteText.trim() === ''
-                  }
-                  type="submit"
-                >
-                  {submitRoadmapNote.isPending ? 'Sending…' : 'Send'}
-                </button>
-              </div>
-            </form>
-            {roadmap ? (
-              <div className="grid min-w-0 gap-6 xl:grid-cols-2">
-                {(Object.keys(laneLabels) as CoachRoadmapLane[]).map((lane) => {
-                  const topics = groupedTopics.get(lane) ?? []
-                  return (
-                    <section
-                      aria-labelledby={`roadmap-${lane}`}
-                      className="min-w-0 space-y-3"
-                      key={lane}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <h4
-                          className="font-heading font-semibold text-foreground"
-                          id={`roadmap-${lane}`}
-                        >
-                          {laneLabels[lane]}
-                        </h4>
-                        <span className="text-xs text-muted-foreground">
-                          {topics.length}
-                        </span>
-                      </div>
-                      {topics.length ? (
-                        topics.map((topic) => (
-                          <TopicCard
-                            key={topic.topic}
-                            dismissPending={dismissProblem.isPending}
-                            onDismissProblem={(provider, externalId) => {
-                              dismissProblem.mutate({ provider, externalId })
-                            }}
-                            onStatus={(status) =>
-                              void setTopicStatus.mutateAsync({
-                                topic: topic.topic,
-                                status,
-                              })
-                            }
-                            statusPending={setTopicStatus.isPending}
-                            topic={topic}
-                          />
-                        ))
-                      ) : (
-                        <p className="rounded-2xl border border-dashed border-border p-4 text-sm text-muted-foreground">
-                          Nothing here yet.
-                        </p>
-                      )}
-                    </section>
-                  )
-                })}
-              </div>
-            ) : null}
-          </div>
         ) : null}
 
         {view === 'checkins' ? (

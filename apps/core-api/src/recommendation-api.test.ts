@@ -212,7 +212,7 @@ describe('recommendation API', () => {
     }
   })
 
-  it('sends plan, weak-topic and contest signals to AI only under consent', async () => {
+  it('sends plan, weak-topic and contest signals under the always-on AI policy', async () => {
     const coachRepository = new InMemoryCoachRepository()
     await coachRepository.setTopicStatus(userA, 'math', 'working_on')
     await coachRepository.setTopicStatus(userB, 'math', 'working_on')
@@ -279,17 +279,16 @@ describe('recommendation API', () => {
       ratingChange90Days: 46,
       trend: 'rising',
     })
-    const private_ = requests.get(userB)?.learner
-    expect(private_).toBeDefined()
-    expect(private_).not.toHaveProperty('roadmapFocusTopics')
-    expect(private_).not.toHaveProperty('contestSummary')
-    // Only the stated (cold-start) profile, in its own order.
-    expect(private_?.focusTopics).toEqual([
-      'implementation',
-      'math',
-      'sorting',
-      'strings',
-    ])
+    const alwaysOn = requests.get(userB)?.learner
+    expect(alwaysOn).toBeDefined()
+    expect(alwaysOn?.roadmapFocusTopics).toEqual(['math'])
+    expect(alwaysOn?.contestSummary).toEqual({
+      contestsLast90Days: 1,
+      currentRating: 1806,
+      ratingChange90Days: 46,
+      trend: 'rising',
+    })
+    expect(alwaysOn?.focusTopics[0]).toBe('math')
   })
 
   it('passes observed topic progress to AI and refreshes after new evidence', async () => {
@@ -324,17 +323,7 @@ describe('recommendation API', () => {
       evidenceSource: 'manual',
     })
     await fetch(`${baseUrl}/api/recommendations`, { headers })
-    expect(requests[1]?.learner.topicEvidence).toEqual([])
-
-    await progressRepository.saveConsent(
-      userA,
-      true,
-      'personalized-coaching-rag-v2',
-    )
-    await fetch(`${baseUrl}/api/recommendations`, { headers })
-
-    expect(requests).toHaveLength(3)
-    expect(requests[2]?.learner.topicEvidence).toContainEqual({
+    expect(requests[1]?.learner.topicEvidence).toContainEqual({
       topic: 'implementation',
       observedAttemptedProblems: 1,
       observedSolvedProblems: 0,
@@ -472,9 +461,7 @@ describe('recommendation API', () => {
           })
         ).json(),
       )
-      expect(dismissals.data.map((item) => item.externalId)).toContain(
-        '800A',
-      )
+      expect(dismissals.data.map((item) => item.externalId)).toContain('800A')
     })
 
     it('is idempotent: dismissing an already-dismissed problem keeps the original timestamp', async () => {

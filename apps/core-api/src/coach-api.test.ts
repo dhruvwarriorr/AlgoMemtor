@@ -402,7 +402,7 @@ describe('coach API', () => {
       expect(response.status).toBe(401)
     })
 
-    it('requires AI coaching consent', async () => {
+    it('uses coaching without a separate consent record', async () => {
       const baseUrl = startApp({})
       const response = await fetch(`${baseUrl}/api/coach/roadmap/notes`, {
         method: 'POST',
@@ -413,8 +413,8 @@ describe('coach API', () => {
         body: JSON.stringify({ note: "I'm good at this." }),
       })
       const body = (await response.json()) as { error: { code: string } }
-      expect(response.status).toBe(403)
-      expect(body.error.code).toBe('COACH_CONSENT_REQUIRED')
+      expect(response.status).toBe(200)
+      expect(body).not.toHaveProperty('error')
     })
 
     it('ignores a topic the AI names outside the canonical taxonomy', async () => {
@@ -724,7 +724,7 @@ describe('coach API', () => {
     },
   )
 
-  it('stores proposals, requires consent, revalidates ownership, and confirms idempotently', async () => {
+  it('stores proposals, revalidates ownership, and confirms idempotently', async () => {
     const progressRepository = new InMemoryProgressRepository()
     await progressRepository.saveConsent(
       userA,
@@ -827,7 +827,7 @@ describe('coach API', () => {
         body: JSON.stringify({ content: 'Explain arrays.' }),
       },
     )
-    expect(noConsentResponse.status).toBe(403)
+    expect(noConsentResponse.status).toBe(200)
   })
 
   it('sends bounded problem identities to AI without canonical URLs', async () => {
@@ -1774,7 +1774,7 @@ describe('coach API', () => {
     expect(await refreshed.json()).toMatchObject({ created: 0 })
   })
 
-  it('clears derived conversation summaries when coaching consent is revoked', async () => {
+  it('rejects legacy attempts to disable always-on coaching', async () => {
     const progressRepository = new InMemoryProgressRepository()
     await progressRepository.saveConsent(
       userA,
@@ -1800,12 +1800,32 @@ describe('coach API', () => {
         policyVersion: 'personalized-coaching-rag-v2',
       }),
     })
-    expect(response.status).toBe(200)
+    expect(response.status).toBe(400)
+    expect((await response.json()).error).toMatchObject({
+      code: 'AI_COACHING_ALWAYS_ON',
+    })
 
     const history = await fetch(
       `${baseUrl}/api/coach/conversations/${conversation.id}`,
       { headers: authorization('user-a') },
     )
-    expect((await history.json()).data.summary).toBeUndefined()
+    expect((await history.json()).data.summary).toBe(
+      'Derived rolling summary that should be removed.',
+    )
+  })
+
+  it('reports the always-on AI policy for an account without a consent row', async () => {
+    const baseUrl = startApp({})
+    const response = await fetch(`${baseUrl}/api/ai-consent`, {
+      headers: authorization('user-a'),
+    })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      data: {
+        enabled: true,
+        policyVersion: 'personalized-coaching-rag-v2',
+      },
+    })
   })
 })

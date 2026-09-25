@@ -12,11 +12,18 @@ import Topbar from './Topbar'
 const authValue: AuthContextValue = {
   user: null,
   status: 'unauthenticated',
+  passwordRecovery: false,
   sessionMessage: null,
   clearSessionMessage: () => undefined,
   signIn: () => Promise.resolve(),
   signUp: () => Promise.resolve(null),
   signInWithGoogle: () => Promise.resolve(),
+  requestPasswordReset: () => Promise.resolve(),
+  updatePassword: () => Promise.resolve(),
+  changePassword: () => Promise.resolve(),
+  setPassword: () => Promise.resolve(),
+  linkGoogleAccount: () => Promise.resolve(),
+  unlinkGoogleAccount: () => Promise.resolve(),
   signOut: () => Promise.resolve(),
 }
 

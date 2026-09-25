@@ -67,6 +67,11 @@ import type { StructuredLogger } from '../utils/structured-logger.js'
 import type { ProgressService } from './progress-service.js'
 import { isCoachSmallTalk } from './coach-intent.js'
 import {
+  coachFeatureRedirect,
+  routeCoachFeature,
+  type CoachFeatureRoute,
+} from './coach-feature-routing.js'
+import {
   allowedCoachAnswerUrl,
   extractCoachUrls,
   leetcodeIdForSlug,
@@ -1782,6 +1787,9 @@ export type CoachServiceOptions = {
     provider: ProviderKey,
     externalId: string,
   ) => Promise<ProblemContent | null>
+  // Point feature requests (problem hints, solutions, upsolving, contest
+  // analysis, progress reports, the pathway) to their dedicated sections.
+  featureRouting?: boolean
   now?: () => Date
 }
 
@@ -2708,6 +2716,17 @@ export class CoachService {
     return this.withRefreshHint(await this.buildAndSaveRoadmap(userId))
   }
 
+  // The saved plan when one exists; building it only when none was saved.
+  // Readers that just need topic context avoid a full rebuild.
+  async getStoredRoadmap(userId: string) {
+    const stored = await this.options.repository
+      .getRoadmap(userId)
+      .catch(() => null)
+    return stored === null
+      ? this.getRoadmap(userId)
+      : this.withRefreshHint(stored)
+  }
+
   private async buildAndSaveRoadmap(userId: string) {
     const roadmap = await this.buildRoadmap(userId)
     const existing = await this.options.repository.getRoadmap(userId)
@@ -2780,6 +2799,19 @@ export class CoachService {
       },
     )
     if (userMessage === null) throw new CoachConversationNotFoundError()
+    const featureRoute =
+      this.options.featureRouting === true
+        ? routeCoachFeature(input.content)
+        : null
+    if (featureRoute !== null) {
+      return this.respondWithFeatureRedirect(
+        userId,
+        conversationId,
+        conversation.messages,
+        userMessage,
+        featureRoute,
+      )
+    }
     if (
       transient === undefined &&
       transientMedia === undefined &&
@@ -2995,6 +3027,56 @@ export class CoachService {
       message: savedAssistant,
       roadmap: context.roadmap,
     })
+  }
+
+  // A request that belongs to a dedicated section gets a deterministic pointer
+  // to it. No model call, provider history or memory retrieval is needed.
+  private async respondWithFeatureRedirect(
+    userId: string,
+    conversationId: string,
+    previousMessages: readonly CoachMessage[],
+    userMessage: CoachMessage,
+    route: CoachFeatureRoute,
+  ): Promise<CoachResponse> {
+    const storedRoadmap = await this.options.repository
+      .getRoadmap(userId)
+      .catch(() => null)
+    const roadmap =
+      storedRoadmap === null
+        ? await this.getRoadmap(userId)
+        : this.withRefreshHint(storedRoadmap)
+    const now = this.now().toISOString()
+    const redirect = coachFeatureRedirect(route)
+    const message = CoachMessageSchema.parse({
+      id: randomUUID(),
+      role: 'assistant',
+      content: redirect.answer,
+      evidence: [],
+      proposals: [],
+      richContent: CoachRichContentSchema.parse({
+        version: 'coach-rich-v2',
+        blocks: [redirect.block],
+        citations: [],
+        suggestedQuestions: [],
+        generatedAt: now,
+        dataAsOf: roadmap.generatedAt,
+        completeness: roadmap.dataCompleteness,
+        stale: roadmap.dataCompleteness !== 'complete',
+      }),
+      createdAt: now,
+    })
+    const savedAssistant = await this.options.repository.appendMessage(
+      userId,
+      conversationId,
+      message,
+    )
+    if (savedAssistant === null) throw new CoachConversationNotFoundError()
+    await this.options.repository.updateSummary(
+      userId,
+      conversationId,
+      this.summaryForConversation([...previousMessages, userMessage], message),
+    )
+    return CoachResponseSchema.parse({ message: savedAssistant, roadmap })
   }
 
   // Greetings and thanks get one quick reply from a light context: the stored

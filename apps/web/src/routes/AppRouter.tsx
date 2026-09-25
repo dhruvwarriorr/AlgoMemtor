@@ -10,6 +10,8 @@ import ProtectedRoute from './ProtectedRoute'
 const AnalyticsPage = lazy(() => import('@/pages/AnalyticsPage'))
 const BookmarksPage = lazy(() => import('@/pages/BookmarksPage'))
 const ContestsPage = lazy(() => import('@/pages/ContestsPage'))
+const ContestAnalysisPage = lazy(() => import('@/pages/ContestAnalysisPage'))
+const DoubtHelperPage = lazy(() => import('@/pages/DoubtHelperPage'))
 const CoachPage = lazy(() => import('@/pages/CoachPage'))
 const DashboardPage = lazy(() => import('@/pages/DashboardPage'))
 const LandingPage = lazy(() => import('@/pages/LandingPage'))
@@ -17,12 +19,19 @@ const LoginPage = lazy(() => import('@/pages/LoginPage'))
 const MemoryPage = lazy(() => import('@/pages/MemoryPage'))
 const NotFoundPage = lazy(() => import('@/pages/NotFoundPage'))
 const OnboardingPage = lazy(() => import('@/pages/OnboardingPage'))
+const PathwayPage = lazy(() => import('@/pages/PathwayPage'))
 const ProblemsPage = lazy(() => import('@/pages/ProblemsPage'))
 const ProblemDetailPage = lazy(() => import('@/pages/ProblemDetailPage'))
 const ProfilePage = lazy(() => import('@/pages/ProfilePage'))
 const ProgressPage = lazy(() => import('@/pages/ProgressPage'))
+const ProgressReportPage = lazy(() => import('@/pages/ProgressReportPage'))
 const RecommendationsPage = lazy(() => import('@/pages/RecommendationsPage'))
+const ResetPasswordPage = lazy(
+  () => import('@/features/auth/components/ResetPasswordPage'),
+)
 const SettingPage = lazy(() => import('@/pages/SettingPage'))
+const SolutionExplorerPage = lazy(() => import('@/pages/SolutionExplorerPage'))
+const UpsolvePage = lazy(() => import('@/pages/UpsolvePage'))
 
 const page = (content: ReactNode, label: string) => (
   <Suspense
@@ -42,6 +51,10 @@ function AppRouter() {
       <Route element={<AppShell />}>
         <Route index element={page(<LandingPage />, 'Loading home')} />
         <Route path="login" element={page(<LoginPage />, 'Loading sign in')} />
+        <Route
+          path="reset-password"
+          element={page(<ResetPasswordPage />, 'Loading password reset')}
+        />
         <Route element={<ProtectedRoute />}>
           <Route
             path="onboarding"
@@ -71,6 +84,37 @@ function AppRouter() {
           <Route
             path="coach"
             element={page(<CoachPage />, 'Loading your coach')}
+          />
+          <Route
+            path="pathway"
+            element={page(<PathwayPage />, 'Loading your pathway')}
+          />
+          <Route
+            path="doubt-helper"
+            element={page(<DoubtHelperPage />, 'Loading Doubt Helper')}
+          />
+          <Route
+            path="doubt-helper/:sessionId"
+            element={page(<DoubtHelperPage />, 'Loading Doubt Helper')}
+          />
+          <Route
+            path="solutions"
+            element={page(
+              <SolutionExplorerPage />,
+              'Loading Solution Explorer',
+            )}
+          />
+          <Route
+            path="upsolve"
+            element={page(<UpsolvePage />, 'Loading upsolve queue')}
+          />
+          <Route
+            path="contest-analysis"
+            element={page(<ContestAnalysisPage />, 'Loading contest analysis')}
+          />
+          <Route
+            path="progress/report"
+            element={page(<ProgressReportPage />, 'Loading progress report')}
           />
           <Route
             path="analytics"

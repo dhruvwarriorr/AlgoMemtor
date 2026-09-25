@@ -25,6 +25,11 @@ import {
   HttpAiRoadmapNoteClient,
   UnavailableAiRoadmapNoteClient,
 } from './integrations/ai/ai-roadmap-note-client.js'
+import {
+  HttpAiMentorClient,
+  UnavailableAiMentorClient,
+} from './integrations/ai/ai-mentor-client.js'
+import { PrismaMentorRepository } from './repositories/mentor-repository.js'
 import { CodeChefPublicStatsFetcher } from './integrations/provider-accounts/codechef-public-stats.js'
 import { CodeforcesPublicStatsFetcher } from './integrations/provider-accounts/codeforces-public-stats.js'
 import { LeetCodePublicStatsFetcher } from './integrations/provider-accounts/leetcode-public-stats.js'
@@ -186,6 +191,15 @@ const app = createApp({
   aiRoadmapNoteClient: aiConfig.configured
     ? new HttpAiRoadmapNoteClient(aiConfig)
     : new UnavailableAiRoadmapNoteClient(),
+  aiMentorClient: aiConfig.configured
+    ? new HttpAiMentorClient({
+        baseUrl: aiConfig.baseUrl,
+        internalServiceToken: aiConfig.internalServiceToken,
+        // FastAPI allows 110s per model call plus one repair or search.
+        timeoutMs: 240_000,
+      })
+    : new UnavailableAiMentorClient(),
+  mentorRepository: new PrismaMentorRepository(prisma),
   jwtVerifier,
   problemProvider: codeforcesProvider,
   problemProviders,

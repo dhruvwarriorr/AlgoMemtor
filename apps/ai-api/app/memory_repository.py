@@ -923,6 +923,9 @@ class MemoryRepository:
         statement: str,
         confidence: float = 0.5,
         request_id: str,
+        status: MemoryStatus = "proposed",
+        evidence_prefix: str = "coach-proposal",
+        idempotency_prefix: str = "coach-memory",
     ) -> tuple[StoredMemory, bool]:
         """Create an owner-scoped, evidence-backed memory proposal.
 
@@ -936,9 +939,9 @@ class MemoryRepository:
         evidence_id = uuid4()
         now = datetime.now(UTC)
         context_hash = hashlib.sha256(
-            f"coach-proposal:{category}:{statement}".encode()
+            f"{evidence_prefix}:{category}:{statement}".encode()
         ).hexdigest()
-        idempotency_key = f"coach-memory:{request_id}"
+        idempotency_key = f"{idempotency_prefix}:{request_id}"
         async with self.engine.begin() as connection:
             existing_result = await connection.execute(
                 sa.select(learner_memories).where(
@@ -1007,7 +1010,7 @@ class MemoryRepository:
                     statement=statement,
                     structured_value={},
                     confidence=Decimal(str(confidence)),
-                    status="proposed",
+                    status=status,
                     version=1,
                     learner_corrected=False,
                     embedding=None,
@@ -1027,6 +1030,26 @@ class MemoryRepository:
                 )
             )
             return await self._stored_memory(connection, row), True
+
+    async def create_user_memory(
+        self,
+        learner_id: UUID,
+        *,
+        memory_key: str,
+        statement: str,
+        request_id: str,
+    ) -> tuple[StoredMemory, bool]:
+        return await self.create_proposed_memory(
+            learner_id,
+            memory_key=memory_key,
+            category="user_instruction",
+            statement=statement,
+            confidence=1.0,
+            request_id=request_id,
+            status="active",
+            evidence_prefix="user-input",
+            idempotency_prefix="user-memory",
+        )
 
     async def has_consistent_support(
         self,

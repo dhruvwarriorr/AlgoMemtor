@@ -1,13 +1,17 @@
-import { useState } from 'react'
+import { useId, useRef, useState, type FormEvent } from 'react'
+
+import { ArrowUp, Brain, LoaderCircle } from '@/components/icons/algo-icons'
 
 import { EmptyState } from '@/components/states/EmptyState'
 import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { Button } from '@/components/ui/button'
 import { useNotification } from '@/app/useNotification'
+import { cn } from '@/lib/utils'
 
 import {
   useCorrectLearnerMemory,
+  useCreateLearnerMemory,
   useLearnerMemories,
   useLearnerMemoryAction,
 } from '../hooks/useLearnerMemories'
@@ -114,12 +118,150 @@ function memoryActionLabel(memory: LearnerMemory) {
   return 'Restore'
 }
 
-export function LearnerMemoryPanel() {
+const memoryExamples = [
+  'I prefer short hints before full explanations',
+  'I practice 1 hour on weekdays',
+  'Explain with C++ examples',
+  'I struggle with DP state design',
+  'I am preparing for ICPC',
+]
+
+// Mirrors the recommendation steering bar: say it in plain words, it is saved
+// as an active user instruction that shapes every recommendation, hint and
+// report.
+function LearnerMemoryComposer() {
+  const { notify } = useNotification()
+  const createMutation = useCreateLearnerMemory()
+  const inputRef = useRef<HTMLInputElement | null>(null)
+  const inputId = useId()
+  const [text, setText] = useState('')
+
+  function submit(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault()
+    const value = text.trim()
+    if (value === '' || createMutation.isPending) return
+    createMutation.mutate(
+      { text: value },
+      {
+        onSuccess: () => {
+          setText('')
+          notify({
+            title: 'Memory added',
+            description:
+              'AlgoMemtor will use this in recommendations, hints and reports.',
+            tone: 'success',
+          })
+        },
+        onError: (error) => {
+          notify({
+            title: 'Memory was not added',
+            description:
+              error instanceof Error ? error.message : 'Please try again.',
+            tone: 'error',
+          })
+        },
+      },
+    )
+  }
+
+  return (
+    <section
+      aria-label="Add a memory"
+      className="animate-rise min-w-0 rounded-xl border border-border bg-card p-4 sm:p-5"
+    >
+      <div className="flex min-w-0 items-center gap-2.5">
+        <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-accent text-accent-foreground">
+          <Brain aria-hidden="true" className="size-4" />
+        </span>
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-foreground">
+            Add a memory
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            Tell AlgoMemtor how you learn, what you are preparing for, or what
+            to avoid. Saved as a user instruction.
+          </p>
+        </div>
+      </div>
+      <form className="mt-3" onSubmit={submit}>
+        <label className="sr-only" htmlFor={inputId}>
+          What should AlgoMemtor remember?
+        </label>
+        <div
+          className={cn(
+            'flex items-center gap-2 rounded-xl border border-input bg-background py-1.5 pr-1.5 pl-3.5 transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-4 focus-within:ring-ring/15',
+            createMutation.isPending && 'opacity-80',
+          )}
+        >
+          <input
+            autoComplete="off"
+            className="h-9 min-w-0 flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground sm:text-sm"
+            disabled={createMutation.isPending}
+            id={inputId}
+            maxLength={500}
+            onChange={(event) => setText(event.target.value)}
+            placeholder="e.g. I learn best with concise hints before full explanations."
+            ref={inputRef}
+            value={text}
+          />
+          <button
+            aria-label={
+              createMutation.isPending ? 'Saving memory' : 'Add memory'
+            }
+            className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
+            disabled={text.trim() === '' || createMutation.isPending}
+            type="submit"
+          >
+            {createMutation.isPending ? (
+              <LoaderCircle
+                aria-hidden="true"
+                className="size-4 animate-spin"
+              />
+            ) : (
+              <ArrowUp aria-hidden="true" className="size-4" />
+            )}
+          </button>
+        </div>
+        {createMutation.isPending ? (
+          <p className="mt-2 text-xs text-muted-foreground" role="status">
+            Saving to your learner memory…
+          </p>
+        ) : (
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
+            {memoryExamples.map((example) => (
+              <button
+                className="rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--border))] hover:text-foreground"
+                key={example}
+                onClick={() => {
+                  setText(example)
+                  inputRef.current?.focus()
+                }}
+                type="button"
+              >
+                {example}
+              </button>
+            ))}
+          </div>
+        )}
+        <p className="mt-2.5 text-xs text-muted-foreground">
+          Up to 500 characters. Avoid passwords, contact details or secrets.
+        </p>
+      </form>
+    </section>
+  )
+}
+
+export function LearnerMemoryPanel({
+  showComposer = false,
+}: {
+  showComposer?: boolean
+}) {
   const { notify } = useNotification()
   const memoriesQuery = useLearnerMemories()
   const actionMutation = useLearnerMemoryAction()
   const correctionMutation = useCorrectLearnerMemory()
   const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null)
+  const composer = showComposer ? <LearnerMemoryComposer /> : null
 
   function act(
     memory: LearnerMemory,
@@ -173,20 +315,28 @@ export function LearnerMemoryPanel() {
   }
 
   if (memoriesQuery.isPending) {
-    return <PageSkeleton label="Loading learner memory" rows={3} />
+    return (
+      <div className="space-y-4">
+        {composer}
+        <PageSkeleton label="Loading learner memory" rows={3} />
+      </div>
+    )
   }
 
   if (memoriesQuery.isError) {
     return (
-      <ErrorState
-        message={
-          memoriesQuery.error instanceof Error
-            ? memoriesQuery.error.message
-            : 'Learner memory could not be loaded.'
-        }
-        onRetry={() => void memoriesQuery.refetch()}
-        title="Memory unavailable"
-      />
+      <div className="space-y-4">
+        {composer}
+        <ErrorState
+          message={
+            memoriesQuery.error instanceof Error
+              ? memoriesQuery.error.message
+              : 'Learner memory could not be loaded.'
+          }
+          onRetry={() => void memoriesQuery.refetch()}
+          title="Memory unavailable"
+        />
+      </div>
     )
   }
 
@@ -194,8 +344,12 @@ export function LearnerMemoryPanel() {
 
   if (memories.length === 0) {
     const pendingJobs = memoriesQuery.data.meta.pendingJobs
+    const emptyDescription = showComposer
+      ? 'Add a user instruction above, or wait for eligible reflections, progress, and recommendation feedback to be processed.'
+      : 'Memory will appear after eligible reflections, progress, or recommendation feedback are processed.'
     return (
       <div className="space-y-3">
+        {composer}
         {pendingJobs > 0 ? (
           <p
             className="rounded-lg border border-border bg-muted/50 p-3 text-sm text-muted-foreground"
@@ -209,7 +363,7 @@ export function LearnerMemoryPanel() {
           description={
             pendingJobs > 0
               ? 'Your eligible notes and progress are still being processed. Check back shortly.'
-              : 'Memory will appear after eligible reflections, progress, or recommendation feedback are processed.'
+              : emptyDescription
           }
           title={
             pendingJobs > 0 ? 'Memory is processing' : 'No learner memory yet'
@@ -221,6 +375,7 @@ export function LearnerMemoryPanel() {
 
   return (
     <div className="space-y-4">
+      {composer}
       {memoriesQuery.data.meta.pendingJobs > 0 ? (
         <p
           className="rounded-lg border border-border bg-muted/50 p-3 text-sm text-muted-foreground"

@@ -88,8 +88,17 @@ class AiSettings(BaseSettings):
     coach_web_grounding_enabled: bool = True
     coach_web_grounding_timeout_seconds: float = Field(default=20, ge=10, le=60)
     internal_rate_limit_per_minute: int = Field(default=120, ge=10, le=2_000)
+    # Mentor tools (Doubt Helper, Solution Explorer, contest and progress
+    # reports). Blank provider uses Gemini when LLM_API_KEY is set, otherwise
+    # Groq; blank model uses LLM_MODEL (Gemini) or COACH_GROQ_MODEL (Groq).
+    # Groq calls are still capped by GROQ_MAX_COMPLETION_TOKENS.
+    mentor_llm_provider: LlmProvider | None = None
+    mentor_model: str = ""
+    mentor_thinking_level: Literal["low", "medium", "high"] = "low"
+    mentor_max_output_tokens: int = Field(default=16_384, ge=2_048, le=65_536)
+    mentor_timeout_seconds: float = Field(default=110, gt=0, le=240)
 
-    @field_validator("coach_llm_provider", mode="before")
+    @field_validator("coach_llm_provider", "mentor_llm_provider", mode="before")
     @classmethod
     def blank_coach_provider_follows_llm_provider(cls, value: object) -> object:
         return None if isinstance(value, str) and not value.strip() else value

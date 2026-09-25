@@ -13,7 +13,7 @@ import { useAuth } from '@/features/auth/useAuth'
 
 import { safeReturnTo } from '@/routes/return-to'
 
-type AuthMode = 'sign-in' | 'sign-up'
+type AuthMode = 'sign-in' | 'sign-up' | 'forgot-password'
 
 function authErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) {
@@ -35,6 +35,7 @@ function LoginPage() {
   const {
     clearSessionMessage,
     sessionMessage,
+    requestPasswordReset,
     signIn,
     signInWithGoogle,
     signUp,
@@ -45,6 +46,7 @@ function LoginPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
   const isSignUp = mode === 'sign-up'
+  const isForgotPassword = mode === 'forgot-password'
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -70,6 +72,16 @@ function LoginPage() {
     setIsSubmitting(true)
 
     try {
+      if (isForgotPassword) {
+        await requestPasswordReset(email)
+        form.reset()
+        setSuccessMessage(
+          'If an account exists for that email, we sent a password reset link.',
+        )
+        setIsSubmitting(false)
+        return
+      }
+
       if (isSignUp) {
         const session = await signUp(email, password)
 
@@ -143,34 +155,44 @@ function LoginPage() {
       <section className="flex flex-col justify-center rounded-xl border border-border bg-card p-6 sm:p-10 lg:px-14">
         <div className="mx-auto w-full max-w-md">
           <h1 className="text-4xl text-foreground sm:text-5xl">
-            {isSignUp ? 'Create account' : 'Login'}
+            {isForgotPassword
+              ? 'Reset password'
+              : isSignUp
+                ? 'Create account'
+                : 'Login'}
           </h1>
           <p className="mt-3 text-muted-foreground">
             {isSignUp
               ? 'Create an account to start learning with AlgoMemtor.'
-              : 'Sign in to continue learning with AlgoMemtor.'}
+              : isForgotPassword
+                ? 'Enter your email and we’ll send you a secure reset link.'
+                : 'Sign in to continue learning with AlgoMemtor.'}
           </p>
 
-          <Button
-            className="mt-8 w-full gap-3"
-            disabled={isSubmitting}
-            onClick={() => void handleGoogle()}
-            size="lg"
-            type="button"
-            variant="outline"
-          >
-            <GoogleMark />
-            {isSignUp ? 'Sign up with Google' : 'Continue with Google'}
-          </Button>
+          {!isForgotPassword ? (
+            <Button
+              className="mt-8 w-full gap-3"
+              disabled={isSubmitting}
+              onClick={() => void handleGoogle()}
+              size="lg"
+              type="button"
+              variant="outline"
+            >
+              <GoogleMark />
+              {isSignUp ? 'Sign up with Google' : 'Continue with Google'}
+            </Button>
+          ) : null}
 
-          <div
-            aria-hidden="true"
-            className="mt-6 flex items-center gap-3 text-xs text-muted-foreground"
-          >
-            <span className="h-px flex-1 bg-border" />
-            or use email
-            <span className="h-px flex-1 bg-border" />
-          </div>
+          {!isForgotPassword ? (
+            <div
+              aria-hidden="true"
+              className="mt-6 flex items-center gap-3 text-xs text-muted-foreground"
+            >
+              <span className="h-px flex-1 bg-border" />
+              or use email
+              <span className="h-px flex-1 bg-border" />
+            </div>
+          ) : null}
 
           <form
             aria-busy={isSubmitting}
@@ -204,23 +226,42 @@ function LoginPage() {
               />
             </div>
 
-            <div className="flex min-w-0 flex-col gap-2">
-              <label
-                className="text-sm font-medium text-foreground"
-                htmlFor="password"
-              >
-                Password
-              </label>
-              <input
-                autoComplete={isSignUp ? 'new-password' : 'current-password'}
-                className={inputClass}
-                disabled={isSubmitting}
-                id="password"
-                name="password"
-                required
-                type="password"
-              />
-            </div>
+            {!isForgotPassword ? (
+              <div className="flex min-w-0 flex-col gap-2">
+                <div className="flex items-center justify-between gap-3">
+                  <label
+                    className="text-sm font-medium text-foreground"
+                    htmlFor="password"
+                  >
+                    Password
+                  </label>
+                  {!isSignUp ? (
+                    <button
+                      className="text-sm font-medium text-primary underline-offset-4 hover:underline disabled:opacity-50"
+                      disabled={isSubmitting}
+                      onClick={() => {
+                        setMode('forgot-password')
+                        clearSessionMessage()
+                        setErrorMessage(null)
+                        setSuccessMessage(null)
+                      }}
+                      type="button"
+                    >
+                      Forgot password?
+                    </button>
+                  ) : null}
+                </div>
+                <input
+                  autoComplete={isSignUp ? 'new-password' : 'current-password'}
+                  className={inputClass}
+                  disabled={isSubmitting}
+                  id="password"
+                  name="password"
+                  required
+                  type="password"
+                />
+              </div>
+            ) : null}
 
             {isSignUp ? (
               <div className="flex min-w-0 flex-col gap-2">
@@ -268,29 +309,47 @@ function LoginPage() {
               variant="ink"
             >
               {isSubmitting
-                ? isSignUp
-                  ? 'Creating account…'
-                  : 'Signing in…'
+                ? isForgotPassword
+                  ? 'Sending reset link…'
+                  : isSignUp
+                    ? 'Creating account…'
+                    : 'Signing in…'
                 : isSignUp
                   ? 'Create account'
-                  : 'Login'}
+                  : isForgotPassword
+                    ? 'Send reset link'
+                    : 'Login'}
             </Button>
           </form>
 
           <p className="mt-6 text-sm text-muted-foreground">
-            {isSignUp ? 'Already have an account?' : 'New to AlgoMemtor?'}{' '}
+            {isForgotPassword
+              ? 'Remember your password?'
+              : isSignUp
+                ? 'Already have an account?'
+                : 'New to AlgoMemtor?'}{' '}
             <button
               className="font-medium text-primary underline-offset-4 hover:underline disabled:opacity-50"
               disabled={isSubmitting}
               onClick={() => {
-                setMode(isSignUp ? 'sign-in' : 'sign-up')
+                setMode(
+                  isForgotPassword
+                    ? 'sign-in'
+                    : isSignUp
+                      ? 'sign-in'
+                      : 'sign-up',
+                )
                 clearSessionMessage()
                 setErrorMessage(null)
                 setSuccessMessage(null)
               }}
               type="button"
             >
-              {isSignUp ? 'Sign in' : 'Create an account'}
+              {isForgotPassword
+                ? 'Back to login'
+                : isSignUp
+                  ? 'Sign in'
+                  : 'Create an account'}
             </button>
           </p>
         </div>

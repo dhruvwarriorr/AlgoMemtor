@@ -138,6 +138,11 @@ export interface AiMemoryClient {
     requestId: string,
     input: { statement: string; category: LearnerMemoryCategory },
   ): Promise<AiMemoryActionResponse>
+  createUserMemory?(
+    learnerId: string,
+    requestId: string,
+    statement: string,
+  ): Promise<AiMemoryActionResponse>
   correctMemory(
     learnerId: string,
     memoryId: string,
@@ -201,6 +206,10 @@ export class UnavailableAiMemoryClient implements AiMemoryClient {
   }
 
   async proposeMemory(): Promise<AiMemoryActionResponse> {
+    throw new AiMemoryClientError('AI_MEMORY_NOT_CONFIGURED')
+  }
+
+  async createUserMemory(): Promise<AiMemoryActionResponse> {
     throw new AiMemoryClientError('AI_MEMORY_NOT_CONFIGURED')
   }
 
@@ -366,6 +375,24 @@ export class HttpAiMemoryClient implements AiMemoryClient {
         statement: input.statement,
         category: input.category,
       },
+    )
+    const result = aiMemoryActionResponseSchema.safeParse(payload)
+    if (!result.success) {
+      throw new AiMemoryClientError('AI_MEMORY_INVALID_RESPONSE')
+    }
+    return result.data
+  }
+
+  async createUserMemory(
+    learnerId: string,
+    requestId: string,
+    statement: string,
+  ) {
+    const payload = await this.request(
+      `/internal/learners/${encodeURIComponent(learnerId)}/memories/user-input`,
+      'POST',
+      requestId,
+      { requestId, statement },
     )
     const result = aiMemoryActionResponseSchema.safeParse(payload)
     if (!result.success) {

@@ -1,16 +1,5 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type FormEvent,
-  type ReactNode,
-} from 'react'
-import {
-  Check,
-  ImageUp,
-  LoaderCircle,
-  Trash2,
-} from '@/components/icons/algo-icons'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { ImageUp, LoaderCircle, Trash2 } from '@/components/icons/algo-icons'
 
 import { useNotification } from '@/app/useNotification'
 import { UserAvatar } from '@/components/brand/UserAvatar'
@@ -29,7 +18,6 @@ import {
   prepareAvatarImage,
   uploadAvatarPhoto,
 } from '@/features/profile/api/avatar'
-import { cn } from '@/lib/utils'
 
 type PendingPhoto = { blob: Blob; url: string }
 
@@ -116,19 +104,94 @@ export function IdentityEditor() {
 
   return (
     <form
-      className="grid gap-6 rounded-xl border border-border bg-card p-5 sm:p-6 md:grid-cols-[auto_minmax(0,1fr)]"
+      className="grid gap-8 rounded-xl border border-border bg-card p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_18rem] lg:p-7"
       onSubmit={(event) => void save(event)}
     >
-      <div className="flex flex-col items-center gap-3 md:pt-1">
-        <UserAvatar
-          className="size-24 text-4xl"
-          name={previewName}
-          photoUrl={usingPhoto ? photoUrl : null}
-          preset={DEFAULT_AVATAR}
-        />
-        <p className="max-w-36 truncate text-center text-sm font-medium text-foreground">
-          {previewName}
-        </p>
+      <div className="flex min-w-0 flex-col gap-5">
+        <div className="grid min-w-0 gap-5 sm:grid-cols-2">
+          <label className="flex min-w-0 flex-col gap-1.5">
+            <span className="text-sm font-medium text-foreground">
+              Display name
+            </span>
+            <input
+              autoComplete="nickname"
+              className="h-11 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
+              maxLength={NAME_MAX_LENGTH}
+              onChange={(event) => setName(event.target.value)}
+              placeholder={identity.name}
+              value={name}
+            />
+            <span className="text-xs leading-5 text-muted-foreground">
+              Used in greetings, coaching, and your profile.
+            </span>
+          </label>
+
+          <label className="flex min-w-0 flex-col gap-1.5">
+            <span className="text-sm font-medium text-foreground">
+              Account email
+            </span>
+            <input
+              className="h-11 w-full min-w-0 cursor-not-allowed rounded-md border border-input bg-muted/60 px-3 text-sm text-muted-foreground outline-none"
+              readOnly
+              value={identity.email ?? 'Signed in account'}
+            />
+            <span className="text-xs leading-5 text-muted-foreground">
+              Managed by your sign-in account.
+            </span>
+          </label>
+        </div>
+
+        <div className="rounded-lg border border-border bg-muted/30 p-4">
+          <p className="text-sm font-medium text-foreground">Avatar choice</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            Use your uploaded photo or the AlgoMemtor default. Images are
+            cropped and resized on your device before upload.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button
+              aria-pressed={avatarId === DEFAULT_AVATAR.id}
+              disabled={saving}
+              onClick={() => {
+                setPendingPhoto(null)
+                setAvatarId(DEFAULT_AVATAR.id)
+              }}
+              size="sm"
+              type="button"
+              variant={avatarId === DEFAULT_AVATAR.id ? 'default' : 'outline'}
+            >
+              Use default
+            </Button>
+            {photoUrl ? (
+              <Button
+                aria-pressed={avatarId === PHOTO_AVATAR_ID}
+                disabled={saving}
+                onClick={() => setAvatarId(PHOTO_AVATAR_ID)}
+                size="sm"
+                type="button"
+                variant={avatarId === PHOTO_AVATAR_ID ? 'default' : 'outline'}
+              >
+                Use my photo
+              </Button>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="mt-auto flex flex-wrap items-center gap-3">
+          <Button disabled={!dirty || saving || preparing} type="submit">
+            {saving ? 'Saving…' : 'Save name and avatar'}
+          </Button>
+          {dirty ? (
+            <Button onClick={reset} type="button" variant="ghost">
+              Reset
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="flex min-w-0 flex-col gap-3">
+        <span className="text-sm font-medium text-foreground">
+          Profile photo
+        </span>
         <input
           accept="image/*"
           className="sr-only"
@@ -140,22 +203,39 @@ export function IdentityEditor() {
           tabIndex={-1}
           type="file"
         />
-        <Button
+        <button
+          className="group flex min-h-56 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-input bg-background p-5 text-center outline-none transition-[border-color,background-color,transform] hover:border-primary hover:bg-sky-soft/35 active:scale-[0.99] focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={preparing || saving}
           onClick={() => fileInputRef.current?.click()}
-          size="sm"
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            event.preventDefault()
+            void choosePhoto(event.dataTransfer.files[0])
+          }}
           type="button"
-          variant="outline"
         >
-          {preparing ? (
-            <LoaderCircle aria-hidden="true" className="animate-spin" />
-          ) : (
-            <ImageUp aria-hidden="true" />
-          )}
-          {photoUrl ? 'Change photo' : 'Upload photo'}
-        </Button>
+          <UserAvatar
+            className="size-20 text-3xl transition-transform group-hover:scale-105"
+            name={previewName}
+            photoUrl={usingPhoto ? photoUrl : null}
+            preset={DEFAULT_AVATAR}
+          />
+          <span className="flex items-center gap-2 text-sm font-semibold text-primary">
+            {preparing ? (
+              <LoaderCircle aria-hidden="true" className="animate-spin" />
+            ) : (
+              <ImageUp aria-hidden="true" />
+            )}
+            {photoUrl ? 'Replace photo' : 'Upload photo'}
+          </span>
+          <span className="max-w-52 text-xs leading-5 text-muted-foreground">
+            Drop an image here or choose a file up to 20 MB. It is resized on
+            your device before upload.
+          </span>
+        </button>
         {usingPhoto ? (
           <Button
+            className="self-start"
             disabled={saving}
             onClick={() => {
               setPendingPhoto(null)
@@ -170,120 +250,6 @@ export function IdentityEditor() {
           </Button>
         ) : null}
       </div>
-
-      <div className="flex min-w-0 flex-col gap-5">
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-foreground">
-            Display name
-          </span>
-          <input
-            autoComplete="nickname"
-            className="h-11 w-full max-w-md rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
-            maxLength={NAME_MAX_LENGTH}
-            onChange={(event) => setName(event.target.value)}
-            placeholder={identity.name}
-            value={name}
-          />
-          <span className="text-xs text-muted-foreground">
-            Shown in greetings, the coach and your profile. Leave empty to use
-            the name from your email.
-          </span>
-        </label>
-
-        <fieldset className="flex flex-col gap-2">
-          <legend className="mb-1.5 text-sm font-medium text-foreground">
-            Avatar
-          </legend>
-          <div className="flex flex-wrap gap-2.5">
-            <AvatarOption
-              label="Default avatar"
-              onSelect={() => setAvatarId(DEFAULT_AVATAR.id)}
-              selected={avatarId !== PHOTO_AVATAR_ID}
-            >
-              <UserAvatar
-                className="size-11 text-base"
-                name={previewName}
-                photoUrl={null}
-                preset={DEFAULT_AVATAR}
-              />
-            </AvatarOption>
-            {photoUrl ? (
-              <AvatarOption
-                label="Your photo"
-                onSelect={() => setAvatarId(PHOTO_AVATAR_ID)}
-                selected={avatarId === PHOTO_AVATAR_ID}
-              >
-                <UserAvatar
-                  className="size-11"
-                  name={previewName}
-                  photoUrl={photoUrl}
-                />
-              </AvatarOption>
-            ) : null}
-            {photoUrl === null ? (
-              <button
-                aria-label="Upload a custom photo"
-                className="grid size-12 place-items-center rounded-full border border-dashed border-border text-muted-foreground transition-colors hover:border-primary hover:text-foreground disabled:opacity-60"
-                disabled={preparing || saving}
-                onClick={() => fileInputRef.current?.click()}
-                title="Upload a custom photo"
-                type="button"
-              >
-                <ImageUp aria-hidden="true" className="size-4" />
-              </button>
-            ) : null}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Use the default initial or upload your own photo. Photos are cropped
-            to a square, resized on your device, and stored with your AlgoMemtor
-            account.
-          </p>
-        </fieldset>
-
-        <div className="flex items-center gap-3">
-          <Button disabled={!dirty || saving || preparing} type="submit">
-            {saving ? 'Saving…' : 'Save name and avatar'}
-          </Button>
-          {dirty ? (
-            <Button onClick={reset} type="button" variant="ghost">
-              Reset
-            </Button>
-          ) : null}
-        </div>
-      </div>
     </form>
-  )
-}
-
-function AvatarOption({
-  label,
-  selected,
-  onSelect,
-  children,
-}: {
-  label: string
-  selected: boolean
-  onSelect: () => void
-  children: ReactNode
-}) {
-  return (
-    <button
-      aria-label={label}
-      aria-pressed={selected}
-      className={cn(
-        'relative rounded-full p-0.5 ring-offset-2 ring-offset-card transition-[box-shadow,transform] duration-200 hover:scale-105',
-        selected ? 'ring-2 ring-primary' : 'ring-1 ring-border',
-      )}
-      onClick={onSelect}
-      title={label}
-      type="button"
-    >
-      {children}
-      {selected ? (
-        <span className="absolute -right-0.5 -bottom-0.5 grid size-4.5 place-items-center rounded-full bg-primary text-primary-foreground ring-2 ring-card">
-          <Check aria-hidden="true" className="size-3" />
-        </span>
-      ) : null}
-    </button>
   )
 }

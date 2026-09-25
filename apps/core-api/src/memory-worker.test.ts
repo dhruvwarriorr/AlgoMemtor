@@ -157,6 +157,26 @@ describe('memory worker', () => {
     expect(await worker.processOnce()).toBe(false)
   })
 
+  it('does not execute retired consent cleanup jobs after the always-on migration', async () => {
+    const now = () => new Date('2026-09-13T13:30:00.000Z')
+    const repository: ProgressRepository = new InMemoryProgressRepository(now)
+    const deleteLearnerData = vi.fn(async () => undefined)
+    const client = createClient(async () => ({ status: 'processed' }))
+    client.deleteLearnerData = deleteLearnerData
+    const { worker } = createWorker(repository, client, now)
+
+    await repository.enqueueJob({
+      authUserId: learnerId,
+      jobType: 'memory_consent_cleanup',
+      evidenceType: 'consent_revoked',
+      idempotencyKey: 'retired-consent-cleanup-test',
+    })
+
+    expect(await worker.processOnce()).toBe(true)
+    expect(deleteLearnerData).not.toHaveBeenCalled()
+    expect(await worker.processOnce()).toBe(false)
+  })
+
   it('runs queued coach check-in refreshes through the durable outbox', async () => {
     const now = () => new Date('2026-09-13T14:00:00.000Z')
     const repository: ProgressRepository = new InMemoryProgressRepository(now)
