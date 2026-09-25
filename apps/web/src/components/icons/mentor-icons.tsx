@@ -125,3 +125,17 @@ export const ProgressReportIcon = mentorIcon(
     {node(19.4, 5.8, 2)}
   </>,
 )
+
+// Test Case Visualizer: array cells with a pointer climbing to the cell
+// being executed.
+export const TestCaseVisualizerIcon = mentorIcon(
+  'TestCaseVisualizerIcon',
+  <>
+    <rect height={5.6} rx={1.1} width={5.6} x={2.6} y={4.2} />
+    <rect height={5.6} rx={1.1} width={5.6} x={9.2} y={4.2} />
+    <rect height={5.6} rx={1.1} width={5.6} x={15.8} y={4.2} />
+    <path className="mi-draw" d="M12 19.2v-6.6" pathLength={1} />
+    <path className="mi-draw" d="M9.4 15.1 12 12.5l2.6 2.6" pathLength={1} />
+    {node(12, 20.2, 1.8)}
+  </>,
+)

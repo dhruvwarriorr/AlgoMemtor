@@ -39,9 +39,11 @@ export const errorCode = (error: unknown) =>
 export const languageChoices = ['C++', 'Java', 'Python'] as const
 const languageStorageKey = 'algomemtor.mentor.language'
 
-// The last language the learner picked, kept in this browser only.
-export function useRememberedLanguage() {
+// The last language the learner picked, kept in this browser only. An
+// explicit initial language (for example from the Test Case Visualizer) wins.
+export function useRememberedLanguage(initial?: string) {
   const [language, setLanguage] = useState(() => {
+    if (initial !== undefined && initial.trim() !== '') return initial
     try {
       return window.localStorage.getItem(languageStorageKey) ?? 'C++'
     } catch {

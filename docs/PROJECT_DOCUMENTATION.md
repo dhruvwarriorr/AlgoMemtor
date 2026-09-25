@@ -199,7 +199,9 @@ into this document or a handoff note.
 ### External providers own
 
 - full problem statements and official examples;
-- code editors, compilers, execution, hidden tests, submissions, and verdicts;
+- code editors, compilers, judging runs, hidden tests, submissions, and
+  verdicts (the Test Case Visualizer only replays the learner's own code on
+  the learner's own input, in the browser; see 4.14);
 - canonical contest pages and official rankings;
 - account ownership and private/authenticated data;
 - provider-specific taxonomy and native difficulty/rating semantics.
@@ -207,7 +209,9 @@ into this document or a handoff note.
 ### Explicitly excluded
 
 - copying premium or private problem material;
-- an embedded Monaco editor or code runner;
+- an embedded Monaco editor, an IDE, or any server-side code runner (the Test
+  Case Visualizer runs learner code only inside the learner's browser; see the
+  decision in 4.14);
 - Judge0 or internal judging;
 - learner source-code, drafts, tests, or submission storage;
 - collecting provider passwords, bearer cookies, or CSRF tokens, or sending raw
@@ -639,6 +643,92 @@ card were removed; `GET /api/ai-consent` reports the always-on policy and the
 legacy `PUT` rejects `enabled=false`. Learners still control memory through the
 Memory page (correct, archive, delete, add) and full data reset.
 
+
+### 4.14 Test Case Visualizer
+
+`/visualizer` runs the learner's own C++ or Python program on a test input
+they provide and records every step, so they can see what the program
+actually did. Nothing is generated or guessed by AI; the trace comes from
+running the code.
+
+- **Where code runs.** Only in the learner's browser, in a dedicated Web
+  Worker (`features/visualizer/worker/visualizer.worker.ts`). The worker has no
+  access to the session token, and removes `fetch`, `XMLHttpRequest`,
+  `WebSocket`, `importScripts` and storage APIs once its runtime has loaded.
+  Code, input and expected output are never sent to AlgoMemtor's servers by
+  the visualizer and never stored server-side; the current draft stays in
+  this tab's `sessionStorage`.
+- **Python** runs real CPython 3.14 through Pyodide (`pyodide` npm package,
+  self-hosted under `/pyodide/<version>/`, never from a CDN). The tracer
+  (`engines/python/tracer.py`) uses `sys.settrace` and AST analysis for
+  branch/loop headers and element accesses. Imports of `js`/`pyodide` are
+  blocked, `open()` only reaches standard input/output, and
+  `sys.setrecursionlimit` is capped at 2,500.
+- **C++** runs in a TypeScript interpreter for contest C++
+  (`engines/cpp/*`): preprocessor macros and `#ifdef`, 8/16/32/64/128-bit
+  integers with g++ wrap-around, `double`, strings, C arrays, `vector`,
+  `deque`, `stack`, `queue`, `priority_queue`, `map`/`set` (ordered, unordered
+  and multi), `pair`/`tuple`, structs with methods, constructors and
+  operators, lambdas (including recursive ones), templates as `auto`,
+  iterators, `<algorithm>`, `cin`/`cout` formatting, `scanf`/`printf` and
+  `getline`. Unsupported features (pointers, `new`/`delete`, inheritance,
+  exceptions, namespaces, random engines) stop with a clear "not supported"
+  message and line. Undefined behaviour that would corrupt a real run is
+  reported instead of hidden: an out-of-range index stops the run with the
+  index, size and valid range; signed overflow, unsigned wrap-around,
+  narrowing conversions and reads of unset locals are step warnings.
+  Recursion is executed with generators and an explicit call stack, so depth
+  is limited to 20,000 calls rather than by the JavaScript stack. Unordered
+  containers iterate in insertion order, and `long` is 64-bit (LP64).
+- **Limits.** 10,000 recorded steps (the program keeps running unrecorded so
+  the final output is still correct), a 5-second run budget, 200,000
+  characters of output and bounded container sizes. A worker that does not
+  answer within the budget plus 8 seconds is terminated.
+- **What the learner sees.** The code with the current line, breakpoints and
+  per-line hit counts; Previous/Next/Play/Pause/Restart, a scrubber, speed,
+  an important-steps filter and jumps (next change, branch, iteration, call,
+  output, breakpoint, watched variable, warning, first wrong output, error);
+  a plain-language description of each step; the call stack with changed
+  values and their previous value; arrays with index pointers, a window
+  between pointer pairs and read/write highlights; grids, stacks, queues,
+  deques, heaps, sets and maps; consumed input, output so far and a
+  whitespace-insensitive expected-output comparison that locates the step that
+  printed the first wrong token; and a virtualised timeline that collapses the
+  middle of long loops.
+- **Doubt Helper.** Active sessions in C++ or Python show "Visualize a test
+  case", which opens the visualizer with the session's problem and the code
+  attached in that tab. From the visualizer, "Ask Doubt Helper about this
+  step" opens the session's Ask dock with a question built from the recorded
+  step (line, variables, output, expected output) and the code attached as
+  the existing transient `transientCode`; the learner reviews and sends it.
+  Without a session, "Get help with this step" pre-fills a new Doubt Helper
+  intake instead.
+- **Solution Explorer.** Every approach with a program in C++ or Python has
+  "Visualize with a test case", which opens that program in the visualizer.
+
+#### Decision: the Test Case Visualizer runs learner code in the browser (2026-09-25)
+
+- **Context:** the project owner asked for a visualizer that executes the
+  learner's code on a test case and shows each step (see
+  `docs/TEST_CASE_VISUALIZER_PLAN.md`). Section 3 excluded any code runner so
+  that AlgoMemtor would not become a judge or store learner code.
+- **Decision:** allow execution only for visualization, only inside the
+  learner's browser (a Web Worker with network APIs removed), with Pyodide for
+  Python and a purpose-built interpreter for contest C++. No server endpoint
+  executes code; nothing about a run is stored server-side. The judge boundary
+  stays: no hidden tests, submissions, verdicts or Judge0.
+- **Alternatives:** server-side sandboxes or Judge0 (a new attack surface,
+  operational cost and learner code on the server), compiling C++ to
+  WebAssembly (no variable-level tracing without debug-info parsing, and a
+  very large download), and AI-generated traces (rejected: they can be wrong).
+- **Consequences:** the C++ interpreter supports a documented subset and may
+  differ from g++ where C++ leaves behaviour undefined (it reports those cases
+  instead); the first Python run downloads about 13 MB, cached afterwards;
+  AI-generated Solution Explorer code can be run, but only in the learner's
+  own sandboxed worker.
+- **Review triggers:** any request to run code on a server, to store runs or
+  code, to support more languages, or a security finding about the worker.
+
 ---
 
 ## 5. User experience
@@ -660,6 +750,7 @@ Memory page (correct, archive, delete, add) and full data reset.
   and redirect cards to the mentor tools.
 - `/doubt-helper` and `/doubt-helper/:sessionId` — guided hints and debugging.
 - `/solutions` — Solution Explorer.
+- `/visualizer` — Test Case Visualizer (code runs in the browser only).
 - `/upsolve` — upsolve queue and completion tracking.
 - `/contest-analysis` — per-contest and cross-contest analysis.
 - `/progress/report` — progress evaluation and insight report.
@@ -2413,6 +2504,11 @@ npm run test:web
 npm run test:core
 ```
 
+The Test Case Visualizer engines are covered by
+`apps/web/src/features/visualizer/**/*.test.ts`: the C++ interpreter against
+contest programs, and the Python tracer inside real Pyodide under Node (the
+first run loads the runtime from `node_modules`, a few seconds).
+
 ### Python service
 
 ```bash
@@ -2552,6 +2648,13 @@ destructive reset against a shared database.
 11. Google sign-in and "Connect Google" require the Google provider (and manual
     identity linking) to be enabled in the Supabase Dashboard, with
     `/dashboard`, `/settings` and `/reset-password` on the redirect allowlist.
+12. The Test Case Visualizer runs C++ in an interpreter for a contest subset
+    (no pointers, inheritance, exceptions or custom namespaces; unordered
+    containers iterate in insertion order) and supports only C++ and Python.
+    Plan items not built yet: comparing two runs, graph/tree/DP-table
+    drawings, named test cases and AI explanations inside the visualizer
+    (questions go through the Doubt Helper).
+
 ### Safe next work
 
 - Add a provider-approved API or user-controlled local connector for complete
@@ -2733,6 +2836,13 @@ integrations/provider-accounts/
 | `apps/web/src/features/coach/components/CoachRichContent.tsx`  | Accessible charts, tables, timelines, trusted problems, citations, follow-ups |
 | `apps/web/src/features/coach/*`                                | Coach API calls and TanStack Query state                                      |
 | `apps/web/src/mocks/handlers.ts`                               | MSW implementation of the same normalized API shape                           |
+| `apps/web/src/pages/TestCaseVisualizerPage.tsx`                | Visualizer editor, playback, panels, and mentor handoffs                      |
+| `apps/web/src/features/visualizer/trace.ts`                    | Execution-trace format shared by both engines and the UI                      |
+| `apps/web/src/features/visualizer/engines/cpp/*`               | Contest C++ preprocessor, parser, interpreter, library, and snapshots         |
+| `apps/web/src/features/visualizer/engines/python/*`            | Pyodide tracer (`tracer.py`) and its TypeScript wrapper                       |
+| `apps/web/src/features/visualizer/worker/*`                    | Web Worker that runs both engines off the main thread                         |
+| `apps/web/src/features/visualizer/analysis.ts`                 | Step descriptions, changes, loop compression, pointers, output comparison     |
+| `apps/web/src/features/visualizer/handoff.ts`                  | Validated navigation-state handoffs and the tab-only draft                    |
 
 ---
 

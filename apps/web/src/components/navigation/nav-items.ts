@@ -16,6 +16,7 @@ import {
   DoubtHelperIcon,
   ProgressReportIcon,
   SolutionExplorerIcon,
+  TestCaseVisualizerIcon,
   UpsolveIcon,
 } from '@/components/icons/mentor-icons'
 
@@ -61,6 +62,12 @@ export const accountMenuGroups: ReadonlyArray<{
         to: '/solutions',
         icon: SolutionExplorerIcon,
         chip: 'bg-[#a78bfa] text-[#1e1038]',
+      },
+      {
+        label: 'Test Case Visualizer',
+        to: '/visualizer',
+        icon: TestCaseVisualizerIcon,
+        chip: 'bg-[#38bdf8] text-[#03121c]',
       },
       {
         label: 'Upsolve',

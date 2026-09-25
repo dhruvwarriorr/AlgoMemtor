@@ -26,7 +26,10 @@ import {
 } from '@/components/motion/GradientCard'
 import { AiLoader, type AiLoaderStep } from '@/components/motion/AiLoader'
 import PageContainer from '@/components/layout/PageContainer'
-import { DoubtHelperIcon } from '@/components/icons/mentor-icons'
+import {
+  DoubtHelperIcon,
+  TestCaseVisualizerIcon,
+} from '@/components/icons/mentor-icons'
 import PageHeader from '@/components/layout/PageHeader'
 import { ErrorState } from '@/components/states/ErrorState'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -59,6 +62,11 @@ import {
   useSolutionAccess,
   useSolutionChat,
 } from '@/features/mentor/hooks'
+import {
+  VISUALIZER_PATH,
+  visualizerLanguageFor,
+  type VisualizerHandoff,
+} from '@/features/visualizer/handoff'
 import { cn } from '@/lib/utils'
 
 const kindLabels: Record<SolutionApproachKind, string> = {
@@ -122,12 +130,25 @@ function ApproachCard({
   index,
   total,
   language,
+  problem,
 }: {
   approach: SolutionApproach
   index: number
   total: number
   language: string
+  problem: { title: string; url?: string }
 }) {
+  const visualizerLanguage = visualizerLanguageFor(language)
+  const visualizer: VisualizerHandoff | null =
+    approach.code === undefined || visualizerLanguage === null
+      ? null
+      : {
+          source: 'solution_explorer',
+          language: visualizerLanguage,
+          code: approach.code,
+          problem,
+          approach: `${kindLabels[approach.kind]}: ${approach.name}`,
+        }
   return (
     <article className="min-w-0 rounded-xl border border-border bg-card p-4 sm:p-5">
       <div className="flex flex-wrap items-center gap-2">
@@ -201,6 +222,19 @@ function ApproachCard({
             Code ({language})
           </summary>
           <CodeBlockView code={approach.code} language={language} />
+          {visualizer !== null ? (
+            <Link
+              className={cn(
+                buttonVariants({ size: 'sm', variant: 'outline' }),
+                'mb-1',
+              )}
+              state={{ visualizer }}
+              to={VISUALIZER_PATH}
+            >
+              <TestCaseVisualizerIcon aria-hidden="true" /> Visualize with a
+              test case
+            </Link>
+          ) : null}
           {approach.codeExplanation ? (
             <div className="mt-3 text-sm text-muted-foreground [&>div]:mt-1">
               <CoachMessageContent
@@ -475,6 +509,11 @@ function ExplorationView({
             index={index}
             key={`${approach.kind}-${index}`}
             language={exploration.language}
+            problem={
+              problem.canonicalUrl === undefined
+                ? { title: problem.title }
+                : { title: problem.title, url: problem.canonicalUrl }
+            }
             total={exploration.approaches.length}
           />
         ))}

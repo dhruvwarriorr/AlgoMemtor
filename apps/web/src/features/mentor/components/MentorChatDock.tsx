@@ -50,6 +50,9 @@ type MentorChatDockProps = {
   disabledReason?: string
   // Extra fields for the active mode, for example attached code.
   extra?: ReactNode
+  // Drafts to start with, by mode (for example a question prepared by the
+  // Test Case Visualizer). The learner reviews and sends them.
+  initialDrafts?: Readonly<Record<string, string>>
   // Resolves true when the message was accepted and the draft can be
   // cleared; a failed send keeps the draft.
   onSubmit: (text: string, mode: string) => boolean | Promise<boolean>
@@ -72,10 +75,13 @@ export function MentorChatDock({
   disabled = false,
   disabledReason,
   extra,
+  initialDrafts,
   onSubmit,
 }: MentorChatDockProps) {
   const panelId = useId()
-  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [drafts, setDrafts] = useState<Record<string, string>>(() => ({
+    ...initialDrafts,
+  }))
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const endRef = useRef<HTMLDivElement | null>(null)
   const active = modes.find((item) => item.id === mode) ?? modes[0]

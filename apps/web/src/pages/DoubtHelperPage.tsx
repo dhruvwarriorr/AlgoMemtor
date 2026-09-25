@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import {
+  Link,
+  useLocation,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from 'react-router-dom'
 import {
   PROBLEM_HELP_MAX_GUIDED_LEVEL,
   codeRequiredDoubtTypes,
@@ -59,6 +65,17 @@ import {
   useStartHelpSession,
 } from '@/features/mentor/hooks'
 import { mentorToolPath } from '@/features/mentor/feature-routes'
+import { TestCaseVisualizerIcon } from '@/components/icons/mentor-icons'
+import {
+  VISUALIZER_PATH,
+  readDoubtIntake,
+  readDoubtQuestion,
+  recallDoubtCode,
+  rememberDoubtCode,
+  visualizerLanguageFor,
+  type DoubtIntakeHandoff,
+  type VisualizerHandoff,
+} from '@/features/visualizer/handoff'
 import { cn } from '@/lib/utils'
 
 const doubtIcons: Record<ProblemHelpDoubtType, IconComponent> = {
@@ -331,19 +348,33 @@ function Transcript({ turns }: { turns: readonly ProblemHelpTurn[] }) {
   )
 }
 
-function IntakeForm({ initialProblem }: { initialProblem: string }) {
+function IntakeForm({
+  initialProblem,
+  intake,
+}: {
+  initialProblem: string
+  intake: DoubtIntakeHandoff | null
+}) {
   const navigate = useNavigate()
   const { notify } = useNotification()
   const start = useStartHelpSession()
-  const [language, setLanguage] = useRememberedLanguage()
+  const [language, setLanguage] = useRememberedLanguage(intake?.language)
   const [problemUrl, setProblemUrl] = useState(initialProblem)
   const [pasteMode, setPasteMode] = useState(false)
   const [problemTitle, setProblemTitle] = useState('')
   const [statement, setStatement] = useState('')
-  const [doubtType, setDoubtType] = useState<ProblemHelpDoubtType | null>(null)
-  const [attempt, setAttempt] = useState('')
-  const [code, setCode] = useState('')
-  const [errorText, setErrorText] = useState('')
+  const [doubtType, setDoubtType] = useState<ProblemHelpDoubtType | null>(
+    intake === null ? null : 'wrong_answer',
+  )
+  const [attempt, setAttempt] = useState(
+    intake === null
+      ? ''
+      : 'I traced my code on a test case in the Test Case Visualizer. The step I am unsure about is below.',
+  )
+  const [code, setCode] = useState(intake?.code ?? '')
+  const [errorText, setErrorText] = useState(
+    intake?.details.slice(0, 4_000) ?? '',
+  )
   const [fieldError, setFieldError] = useState<string | null>(null)
   const [needsStatement, setNeedsStatement] = useState(false)
 
@@ -407,6 +438,13 @@ function IntakeForm({ initialProblem }: { initialProblem: string }) {
       },
       {
         onSuccess: (response) => {
+          if (code.trim() !== '') {
+            rememberDoubtCode(
+              response.data.id,
+              code,
+              doubtType === 'no_output' ? errorText : '',
+            )
+          }
           if (showStatement && statement.trim() !== '') {
             try {
               window.sessionStorage.setItem(
@@ -664,11 +702,15 @@ function IntakeForm({ initialProblem }: { initialProblem: string }) {
 
 function SessionView({ sessionId }: { sessionId: string }) {
   const { notify } = useNotification()
+  const location = useLocation()
+  const navigate = useNavigate()
   const sessionQuery = useHelpSession(sessionId)
   const turn = useHelpTurn(sessionId)
-  const [dockOpen, setDockOpen] = useState(false)
+  // A question prepared in the Test Case Visualizer about one step.
+  const [visualizerQuestion] = useState(() => readDoubtQuestion(location.state))
+  const [dockOpen, setDockOpen] = useState(visualizerQuestion !== null)
   const [dockMode, setDockMode] = useState<'ask' | 'attempt'>('ask')
-  const [code, setCode] = useState('')
+  const [code, setCode] = useState(visualizerQuestion?.code ?? '')
   const [errorText, setErrorText] = useState('')
   const [statement, setStatement] = useState(() => {
     try {
@@ -684,6 +726,12 @@ function SessionView({ sessionId }: { sessionId: string }) {
   const [needsStatement, setNeedsStatement] = useState(false)
   const endRef = useRef<HTMLDivElement | null>(null)
   const turnCount = sessionQuery.data?.turns.length ?? 0
+
+  useEffect(() => {
+    if (location.state !== null && location.state !== undefined) {
+      void navigate(location.pathname, { replace: true, state: null })
+    }
+  }, [location.pathname, location.state, navigate])
 
   useEffect(() => {
     if (turnCount === 0) return
@@ -799,6 +847,23 @@ function SessionView({ sessionId }: { sessionId: string }) {
     session.hintLevel + 1,
     PROBLEM_HELP_MAX_GUIDED_LEVEL,
   )
+  const visualizerLanguage = visualizerLanguageFor(session.language)
+
+  function openVisualizer() {
+    const remembered = recallDoubtCode(session.id)
+    const handoff: VisualizerHandoff = {
+      source: 'doubt_helper',
+      language: visualizerLanguage ?? 'cpp',
+      code: code.trim() !== '' ? code : (remembered?.code ?? ''),
+      input: remembered?.input ?? '',
+      problem:
+        session.problem.canonicalUrl === undefined
+          ? { title: session.problem.title }
+          : { title: session.problem.title, url: session.problem.canonicalUrl },
+      sessionId: session.id,
+    }
+    void navigate(VISUALIZER_PATH, { state: { visualizer: handoff } })
+  }
   const canExplore =
     session.problem.canonicalUrl !== undefined &&
     session.problem.provider !== undefined
@@ -976,6 +1041,17 @@ function SessionView({ sessionId }: { sessionId: string }) {
             >
               <MessageCircle aria-hidden="true" /> Ask a question
             </Button>
+            {visualizerLanguage !== null ? (
+              <Button
+                disabled={turn.isPending}
+                onClick={openVisualizer}
+                type="button"
+                variant="outline"
+              >
+                <TestCaseVisualizerIcon aria-hidden="true" /> Visualize a test
+                case
+              </Button>
+            ) : null}
             {session.stage === 'hinting' ? (
               <Button
                 disabled={turn.isPending}
@@ -1068,7 +1144,10 @@ function SessionView({ sessionId }: { sessionId: string }) {
             )
           }
           extra={
-            <details className="rounded-lg border border-border px-3 py-2">
+            <details
+              className="rounded-lg border border-border px-3 py-2"
+              open={visualizerQuestion !== null}
+            >
               <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
                 <Code2 aria-hidden="true" className="mr-1 inline size-3.5" />
                 Attach code{dockMode === 'attempt' ? ' or a verdict' : ''} (used
@@ -1107,6 +1186,9 @@ function SessionView({ sessionId }: { sessionId: string }) {
             </details>
           }
           launcherLabel="Ask or share an attempt"
+          {...(visualizerQuestion === null
+            ? {}
+            : { initialDrafts: { ask: visualizerQuestion.content } })}
           messages={dockMessages}
           mode={dockMode}
           modes={[
@@ -1203,8 +1285,10 @@ function SessionList({ activeId }: { activeId: string | undefined }) {
 
 function DoubtHelperPage() {
   const { sessionId } = useParams()
+  const location = useLocation()
   const [searchParams] = useSearchParams()
   const initialProblem = searchParams.get('problem') ?? ''
+  const intake = readDoubtIntake(location.state)
 
   return (
     <main
@@ -1231,7 +1315,11 @@ function DoubtHelperPage() {
         <SessionList activeId={sessionId} />
         <div className="min-w-0 max-w-4xl">
           {sessionId === undefined ? (
-            <IntakeForm initialProblem={initialProblem} key={initialProblem} />
+            <IntakeForm
+              initialProblem={initialProblem}
+              intake={intake}
+              key={`${initialProblem}|${intake === null ? '' : 'visualizer'}`}
+            />
           ) : (
             <SessionView key={sessionId} sessionId={sessionId} />
           )}

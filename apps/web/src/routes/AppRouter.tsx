@@ -30,6 +30,9 @@ const ResetPasswordPage = lazy(
 )
 const SettingPage = lazy(() => import('@/pages/SettingPage'))
 const SolutionExplorerPage = lazy(() => import('@/pages/SolutionExplorerPage'))
+const TestCaseVisualizerPage = lazy(
+  () => import('@/pages/TestCaseVisualizerPage'),
+)
 const UpsolvePage = lazy(() => import('@/pages/UpsolvePage'))
 
 const page = (content: ReactNode, label: string) => (
@@ -97,6 +100,13 @@ function AppRouter() {
             element={page(
               <SolutionExplorerPage />,
               'Loading Solution Explorer',
+            )}
+          />
+          <Route
+            path="visualizer"
+            element={page(
+              <TestCaseVisualizerPage />,
+              'Loading Test Case Visualizer',
             )}
           />
           <Route

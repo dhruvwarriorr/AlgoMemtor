@@ -69,8 +69,14 @@ learner profile
 
 - Store and render provider-permitted metadata, not full external problem
   statements, examples, constraints, starter code, editorials, or test cases.
-- Do not add Monaco, an embedded IDE, code execution, Judge0, internal judging,
-  learner source-code storage, drafts, submissions, or verdict storage.
+- Do not add Monaco, an embedded IDE, server-side code execution, Judge0,
+  internal judging, learner source-code storage, drafts, submissions, or
+  verdict storage.
+- Exception (decision of 2026-09-25): the Test Case Visualizer runs the
+  learner's own code on their own input only inside the learner's browser
+  (a Web Worker with network APIs removed; Pyodide for Python, a TypeScript
+  interpreter for contest C++). No server endpoint executes code and no run
+  or code is stored server-side. Traces come from execution, never from AI.
 - Use official or explicitly permitted provider APIs or feeds for catalog data.
   The public solved-count and activity behavior in the project documentation permits the backend to
   read the public CodeChef profile page and LeetCode website GraphQL response
@@ -353,6 +359,15 @@ source, tests, and `git status` before relying on it.
   bands follow the observed Codeforces rating once onboarding comfort is
   outgrown, steered topics outrank other focus topics, and
   `AI_RANKING_TIMEOUT_MS` defaults to 60 s.
+- 2026-09-25 (visualizer): `/visualizer` is the Test Case Visualizer
+  (`apps/web/src/features/visualizer`). It traces C++ (own interpreter in
+  `engines/cpp`) and Python (Pyodide self-hosted under `/pyodide/<version>/`
+  by the Vite plugin in `vite.config.ts`, tracer in `engines/python/tracer.py`)
+  in a Web Worker, with a shared `ExecutionTrace` format. Doubt Helper sessions
+  and Solution Explorer approaches open it through validated navigation
+  state; "Ask Doubt Helper about this step" pre-fills the session's Ask dock.
+  Code moves only through browser history state and this tab's
+  `sessionStorage`.
 
 Important: this snapshot describes the working tree, which currently contains
 uncommitted Week 10 work. It is context, not permission to commit or rewrite it.
