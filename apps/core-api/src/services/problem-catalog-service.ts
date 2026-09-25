@@ -196,4 +196,14 @@ export class ProblemCatalogService {
       ...(requestId === undefined ? {} : { requestId }),
     })
   }
+
+  async getCommunitySolutions(
+    provider: ProviderKey,
+    externalId: string,
+    language: string,
+  ) {
+    const selected = this.selected(provider)[0]
+    if (selected?.communitySolutions === undefined) return []
+    return selected.communitySolutions(externalId, language)
+  }
 }

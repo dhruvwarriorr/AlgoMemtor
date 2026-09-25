@@ -322,6 +322,15 @@ source, tests, and `git status` before relying on it.
   New `core` tables: `problem_help_sessions`/`_turns`, `mentor_reports`,
   `upsolve_item_states`, `revision_items`. Personalized AI is always on;
   Settings has an Accounts section (Google connect, change password).
+- 2026-09-25: mentor tools work from a link alone (`page_retrieval.py`: direct
+  read, then the `WEB_READER_PROXY_URL` reader for blocked pages; see the
+  decision in PROJECT_DOCUMENTATION). The Solution Explorer explains the
+  problem, gives three approaches with complete programs, resolves the
+  Codeforces editorial link, lists top community solutions in the chosen
+  language (platform APIs, then web search) and has a follow-up assistant;
+  the Doubt Helper's ask/attempt actions live in a bottom-right panel. Coach
+  turns get per-tier token budgets and relevance-packed context
+  (`coach_context.py`). Pathway and check-ins are removed; do not re-add them.
 
 Important: this snapshot describes the working tree, which currently contains
 uncommitted Week 10 work. It is context, not permission to commit or rewrite it.

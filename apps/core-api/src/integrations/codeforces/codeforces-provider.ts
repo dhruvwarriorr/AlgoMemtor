@@ -29,11 +29,17 @@ import type { ProviderCapabilityMap } from '../providers/provider-adapter.js'
 import type { ProblemMetadataCache } from '../providers/problem-metadata-cache.js'
 import type { ProblemContentCacheRepository } from '../../repositories/problem-content-cache-repository.js'
 import {
+  fetchProviderJson,
   fetchProviderText,
   isProviderHostnameAllowed,
   type ProviderHttpRequest,
 } from '../providers/provider-http-client.js'
 import { readLimitedResponseText } from '../provider-accounts/provider-fetch-utils.js'
+import {
+  CodeforcesStatusEnvelopeSchema,
+  codeforcesCommunitySolutions,
+  type CommunitySolutionLink,
+} from '../providers/community-solutions.js'
 import { problemContentFromHtml } from '../providers/provider-content.js'
 import { providerHtmlToText } from '../providers/provider-html-sanitizer.js'
 import {
@@ -405,6 +411,44 @@ export class CodeforcesProvider implements ProblemProvider {
       }
       throw error
     }
+  }
+
+  async communitySolutions(
+    externalId: string,
+    language: string,
+    request: ProblemProviderRequest = {},
+  ): Promise<CommunitySolutionLink[]> {
+    const match = /^(\d+)([A-Za-z][0-9]*)$/.exec(externalId.trim())
+    if (match?.[1] === undefined || match[2] === undefined) return []
+    const contestId = Number(match[1])
+    // The newest submissions of the contest from the official API; accepted
+    // ones for this problem and language are ranked by run time.
+    const url = new URL('contest.status', this.endpoint)
+    url.searchParams.set('contestId', String(contestId))
+    url.searchParams.set('from', '1')
+    url.searchParams.set('count', '4000')
+    const body = await fetchProviderJson({
+      provider: this.key,
+      url,
+      allowedHostname: 'codeforces.com',
+      requestGate: this.requestGate,
+      fetchImpl: this.fetchImpl,
+      timeoutMs: Math.max(this.timeoutMs, 15_000),
+      maxAttempts: 1,
+      maxResponseBytes: 12_000_000,
+      ...(request.signal === undefined ? {} : { signal: request.signal }),
+      ...(request.requestId === undefined
+        ? {}
+        : { requestId: request.requestId }),
+    } satisfies ProviderHttpRequest)
+    const parsed = CodeforcesStatusEnvelopeSchema.safeParse(body)
+    if (!parsed.success) return []
+    return codeforcesCommunitySolutions(
+      parsed.data.result,
+      contestId,
+      match[2],
+      language,
+    )
   }
 
   private async loadCatalog(request: ProblemProviderRequest) {

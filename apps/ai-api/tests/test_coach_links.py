@@ -145,10 +145,10 @@ class CapturingModel:
 async def test_pasted_pages_are_read_for_the_turn_and_links_stay_clickable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_read(url: str, **_kwargs: Any) -> web_reader.WebPage:
+    async def fake_read(url: str, *_args: Any, **_kwargs: Any) -> web_reader.WebPage:
         return web_reader.WebPage(url=url, title="A post", text="Page body text.")
 
-    monkeypatch.setattr("app.coach_service.read_public_page", fake_read)
+    monkeypatch.setattr("app.coach_service.retrieve_public_page", fake_read)
     model = CapturingModel()
     service = CoachService(settings(), model=model, audit_repository=AuditRepository())
     output = await service.respond(
@@ -178,10 +178,10 @@ async def test_pasted_pages_are_read_for_the_turn_and_links_stay_clickable(
 async def test_platform_links_opened_by_core_are_not_fetched_again(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fail(_url: str, **_kwargs: Any) -> web_reader.WebPage:
+    async def fail(_url: str, *_args: Any, **_kwargs: Any) -> web_reader.WebPage:
         raise AssertionError("already opened by the core API")
 
-    monkeypatch.setattr("app.coach_service.read_public_page", fail)
+    monkeypatch.setattr("app.coach_service.retrieve_public_page", fail)
     model = CapturingModel()
     service = CoachService(settings(), model=model, audit_repository=AuditRepository())
     url = "https://codeforces.com/problemset/problem/2266/G"

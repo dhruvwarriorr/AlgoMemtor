@@ -5194,6 +5194,8 @@ export const createApp = (options: CreateAppOptions = {}) => {
         problemContent: async (provider, externalId) =>
           (await catalogService.getProblemContent(provider, externalId))
             ?.content ?? null,
+        communitySolutions: (provider, externalId, language) =>
+          catalogService.getCommunitySolutions(provider, externalId, language),
         logger,
       }),
     })

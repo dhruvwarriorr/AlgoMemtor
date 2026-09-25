@@ -6,6 +6,7 @@ import {
   PROBLEM_HELP_MAX_GUIDED_LEVEL,
   ProgressNarrativeSchema,
   REVISION_INTERVAL_DAYS,
+  SOLUTION_CHAT_HISTORY_LIMIT,
   SolutionExplorationSchema,
   activeProblemHelpStages,
   debuggingDoubtTypes,
@@ -29,6 +30,7 @@ import {
   type RevisionItem,
   type RevisionsResponse,
   type SolutionAccess,
+  type SolutionChatRequest,
   type SolutionExploration,
   type SolutionUnlockReason,
   type StartProblemHelpRequest,
@@ -44,6 +46,7 @@ import type {
 } from '../integrations/ai/ai-mentor-client.js'
 import { AiMentorClientError } from '../integrations/ai/ai-mentor-client.js'
 import type { AiMemoryClient } from '../integrations/ai/ai-memory-client.js'
+import type { CommunitySolutionLink } from '../integrations/providers/community-solutions.js'
 import {
   problemKeyFor,
   problemRef,
@@ -72,6 +75,8 @@ import { buildUpsolve, editorialUrl } from './upsolve-queue.js'
 const DAY_MS = 86_400_000
 const ANALYZED_CONTEST_LIMIT = 12
 const STATEMENT_LIMIT = 18_000
+const PLATFORM_SOLUTIONS_BUDGET_MS = 20_000
+const UNREADABLE_TTL_MS = 15 * 60_000
 
 export type MentorErrorCode =
   | 'PROBLEM_HELP_SESSION_NOT_FOUND'
@@ -125,6 +130,11 @@ export type MentorServiceOptions = {
     provider: ProviderKey,
     externalId: string,
   ) => Promise<ProblemContent | null>
+  communitySolutions?: (
+    provider: ProviderKey,
+    externalId: string,
+    language: string,
+  ) => Promise<CommunitySolutionLink[]>
   logger: StructuredLogger
   now?: () => Date
 }
@@ -184,7 +194,14 @@ const titleFromUrl = (url: string) => {
   }
 }
 
+const pastedProblem = (title: string): ResolvedProblem => ({
+  problem: { platform: 'other', title: title.slice(0, 200), topics: [] },
+  context: { platform: 'other', title: title.slice(0, 200), tags: [] },
+})
+
 export class MentorService {
+  private readonly unreadableUntil = new Map<string, number>()
+
   constructor(private readonly options: MentorServiceOptions) {}
 
   private now() {
@@ -200,6 +217,12 @@ export class MentorService {
         throw new MentorError(
           'MENTOR_AI_RATE_LIMITED',
           'The AI mentor is busy right now. Wait a minute and try again.',
+        )
+      }
+      if (error.code === 'AI_MENTOR_PROBLEM_UNREADABLE') {
+        throw new MentorError(
+          'PROBLEM_CONTEXT_UNAVAILABLE',
+          'The problem page could not be read from that link. Paste the statement and try again.',
         )
       }
       throw new MentorError(
@@ -220,11 +243,20 @@ export class MentorService {
     authUserId: string,
     activity?: LearnerActivity,
     focusTopics: readonly string[] = [],
+    // What this request is about; memories are then retrieved by vector and
+    // keyword similarity to it instead of taking the most confident ones.
+    memoryQuery?: string,
   ): Promise<LearnerSnapshot> {
+    const memoryClient = this.options.aiMemoryClient
     const [profile, roadmap, memories, loaded] = await Promise.all([
       this.options.learnerProfile(authUserId).catch(() => null),
       this.options.roadmap(authUserId).catch(() => null),
-      this.options.aiMemoryClient.listMemories(authUserId).catch(() => []),
+      (memoryQuery !== undefined && memoryClient.retrieveMemories !== undefined
+        ? memoryClient
+            .retrieveMemories(authUserId, memoryQuery.slice(0, 500), 8)
+            .catch(() => memoryClient.listMemories(authUserId))
+        : memoryClient.listMemories(authUserId)
+      ).catch(() => []),
       activity === undefined
         ? this.options.repository.loadActivity(authUserId)
         : Promise.resolve(activity),
@@ -259,7 +291,10 @@ export class MentorService {
       })),
       memories: memories
         .filter((memory) => memory.status === 'active')
-        .sort((left, right) => right.confidence - left.confidence)
+        .sort((left, right) =>
+          // Retrieved memories arrive ranked by relevance; keep that order.
+          memoryQuery === undefined ? right.confidence - left.confidence : 0,
+        )
         .slice(0, 8)
         .map((memory) => memory.statement.slice(0, 400)),
     }
@@ -273,6 +308,8 @@ export class MentorService {
     url?: string
     title?: string
     statement?: string
+    // Access checks need the identity and metadata, not the statement.
+    withContent?: boolean
   }): Promise<ResolvedProblem> {
     const reference =
       input.url === undefined ? null : providerProblemFromUrl(input.url)
@@ -296,6 +333,8 @@ export class MentorService {
         reference.provider,
         externalId,
         input.statement,
+        input.url,
+        input.withContent ?? true,
       )
     }
     if (input.url !== undefined) {
@@ -320,7 +359,10 @@ export class MentorService {
           tags: [],
           ...(input.statement === undefined
             ? { readUrl: input.url }
-            : { statement: input.statement.slice(0, STATEMENT_LIMIT) }),
+            : {
+                statement: input.statement.slice(0, STATEMENT_LIMIT),
+                statementOrigin: 'pasted' as const,
+              }),
         },
       }
     }
@@ -336,6 +378,7 @@ export class MentorService {
         platform: 'other',
         title: input.title,
         statement: input.statement.slice(0, STATEMENT_LIMIT),
+        statementOrigin: 'pasted',
         tags: [],
       },
     }
@@ -345,10 +388,29 @@ export class MentorService {
     provider: ProviderKey,
     externalId: string,
     pastedStatement?: string,
+    linkedUrl?: string,
+    withContent = true,
   ): Promise<ResolvedProblem> {
     const problemKey = problemKeyFor(provider, externalId)
+    const ref = problemRef(provider, externalId)
+    const skipContent =
+      !withContent ||
+      pastedStatement !== undefined ||
+      (this.unreadableUntil.get(ref) ?? 0) > Date.now()
     const [content, metadata] = await Promise.all([
-      this.options.problemContent(provider, externalId).catch(() => null),
+      skipContent
+        ? Promise.resolve(null)
+        : this.options
+            .problemContent(provider, externalId)
+            .catch(() => null)
+            .then((result) => {
+              // A blocked or missing statement is not retried on every
+              // turn; the AI service reads the public page instead.
+              if (result === null) {
+                this.unreadableUntil.set(ref, Date.now() + UNREADABLE_TTL_MS)
+              }
+              return result
+            }),
       this.options.repository
         .problemMetadata([{ provider, problemKey: externalId }])
         .catch(() => new Map<string, ProblemMeta>()),
@@ -361,12 +423,21 @@ export class MentorService {
     const topics = (
       meta?.topics.length ? meta.topics : (meta?.tags ?? [])
     ).slice(0, 12)
-    const statement =
-      pastedStatement?.slice(0, STATEMENT_LIMIT) ??
-      (content === null || content.isPaidOnly
+    const providerStatement =
+      content === null || content.isPaidOnly
         ? undefined
         : linkedProblemFromContent(content, STATEMENT_LIMIT).statement ||
-          undefined)
+          undefined
+    const statement =
+      pastedStatement?.slice(0, STATEMENT_LIMIT) ?? providerStatement
+    // When the adapter cannot read the page (for example a bot challenge),
+    // the AI service reads the public page itself for this request only.
+    const readUrl =
+      statement !== undefined
+        ? undefined
+        : [canonicalUrl, linkedUrl].find(
+            (url) => url !== undefined && isSafeCoachPublicUrl(url),
+          )
     const key =
       provider === 'leetcode' && canonicalUrl !== undefined
         ? problemKeyFor(provider, externalId, canonicalUrl)
@@ -388,7 +459,17 @@ export class MentorService {
         platform: provider,
         title,
         ...(canonicalUrl === undefined ? {} : { url: canonicalUrl }),
-        ...(statement === undefined ? {} : { statement }),
+        ...(statement === undefined
+          ? readUrl === undefined
+            ? {}
+            : { readUrl }
+          : {
+              statement,
+              statementOrigin:
+                pastedStatement === undefined
+                  ? ('provider' as const)
+                  : ('pasted' as const),
+            }),
         tags: topics,
         ...(meta?.rating === undefined ? {} : { rating: meta.rating }),
       },
@@ -406,6 +487,7 @@ export class MentorService {
           problem.provider,
           problem.externalId,
           transientStatement,
+          problem.canonicalUrl,
         )
       ).context
     }
@@ -416,7 +498,10 @@ export class MentorService {
         ? {}
         : { url: problem.canonicalUrl }),
       ...(transientStatement !== undefined
-        ? { statement: transientStatement.slice(0, STATEMENT_LIMIT) }
+        ? {
+            statement: transientStatement.slice(0, STATEMENT_LIMIT),
+            statementOrigin: 'pasted' as const,
+          }
         : problem.canonicalUrl !== undefined
           ? { readUrl: problem.canonicalUrl }
           : {}),
@@ -457,6 +542,12 @@ export class MentorService {
       authUserId,
       undefined,
       focusTopics,
+      [
+        request.problem.title,
+        doubtLabels[request.doubtType as ProblemHelpDoubtType] ?? '',
+        request.learnerMessage ?? request.attemptSummary,
+        ...focusTopics,
+      ].join(' '),
     )
     let response
     try {
@@ -881,12 +972,14 @@ export class MentorService {
     problemUrl: string,
     language: string,
   ): Promise<SolutionAccess> {
-    const resolved = await this.resolveProblem({ url: problemUrl })
+    const resolved = await this.resolveProblem({
+      url: problemUrl,
+      withContent: false,
+    })
     const [{ status, reason }, cached] = await Promise.all([
       this.unlockReason(authUserId, resolved),
-      this.options.repository.getReport(
+      this.cachedExploration(
         authUserId,
-        'solution_exploration',
         this.explorationKey(resolved, language),
       ),
     ])
@@ -901,56 +994,28 @@ export class MentorService {
   private officialSources(resolved: ResolvedProblem): AiCommunitySource[] {
     const { problem } = resolved
     const sources: Omit<AiCommunitySource, 'id'>[] = []
-    if (problem.provider === 'codeforces' && problem.externalId !== undefined) {
-      const match = /^(\d+)([A-Z][0-9]?)$/.exec(problem.externalId)
-      if (match?.[1] !== undefined && match[2] !== undefined) {
-        sources.push(
-          {
-            title: 'Contest page (editorial under Contest materials)',
-            url: `https://codeforces.com/contest/${match[1]}`,
-            publisher: 'Codeforces',
-            kind: 'editorial',
-            official: true,
-          },
-          {
-            title: 'Submissions for this problem',
-            url: `https://codeforces.com/problemset/status/${match[1]}/problem/${match[2]}`,
-            publisher: 'Codeforces',
-            kind: 'submissions',
-            official: true,
-          },
-        )
-      }
-    }
+    // Codeforces editorials are blog posts linked from the contest page; the
+    // AI service follows that link (see editorialLookup).
     if (problem.provider === 'leetcode' && resolved.problemKey !== undefined) {
       const editorial = editorialUrl('leetcode', resolved.problemKey, '')
       if (editorial !== undefined) {
-        sources.push(
-          {
-            title: 'Official editorial',
-            url: editorial,
-            publisher: 'LeetCode',
-            kind: 'editorial',
-            official: true,
-          },
-          {
-            title: 'Most-voted community solutions',
-            url: `https://leetcode.com/problems/${resolved.problemKey}/solutions/?orderBy=most_votes`,
-            publisher: 'LeetCode',
-            kind: 'community',
-            official: false,
-          },
-        )
+        sources.push({
+          title: 'Official editorial',
+          url: editorial,
+          publisher: 'LeetCode',
+          kind: 'editorial',
+          official: true,
+        })
       }
     }
     if (problem.provider === 'codechef' && problem.externalId !== undefined) {
       const discuss = editorialUrl('codechef', problem.externalId, '')
       if (discuss !== undefined) {
         sources.push({
-          title: 'Editorial discussions on CodeChef Discuss',
+          title: 'Official editorial on CodeChef Discuss',
           url: discuss,
           publisher: 'CodeChef',
-          kind: 'discussion',
+          kind: 'editorial',
           official: true,
         })
       }
@@ -960,11 +1025,92 @@ export class MentorService {
       .map((source, index) => ({ ...source, id: `s${index + 1}` }))
   }
 
+  private editorialLookup(
+    resolved: ResolvedProblem,
+  ): { contestUrl: string; problemIndex: string } | undefined {
+    const { problem } = resolved
+    if (problem.provider !== 'codeforces' || problem.externalId === undefined) {
+      return undefined
+    }
+    const match = /^(\d+)([A-Z][0-9]?)$/.exec(problem.externalId)
+    if (match?.[1] === undefined || match[2] === undefined) return undefined
+    return {
+      contestUrl: `https://codeforces.com/contest/${match[1]}`,
+      problemIndex: match[2],
+    }
+  }
+
+  private async platformSolutions(
+    resolved: ResolvedProblem,
+    language: string,
+  ): Promise<AiCommunitySource[]> {
+    const { provider, externalId } = resolved.problem
+    const read = this.options.communitySolutions
+    if (
+      read === undefined ||
+      provider === undefined ||
+      externalId === undefined
+    )
+      return []
+    const key = resolved.problemKey ?? externalId
+    try {
+      const links = await Promise.race([
+        read(provider, key, language),
+        new Promise<CommunitySolutionLink[]>((resolve) =>
+          setTimeout(() => resolve([]), PLATFORM_SOLUTIONS_BUDGET_MS),
+        ),
+      ])
+      return links
+        .filter((link) => isSafeCoachPublicUrl(link.url))
+        .slice(0, 3)
+        .map((link, index) => ({
+          id: `p${index + 1}`,
+          title: link.title.slice(0, 200),
+          url: link.url,
+          publisher: link.publisher,
+          kind: 'community' as const,
+          official: false,
+          language: link.language.slice(0, 64),
+          ...(link.note === undefined ? {} : { note: link.note.slice(0, 600) }),
+        }))
+    } catch {
+      this.options.logger.warn('mentor_platform_solutions_unavailable', {
+        provider,
+      })
+      return []
+    }
+  }
+
+  private async cachedExploration(
+    authUserId: string,
+    key: string,
+  ): Promise<SolutionExploration | null> {
+    const cached = await this.options.repository.getReport(
+      authUserId,
+      'solution_exploration',
+      key,
+    )
+    const parsed = SolutionExplorationSchema.safeParse(cached?.payload)
+    // Explorations written before the problem explanation and complete
+    // programs existed are regenerated instead of reused.
+    return parsed.success && parsed.data.problemExplanation !== undefined
+      ? parsed.data
+      : null
+  }
+
   async exploreSolutions(
     authUserId: string,
     request: ExploreSolutionsRequest,
   ): Promise<{ data: SolutionExploration; cached: boolean }> {
-    const resolved = await this.resolveProblem({ url: request.problemUrl })
+    const resolved = await this.resolveProblem({
+      ...(request.problemUrl === undefined ? {} : { url: request.problemUrl }),
+      ...(request.problemTitle === undefined
+        ? {}
+        : { title: request.problemTitle }),
+      ...(request.transientStatement === undefined
+        ? {}
+        : { statement: request.transientStatement }),
+    })
     const { reason } = await this.unlockReason(authUserId, resolved)
     const unlockedBy: SolutionUnlockReason | undefined =
       reason ??
@@ -977,19 +1123,19 @@ export class MentorService {
     }
     const key = this.explorationKey(resolved, request.language)
     if (request.refresh !== true) {
-      const cached = await this.options.repository.getReport(
-        authUserId,
-        'solution_exploration',
-        key,
-      )
-      const parsed = SolutionExplorationSchema.safeParse(cached?.payload)
-      if (parsed.success) return { data: parsed.data, cached: true }
+      const cached = await this.cachedExploration(authUserId, key)
+      if (cached !== null) return { data: cached, cached: true }
     }
-    const learner = await this.learnerSnapshot(
-      authUserId,
-      undefined,
-      resolved.problem.topics,
-    )
+    const [learner, platformSolutions] = await Promise.all([
+      this.learnerSnapshot(
+        authUserId,
+        undefined,
+        resolved.problem.topics,
+        `${resolved.problem.title} ${resolved.problem.topics.join(' ')} solution approaches`,
+      ),
+      this.platformSolutions(resolved, request.language),
+    ])
+    const editorialLookup = this.editorialLookup(resolved)
     let response
     try {
       response = await this.options.aiMentorClient.solutions({
@@ -999,6 +1145,8 @@ export class MentorService {
         problem: resolved.context,
         learner,
         officialSources: this.officialSources(resolved),
+        ...(editorialLookup === undefined ? {} : { editorialLookup }),
+        ...(platformSolutions.length === 0 ? {} : { platformSolutions }),
         searchCommunity: true,
       })
     } catch (error) {
@@ -1009,6 +1157,12 @@ export class MentorService {
       language: request.language,
       unlockedBy,
       summary: response.summary,
+      ...(response.problemExplanation === undefined
+        ? {}
+        : { problemExplanation: response.problemExplanation }),
+      ...(response.statementSource === undefined
+        ? {}
+        : { statementSource: response.statementSource }),
       approaches: response.approaches,
       comparison: response.comparison,
       thinkingLessons: response.thinkingLessons,
@@ -1025,6 +1179,55 @@ export class MentorService {
       exploration,
     )
     return { data: exploration, cached: false }
+  }
+
+  async solutionChat(
+    authUserId: string,
+    request: SolutionChatRequest,
+  ): Promise<{ answer: string }> {
+    // A pasted problem is identified by its name; the cached page carries
+    // the explanation of the statement.
+    const resolved =
+      request.problemUrl !== undefined
+        ? await this.resolveProblem({ url: request.problemUrl })
+        : pastedProblem(request.problemTitle ?? 'Pasted problem')
+    const exploration = await this.cachedExploration(
+      authUserId,
+      this.explorationKey(resolved, request.language),
+    )
+    if (exploration === null) {
+      throw new MentorError(
+        'SOLUTION_LOCKED',
+        'Explore the approaches for this problem first, then ask about them.',
+      )
+    }
+    const learner = await this.learnerSnapshot(
+      authUserId,
+      undefined,
+      resolved.problem.topics,
+      `${request.question} ${resolved.problem.title}`,
+    )
+    // The page itself is the context: the learner never restates it. The
+    // generated timestamp and unlock reason carry nothing to reason about.
+    const {
+      generatedAt: _generatedAt,
+      unlockedBy: _unlockedBy,
+      ...page
+    } = exploration
+    try {
+      return await this.options.aiMentorClient.solutionChat({
+        requestId: randomUUID(),
+        learnerId: authUserId,
+        language: request.language,
+        problem: resolved.context,
+        learner,
+        exploration: page,
+        history: (request.history ?? []).slice(-SOLUTION_CHAT_HISTORY_LIMIT),
+        question: request.question,
+      })
+    } catch (error) {
+      this.aiError(error)
+    }
   }
 
   async listExplorations(authUserId: string) {

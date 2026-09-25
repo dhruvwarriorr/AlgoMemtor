@@ -4,12 +4,14 @@ import type {
   ProblemHelpSessionResponse,
   ProblemHelpTurnRequest,
   ProviderKey,
+  SolutionChatRequest,
   StartProblemHelpRequest,
 } from '@algomemtor/shared-contracts'
 
 import { useAuth } from '@/features/auth/useAuth'
 
 import {
+  askSolutionChat,
   exploreSolutions,
   fetchContestDetail,
   fetchContestOverview,
@@ -133,6 +135,12 @@ export function useExploreSolutions() {
         queryKey: [...key, 'solution-access'],
       })
     },
+  })
+}
+
+export function useSolutionChat() {
+  return useMutation({
+    mutationFn: (input: SolutionChatRequest) => askSolutionChat(input),
   })
 }
 

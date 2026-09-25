@@ -36,46 +36,10 @@ import type { StructuredLogger } from './utils/structured-logger.js'
 const retryDelaysMs = [30_000, 120_000, 600_000] as const
 const COACH_CONSENT_POLICY_VERSION = 'personalized-coaching-rag-v2'
 
-const localCoachDateParts = (date: Date, timezone: string) => {
-  try {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: timezone,
-      weekday: 'short',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).formatToParts(date)
-    const values = Object.fromEntries(
-      parts.map((part) => [part.type, part.value]),
-    )
-    const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(
-      values.weekday ?? '',
-    )
-    return {
-      weekday: weekday < 0 ? 0 : weekday,
-      date: `${values.year}-${values.month}-${values.day}`,
-      time: `${values.hour === '24' ? '00' : values.hour}:${values.minute}`,
-    }
-  } catch {
-    return {
-      weekday: date.getUTCDay(),
-      date: date.toISOString().slice(0, 10),
-      time: date.toISOString().slice(11, 16),
-    }
-  }
-}
-
 export type MemoryWorkerOptions = {
   repository: ProgressRepository
   client: AiMemoryClient
   aiCoachClient?: AiCoachClient
-  coachCheckInRefresh?: (
-    authUserId: string,
-    idempotencyKey: string,
-  ) => Promise<void>
   coachRepository?: CoachRepository
   learnerProfileRepository?: LearnerProfileRepository
   recommendationRepository?: RecommendationRepository
@@ -89,7 +53,6 @@ export class MemoryWorker {
   private readonly now
   private processing = false
   private activeRun: Promise<boolean> | null = null
-  private lastCoachScheduleAt: Date | undefined
 
   constructor(private readonly options: MemoryWorkerOptions) {
     this.logger = options.logger ?? structuredLogger
@@ -114,13 +77,6 @@ export class MemoryWorker {
   }
 
   private async processOne() {
-    try {
-      await this.scheduleCoachCheckIns()
-    } catch {
-      this.logger.warn('coach_check_in_schedule_failed', {
-        errorCode: 'COACH_SCHEDULE_UNAVAILABLE',
-      })
-    }
     const job = await this.options.repository.claimNextJob(this.now())
     if (job === null) return false
     try {
@@ -163,54 +119,6 @@ export class MemoryWorker {
     return true
   }
 
-  private async scheduleCoachCheckIns() {
-    const listSchedules = this.options.coachRepository?.listCheckInSchedules
-    if (
-      listSchedules === undefined ||
-      this.options.coachCheckInRefresh === undefined
-    )
-      return
-    const now = this.now()
-    if (
-      this.lastCoachScheduleAt !== undefined &&
-      now.getTime() - this.lastCoachScheduleAt.getTime() < 60_000
-    )
-      return
-    const schedules = await listSchedules.call(this.options.coachRepository)
-    this.lastCoachScheduleAt = now
-    await Promise.all(
-      schedules.map(async (schedule) => {
-        try {
-          const consent = await this.options.repository.getConsent(
-            schedule.authUserId,
-          )
-          if (
-            consent?.enabled !== true ||
-            consent.policyVersion !== COACH_CONSENT_POLICY_VERSION
-          )
-            return
-          const local = localCoachDateParts(now, schedule.timezone)
-          const weeklyDue =
-            schedule.weeklyEnabled &&
-            local.weekday === schedule.weeklyDay &&
-            local.time >= schedule.weeklyTime
-          if (!schedule.eventEnabled && !weeklyDue) return
-          const phase = weeklyDue ? 'weekly' : 'events'
-          await this.options.repository.enqueueJob({
-            authUserId: schedule.authUserId,
-            jobType: 'coach_check_in_refresh',
-            evidenceType: 'coach_check_in',
-            idempotencyKey: `coach-check-in-refresh:${schedule.authUserId}:${local.date}:${phase}`,
-          })
-        } catch {
-          this.logger.warn('coach_check_in_schedule_enqueue_failed', {
-            errorCode: 'OUTBOX_UNAVAILABLE',
-          })
-        }
-      }),
-    )
-  }
-
   private async processJob(job: OutboxJobRecord) {
     if (job.jobType === 'learner_data_deletion') {
       await this.options.client.deleteLearnerData(
@@ -249,13 +157,7 @@ export class MemoryWorker {
       return
     }
     if (job.jobType === 'coach_check_in_refresh') {
-      if (await this.options.repository.hasPendingDeletion?.(job.authUserId)) {
-        return
-      }
-      if (this.options.coachCheckInRefresh === undefined) {
-        throw new Error('The coach check-in worker is unavailable.')
-      }
-      await this.options.coachCheckInRefresh(job.authUserId, job.idempotencyKey)
+      // Coach check-ins were retired; complete jobs queued before that.
       return
     }
     if (job.jobType === 'coach_conversation_audit_deletion') {
@@ -429,34 +331,10 @@ export async function runMemoryWorker() {
         timeoutMs: 125_000,
       })
     : new UnavailableAiCoachClient()
-  const coreApiUrl = process.env.CORE_API_URL?.trim() ?? ''
-  const coachCheckInRefresh =
-    coreApiUrl !== '' && aiConfig.internalServiceToken !== ''
-      ? async (authUserId: string, idempotencyKey: string) => {
-          const response = await fetch(
-            new URL('/internal/coach/check-ins/refresh', coreApiUrl),
-            {
-              method: 'POST',
-              headers: {
-                'content-type': 'application/json',
-                'x-internal-service-token': aiConfig.internalServiceToken,
-                'x-idempotency-key': idempotencyKey,
-              },
-              body: JSON.stringify({
-                learnerId: authUserId,
-              }),
-            },
-          )
-          if (!response.ok) {
-            throw new Error('The core coach check-in refresh failed.')
-          }
-        }
-      : undefined
   const worker = new MemoryWorker({
     repository,
     client,
     aiCoachClient,
-    ...(coachCheckInRefresh === undefined ? {} : { coachCheckInRefresh }),
     learnerProfileRepository,
     recommendationRepository,
     coachRepository,

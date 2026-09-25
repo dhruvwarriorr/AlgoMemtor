@@ -32,7 +32,6 @@ const createWorker = (
   repository: ProgressRepository,
   client: AiMemoryClient,
   now: () => Date,
-  coachCheckInRefresh?: MemoryWorkerOptions['coachCheckInRefresh'],
   aiCoachClient?: AiCoachClient,
   coachRepository?: MemoryWorkerOptions['coachRepository'],
 ) => {
@@ -43,7 +42,6 @@ const createWorker = (
     now,
     logger,
     ...(aiCoachClient === undefined ? {} : { aiCoachClient }),
-    ...(coachCheckInRefresh === undefined ? {} : { coachCheckInRefresh }),
     ...(coachRepository === undefined ? {} : { coachRepository }),
   }
   return { worker: new MemoryWorker(options), logger }
@@ -177,15 +175,13 @@ describe('memory worker', () => {
     expect(await worker.processOnce()).toBe(false)
   })
 
-  it('runs queued coach check-in refreshes through the durable outbox', async () => {
+  it('completes coach check-in jobs queued before check-ins were retired', async () => {
     const now = () => new Date('2026-09-13T14:00:00.000Z')
     const repository: ProgressRepository = new InMemoryProgressRepository(now)
-    const refresh = vi.fn(async () => undefined)
     const { worker } = createWorker(
       repository,
       createClient(async () => ({ status: 'processed' })),
       now,
-      refresh,
     )
 
     await repository.enqueueJob({
@@ -196,10 +192,6 @@ describe('memory worker', () => {
     })
 
     expect(await worker.processOnce()).toBe(true)
-    expect(refresh).toHaveBeenCalledWith(
-      learnerId,
-      'coach-check-in-refresh-test',
-    )
     expect(await worker.processOnce()).toBe(false)
   })
 
@@ -238,7 +230,6 @@ describe('memory worker', () => {
       repository,
       client,
       now,
-      undefined,
       undefined,
       coachRepository,
     )
@@ -286,7 +277,6 @@ describe('memory worker', () => {
       client,
       now,
       undefined,
-      undefined,
       coachRepository,
     )
     await repository.enqueueJob({
@@ -321,7 +311,6 @@ describe('memory worker', () => {
       client,
       now,
       undefined,
-      undefined,
       coachRepository,
     )
     await repository.enqueueJob({
@@ -350,7 +339,6 @@ describe('memory worker', () => {
       repository,
       createClient(async () => ({ status: 'processed' })),
       now,
-      undefined,
       aiCoachClient,
     )
 
@@ -365,39 +353,6 @@ describe('memory worker', () => {
 
     expect(await worker.processOnce()).toBe(true)
     expect(deleted).toEqual([{ learnerId, conversationId }])
-    expect(await worker.processOnce()).toBe(false)
-  })
-
-  it('schedules due coach refreshes for consented learners without a page open', async () => {
-    const now = () => new Date('2026-09-13T14:00:00.000Z')
-    const repository: ProgressRepository = new InMemoryProgressRepository(now)
-    await repository.saveConsent(
-      learnerId,
-      true,
-      'personalized-coaching-rag-v2',
-    )
-    const coachRepository = new InMemoryCoachRepository(now)
-    await coachRepository.savePreferences(learnerId, {
-      weeklyEnabled: true,
-      weeklyDay: 0,
-      weeklyTime: '09:00',
-      eventEnabled: false,
-      timezone: 'UTC',
-    })
-    const refresh = vi.fn(async () => undefined)
-    const worker = new MemoryWorker({
-      repository,
-      client: createClient(async () => ({ status: 'processed' })),
-      coachRepository,
-      coachCheckInRefresh: refresh,
-      now,
-    })
-
-    expect(await worker.processOnce()).toBe(true)
-    expect(refresh).toHaveBeenCalledWith(
-      learnerId,
-      'coach-check-in-refresh:11111111-1111-4111-8111-111111111111:2026-09-13:weekly',
-    )
     expect(await worker.processOnce()).toBe(false)
   })
 })

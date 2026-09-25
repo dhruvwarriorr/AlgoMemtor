@@ -18,7 +18,12 @@ from zipfile import BadZipFile, ZipFile
 
 from groq import AsyncGroq
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from pydantic import ValidationError
 from pypdf import PdfReader
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -30,6 +35,12 @@ from .coach_audit import (
     context_fingerprint,
     elapsed_ms,
     get_coach_audit_repository,
+)
+from .coach_context import (
+    TurnBudget,
+    estimate_tokens,
+    pack_context,
+    plan_turn_budget,
 )
 from .coach_intent import classify_turn, is_complex_turn
 from .coach_models import (
@@ -55,6 +66,7 @@ from .knowledge_query import build_knowledge_query
 from .knowledge_repository import KnowledgeRepository
 from .llm import chat_model
 from .memory_model import GeminiMemoryEmbedder, MemoryEmbeddingError
+from .page_retrieval import retrieve_public_page
 from .pedagogy import (
     bloom_prompt,
     detect_frustration,
@@ -75,7 +87,6 @@ from .web_reader import (
     WebReadError,
     extract_urls,
     normalize_public_url,
-    read_public_page,
 )
 
 logger = logging.getLogger(__name__)
@@ -305,6 +316,12 @@ PROBLEM_IDS: comma-separated exact problem IDs you recommended, taken only from
 FOLLOW_UPS: two or three short follow-up questions separated by " | "
 """
 
+CONTINUE_PROMPT = (
+    "Your answer was cut off by the length limit. Continue exactly where it "
+    "stopped, without repeating anything or restarting, and finish with the two "
+    "trailer lines."
+)
+
 _TRAILER = re.compile(r"^\s*(PROBLEM_IDS|FOLLOW_UPS)\s*:(.*)$", re.IGNORECASE)
 _TRUSTED_PROBLEM_ID = re.compile(
     r"^(?:codeforces|codechef|leetcode|cses):[^\s:,][^\s,]{0,127}$"
@@ -490,10 +507,21 @@ def _human_message(
     prefetched: dict[str, Any] | None = None,
     *,
     provider: str = "gemini",
+    budget: TurnBudget | None = None,
 ) -> HumanMessage:
+    context = request.context
+    if budget is not None:
+        # Only the sections this question needs, ranked by relevance and
+        # packed into the turn's input budget.
+        reserved = estimate_tokens(request.question) + (
+            estimate_tokens(prefetched) if prefetched else 0
+        )
+        context = pack_context(
+            context, request.question, max(800, budget.input_tokens - reserved)
+        )
     payload: dict[str, Any] = {
         "question": request.question,
-        "context": request.context,
+        "context": context,
     }
     if prefetched:
         # Tool results already run for this question; the model should use
@@ -737,7 +765,11 @@ class AgentToolServices(Protocol):
 
 
 def coach_chat_model(
-    settings: AiSettings, *, fast: bool = False, light: bool = False
+    settings: AiSettings,
+    *,
+    fast: bool = False,
+    light: bool = False,
+    max_tokens: int | None = None,
 ) -> BaseChatModel:
     """The coach's chat model.
 
@@ -761,7 +793,10 @@ def coach_chat_model(
             if fast or light
             else settings.coach_thinking_level
         ),
-        max_tokens=settings.effective_coach_max_output_tokens,
+        max_tokens=min(
+            max_tokens or settings.effective_coach_max_output_tokens,
+            settings.effective_coach_max_output_tokens,
+        ),
         timeout=(
             min(settings.llm_timeout_seconds, 60)
             if fast
@@ -779,6 +814,7 @@ class GeminiCoachModel:
         self.settings = settings
         self.services = services
         self.throttle = ModelRequestThrottle(settings.coach_model_requests_per_minute)
+        self._sized_models: dict[tuple[bool, bool, int], BaseChatModel] = {}
         self.base_model = model
         # Concept and quick-fact turns: same model, light reasoning.
         self.light_model = (
@@ -806,6 +842,54 @@ class GeminiCoachModel:
             output_schema,
             method="function_calling",
             include_raw=True,
+        )
+
+    def _budget(self, request: CoachRequest) -> TurnBudget | None:
+        settings = getattr(self, "settings", None)
+        if settings is None:
+            return None
+        return plan_turn_budget(
+            settings,
+            provider=settings.effective_coach_provider,
+            question=request.question,
+            context=request.context,
+            has_transient_context=bool(request.transientContext),
+            has_media=request.transientMedia is not None,
+        )
+
+    def _sized_model(
+        self, budget: TurnBudget | None, *, deep: bool, fast: bool = False
+    ) -> BaseChatModel | None:
+        """A chat model whose output ceiling matches this turn's budget."""
+        settings = getattr(self, "settings", None)
+        if settings is None or budget is None:
+            return None
+        # Only instances built by __init__ own their models; an instance with
+        # injected models (tests, alternative providers) keeps using them.
+        cache: dict[tuple[bool, bool, int], BaseChatModel] | None = getattr(
+            self, "_sized_models", None
+        )
+        if cache is None:
+            return None
+        key = (deep, fast, budget.output_tokens)
+        if key not in cache:
+            cache[key] = coach_chat_model(
+                settings,
+                fast=fast,
+                light=not deep,
+                max_tokens=budget.output_tokens,
+            )
+        return cache[key]
+
+    def _structured(self, model: BaseChatModel) -> Any:
+        settings = self.settings
+        output_schema = (
+            {"title": "CoachModelOutput", **coach_output_json_schema()}
+            if settings.effective_coach_provider == "groq"
+            else CoachModelOutput
+        )
+        return model.with_structured_output(
+            output_schema, method="function_calling", include_raw=True
         )
 
     async def respond(self, request: CoachRequest) -> CoachModelResult:
@@ -851,24 +935,46 @@ class GeminiCoachModel:
         """One plain-Markdown generation with a short machine-readable trailer."""
         prefetched = await self._prefetch_groq(request)
         request = await _transcribe_groq_media(self.settings, request)
+        budget = self._budget(request)
         request = request.model_copy(update={"context": _groq_context(request.context)})
+        model = self._sized_model(budget, deep=False) or self.base_model
+        messages: list[Any] = [
+            SystemMessage(
+                content=SYSTEM_PROMPT
+                + "\n"
+                + _guidance_prompt(request)
+                + "\n"
+                + PLAIN_OUTPUT_PROMPT
+            ),
+            _human_message(request, prefetched, provider="groq", budget=budget),
+        ]
         await self._acquire_slot()
-        reply = await self.base_model.ainvoke(
-            [
-                SystemMessage(
-                    content=SYSTEM_PROMPT
-                    + "\n"
-                    + _guidance_prompt(request)
-                    + "\n"
-                    + PLAIN_OUTPUT_PROMPT
-                ),
-                _human_message(request, prefetched, provider="groq"),
-            ]
-        )
+        reply = await model.ainvoke(messages)
         text = _message_text(reply)
         finish = str(
             (getattr(reply, "response_metadata", None) or {}).get("finish_reason", "")
         )
+        input_tokens, output_tokens = _usage(reply)
+        if finish == "length" and budget is not None and budget.tier != "quick":
+            # The answer needed more room than planned: continue it once
+            # instead of cutting it off mid-thought.
+            await self._acquire_slot()
+            more = await model.ainvoke(
+                [
+                    *messages,
+                    AIMessage(content=text),
+                    HumanMessage(content=CONTINUE_PROMPT),
+                ]
+            )
+            text = text + _message_text(more)
+            finish = str(
+                (getattr(more, "response_metadata", None) or {}).get(
+                    "finish_reason", ""
+                )
+            )
+            more_in, more_out = _usage(more)
+            input_tokens += more_in
+            output_tokens += more_out
         answer, problem_ids, follow_ups = split_plain_answer(text)
         if finish == "length":
             answer = close_cut_answer(answer)
@@ -883,7 +989,6 @@ class GeminiCoachModel:
         )
         if output is None:
             raise CoachGenerationError("The model returned no answer.")
-        input_tokens, output_tokens = _usage(reply)
         return CoachModelResult(
             output=output,
             input_tokens=input_tokens,
@@ -911,8 +1016,16 @@ class GeminiCoachModel:
                 update={"context": _groq_context(request.context)}
             )
         await self._acquire_slot()
+        budget = self._budget(request)
+        sized = self._sized_model(
+            budget,
+            deep=budget is not None and budget.deep_reasoning and not fast,
+            fast=fast,
+        )
         model = (
-            getattr(self, "fast_structured_model", None) or self.structured_model
+            self._structured(sized)
+            if sized is not None
+            else getattr(self, "fast_structured_model", None) or self.structured_model
             if fast
             else self.structured_model
         )
@@ -927,6 +1040,7 @@ class GeminiCoachModel:
                         if getattr(self, "settings", None) is not None
                         else "gemini"
                     ),
+                    budget=budget,
                 ),
             ]
         )
@@ -1163,6 +1277,7 @@ class GeminiCoachModel:
             )
             for (name, _), result in zip(plan, prefetch_results, strict=True)
         }
+        budget = self._budget(request)
         messages: list[Any] = [
             SystemMessage(
                 content=SYSTEM_PROMPT
@@ -1171,23 +1286,35 @@ class GeminiCoachModel:
                 + "\n"
                 + _guidance_prompt(request)
             ),
-            _human_message(request, prefetched),
+            _human_message(request, prefetched, budget=budget),
         ]
-        # Deep reasoning only where it pays off (debugging, proofs, attached
-        # code, plans); everything else answers several times faster.
-        chosen_model = (
-            self.base_model
-            if is_complex_turn(
+        # Deep reasoning and a large output budget only where they pay off
+        # (debugging, proofs, attached code, plans); everything else answers
+        # several times faster with a right-sized budget.
+        deep = (
+            budget.deep_reasoning
+            if budget is not None
+            else is_complex_turn(
                 request.question,
                 has_transient_context=bool(request.transientContext),
                 has_media=request.transientMedia is not None,
             )
+        )
+        chosen_model = self._sized_model(budget, deep=deep) or (
+            self.base_model
+            if deep
             else getattr(self, "light_model", None) or self.base_model
         )
         agent = chosen_model.bind_tools([*declarations, final_tool], tool_choice="any")
+        max_steps = (
+            budget.agent_steps
+            if budget is not None
+            else self.settings.coach_agent_max_steps
+        )
+        result_chars = budget.tool_result_chars if budget is not None else 30_000
         input_tokens = output_tokens = 0
-        for step in range(self.settings.coach_agent_max_steps + 1):
-            final_step = step == self.settings.coach_agent_max_steps
+        for step in range(max_steps + 1):
+            final_step = step == max_steps
             runnable = (
                 chosen_model.bind_tools([final_tool], tool_choice=FINAL_TOOL)
                 if final_step
@@ -1250,7 +1377,7 @@ class GeminiCoachModel:
                 messages.append(
                     ToolMessage(
                         content=json.dumps(result, separators=(",", ":"), default=str)[
-                            :30_000
+                            :result_chars
                         ],
                         tool_call_id=call.get("id") or call.get("name", "tool"),
                         name=call.get("name", "tool"),
@@ -1446,7 +1573,7 @@ class CoachService:
     async def agent_read_page(self, url: str) -> dict[str, Any]:
         """Read one public page for the current turn; errors are model-safe."""
         try:
-            page = await read_public_page(url)
+            page = await retrieve_public_page(url, self.settings)
         except WebReadError as error:
             return {"url": url, "error": str(error)}
         except asyncio.CancelledError:
@@ -1456,7 +1583,14 @@ class CoachService:
         return {"url": page.url, "title": page.title, "text": page.text}
 
     async def agent_open_problem(self, reference: dict[str, str]) -> dict[str, Any]:
-        return await request_problem_content(self.settings, reference)
+        result = await request_problem_content(self.settings, reference)
+        url = reference.get("url")
+        if "error" not in result or not url:
+            return result
+        # The platform adapter could not read it (for example a bot
+        # challenge); read the public page itself instead.
+        page = await self.agent_read_page(url)
+        return result if "error" in page else page
 
     async def agent_recall_memory(self, learner_id: UUID, query: str) -> dict[str, Any]:
         """Hybrid (vector + keyword) search over this learner's active memories.

@@ -20,7 +20,6 @@ import {
   Lock,
   MessageCircle,
   Plus,
-  X,
 } from '@/components/icons/algo-icons'
 import { AiLoader, type AiLoaderStep } from '@/components/motion/AiLoader'
 import { ErrorState } from '@/components/states/ErrorState'
@@ -28,6 +27,10 @@ import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { useNotification } from '@/app/useNotification'
 import { CoachMessageContent } from '@/features/coach/components/CoachMessageContent'
+import {
+  MentorChatDock,
+  type DockMessage,
+} from '@/features/mentor/components/MentorChatDock'
 import {
   LanguagePicker,
   ProviderBadge,
@@ -559,8 +562,8 @@ function SessionView({ sessionId }: { sessionId: string }) {
   const { notify } = useNotification()
   const sessionQuery = useHelpSession(sessionId)
   const turn = useHelpTurn(sessionId)
-  const [composer, setComposer] = useState<'attempt' | 'ask' | null>(null)
-  const [message, setMessage] = useState('')
+  const [dockOpen, setDockOpen] = useState(false)
+  const [dockMode, setDockMode] = useState<'ask' | 'attempt'>('ask')
   const [code, setCode] = useState('')
   const [errorText, setErrorText] = useState('')
   const [statement, setStatement] = useState(() => {
@@ -609,8 +612,11 @@ function SessionView({ sessionId }: { sessionId: string }) {
     session.stage === 'solution_confirmation' ||
     session.stage === 'solution_revealed'
 
-  function act(request: ProblemHelpTurnRequest, success?: string) {
-    if (turn.isPending) return
+  function act(
+    request: ProblemHelpTurnRequest,
+    success?: string,
+  ): Promise<boolean> {
+    if (turn.isPending) return Promise.resolve(false)
     const withStatement =
       statement.trim() !== '' &&
       (request.action === 'next_hint' ||
@@ -619,29 +625,71 @@ function SessionView({ sessionId }: { sessionId: string }) {
         request.action === 'confirm_solution')
         ? { ...request, transientStatement: statement.trim() }
         : request
-    turn.mutate(withStatement, {
-      onSuccess: () => {
-        setComposer(null)
-        setMessage('')
-        setCode('')
-        setErrorText('')
-        if (success) notify({ title: success, tone: 'success' })
-      },
-      onError: (error) => {
-        if (errorCode(error) === 'PROBLEM_CONTEXT_UNAVAILABLE') {
-          setNeedsStatement(true)
-        }
-        notify({
-          title:
-            errorCode(error) === 'PROBLEM_HELP_STALE_VERSION'
-              ? 'Session updated elsewhere'
-              : 'That did not work',
-          description: mentorErrorMessage(error, 'Try again shortly.'),
-          tone: 'error',
-        })
-      },
+    return new Promise((resolve) => {
+      turn.mutate(withStatement, {
+        onSuccess: () => {
+          setCode('')
+          setErrorText('')
+          if (success) notify({ title: success, tone: 'success' })
+          resolve(true)
+        },
+        onError: (error) => {
+          if (errorCode(error) === 'PROBLEM_CONTEXT_UNAVAILABLE') {
+            setNeedsStatement(true)
+          }
+          notify({
+            title:
+              errorCode(error) === 'PROBLEM_HELP_STALE_VERSION'
+                ? 'Session updated elsewhere'
+                : 'That did not work',
+            description: mentorErrorMessage(error, 'Try again shortly.'),
+            tone: 'error',
+          })
+          resolve(false)
+        },
+      })
     })
   }
+
+  function openDock(mode: 'ask' | 'attempt') {
+    setDockMode(mode)
+    setDockOpen(true)
+  }
+
+  function sendFromDock(content: string, mode: string) {
+    return act(
+      mode === 'attempt'
+        ? {
+            action: 'submit_attempt',
+            expectedVersion: session.version,
+            content,
+            ...(code.trim() === '' ? {} : { transientCode: code }),
+            ...(errorText.trim() === '' ? {} : { transientError: errorText }),
+          }
+        : {
+            action: 'ask',
+            expectedVersion: session.version,
+            content,
+            ...(code.trim() === '' ? {} : { transientCode: code }),
+          },
+    )
+  }
+
+  // The dock shows the back-and-forth; hints stay in the main transcript.
+  const dockMessages: DockMessage[] = turns
+    .filter((item) =>
+      ['question', 'attempt', 'answer', 'feedback'].includes(item.kind),
+    )
+    .map((item) => ({
+      id: item.id,
+      role: item.role,
+      content: item.content,
+      ...(item.kind === 'attempt'
+        ? { label: 'I tried this' }
+        : item.kind === 'feedback'
+          ? { label: 'Feedback' }
+          : {}),
+    }))
 
   const nextLevel = Math.min(
     session.hintLevel + 1,
@@ -759,7 +807,7 @@ function SessionView({ sessionId }: { sessionId: string }) {
             <Button
               disabled={turn.isPending}
               onClick={() =>
-                act({
+                void act({
                   action: 'cancel_solution',
                   expectedVersion: session.version,
                 })
@@ -772,7 +820,7 @@ function SessionView({ sessionId }: { sessionId: string }) {
             <Button
               disabled={turn.isPending}
               onClick={() =>
-                act({
+                void act({
                   action: 'confirm_solution',
                   expectedVersion: session.version,
                 })
@@ -787,189 +835,87 @@ function SessionView({ sessionId }: { sessionId: string }) {
 
       {active && session.stage !== 'solution_confirmation' ? (
         <div className="sticky bottom-0 z-10 -mx-1 rounded-xl border border-border bg-background/95 p-3 shadow-soft backdrop-blur supports-[backdrop-filter]:bg-background/85 sm:p-4">
-          {composer !== null ? (
-            <form
-              className="flex flex-col gap-3"
-              onSubmit={(event) => {
-                event.preventDefault()
-                const content = message.trim()
-                if (content === '') return
-                act(
-                  composer === 'attempt'
-                    ? {
-                        action: 'submit_attempt',
-                        expectedVersion: session.version,
-                        content,
-                        ...(code.trim() === '' ? {} : { transientCode: code }),
-                        ...(errorText.trim() === ''
-                          ? {}
-                          : { transientError: errorText }),
-                      }
-                    : {
-                        action: 'ask',
-                        expectedVersion: session.version,
-                        content,
-                        ...(code.trim() === '' ? {} : { transientCode: code }),
-                      },
-                )
-              }}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-foreground">
-                  {composer === 'attempt'
-                    ? 'What did you try?'
-                    : 'Ask about this hint'}
-                </p>
-                <button
-                  aria-label="Close"
-                  className="grid size-8 place-items-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
-                  onClick={() => setComposer(null)}
-                  type="button"
-                >
-                  <X aria-hidden="true" className="size-4" />
-                </button>
-              </div>
-              <textarea
-                autoFocus
-                className={cn(inputClass, 'min-h-20 resize-y')}
-                disabled={turn.isPending}
-                maxLength={2_000}
-                onChange={(event) => setMessage(event.target.value)}
-                placeholder={
-                  composer === 'attempt'
-                    ? 'Describe what you tried and what happened.'
-                    : 'What is unclear about the last hint?'
+          <div className="flex flex-wrap items-center gap-2">
+            {session.stage === 'hinting' ? (
+              <Button
+                disabled={
+                  turn.isPending ||
+                  session.hintLevel >= PROBLEM_HELP_MAX_GUIDED_LEVEL
                 }
-                value={message}
-              />
-              <details className="rounded-lg border border-border px-3 py-2">
-                <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
-                  <Code2 aria-hidden="true" className="mr-1 inline size-3.5" />
-                  Attach code{composer === 'attempt'
-                    ? ' or a verdict'
-                    : ''}{' '}
-                  (used for this answer only, never saved)
-                </summary>
-                <div className="mt-3 grid gap-3">
-                  <textarea
-                    aria-label="Code for this answer"
-                    className={cn(
-                      inputClass,
-                      'min-h-32 resize-y font-mono text-xs',
-                    )}
-                    disabled={turn.isPending}
-                    maxLength={12_000}
-                    onChange={(event) => setCode(event.target.value)}
-                    placeholder="Paste your current code."
-                    spellCheck={false}
-                    value={code}
-                  />
-                  {composer === 'attempt' ? (
-                    <textarea
-                      aria-label="Verdict or error for this answer"
-                      className={cn(
-                        inputClass,
-                        'min-h-16 resize-y font-mono text-xs',
-                      )}
-                      disabled={turn.isPending}
-                      maxLength={4_000}
-                      onChange={(event) => setErrorText(event.target.value)}
-                      placeholder="Verdict, error output, or failing test."
-                      spellCheck={false}
-                      value={errorText}
-                    />
-                  ) : null}
-                </div>
-              </details>
-              <div className="flex justify-end">
-                <Button
-                  disabled={turn.isPending || message.trim() === ''}
-                  type="submit"
-                >
-                  {composer === 'attempt' ? 'Get feedback' : 'Ask'}
-                </Button>
-              </div>
-            </form>
-          ) : (
-            <div className="flex flex-wrap items-center gap-2">
-              {session.stage === 'hinting' ? (
-                <Button
-                  disabled={
-                    turn.isPending ||
-                    session.hintLevel >= PROBLEM_HELP_MAX_GUIDED_LEVEL
-                  }
-                  onClick={() =>
-                    act({
-                      action: 'next_hint',
-                      expectedVersion: session.version,
-                    })
-                  }
-                  type="button"
-                >
-                  <Plus aria-hidden="true" />
-                  {session.hintLevel >= PROBLEM_HELP_MAX_GUIDED_LEVEL
-                    ? 'All hints used'
-                    : `Next hint · ${levelNames[nextLevel - 1]}`}
-                </Button>
-              ) : null}
+                onClick={() =>
+                  void act({
+                    action: 'next_hint',
+                    expectedVersion: session.version,
+                  })
+                }
+                type="button"
+              >
+                <Plus aria-hidden="true" />
+                {session.hintLevel >= PROBLEM_HELP_MAX_GUIDED_LEVEL
+                  ? 'All hints used'
+                  : `Next hint · ${levelNames[nextLevel - 1]}`}
+              </Button>
+            ) : null}
+            <Button
+              disabled={turn.isPending}
+              onClick={() => openDock('attempt')}
+              type="button"
+              variant="outline"
+            >
+              <Code2 aria-hidden="true" /> I tried this
+            </Button>
+            <Button
+              disabled={turn.isPending}
+              onClick={() => openDock('ask')}
+              type="button"
+              variant="outline"
+            >
+              <MessageCircle aria-hidden="true" /> Ask a question
+            </Button>
+            {session.stage === 'hinting' ? (
               <Button
                 disabled={turn.isPending}
-                onClick={() => setComposer('attempt')}
+                onClick={() =>
+                  void act({
+                    action: 'request_solution',
+                    expectedVersion: session.version,
+                  })
+                }
                 type="button"
-                variant="outline"
+                variant="ghost"
               >
-                <Code2 aria-hidden="true" /> I tried this
+                <Lock aria-hidden="true" /> Full solution
+              </Button>
+            ) : null}
+            <span className="ml-auto flex flex-wrap gap-2">
+              <Button
+                disabled={turn.isPending}
+                onClick={() =>
+                  void act(
+                    { action: 'complete', expectedVersion: session.version },
+                    'Nice work. Added to your revision schedule.',
+                  )
+                }
+                type="button"
+                variant="secondary"
+              >
+                <Check aria-hidden="true" /> I solved it
               </Button>
               <Button
                 disabled={turn.isPending}
-                onClick={() => setComposer('ask')}
+                onClick={() =>
+                  void act({
+                    action: 'abandon',
+                    expectedVersion: session.version,
+                  })
+                }
                 type="button"
-                variant="outline"
+                variant="ghost"
               >
-                <MessageCircle aria-hidden="true" /> Ask a question
+                End
               </Button>
-              {session.stage === 'hinting' ? (
-                <Button
-                  disabled={turn.isPending}
-                  onClick={() =>
-                    act({
-                      action: 'request_solution',
-                      expectedVersion: session.version,
-                    })
-                  }
-                  type="button"
-                  variant="ghost"
-                >
-                  <Lock aria-hidden="true" /> Full solution
-                </Button>
-              ) : null}
-              <span className="ml-auto flex flex-wrap gap-2">
-                <Button
-                  disabled={turn.isPending}
-                  onClick={() =>
-                    act(
-                      { action: 'complete', expectedVersion: session.version },
-                      'Nice work. Added to your revision schedule.',
-                    )
-                  }
-                  type="button"
-                  variant="secondary"
-                >
-                  <Check aria-hidden="true" /> I solved it
-                </Button>
-                <Button
-                  disabled={turn.isPending}
-                  onClick={() =>
-                    act({ action: 'abandon', expectedVersion: session.version })
-                  }
-                  type="button"
-                  variant="ghost"
-                >
-                  End
-                </Button>
-              </span>
-            </div>
-          )}
+            </span>
+          </div>
         </div>
       ) : null}
 
@@ -999,6 +945,95 @@ function SessionView({ sessionId }: { sessionId: string }) {
             </Link>
           ) : null}
         </div>
+      ) : null}
+
+      {active ? (
+        <MentorChatDock
+          emptyState={
+            dockMode === 'attempt' ? (
+              <p>
+                Tell your mentor what you tried and what happened. Attach your
+                code or the verdict for precise feedback.
+              </p>
+            ) : (
+              <p>
+                Ask about the last hint or anything in this problem. Your mentor
+                already knows the problem and every hint so far, and keeps to
+                your current hint level.
+              </p>
+            )
+          }
+          extra={
+            <details className="rounded-lg border border-border px-3 py-2">
+              <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+                <Code2 aria-hidden="true" className="mr-1 inline size-3.5" />
+                Attach code{dockMode === 'attempt' ? ' or a verdict' : ''} (used
+                for this answer only, never saved)
+              </summary>
+              <div className="mt-3 grid gap-3">
+                <textarea
+                  aria-label="Code for this answer"
+                  className={cn(
+                    inputClass,
+                    'min-h-28 resize-y font-mono text-xs',
+                  )}
+                  disabled={turn.isPending}
+                  maxLength={12_000}
+                  onChange={(event) => setCode(event.target.value)}
+                  placeholder="Paste your current code."
+                  spellCheck={false}
+                  value={code}
+                />
+                {dockMode === 'attempt' ? (
+                  <textarea
+                    aria-label="Verdict or error for this answer"
+                    className={cn(
+                      inputClass,
+                      'min-h-14 resize-y font-mono text-xs',
+                    )}
+                    disabled={turn.isPending}
+                    maxLength={4_000}
+                    onChange={(event) => setErrorText(event.target.value)}
+                    placeholder="Verdict, error output, or failing test."
+                    spellCheck={false}
+                    value={errorText}
+                  />
+                ) : null}
+              </div>
+            </details>
+          }
+          launcherLabel="Ask or share an attempt"
+          messages={dockMessages}
+          mode={dockMode}
+          modes={[
+            {
+              id: 'ask',
+              label: 'Ask a question',
+              icon: <MessageCircle aria-hidden="true" className="size-3.5" />,
+              placeholder: 'What is unclear about the last hint?',
+              submitLabel: 'Ask',
+            },
+            {
+              id: 'attempt',
+              label: 'I tried this',
+              icon: <Code2 aria-hidden="true" className="size-3.5" />,
+              placeholder: 'Describe what you tried and what happened.',
+              submitLabel: 'Get feedback',
+            },
+          ]}
+          onModeChange={(mode) =>
+            setDockMode(mode === 'attempt' ? 'attempt' : 'ask')
+          }
+          onOpenChange={setDockOpen}
+          onSubmit={sendFromDock}
+          open={dockOpen}
+          pending={turn.isPending}
+          pendingLabel="Your mentor is thinking…"
+          disabled={session.stage === 'solution_confirmation'}
+          disabledReason="Choose whether to reveal the full solution first."
+          subtitle={`${session.problem.title} · Hint ${session.hintLevel} of 5`}
+          title="Your mentor"
+        />
       ) : null}
     </div>
   )

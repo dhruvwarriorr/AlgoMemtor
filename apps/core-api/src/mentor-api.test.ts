@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net'
 import {
   CoachResponseSchema,
   ProblemHelpSessionResponseSchema,
+  SolutionChatResponseSchema,
   SolutionExplorationResponseSchema,
   UpsolveResponseSchema,
   type ProblemContent,
@@ -18,6 +19,7 @@ import type {
   AiProblemHelpRequest,
 } from './integrations/ai/ai-mentor-client.js'
 import type { ProblemProvider } from './integrations/providers/problem-provider.js'
+import { AiMentorClientError } from './integrations/ai/ai-mentor-client.js'
 import { InMemoryMentorRepository } from './repositories/mentor-repository.js'
 
 const userA = '00000000-0000-4000-8000-000000000021'
@@ -61,15 +63,27 @@ const content = (externalId: string): ProblemContent => ({
   },
 })
 
+const getContent = vi.fn(async (externalId: string) => ({
+  content: content(externalId),
+  freshness,
+  warnings: [],
+}))
+const communitySolutions = vi.fn(async () => [
+  {
+    title: 'Accepted C++17 solution · 46 ms',
+    url: 'https://codeforces.com/contest/2266/submission/391944209',
+    publisher: 'Codeforces',
+    language: 'C++17 (GCC 7-32)',
+    note: 'One of the fastest accepted submissions.',
+  },
+])
+
 const provider: ProblemProvider = {
   key: 'codeforces',
   search: vi.fn(async () => ({ problems: [], freshness, warnings: [] })),
   getHealth: () => freshness,
-  getContent: vi.fn(async (externalId: string) => ({
-    content: content(externalId),
-    freshness,
-    warnings: [],
-  })),
+  getContent,
+  communitySolutions,
 }
 
 const memoryClient: AiMemoryClient = {
@@ -102,6 +116,13 @@ const fakeMentor = () => {
     }),
     solutions: vi.fn(async () => ({
       summary: 'Count paths with DP.',
+      problemExplanation: {
+        restatement: 'Count grid paths.',
+        inputOutput: 'n and m up to 1000.',
+        keyObservations: ['Paths only move right or down.'],
+        edgeCases: ['1 by 1 grid'],
+      },
+      statementSource: 'provider' as const,
       approaches: [
         {
           kind: 'brute_force' as const,
@@ -117,13 +138,16 @@ const fakeMentor = () => {
       thinkingLessons: ['Count, do not enumerate.'],
       community: [
         {
-          title: 'Contest page',
-          url: 'https://codeforces.com/contest/2266',
+          title: 'Official editorial',
+          url: 'https://codeforces.com/blog/entry/156984',
           publisher: 'Codeforces',
           kind: 'editorial' as const,
           official: true,
         },
       ],
+    })),
+    solutionChat: vi.fn(async () => ({
+      answer: 'Because every path ends at the corner.',
     })),
     contestAnalysis: vi.fn(async () => {
       throw new Error('Not used.')
@@ -352,6 +376,31 @@ describe('Doubt Helper API', () => {
   })
 })
 
+describe('Problem links without a readable adapter page', () => {
+  it('asks the AI service to read the linked page instead', async () => {
+    const mentor = fakeMentor()
+    getContent.mockRejectedValueOnce(
+      new Error('Codeforces blocked public problem content.'),
+    )
+    const baseUrl = startApp({ mentor: mentor.client })
+    const started = await post(
+      baseUrl,
+      '/api/problem-help/sessions',
+      'user-a',
+      {
+        problemUrl,
+        language: 'C++17',
+        doubtType: 'find_approach',
+        attemptSummary: 'I have no idea where to start.',
+      },
+    )
+    expect(started.status).toBe(201)
+    const context = mentor.requests.at(-1)?.problem
+    expect(context?.statement).toBeUndefined()
+    expect(context?.readUrl).toBe(problemUrl)
+  })
+})
+
 describe('Solution Explorer API', () => {
   it('opens only after an attempt and reuses the cached exploration', async () => {
     const mentor = fakeMentor()
@@ -385,11 +434,120 @@ describe('Solution Explorer API', () => {
     )
     expect(second.cached).toBe(true)
     expect(mentor.client.solutions).toHaveBeenCalledTimes(1)
-    const officialSources = vi.mocked(mentor.client.solutions).mock
-      .calls[0]?.[0].officialSources
-    expect(officialSources?.[0]?.url).toBe(
-      'https://codeforces.com/contest/2266',
+    const aiRequest = vi.mocked(mentor.client.solutions).mock.calls[0]?.[0]
+    // The editorial is resolved from the contest page by the AI service.
+    expect(aiRequest?.editorialLookup).toEqual({
+      contestUrl: 'https://codeforces.com/contest/2266',
+      problemIndex: 'G',
+    })
+    expect(aiRequest?.officialSources).toEqual([])
+    expect(communitySolutions).toHaveBeenCalledWith('2266G', 'C++17')
+    expect(aiRequest?.platformSolutions?.[0]).toMatchObject({
+      url: 'https://codeforces.com/contest/2266/submission/391944209',
+      kind: 'community',
+      official: false,
+    })
+    expect(first.data.problemExplanation?.restatement).toBe('Count grid paths.')
+    expect(first.data.community[0]?.url).toBe(
+      'https://codeforces.com/blog/entry/156984',
     )
+  })
+
+  it('answers follow-up questions with the explored page as context', async () => {
+    const mentor = fakeMentor()
+    const baseUrl = startApp({ mentor: mentor.client })
+    const early = await post(baseUrl, '/api/solutions/chat', 'user-a', {
+      problemUrl,
+      language: 'C++17',
+      question: 'Why DP?',
+    })
+    expect(early.status).toBe(409)
+
+    await post(baseUrl, '/api/solutions/explore', 'user-a', {
+      problemUrl,
+      language: 'C++17',
+      attemptConfirmed: true,
+    })
+    const response = await post(baseUrl, '/api/solutions/chat', 'user-a', {
+      problemUrl,
+      language: 'C++17',
+      question: 'Why DP?',
+      history: [{ role: 'learner', content: 'Hi' }],
+    })
+    expect(response.status).toBe(200)
+    expect(
+      SolutionChatResponseSchema.parse(await response.json()).data,
+    ).toEqual({ answer: 'Because every path ends at the corner.' })
+    const chat = vi.mocked(mentor.client.solutionChat).mock.calls[0]?.[0]
+    expect(chat?.exploration).toMatchObject({ summary: 'Count paths with DP.' })
+    expect(chat?.exploration).not.toHaveProperty('generatedAt')
+    expect(chat?.history).toEqual([{ role: 'learner', content: 'Hi' }])
+
+    // Another learner cannot ask about this learner's page.
+    const other = await post(baseUrl, '/api/solutions/chat', 'user-b', {
+      problemUrl,
+      language: 'C++17',
+      question: 'Why DP?',
+    })
+    expect(other.status).toBe(409)
+  })
+
+  it('explores a problem without a link from its name and statement', async () => {
+    const mentor = fakeMentor()
+    const baseUrl = startApp({ mentor: mentor.client })
+    const explored = await post(baseUrl, '/api/solutions/explore', 'user-a', {
+      problemTitle: 'Grid Paths',
+      transientStatement: 'Count the paths in an n by m grid.',
+      language: 'Python',
+      attemptConfirmed: true,
+    })
+    expect(explored.status).toBe(200)
+    expect(
+      vi.mocked(mentor.client.solutions).mock.calls.at(-1)?.[0].problem,
+    ).toMatchObject({
+      platform: 'other',
+      title: 'Grid Paths',
+      statementOrigin: 'pasted',
+    })
+    const chat = await post(baseUrl, '/api/solutions/chat', 'user-a', {
+      problemTitle: 'Grid Paths',
+      language: 'Python',
+      question: 'Why DP?',
+    })
+    expect(chat.status).toBe(200)
+    const missing = await post(baseUrl, '/api/solutions/explore', 'user-a', {
+      problemTitle: 'Grid Paths',
+      language: 'Python',
+    })
+    expect(missing.status).toBe(400)
+  })
+
+  it('asks for a pasted statement when the page cannot be read', async () => {
+    const mentor = fakeMentor()
+    vi.mocked(mentor.client.solutions).mockRejectedValueOnce(
+      new AiMentorClientError('AI_MENTOR_PROBLEM_UNREADABLE'),
+    )
+    const baseUrl = startApp({ mentor: mentor.client })
+    const failed = await post(baseUrl, '/api/solutions/explore', 'user-a', {
+      problemUrl,
+      language: 'C++17',
+      attemptConfirmed: true,
+    })
+    expect(failed.status).toBe(422)
+    expect((await failed.json()).error.code).toBe('PROBLEM_CONTEXT_UNAVAILABLE')
+
+    await post(baseUrl, '/api/solutions/explore', 'user-a', {
+      problemUrl,
+      language: 'C++17',
+      attemptConfirmed: true,
+      transientStatement: 'Count the paths in an n by m grid.',
+    })
+    expect(
+      vi.mocked(mentor.client.solutions).mock.calls.at(-1)?.[0].problem,
+    ).toMatchObject({
+      statement: 'Count the paths in an n by m grid.',
+      statementOrigin: 'pasted',
+    })
   })
 })
 

@@ -545,7 +545,7 @@ def test_coach_can_run_on_groq_while_other_calls_stay_on_gemini() -> None:
     assert groq.coach_api_key == "gsk-test"
     assert groq.llm_api_key == "test-key"
     # The on-demand tier accepts less than 1,000 output tokens per minute.
-    assert groq.effective_coach_max_output_tokens == 900
+    assert groq.effective_coach_max_output_tokens == 8_192
     model = coach_chat_model(groq)
     assert isinstance(model, ChatGroq)
     assert model.model_name == "qwen/qwen3.8-27b"
@@ -585,7 +585,7 @@ def test_llm_provider_moves_generation_and_coach_to_groq() -> None:
         groq, temperature=0.2, max_tokens=50_000, timeout=10, max_retries=0
     )
     assert isinstance(model, ChatGroq)
-    assert model.max_tokens == 900
+    assert model.max_tokens == 8_192
     assert model.reasoning_effort == "low"
 
 

@@ -14,6 +14,8 @@ import {
   RevisionResponseSchema,
   RevisionsResponseSchema,
   SolutionAccessResponseSchema,
+  SolutionChatRequestSchema,
+  SolutionChatResponseSchema,
   SolutionExplorationResponseSchema,
   SolutionExplorationsResponseSchema,
   StartProblemHelpRequestSchema,
@@ -232,6 +234,27 @@ export function registerMentorRoutes(
         SolutionExplorationResponseSchema.parse(
           await service.exploreSolutions(subject(response), input.data),
         ),
+      )
+    }),
+  )
+
+  app.post(
+    '/api/solutions/chat',
+    requireAuthenticated,
+    handle(async (request, response) => {
+      const input = SolutionChatRequestSchema.safeParse(request.body)
+      if (!input.success) {
+        invalidInput(
+          response,
+          input.error.issues[0]?.message ?? 'The request is invalid.',
+          input.error.issues,
+        )
+        return
+      }
+      response.json(
+        SolutionChatResponseSchema.parse({
+          data: await service.solutionChat(subject(response), input.data),
+        }),
       )
     }),
   )

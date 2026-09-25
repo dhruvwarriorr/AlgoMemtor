@@ -12,6 +12,8 @@ import {
   RevisionResponseSchema,
   RevisionsResponseSchema,
   SolutionAccessResponseSchema,
+  SolutionChatRequestSchema,
+  SolutionChatResponseSchema,
   SolutionExplorationResponseSchema,
   SolutionExplorationsResponseSchema,
   StartProblemHelpRequestSchema,
@@ -21,6 +23,7 @@ import {
   type ProblemHelpTurnRequest,
   type ProviderKey,
   type ReviewRevisionRequest,
+  type SolutionChatRequest,
   type StartProblemHelpRequest,
   type UpdateUpsolveItemRequest,
 } from '@algomemtor/shared-contracts'
@@ -125,6 +128,14 @@ export function exploreSolutions(input: ExploreSolutionsRequest) {
     '/api/solutions/explore',
     ExploreSolutionsRequestSchema.parse(input),
     SolutionExplorationResponseSchema,
+  )
+}
+
+export function askSolutionChat(input: SolutionChatRequest) {
+  return post(
+    '/api/solutions/chat',
+    SolutionChatRequestSchema.parse(input),
+    SolutionChatResponseSchema,
   )
 }
 

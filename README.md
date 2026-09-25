@@ -158,8 +158,10 @@ turns to `COACH_GEMINI_MODEL` (default `gemini-3.5-flash-lite`). If the chosen
 provider fails or is rate-limited, the coach tries the other provider once;
 if both fail, it reports unavailability rather than fabricating a reply. Qwen
 uses one bounded, structured call with local learner-data prefetch to fit
-smaller Groq quotas; `GROQ_MAX_COMPLETION_TOKENS` defaults to 900 and can be
-raised for a higher-limit account. Gemini handles multimodal inputs natively;
+smaller Groq quotas. Each turn sizes its own answer and context budget (quick,
+standard or deep) inside `GROQ_TOKENS_PER_MINUTE` (default 6000);
+`GROQ_MAX_COMPLETION_TOKENS` (default 8192) is only the upper bound, and a
+Groq answer that still hits the limit is continued once. Gemini handles multimodal inputs natively;
 for Qwen failover, images use its vision input, audio/video is transcribed
 transiently, and PDF text is extracted locally. No attachment or transcript
 is saved in chat history or audits. It returns up to ten allowlisted provider IDs, scores, concise reasons,

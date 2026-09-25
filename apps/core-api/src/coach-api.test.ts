@@ -1737,43 +1737,6 @@ describe('coach API', () => {
     expect(coachResponse.message.proposals).toEqual([])
   })
 
-  it('protects durable coach refreshes with the internal service token', async () => {
-    const progressRepository = new InMemoryProgressRepository()
-    await progressRepository.saveConsent(
-      userA,
-      true,
-      'personalized-coaching-rag-v2',
-    )
-    const baseUrl = startApp({
-      progressRepository,
-      internalServiceToken: 'internal-test-token',
-    })
-
-    const unauthorized = await fetch(
-      `${baseUrl}/internal/coach/check-ins/refresh`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ learnerId: userA }),
-      },
-    )
-    expect(unauthorized.status).toBe(401)
-
-    const refreshed = await fetch(
-      `${baseUrl}/internal/coach/check-ins/refresh`,
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-internal-service-token': 'internal-test-token',
-        },
-        body: JSON.stringify({ learnerId: userA }),
-      },
-    )
-    expect(refreshed.status).toBe(200)
-    expect(await refreshed.json()).toMatchObject({ created: 0 })
-  })
-
   it('rejects legacy attempts to disable always-on coaching', async () => {
     const progressRepository = new InMemoryProgressRepository()
     await progressRepository.saveConsent(

@@ -4,8 +4,13 @@ from uuid import uuid4
 import pytest
 from app.main import app
 from app.mentor_models import (
+    ApproachOutput,
+    CodeRepairOutput,
+    CommunitySource,
     ContestNarrativeOutput,
+    MissingApproachOutput,
     ProblemHelpRequest,
+    SolutionChatRequest,
     SolutionModelOutput,
     SolutionRequest,
 )
@@ -13,15 +18,21 @@ from app.mentor_prompts import phase_instructions
 from app.mentor_service import (
     UNREADABLE_PROBLEM_ANSWER,
     MentorGenerationError,
+    MentorProblemUnavailableError,
     MentorService,
+    clean_points,
     coerce_to_schema,
     disclosure_violation,
+    editorial_excerpt,
+    editorial_link,
     get_mentor_service,
+    is_stub_code,
     keep_teaching_links,
     split_category,
 )
 from app.settings import AiSettings, get_ai_settings
 from app.web_grounding import PublicCitation, PublicResearch
+from app.web_reader import WebReadError
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
@@ -159,8 +170,11 @@ async def test_full_solution_allows_complete_code() -> None:
 
 @pytest.mark.asyncio
 async def test_missing_statement_asks_for_a_paste_without_a_model_call() -> None:
+    async def no_search(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
     model = ScriptedModel()
-    service = MentorService(settings(), model)
+    service = MentorService(settings(), model, ground=no_search)
     request = help_request(
         problem={"platform": "codeforces", "title": "Towers", "tags": []}
     )
@@ -236,84 +250,304 @@ def test_structured_output_is_clipped_to_schema_bounds() -> None:
     assert len(recovered.strategy) == 6
 
 
+REAL_PROGRAM = """#include <bits/stdc++.h>
+using namespace std;
+int main() {
+    int t;
+    cin >> t;
+    while (t--) {
+        int n;
+        cin >> n;
+        vector<long long> a(n);
+        for (auto &x : a) cin >> x;
+        sort(a.begin(), a.end());
+        long long best = 0;
+        for (int i = 0; i < n; i++) best = max(best, a[i] - i);
+        cout << best << "\\n";
+    }
+}"""
+
+
+def approach(kind: str, name: str, code: str | None) -> dict[str, Any]:
+    return {
+        "kind": kind,
+        "name": name,
+        "idea": f"{name} idea.",
+        "keyInsight": "Insight.",
+        "steps": ["Read input", "Compute", "Print"],
+        "whyItWorks": "Because.",
+        "timeComplexity": "O(n log n)",
+        "spaceComplexity": "O(n)",
+        **({} if code is None else {"code": code}),
+    }
+
+
+def solution_output(codes: list[str | None]) -> SolutionModelOutput:
+    return SolutionModelOutput.model_validate(
+        {
+            "summary": "Sort, then track the best drop.",
+            "problemExplanation": {
+                "restatement": "Move sections backwards; maximize the result.",
+                "inputOutput": "t test cases; n up to 2*10^5.",
+                "keyObservations": ["Order after sorting is fixed."],
+                "exampleWalkthrough": "Sample 1 gives 3.",
+                "edgeCases": ["n = 1"],
+            },
+            "approaches": [
+                approach("brute_force", "Simulate", codes[0]),
+                approach("better", "Prefix", codes[1]),
+                approach("optimized", "Sort", codes[2]),
+            ],
+            "comparison": "Sorting wins.",
+            "thinkingLessons": ["Sort first."],
+            "communityHighlights": [
+                {"sourceId": "c1", "highlight": "Clean C++ code."},
+                {"sourceId": "zz", "highlight": "Unknown source is ignored."},
+            ],
+        }
+    )
+
+
+def solution_request(**problem: Any) -> SolutionRequest:
+    return SolutionRequest.model_validate(
+        {
+            "requestId": "req",
+            "learnerId": str(uuid4()),
+            "language": "C++17",
+            "problem": {
+                "platform": "codeforces",
+                "title": "Falling Concrete",
+                "url": "https://codeforces.com/problemset/problem/2266/D",
+                "readUrl": "https://codeforces.com/problemset/problem/2266/D",
+                "tags": [],
+                **problem,
+            },
+            "learner": {},
+            "editorialLookup": {
+                "contestUrl": "https://codeforces.com/contest/2266",
+                "problemIndex": "D",
+            },
+        }
+    )
+
+
+class FakePage:
+    def __init__(self, url: str, text: str) -> None:
+        self.url = url
+        self.title = "Page"
+        self.text = text
+
+
+PAGES = {
+    "https://codeforces.com/problemset/problem/2266/D": "Vihaan repairs a road of n "
+    "sections. Input: t test cases.",
+    "https://codeforces.com/contest/2266": "Contest materials "
+    "[Announcement](https://codeforces.com/blog/entry/156834) "
+    '[Tutorial (en)](https://codeforces.com/blog/entry/156984 "Round 1122")',
+    "https://codeforces.com/blog/entry/156984": "2266A Easy. Hint. "
+    "2266D Falling Concrete: sort the heights and track a[i] - i.",
+}
+
+
+async def fake_pages(url: str) -> FakePage:
+    return FakePage(url, PAGES[url])
+
+
 @pytest.mark.asyncio
-async def test_solutions_merge_official_and_grounded_sources() -> None:
+async def test_solutions_resolve_the_editorial_and_top_community_solutions() -> None:
+    searches: list[str] = []
+
     async def ground(*args: Any, **kwargs: Any) -> PublicResearch:
-        assert "editorial" in kwargs["instruction"]
+        searches.append(kwargs["instruction"])
         return PublicResearch(
-            summary="found",
+            summary="Blog uses sorting.",
             citations=[
-                PublicCitation(
-                    id="web-1",
-                    title="Codeforces Round Editorial",
-                    url="https://codeforces.com/blog/entry/1",
-                    publisher="codeforces.com",
+                PublicCitation(id=f"web-{index}", title=title, url=url, publisher="web")
+                for index, (title, url) in enumerate(
+                    [
+                        (
+                            "Problem - 2266D",
+                            "https://codeforces.com/problemset/problem/2266/D",
+                        ),
+                        (
+                            "Codeforces Round 1122 Editorial",
+                            "https://codeforces.com/blog/entry/156984?locale=en",
+                        ),
+                        (
+                            "D. Falling Concrete | Codeforces Round 1122",
+                            "https://www.youtube.com/watch?v=abc",
+                        ),
+                        ("Two Sum in Java", "https://example.com/two-sum"),
+                        (
+                            "cf solutions",
+                            "https://github.com/x/cf/blob/main/2266D.cpp",
+                        ),
+                        (
+                            "Falling Concrete solution in C++",
+                            "https://example.com/falling-concrete",
+                        ),
+                    ],
+                    start=1,
                 )
             ],
             searched=True,
         )
 
-    output = SolutionModelOutput.model_validate(
-        {
-            "summary": "Minimize cost.",
-            "approaches": [
-                {
-                    "kind": "brute_force",
-                    "name": "Try all",
-                    "idea": "Enumerate.",
-                    "keyInsight": "Correct but slow.",
-                    "whyItWorks": "Checks everything.",
-                    "timeComplexity": "O(2^n)",
-                    "spaceComplexity": "O(n)",
-                },
-                {
-                    "kind": "optimized",
-                    "name": "Greedy",
-                    "idea": "Sort then pick.",
-                    "keyInsight": "Exchange argument.",
-                    "whyItWorks": "Swapping never helps.",
-                    "timeComplexity": "O(n log n)",
-                    "spaceComplexity": "O(n)",
-                    "code": "```cpp\nint main(){}\n```",
-                },
-            ],
-            "comparison": "Greedy wins.",
-            "thinkingLessons": ["Look for exchange arguments."],
-            "communityHighlights": [
-                {"sourceId": "s2", "highlight": "Explains the exchange argument."},
-                {"sourceId": "s9", "highlight": "Unknown source is ignored."},
-            ],
-        }
+    stub = "#include <iostream>\nusing namespace std;\nint main() { return 0; }"
+    model = ScriptedModel(
+        solution_output([stub, REAL_PROGRAM, REAL_PROGRAM]),
+        CodeRepairOutput(programs=[{"index": 0, "code": REAL_PROGRAM}]),
     )
-    model = ScriptedModel(output)
-    service = MentorService(settings(), model, ground=ground)
-    request = SolutionRequest.model_validate(
-        {
-            "requestId": "req",
-            "learnerId": str(uuid4()),
-            "language": "C++17",
-            "problem": {"platform": "codeforces", "title": "Towers", "tags": []},
-            "learner": {},
-            "officialSources": [
-                {
-                    "id": "s1",
-                    "title": "Contest materials",
-                    "url": "https://codeforces.com/contest/2266",
-                    "publisher": "Codeforces",
-                    "kind": "editorial",
-                    "official": True,
-                }
-            ],
+    service = MentorService(settings(), model, ground=ground, read_page=fake_pages)
+    response = await service.solutions(solution_request())
+
+    assert len(searches) == 1 and "C++17" in searches[0]
+    human = model.calls[0]["human"]
+    assert "Vihaan repairs a road" in human
+    assert "track a[i] - i" in human  # editorial excerpt grounds the answer
+    assert "readUrl" not in human
+    assert response.statementSource == "page"
+    assert response.problemExplanation is not None
+    # The problem page, the editorial again and unrelated hits are dropped;
+    # the most specific solutions come first.
+    assert [item.url for item in response.community] == [
+        "https://codeforces.com/blog/entry/156984",
+        "https://github.com/x/cf/blob/main/2266D.cpp",
+        "https://www.youtube.com/watch?v=abc",
+        "https://example.com/falling-concrete",
+    ]
+    assert response.community[2].kind == "video"
+    assert response.community[0].official is True
+    assert response.community[1].language == "C++17"
+    assert response.community[1].highlight == "Clean C++ code."
+    # The skeleton program was replaced by one targeted repair call.
+    assert model.calls[1]["schema"] is CodeRepairOutput
+    assert all(item.code == REAL_PROGRAM for item in response.approaches)
+
+
+@pytest.mark.asyncio
+async def test_solutions_refuse_to_guess_without_a_statement() -> None:
+    async def unreadable(url: str) -> FakePage:
+        raise WebReadError("blocked")
+
+    async def no_search(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    model = ScriptedModel()
+    service = MentorService(settings(), model, ground=no_search, read_page=unreadable)
+    with pytest.raises(MentorProblemUnavailableError):
+        await service.solutions(solution_request())
+    assert model.calls == []
+
+
+@pytest.mark.asyncio
+async def test_platform_solutions_fill_the_community_list_without_search() -> None:
+    async def no_search(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("three platform solutions need no web search")
+
+    model = ScriptedModel(solution_output([REAL_PROGRAM] * 3))
+    service = MentorService(settings(), model, ground=no_search, read_page=fake_pages)
+    request = solution_request().model_copy(
+        update={
+            "platformSolutions": [
+                CommunitySource(
+                    id=f"p{index}",
+                    title=f"Accepted C++17 solution {index}",
+                    url=f"https://codeforces.com/contest/2266/submission/{index}",
+                    publisher="Codeforces",
+                    kind="community",
+                    official=False,
+                    language="C++17 (GCC 7-32)",
+                    note="Fast.",
+                )
+                for index in range(1, 4)
+            ]
         }
     )
     response = await service.solutions(request)
-    assert [item.url for item in response.community] == [
-        "https://codeforces.com/contest/2266",
-        "https://codeforces.com/blog/entry/1",
+    community = [item for item in response.community if not item.official]
+    assert len(community) == 3
+    assert community[0].language == "C++17 (GCC 7-32)"
+    assert community[0].highlight == "Fast."
+    assert "platformSolutions" not in model.calls[0]["human"]
+
+
+@pytest.mark.asyncio
+async def test_a_missing_middle_approach_is_written_separately() -> None:
+    two = solution_output([REAL_PROGRAM] * 3)
+    two = two.model_copy(update={"approaches": [two.approaches[0], two.approaches[2]]})
+    middle = ApproachOutput.model_validate(approach("better", "Prefix", REAL_PROGRAM))
+
+    async def no_search(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    model = ScriptedModel(two, MissingApproachOutput(approach=middle))
+    service = MentorService(settings(), model, ground=no_search, read_page=fake_pages)
+    response = await service.solutions(solution_request())
+    assert [item.kind for item in response.approaches] == [
+        "brute_force",
+        "better",
+        "optimized",
     ]
-    assert response.community[1].highlight == "Explains the exchange argument."
-    assert response.community[1].kind == "editorial"
-    assert response.approaches[1].code == "int main(){}"
+    assert model.calls[1]["schema"] is MissingApproachOutput
+
+
+def test_list_items_are_split_and_leaked_fields_dropped() -> None:
+    assert clean_points(
+        [
+            (
+                "1. Heights shift by one. 2. Sections keep a[i] - i.\n"
+                "restatement: leaked text"
+            ),
+            "- n = 1",
+        ],
+        400,
+        5,
+    ) == ["Heights shift by one.", "Sections keep a[i] - i.", "n = 1"]
+
+
+def test_stub_detection_and_editorial_parsing() -> None:
+    assert is_stub_code(None)
+    assert is_stub_code("int main() {\n  // Optimized approach structure\n}")
+    assert not is_stub_code(REAL_PROGRAM)
+    contest = PAGES["https://codeforces.com/contest/2266"]
+    assert editorial_link(contest) == "https://codeforces.com/blog/entry/156984"
+    assert editorial_link("no links here") is None
+    excerpt = editorial_excerpt(
+        PAGES["https://codeforces.com/blog/entry/156984"],
+        index="D",
+        title="Falling Concrete",
+        contest_id="2266",
+    )
+    assert excerpt is not None and excerpt.startswith("2266D")
+
+
+@pytest.mark.asyncio
+async def test_solution_chat_answers_with_the_page_context() -> None:
+    model = ScriptedModel("Because sorting fixes the order.")
+    service = MentorService(settings(), model, read_page=fake_pages)
+    response = await service.solution_chat(
+        SolutionChatRequest.model_validate(
+            {
+                "requestId": "chat",
+                "learnerId": str(uuid4()),
+                "language": "C++17",
+                "problem": {
+                    "platform": "codeforces",
+                    "title": "Falling Concrete",
+                    "readUrl": "https://codeforces.com/problemset/problem/2266/D",
+                },
+                "learner": {},
+                "exploration": {"summary": "Sort, then track the best drop."},
+                "history": [{"role": "learner", "content": "Why sort?"}],
+                "question": "Why does sorting work?",
+            }
+        )
+    )
+    assert response.answer == "Because sorting fixes the order."
+    human = model.calls[0]["human"]
+    assert "Sort, then track the best drop." in human
+    assert "Vihaan repairs a road" in human
 
 
 def test_mentor_endpoint_requires_the_internal_token_and_maps_errors() -> None:

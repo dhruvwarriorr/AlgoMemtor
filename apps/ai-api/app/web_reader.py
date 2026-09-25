@@ -110,18 +110,27 @@ class _TextExtractor(HTMLParser):
         }
     )
 
-    def __init__(self) -> None:
+    def __init__(self, link_base: str | None = None) -> None:
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
         self.title = ""
         self._skip_depth = 0
         self._in_title = False
+        # When set, anchors become Markdown links resolved against this URL.
+        self._link_base = link_base
+        self._links: list[str | None] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in self._SKIP:
             self._skip_depth += 1
         elif tag == "title":
             self._in_title = True
+        elif tag == "a" and self._link_base is not None and self._skip_depth == 0:
+            href = dict(attrs).get("href") or ""
+            target = normalize_public_url(urljoin(self._link_base, href))
+            self._links.append(target)
+            if target is not None:
+                self.parts.append("[")
         elif tag in self._BLOCK:
             self.parts.append("\n")
 
@@ -130,6 +139,10 @@ class _TextExtractor(HTMLParser):
             self._skip_depth -= 1
         elif tag == "title":
             self._in_title = False
+        elif tag == "a" and self._link_base is not None and self._links:
+            target = self._links.pop()
+            if target is not None:
+                self.parts.append(f"]({target})")
         elif tag in self._BLOCK:
             self.parts.append("\n")
 
@@ -140,8 +153,8 @@ class _TextExtractor(HTMLParser):
             self.parts.append(data)
 
 
-def html_to_text(html: str) -> tuple[str, str]:
-    extractor = _TextExtractor()
+def html_to_text(html: str, link_base: str | None = None) -> tuple[str, str]:
+    extractor = _TextExtractor(link_base)
     # A malformed page still yields whatever text parsed before the error.
     with contextlib.suppress(Exception):
         extractor.feed(html)
@@ -152,7 +165,9 @@ def html_to_text(html: str) -> tuple[str, str]:
     return " ".join(extractor.title.split())[:200], text
 
 
-async def read_public_page(url: str, *, timeout_seconds: float = 10) -> WebPage:
+async def read_public_page(
+    url: str, *, timeout_seconds: float = 10, keep_links: bool = False
+) -> WebPage:
     current = normalize_public_url(url)
     if current is None:
         raise WebReadError("Only public https links can be opened.")
@@ -192,7 +207,7 @@ async def read_public_page(url: str, *, timeout_seconds: float = 10) -> WebPage:
                 raise WebReadError("The page could not be reached.") from error
             raw = bytes(body).decode(encoding, errors="replace")
             if content_type.startswith("text/html"):
-                title, text = html_to_text(raw)
+                title, text = html_to_text(raw, current if keep_links else None)
             else:
                 title, text = "", raw.strip()
             if not text:

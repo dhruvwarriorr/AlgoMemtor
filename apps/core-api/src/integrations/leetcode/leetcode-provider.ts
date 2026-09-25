@@ -5,6 +5,13 @@ import {
   type ExternalProblemSummary,
 } from '@algomemtor/shared-contracts'
 
+import {
+  LeetCodeSolutionsEnvelopeSchema,
+  leetcodeCommunitySolutions,
+  leetcodeLanguageTag,
+  leetcodeSolutionsQuery,
+  type CommunitySolutionLink,
+} from '../providers/community-solutions.js'
 import { ProviderError } from '../../errors/provider-error.js'
 import { RequestGate } from '../../utils/request-gate.js'
 import {
@@ -212,6 +219,51 @@ export class LeetCodeProvider implements ProblemProvider {
       }
     }
     return result
+  }
+
+  async communitySolutions(
+    externalId: string,
+    language: string,
+    request: ProblemProviderRequest = {},
+  ): Promise<CommunitySolutionLink[]> {
+    const tag = leetcodeLanguageTag(language)
+    let titleSlug = this.titleSlugByExternalId.get(externalId)
+    if (titleSlug === undefined && leetcodeSlugPattern.test(externalId)) {
+      titleSlug = externalId
+    }
+    if (titleSlug === undefined || tag === undefined) return []
+    const body = await fetchProviderJson({
+      provider: this.key,
+      url: this.endpoint,
+      allowedHostname: 'leetcode.com',
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        referer: `https://leetcode.com/problems/${titleSlug}/solutions/`,
+      },
+      body: JSON.stringify({
+        query: leetcodeSolutionsQuery,
+        variables: {
+          questionSlug: titleSlug,
+          orderBy: 'MOST_VOTES',
+          tagSlugs: [tag],
+          skip: 0,
+          first: 3,
+        },
+      }),
+      requestGate: this.requestGate,
+      fetchImpl: this.fetchImpl,
+      timeoutMs: this.timeoutMs,
+      maxAttempts: 1,
+      maxResponseBytes: 500_000,
+      ...(request.signal === undefined ? {} : { signal: request.signal }),
+      ...(request.requestId === undefined
+        ? {}
+        : { requestId: request.requestId }),
+    } satisfies ProviderHttpRequest)
+    const parsed = LeetCodeSolutionsEnvelopeSchema.safeParse(body)
+    if (!parsed.success || parsed.data.errors?.length) return []
+    return leetcodeCommunitySolutions(parsed.data, titleSlug, language)
   }
 
   async getContent(externalId: string, request: ProblemProviderRequest = {}) {

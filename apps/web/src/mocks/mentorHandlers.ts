@@ -198,6 +198,7 @@ export const mentorHandlers: RequestHandler[] = [
     )
   }),
   http.post('/api/solutions/explore', unavailable),
+  http.post('/api/solutions/chat', unavailable),
   http.get('/api/upsolve', () =>
     HttpResponse.json(
       UpsolveResponseSchema.parse({

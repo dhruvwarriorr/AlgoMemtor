@@ -283,6 +283,7 @@ export type ProblemHelpTurnRequest = z.infer<
 
 export const SolutionApproachKindSchema = z.enum([
   'brute_force',
+  'better',
   'optimized',
   'alternative',
   'mathematical',
@@ -295,11 +296,13 @@ export const SolutionApproachSchema = z
     name: nonEmptyStringSchema.max(120),
     idea: nonEmptyStringSchema.max(2_400),
     keyInsight: nonEmptyStringSchema.max(800),
+    steps: z.array(nonEmptyStringSchema.max(400)).max(8).optional(),
     whyItWorks: nonEmptyStringSchema.max(2_000),
     limitations: nonEmptyStringSchema.max(1_000).optional(),
     timeComplexity: nonEmptyStringSchema.max(80),
     spaceComplexity: nonEmptyStringSchema.max(80),
     code: nonEmptyStringSchema.max(TRANSIENT_CODE_LIMIT).optional(),
+    codeExplanation: nonEmptyStringSchema.max(1_500).optional(),
   })
   .strict()
 export type SolutionApproach = z.infer<typeof SolutionApproachSchema>
@@ -321,6 +324,9 @@ export const CommunitySolutionSchema = z
     publisher: nonEmptyStringSchema.max(100),
     kind: CommunitySolutionKindSchema,
     official: z.boolean(),
+    // The programming language of a community solution found for the
+    // learner's selected language.
+    language: nonEmptyStringSchema.max(64).optional(),
     highlight: nonEmptyStringSchema.max(600).optional(),
   })
   .strict()
@@ -334,12 +340,38 @@ export const SolutionUnlockReasonSchema = z.enum([
 ])
 export type SolutionUnlockReason = z.infer<typeof SolutionUnlockReasonSchema>
 
+export const SolutionProblemExplanationSchema = z
+  .object({
+    restatement: nonEmptyStringSchema.max(1_600),
+    inputOutput: nonEmptyStringSchema.max(1_200),
+    keyObservations: z.array(nonEmptyStringSchema.max(400)).max(5),
+    exampleWalkthrough: nonEmptyStringSchema.max(2_000).optional(),
+    edgeCases: z.array(nonEmptyStringSchema.max(300)).max(5),
+  })
+  .strict()
+export type SolutionProblemExplanation = z.infer<
+  typeof SolutionProblemExplanationSchema
+>
+
+// Where the problem statement behind an exploration came from.
+export const SolutionStatementSourceSchema = z.enum([
+  'provider',
+  'page',
+  'pasted',
+  'search',
+])
+export type SolutionStatementSource = z.infer<
+  typeof SolutionStatementSourceSchema
+>
+
 export const SolutionExplorationSchema = z
   .object({
     problem: ProblemHelpProblemSchema,
     language: nonEmptyStringSchema.max(64),
     unlockedBy: SolutionUnlockReasonSchema,
     summary: nonEmptyStringSchema.max(1_200),
+    problemExplanation: SolutionProblemExplanationSchema.optional(),
+    statementSource: SolutionStatementSourceSchema.optional(),
     approaches: z.array(SolutionApproachSchema).min(1).max(5),
     comparison: nonEmptyStringSchema.max(2_400),
     thinkingLessons: z.array(nonEmptyStringSchema.max(400)).max(5),
@@ -351,12 +383,28 @@ export type SolutionExploration = z.infer<typeof SolutionExplorationSchema>
 
 export const ExploreSolutionsRequestSchema = z
   .object({
-    problemUrl: publicHttpsUrlSchema,
+    problemUrl: publicHttpsUrlSchema.optional(),
+    // No link: a problem name with the pasted statement.
+    problemTitle: nonEmptyStringSchema.max(200).optional(),
     language: nonEmptyStringSchema.max(64),
     attemptConfirmed: z.boolean().optional(),
     refresh: z.boolean().optional(),
+    // Pasted statement, for pages that cannot be read or problems without a
+    // link. Transient.
+    transientStatement: transientStatementSchema.optional(),
   })
   .strict()
+  .refine(
+    (value) =>
+      value.problemUrl !== undefined ||
+      (value.problemTitle !== undefined &&
+        value.transientStatement !== undefined),
+    {
+      message:
+        'Provide a problem link, or a problem name with the pasted statement.',
+      path: ['problemUrl'],
+    },
+  )
 export type ExploreSolutionsRequest = z.infer<
   typeof ExploreSolutionsRequestSchema
 >
@@ -396,6 +444,42 @@ export type SolutionExplorationSummary = z.infer<
 export const SolutionExplorationsResponseSchema = z
   .object({ data: z.array(SolutionExplorationSummarySchema).max(50) })
   .strict()
+
+// Follow-up questions on a Solution Explorer page. The server supplies the
+// explored page as context; the conversation lives in the browser only.
+export const SOLUTION_CHAT_HISTORY_LIMIT = 12
+
+export const SolutionChatTurnSchema = z
+  .object({
+    role: z.enum(['learner', 'mentor']),
+    content: nonEmptyStringSchema.max(6_000),
+  })
+  .strict()
+export type SolutionChatTurn = z.infer<typeof SolutionChatTurnSchema>
+
+export const SolutionChatRequestSchema = z
+  .object({
+    problemUrl: publicHttpsUrlSchema.optional(),
+    problemTitle: nonEmptyStringSchema.max(200).optional(),
+    language: nonEmptyStringSchema.max(64),
+    question: nonEmptyStringSchema.max(2_000),
+    history: z
+      .array(SolutionChatTurnSchema)
+      .max(SOLUTION_CHAT_HISTORY_LIMIT)
+      .optional(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      value.problemUrl !== undefined || value.problemTitle !== undefined,
+    { message: 'Provide the problem link or name.', path: ['problemUrl'] },
+  )
+export type SolutionChatRequest = z.infer<typeof SolutionChatRequestSchema>
+
+export const SolutionChatResponseSchema = z
+  .object({ data: z.object({ answer: nonEmptyStringSchema.max(16_000) }) })
+  .strict()
+export type SolutionChatResponse = z.infer<typeof SolutionChatResponseSchema>
 
 // ---------------------------------------------------------------------------
 // Upsolve Tracker and revision schedule

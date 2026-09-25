@@ -1,6 +1,8 @@
 import {
   ProblemHelpBugCategorySchema,
   SolutionApproachSchema,
+  SolutionProblemExplanationSchema,
+  SolutionStatementSourceSchema,
   CommunitySolutionKindSchema,
 } from '@algomemtor/shared-contracts'
 import { z } from 'zod'
@@ -28,6 +30,7 @@ export type MentorProblemContext = {
   tags: string[]
   rating?: number
   readUrl?: string
+  statementOrigin?: 'provider' | 'pasted'
 }
 
 export type AiProblemHelpRequest = {
@@ -74,6 +77,8 @@ export type AiCommunitySource = {
   publisher: string
   kind: z.infer<typeof CommunitySolutionKindSchema>
   official: boolean
+  language?: string
+  note?: string
 }
 
 export type AiSolutionRequest = {
@@ -83,17 +88,42 @@ export type AiSolutionRequest = {
   problem: MentorProblemContext
   learner: LearnerSnapshot
   officialSources: AiCommunitySource[]
+  // Top solutions in the learner's language from the platform's own API.
+  platformSolutions?: AiCommunitySource[]
+  // For contest problems whose editorial is linked from the contest page.
+  editorialLookup?: { contestUrl: string; problemIndex: string }
   searchCommunity: boolean
 }
+
+export type AiSolutionChatRequest = {
+  requestId: string
+  learnerId: string
+  language: string
+  problem: MentorProblemContext
+  learner: LearnerSnapshot
+  exploration: Record<string, unknown>
+  history: { role: 'learner' | 'mentor'; content: string }[]
+  question: string
+}
+
+export const AiSolutionChatResponseSchema = z
+  .object({ answer: shortText.max(16_000) })
+  .strict()
+export type AiSolutionChatResponse = z.infer<
+  typeof AiSolutionChatResponseSchema
+>
 
 export const AiSolutionResponseSchema = z
   .object({
     summary: shortText.max(1_200),
+    problemExplanation: SolutionProblemExplanationSchema.optional(),
+    statementSource: SolutionStatementSourceSchema.optional(),
     approaches: z
       .array(
         SolutionApproachSchema.extend({
           limitations: shortText.max(1_000).optional(),
           code: shortText.max(12_000).optional(),
+          codeExplanation: shortText.max(1_500).optional(),
         }),
       )
       .min(1)
@@ -109,6 +139,7 @@ export const AiSolutionResponseSchema = z
             publisher: shortText.max(100),
             kind: CommunitySolutionKindSchema,
             official: z.boolean(),
+            language: shortText.max(64).optional(),
             highlight: shortText.max(600).optional(),
           })
           .strict(),
@@ -196,6 +227,7 @@ export type AiMentorErrorCode =
   | 'AI_MENTOR_TIMEOUT'
   | 'AI_MENTOR_INVALID_RESPONSE'
   | 'AI_MENTOR_CANCELLED'
+  | 'AI_MENTOR_PROBLEM_UNREADABLE'
 
 export class AiMentorClientError extends Error {
   constructor(readonly code: AiMentorErrorCode) {
@@ -213,6 +245,10 @@ export interface AiMentorClient {
     input: AiSolutionRequest,
     signal?: AbortSignal,
   ): Promise<AiSolutionResponse>
+  solutionChat(
+    input: AiSolutionChatRequest,
+    signal?: AbortSignal,
+  ): Promise<AiSolutionChatResponse>
   contestAnalysis(
     input: {
       requestId: string
@@ -257,6 +293,10 @@ export class UnavailableAiMentorClient implements AiMentorClient {
     return this.fail()
   }
 
+  async solutionChat(): Promise<AiSolutionChatResponse> {
+    return this.fail()
+  }
+
   async contestAnalysis(): Promise<AiContestNarrative> {
     return this.fail()
   }
@@ -285,6 +325,7 @@ export class HttpAiMentorClient implements AiMentorClient {
     body: unknown,
     schema: z.ZodType<T>,
     signal?: AbortSignal,
+    timeoutMs = this.options.timeoutMs ?? 150_000,
   ): Promise<T> {
     const controller = new AbortController()
     const abortFromCaller = () => controller.abort(signal?.reason)
@@ -295,7 +336,7 @@ export class HttpAiMentorClient implements AiMentorClient {
     }
     const timeout = setTimeout(
       () => controller.abort(new Error('The AI mentor request timed out.')),
-      this.options.timeoutMs ?? 150_000,
+      timeoutMs,
     )
     try {
       const response = await (this.options.fetchImplementation ?? fetch)(
@@ -312,6 +353,9 @@ export class HttpAiMentorClient implements AiMentorClient {
       )
       if (response.status === 429) {
         throw new AiMentorClientError('AI_MENTOR_RATE_LIMITED')
+      }
+      if (response.status === 424) {
+        throw new AiMentorClientError('AI_MENTOR_PROBLEM_UNREADABLE')
       }
       if (!response.ok) {
         throw new AiMentorClientError('AI_MENTOR_UNAVAILABLE')
@@ -351,10 +395,22 @@ export class HttpAiMentorClient implements AiMentorClient {
   }
 
   solutions(input: AiSolutionRequest, signal?: AbortSignal) {
+    // Reading the statement and editorial, searching community solutions,
+    // three complete programs and an occasional code repair take a while.
     return this.post(
       '/internal/mentor/solutions',
       input,
       AiSolutionResponseSchema,
+      signal,
+      Math.max(this.options.timeoutMs ?? 0, 280_000),
+    )
+  }
+
+  solutionChat(input: AiSolutionChatRequest, signal?: AbortSignal) {
+    return this.post(
+      '/internal/mentor/solution-chat',
+      input,
+      AiSolutionChatResponseSchema,
       signal,
     )
   }

@@ -91,6 +91,8 @@ class ProblemContext(StrictModel):
     # A public page on a site without a provider adapter. The service reads it
     # for this request only, through the SSRF-guarded page reader.
     readUrl: str | None = Field(default=None, max_length=2_048)
+    # Where `statement` came from when Express supplies it.
+    statementOrigin: Literal["provider", "pasted"] | None = None
 
 
 class PriorTurn(StrictModel):
@@ -126,10 +128,13 @@ class ProblemHelpResponse(StrictModel):
 
 # --- Solution Explorer -----------------------------------------------------
 
-ApproachKind = Literal["brute_force", "optimized", "alternative", "mathematical"]
+ApproachKind = Literal[
+    "brute_force", "better", "optimized", "alternative", "mathematical"
+]
 CommunityKind = Literal[
     "editorial", "community", "discussion", "submissions", "article", "video"
 ]
+StatementSource = Literal["provider", "page", "pasted", "search"]
 
 
 class CommunitySource(StrictModel):
@@ -139,6 +144,15 @@ class CommunitySource(StrictModel):
     publisher: str = Field(min_length=1, max_length=100)
     kind: CommunityKind
     official: bool
+    language: str | None = Field(default=None, max_length=64)
+    note: str | None = Field(default=None, max_length=600)
+
+
+class EditorialLookup(StrictModel):
+    """Where to find the official editorial link for a contest problem."""
+
+    contestUrl: str = Field(min_length=1, max_length=2_048)
+    problemIndex: str = Field(min_length=1, max_length=8)
 
 
 class SolutionRequest(StrictModel):
@@ -148,7 +162,22 @@ class SolutionRequest(StrictModel):
     problem: ProblemContext
     learner: LearnerSnapshot
     officialSources: list[CommunitySource] = Field(default_factory=list, max_length=4)
+    # Top solutions in the learner's language from the platform's own API.
+    platformSolutions: list[CommunitySource] = Field(default_factory=list, max_length=3)
+    editorialLookup: EditorialLookup | None = None
     searchCommunity: bool = True
+
+
+class ProblemExplanationOutput(StrictModel):
+    restatement: str = Field(min_length=1, max_length=1_600)
+    inputOutput: str = Field(min_length=1, max_length=1_200)
+    keyObservations: list[Annotated[str, Field(min_length=1, max_length=400)]] = Field(
+        default_factory=list, max_length=5
+    )
+    exampleWalkthrough: str | None = Field(default=None, max_length=2_000)
+    edgeCases: list[Annotated[str, Field(min_length=1, max_length=300)]] = Field(
+        default_factory=list, max_length=5
+    )
 
 
 class ApproachOutput(StrictModel):
@@ -156,11 +185,15 @@ class ApproachOutput(StrictModel):
     name: str = Field(min_length=1, max_length=120)
     idea: str = Field(min_length=1, max_length=2_400)
     keyInsight: str = Field(min_length=1, max_length=800)
+    steps: list[Annotated[str, Field(min_length=1, max_length=400)]] = Field(
+        default_factory=list, max_length=8
+    )
     whyItWorks: str = Field(min_length=1, max_length=2_000)
     limitations: str | None = Field(default=None, max_length=1_000)
     timeComplexity: str = Field(min_length=1, max_length=80)
     spaceComplexity: str = Field(min_length=1, max_length=80)
     code: str | None = Field(default=None, max_length=12_000)
+    codeExplanation: str | None = Field(default=None, max_length=1_500)
 
 
 class CommunityHighlight(StrictModel):
@@ -172,7 +205,8 @@ class SolutionModelOutput(StrictModel):
     """Structured output requested from the model."""
 
     summary: str = Field(min_length=1, max_length=1_200)
-    approaches: list[ApproachOutput] = Field(min_length=1, max_length=5)
+    problemExplanation: ProblemExplanationOutput
+    approaches: list[ApproachOutput] = Field(min_length=1, max_length=4)
     comparison: str = Field(min_length=1, max_length=2_400)
     thinkingLessons: list[Annotated[str, Field(min_length=1, max_length=400)]] = Field(
         default_factory=list, max_length=5
@@ -182,23 +216,69 @@ class SolutionModelOutput(StrictModel):
     )
 
 
+class ProgramOutput(StrictModel):
+    index: int = Field(ge=0, le=3)
+    code: str = Field(min_length=1, max_length=12_000)
+
+
+class CodeRepairOutput(StrictModel):
+    """Complete programs for approaches whose first draft had no real code."""
+
+    programs: list[ProgramOutput] = Field(min_length=1, max_length=4)
+
+
+class MissingApproachOutput(StrictModel):
+    """One more approach when the first answer had fewer than three."""
+
+    approach: ApproachOutput
+
+
 class CommunityOutput(StrictModel):
     title: str = Field(min_length=1, max_length=200)
     url: str = Field(min_length=1, max_length=2_048)
     publisher: str = Field(min_length=1, max_length=100)
     kind: CommunityKind
     official: bool
+    language: str | None = Field(default=None, max_length=64)
     highlight: str | None = Field(default=None, max_length=600)
 
 
 class SolutionResponse(StrictModel):
     summary: str = Field(min_length=1, max_length=1_200)
+    problemExplanation: ProblemExplanationOutput | None = None
+    statementSource: StatementSource | None = None
     approaches: list[ApproachOutput] = Field(min_length=1, max_length=5)
     comparison: str = Field(min_length=1, max_length=2_400)
     thinkingLessons: list[Annotated[str, Field(min_length=1, max_length=400)]] = Field(
         default_factory=list, max_length=5
     )
     community: list[CommunityOutput] = Field(default_factory=list, max_length=8)
+
+
+class ChatTurn(StrictModel):
+    role: Literal["learner", "mentor"]
+    content: str = Field(min_length=1, max_length=6_000)
+
+
+class SolutionChatRequest(StrictModel):
+    """A follow-up question asked on a Solution Explorer page.
+
+    `exploration` is the page the learner is looking at, supplied by Express
+    from its cache, so the learner never has to restate the context.
+    """
+
+    requestId: str = Field(min_length=1, max_length=160)
+    learnerId: UUID
+    language: str = Field(min_length=1, max_length=64)
+    problem: ProblemContext
+    learner: LearnerSnapshot
+    exploration: dict[str, object]
+    history: list[ChatTurn] = Field(default_factory=list, max_length=12)
+    question: str = Field(min_length=1, max_length=2_000)
+
+
+class SolutionChatResponse(StrictModel):
+    answer: str = Field(min_length=1, max_length=16_000)
 
 
 # --- Contest analysis -------------------------------------------------------

@@ -55,7 +55,10 @@ class AiSettings(BaseSettings):
     groq_api_key: str = ""
     # Default below the current on-demand Groq account's 1,000 OTPM limit.
     # Higher-tier deployments can raise this after checking their quota.
-    groq_max_completion_tokens: int = Field(default=900, ge=512, le=16_384)
+    groq_max_completion_tokens: int = Field(default=8_192, ge=512, le=32_768)
+    # Groq's per-minute token allowance for the coach model (input + output).
+    # Each turn's context and answer budgets are sized to fit inside it.
+    groq_tokens_per_minute: int = Field(default=6_000, ge=1_000, le=10_000_000)
     coach_input_price_per_million_usd: Decimal | None = Field(default=None, ge=0)
     coach_output_price_per_million_usd: Decimal | None = Field(default=None, ge=0)
     # Process-local cap on coach model requests per minute. 0 disables it.
@@ -97,6 +100,21 @@ class AiSettings(BaseSettings):
     mentor_thinking_level: Literal["low", "medium", "high"] = "low"
     mentor_max_output_tokens: int = Field(default=16_384, ge=2_048, le=65_536)
     mentor_timeout_seconds: float = Field(default=110, gt=0, le=240)
+    # The Solution Explorer writes three complete programs; it may use a
+    # stronger model or deeper thinking than the per-turn Doubt Helper.
+    solution_model: str = ""
+    solution_thinking_level: Literal["low", "medium", "high"] = "medium"
+    # Public page reading for the Coach and mentor tools. When a site answers a
+    # direct server request with a bot challenge, the page is read once through
+    # this public reader service instead. Blank disables the fallback.
+    web_reader_proxy_url: str = "https://r.jina.ai/"
+    web_reader_proxy_api_key: str = ""
+    web_reader_timeout_seconds: float = Field(default=10, gt=0, le=60)
+    web_reader_cache_seconds: float = Field(default=1_800, ge=0, le=86_400)
+    # Web search falls back to Groq's built-in browser_search tool when Gemini
+    # Google Search grounding fails or runs out of quota. Blank disables it.
+    web_search_groq_model: str = "openai/gpt-oss-20b"
+    web_search_timeout_seconds: float = Field(default=40, ge=5, le=120)
 
     @field_validator("coach_llm_provider", "mentor_llm_provider", mode="before")
     @classmethod

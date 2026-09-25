@@ -1,0 +1,132 @@
+from typing import Any
+
+from app.coach_context import (
+    estimate_tokens,
+    pack_context,
+    plan_turn_budget,
+    turn_tier,
+)
+from app.settings import AiSettings
+
+
+def settings(**updates: Any) -> AiSettings:
+    return AiSettings(_env_file=None, **updates)
+
+
+def big_context() -> dict[str, object]:
+    return {
+        "excludedTopics": ["geometry"],
+        "userInstructions": ["Keep answers short."],
+        "profile": {"experience": "intermediate", "goal": "codeforces_1600"},
+        "memories": [
+            {"statement": f"Memory {index} about unrelated preferences."}
+            for index in range(30)
+        ]
+        + [{"statement": "Struggles with binary search on answer boundaries."}],
+        "recentTurns": [
+            {"role": "user", "content": f"Old turn {index} " + "x" * 400}
+            for index in range(20)
+        ],
+        "roadmap": {
+            "dataCompleteness": "partial",
+            "topics": [
+                {"topic": f"topic-{index}", "name": f"Topic {index}", "lane": "later"}
+                for index in range(40)
+            ]
+            + [
+                {
+                    "topic": "binary-search",
+                    "name": "Binary search",
+                    "lane": "current_focus",
+                }
+            ],
+        },
+        "activityDigest": {"summary": "y" * 20_000},
+        "currentRecommendations": [
+            {"title": f"Problem {index}", "topics": ["graphs"]} for index in range(20)
+        ],
+    }
+
+
+def test_turn_tiers_follow_the_question() -> None:
+    assert turn_tier("What is my rating?") == "quick"
+    assert turn_tier("Explain how segment trees support lazy propagation") in {
+        "standard",
+        "deep",
+    }
+    assert turn_tier("Why does my code get wrong answer on test 3?") == "deep"
+    assert turn_tier("hi there, what", has_linked_problems=True) == "deep"
+
+
+def test_groq_budgets_fit_the_per_minute_allowance() -> None:
+    config = settings(groq_tokens_per_minute=6_000, groq_max_completion_tokens=8_192)
+    for question in ("What is my rating?", "Debug my DP solution, it gets TLE"):
+        budget = plan_turn_budget(
+            config, provider="groq", question=question, context={}
+        )
+        assert budget.input_tokens + budget.output_tokens <= 6_000
+        assert budget.output_tokens >= 600
+    quick = plan_turn_budget(
+        config, provider="groq", question="What is my rating?", context={}
+    )
+    deep = plan_turn_budget(
+        config,
+        provider="groq",
+        question="Debug my DP solution, it gets TLE",
+        context={},
+    )
+    assert deep.output_tokens > quick.output_tokens
+
+
+def test_gemini_budgets_scale_with_the_turn() -> None:
+    config = settings(coach_max_output_tokens=24_576)
+    quick = plan_turn_budget(
+        config, provider="gemini", question="What is my rating?", context={}
+    )
+    deep = plan_turn_budget(
+        config,
+        provider="gemini",
+        question="Prove why this greedy works and write the code",
+        context={},
+    )
+    assert quick.output_tokens == 2_048
+    assert quick.agent_steps == 1
+    assert deep.output_tokens == 24_576
+    assert deep.deep_reasoning is True
+
+
+def test_packing_keeps_required_and_relevant_context_within_budget() -> None:
+    context = big_context()
+    packed = pack_context(
+        context, "How should I practice binary search next?", budget_tokens=3_000
+    )
+    assert estimate_tokens(packed) <= 3_300
+    assert packed["excludedTopics"] == ["geometry"]
+    assert packed["userInstructions"] == ["Keep answers short."]
+    roadmap = packed["roadmap"]
+    assert isinstance(roadmap, dict)
+    topics = roadmap["topics"]
+    assert isinstance(topics, list)
+    assert topics[0]["topic"] == "binary-search"
+    memories = packed.get("memories")
+    assert isinstance(memories, list)
+    assert "binary search" in memories[0]["statement"]
+    notes = packed["contextNotes"]
+    assert isinstance(notes, dict)
+    assert "activityDigest" in notes["omitted"]
+
+
+def test_newest_turns_are_kept_for_follow_ups() -> None:
+    packed = pack_context(big_context(), "and then?", budget_tokens=2_000)
+    turns = packed.get("recentTurns")
+    assert isinstance(turns, list) and turns
+    assert turns[-1]["content"].startswith("Old turn 19")
+
+
+def test_small_contexts_pass_through_unchanged() -> None:
+    context: dict[str, object] = {
+        "profile": {"goal": "interviews"},
+        "recentTurns": [{"role": "user", "content": "hi"}],
+    }
+    packed = pack_context(context, "What next?", budget_tokens=5_000)
+    assert packed == context

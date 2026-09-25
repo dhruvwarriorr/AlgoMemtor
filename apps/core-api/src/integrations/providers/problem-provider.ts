@@ -7,6 +7,8 @@ import type {
   ProblemContent,
 } from '@algomemtor/shared-contracts'
 
+import type { CommunitySolutionLink } from './community-solutions.js'
+
 export type ProblemProviderRequest = {
   signal?: AbortSignal
   requestId?: string
@@ -40,4 +42,10 @@ export interface ProblemProvider {
     externalId: string,
     request?: ProblemProviderRequest,
   ): Promise<ProblemContentResult>
+  // Top solutions in one language from the platform's own public API.
+  communitySolutions?(
+    externalId: string,
+    language: string,
+    request?: ProblemProviderRequest,
+  ): Promise<CommunitySolutionLink[]>
 }

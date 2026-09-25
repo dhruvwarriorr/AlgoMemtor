@@ -469,7 +469,9 @@ The Coach is a chat. Problem-specific help, solution exploration, upsolving,
 contest analysis and progress evaluation each have a dedicated section. Every
 mentor call receives a bounded learner snapshot (experience, goal, learning
 preferences, latest ratings, topic-assessment evidence, and up to eight active
-learner memories) so hints and reports are calibrated to the learner.
+learner memories) so hints and reports are calibrated to the learner. Memories
+are retrieved by vector and keyword similarity to the request (the problem,
+doubt and question) rather than taken by confidence alone.
 
 - **Doubt Helper** (`/doubt-helper`, `/doubt-helper/:sessionId`). Intake:
   problem link (Codeforces, CodeChef, LeetCode, CSES, or any public page) or a
@@ -485,22 +487,38 @@ learner memories) so hints and reports are calibrated to the learner.
   enforces `hintLevel >= 1` and the confirmation stage, and FastAPI repairs or
   withholds code that exceeds the locked disclosure level. Sessions use
   optimistic `expectedVersion` checks so double clicks cannot skip levels.
-  Marking a session solved adds the problem to the revision schedule. When a
-  provider statement cannot be read (for example Codeforces returning
-  `PROVIDER_BLOCKED`), the helper asks for the pasted statement instead of
-  guessing.
+  Marking a session solved adds the problem to the revision schedule. A link is
+  enough: when the provider adapter cannot read the statement (for example
+  Codeforces answering server requests with a bot challenge), the AI service
+  reads the public page itself (see the decision below) and, as a last resort,
+  looks the statement up with web search. Only when all of that fails does the
+  helper ask for the pasted statement. "Ask a question" and "I tried this"
+  live in a bottom-right mentor panel that already has the session context.
 - **Solution Explorer** (`/solutions?problem=`). Opens after the learner solved
   or attempted the problem (provider evidence or manual status), worked on it
-  in the Doubt Helper, or explicitly confirms a genuine attempt. Returns 2–4
-  approaches (brute force and why it fails, the optimized insight, genuinely
-  different alternatives, mathematical/constructive solutions) with
-  complexity, correctness arguments, limitations and code in the chosen
-  language; trade-offs; transferable lessons; and attributed editorial and
-  community links. Official links are built deterministically from validated
-  identifiers (Codeforces contest page and problem status, LeetCode editorial
-  and most-voted solutions, CodeChef Discuss search); additional community
-  write-ups come from one grounded search and each gets a short "what to look
-  for" highlight. Explorations are cached per learner, problem and language.
+  in the Doubt Helper, or explicitly confirms a genuine attempt. A link is
+  enough (an optional pasted statement is accepted when a page cannot be read).
+  The page shows: an explanation of the problem (restatement, input/output and
+  the constraints that matter, key observations, a sample walkthrough, edge
+  cases); exactly three approaches ordered brute force, better (or a genuinely
+  different method), optimal, each with idea, key insight, algorithm steps,
+  correctness argument, limitations, complexity, a complete program in the
+  chosen language and a code walkthrough; trade-offs; transferable lessons; the
+  official editorial; and the top three community solutions in the chosen
+  language. Programs that are skeletons (placeholder comments, empty loops, too
+  little logic) are rewritten once by a targeted repair call and hidden if they
+  are still not real code. The Codeforces editorial link is resolved from the
+  contest page's "Tutorial" link and the relevant section of the editorial
+  grounds the optimal approach. Community solutions come first from the
+  platform's own public API (Codeforces `contest.status`: the fastest accepted
+  submissions in that language, one per author; LeetCode: the most-voted
+  solution posts tagged with that language), then from web search (Gemini
+  Google Search grounding, falling back to Groq `browser_search`) ranked by how
+  specific each hit is to the problem and language. A bottom-right assistant
+  answers follow-up and cross questions with the cached page as context
+  (`POST /api/solutions/chat`; the conversation stays in the browser).
+  Explorations are cached per learner, problem and language; explorations
+  written before the problem explanation existed are regenerated.
 - **Upsolve Tracker** (`/upsolve`). Uses the learner's last 12 matched contests.
   A problem is flagged when it was attempted without acceptance during the
   contest, or (Codeforces, where the contest problem list is known) when it is
@@ -544,6 +562,36 @@ learner code, compiler output and pasted statements remain transient; cached AI
 reports live in `core.mentor_reports`. Review if a provider starts permitting
 contest editorials through an API, or if chat-based problem help is requested
 again.
+
+#### Decision: mentor tools read any linked page, with a reader fallback (2026-09-25)
+
+- **Context:** the project owner requires every mentor tool to work from a
+  link alone, the way chat assistants read pages. Codeforces answers
+  server-side requests (the adapter and the direct page reader) with a
+  Cloudflare challenge, so Doubt Helper and Solution Explorer fell back to
+  generic, guessed answers.
+- **Decision:** the AI service reads pages through `page_retrieval.py`: a
+  direct SSRF-guarded read first; when that fails or returns a challenge page,
+  one read through a configured public reader service
+  (`WEB_READER_PROXY_URL`, `https://r.jina.ai/` by default, optional
+  `WEB_READER_PROXY_API_KEY`). The target is validated as a public https host
+  before either route. Successful reads are cached in memory for
+  `WEB_READER_CACHE_SECONDS` (30 minutes) so consecutive turns do not refetch.
+  Page text stays transient and is never stored. When no page can be read,
+  web search restates the statement and the exploration is labeled as
+  search-based. Web search uses Gemini Google Search grounding and falls back
+  to Groq `browser_search` (`WEB_SEARCH_GROQ_MODEL`) when grounding is out of
+  quota.
+- **Alternatives:** asking for a pasted statement (kept as an optional
+  fallback), Gemini URL context (also blocked by the challenge), and a headless
+  browser (rejected: heavy and it would solve challenges).
+- **Consequences:** the reader service sees which public URLs are read; some
+  providers' terms may restrict automated reads of problem pages; free-tier
+  Groq `browser_search` consumes most of a day's token allowance per search,
+  so it is only a fallback. Community solutions prefer the platforms' own
+  public APIs for that reason.
+- **Review triggers:** a provider objection, a reader-service policy change,
+  before a public deployment, or any need to store fetched content.
 
 #### Decision: personalized AI is always on (2026-09-24)
 
@@ -1311,7 +1359,8 @@ exposed to the browser.
 | `POST` | `/api/problem-help/sessions/:sessionId/turns`   | `next_hint`, `submit_attempt`, `ask`, `request_solution`, `cancel_solution`, `confirm_solution`, `complete`, `abandon` with `expectedVersion` |
 | `GET`  | `/api/solutions`                                | Recent solution explorations |
 | `GET`  | `/api/solutions/access?problemUrl=&language=`   | Learner status and unlock reason for a problem |
-| `POST` | `/api/solutions/explore`                        | Generate or reuse an exploration |
+| `POST` | `/api/solutions/explore`                        | Generate or reuse an exploration (optional `transientStatement`) |
+| `POST` | `/api/solutions/chat`                           | Answer a follow-up question with the cached exploration as context |
 | `GET`  | `/api/upsolve`                                  | Queue, contests, completion summary, revisions due |
 | `PUT`  | `/api/upsolve/items/:provider/:externalId`      | Skip or restore a queue item |
 | `GET`  | `/api/revisions`                                | Revision schedule |
@@ -1330,7 +1379,8 @@ Stable errors: `PROBLEM_HELP_SESSION_NOT_FOUND` (404),
 `NOT_ENOUGH_CONTEST_DATA` (422), `CONTEST_NOT_FOUND`, `REVISION_NOT_FOUND`
 (404), `MENTOR_AI_RATE_LIMITED` (429) and `MENTOR_AI_UNAVAILABLE` (503).
 Internal FastAPI endpoints: `POST /internal/mentor/problem-help`,
-`/internal/mentor/solutions`, `/internal/mentor/contest-analysis`,
+`/internal/mentor/solutions`, `/internal/mentor/solution-chat`,
+`/internal/mentor/contest-analysis`,
 `/internal/mentor/contest-patterns` and `/internal/mentor/progress-narrative`.
 
 ### Progress, memory, consent, and deletion
@@ -1732,18 +1782,9 @@ proposals, or learner-memory job is generated for that failed turn. The fallback
 flag remains internal for observability and is not shown as a learner-facing
 product label.
 
-Check-ins are in-app only. Learners choose a local weekly review day/time and
-can separately enable event nudges for new contest/rating evidence, repeated
-failures, focus transitions/progress, spaced-repetition due topics, milestone
-solves, difficulty plateaus, goal drift, streak risk, and seven full days without
-meaningful practice. Event nudges are capped at two per rolling seven days and deduplicated
-by event key for 72 hours. The dashboard also previews the first three current,
-needs-practice, or revisit topics so the adaptive path is visible outside the
-coach screen. The memory worker periodically enumerates enabled
-schedules and queues one daily `coach_check_in_refresh` row (plus a weekly-due
-phase when the learner's local review time arrives) in the existing PostgreSQL
-outbox. It retries those rows with the same bounded lease and retry policy; the
-core endpoint remains owner-scoped by the learner ID carried in the job.
+Coach check-ins were retired with the Pathway page (2026-09-25). The memory
+worker no longer schedules `coach_check_in_refresh` jobs; rows queued earlier
+are completed without work.
 
 ### Coach agent and complete learner workspace
 
@@ -1793,6 +1834,33 @@ standard tier); `COACH_LLM_MODEL` can move only the coach to a stronger model,
 with `COACH_*_PRICE_PER_MILLION_USD` keeping its audit cost estimates correct.
 Free-tier daily request limits are small, so production needs a paid tier (or
 `COACH_AGENT_ENABLED=false` for single-call mode).
+
+### Coach token budgets and context packing
+
+Each coach turn gets a budget from `coach_context.py` before any model call:
+
+| Tier | Chosen when | Gemini output | Groq output | Context budget (Gemini / Groq) | Agent steps |
+| ---- | ----------- | ------------- | ----------- | ------------------------------ | ----------- |
+| quick | short factual questions ("what is my rating?") | 2,048 | 900 | 5k / 2.5k tokens | 1 |
+| standard | everything else | 8,192 | 2,400 | 12k / 4.5k tokens | 2 |
+| deep | code, debugging, proofs, plans, links, attachments | `COACH_MAX_OUTPUT_TOKENS` | 8,192 | 36k / 9k tokens | `COACH_AGENT_MAX_STEPS` |
+
+Only deep turns use the configured thinking level. On Groq the context and
+answer budgets together stay inside `GROQ_TOKENS_PER_MINUTE` (default 6,000),
+and `GROQ_MAX_COMPLETION_TOKENS` (default 8,192) is only an upper bound. When a
+Groq answer still stops at the length limit on a standard or deep turn, it is
+continued once instead of being cut off. Tool results are capped per tier
+(6k, 14k and 30k characters).
+
+The context is packed to the turn's input budget: governing fields
+(instructions, excluded topics, preferences, linked problems, coaching
+guidance) always stay; the newest conversation turns are kept for follow-ups;
+knowledge chunks and memories keep their vector-retrieval order (pgvector
+hybrid search) and are re-ranked against the question; roadmap topics,
+recommendations and activity sections are included first when the question is
+about them and ranked by relevance within the section. Whatever does not fit is
+listed in `contextNotes.omitted` so the agent can fetch it with its workspace
+tools.
 
 ### FastAPI ranking contract
 
@@ -2093,6 +2161,20 @@ MENTOR_MODEL=
 MENTOR_THINKING_LEVEL=low
 MENTOR_MAX_OUTPUT_TOKENS=16384
 MENTOR_TIMEOUT_SECONDS=110
+# Solution Explorer model (blank = MENTOR_MODEL) and thinking depth.
+SOLUTION_MODEL=
+SOLUTION_THINKING_LEVEL=medium
+# Page reading for links; blocked pages are read once through the reader.
+WEB_READER_PROXY_URL=https://r.jina.ai/
+WEB_READER_PROXY_API_KEY=
+WEB_READER_TIMEOUT_SECONDS=10
+WEB_READER_CACHE_SECONDS=1800
+# Web search fallback when Gemini grounding is out of quota (uses GROQ_API_KEY).
+WEB_SEARCH_GROQ_MODEL=openai/gpt-oss-20b
+WEB_SEARCH_TIMEOUT_SECONDS=40
+# Coach answer ceiling on Groq and the per-minute allowance budgets fit into.
+GROQ_MAX_COMPLETION_TOKENS=8192
+GROQ_TOKENS_PER_MINUTE=6000
 ```
 
 `INTERNAL_SERVICE_TOKEN` must match between core and AI when HTTP ranking is

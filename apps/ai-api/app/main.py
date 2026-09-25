@@ -57,12 +57,15 @@ from .mentor_models import (
     ProblemHelpResponse,
     ProgressNarrativeOutput,
     ProgressNarrativeRequest,
+    SolutionChatRequest,
+    SolutionChatResponse,
     SolutionRequest,
     SolutionResponse,
 )
 from .mentor_service import (
     MentorGenerationError,
     MentorNotConfiguredError,
+    MentorProblemUnavailableError,
     MentorRateLimitedError,
     MentorService,
     get_mentor_service,
@@ -751,6 +754,12 @@ async def delete_learner_memory_owner(
 
 
 def _raise_mentor_http_error(error: Exception) -> None:
+    if isinstance(error, MentorProblemUnavailableError):
+        raise HTTPException(
+            # 424, not 422: FastAPI already uses 422 for invalid requests.
+            status_code=status.HTTP_424_FAILED_DEPENDENCY,
+            detail="PROBLEM_UNREADABLE",
+        ) from error
     if isinstance(error, MentorNotConfiguredError):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -767,7 +776,11 @@ def _raise_mentor_http_error(error: Exception) -> None:
     ) from error
 
 
-_MENTOR_ERRORS = (MentorNotConfiguredError, MentorGenerationError)
+_MENTOR_ERRORS = (
+    MentorNotConfiguredError,
+    MentorGenerationError,
+    MentorProblemUnavailableError,
+)
 
 
 @app.post(
@@ -799,6 +812,22 @@ async def mentor_solutions(
 ) -> SolutionResponse:
     try:
         return await service.solutions(request)
+    except _MENTOR_ERRORS as error:
+        _raise_mentor_http_error(error)
+        raise AssertionError("Mentor error handler did not raise.") from error
+
+
+@app.post(
+    "/internal/mentor/solution-chat",
+    response_model=SolutionChatResponse,
+    dependencies=[Depends(require_internal_service)],
+)
+async def mentor_solution_chat(
+    request: SolutionChatRequest,
+    service: Annotated[MentorService, Depends(get_mentor_service)],
+) -> SolutionChatResponse:
+    try:
+        return await service.solution_chat(request)
     except _MENTOR_ERRORS as error:
         _raise_mentor_http_error(error)
         raise AssertionError("Mentor error handler did not raise.") from error
