@@ -7,13 +7,11 @@ import {
   LayoutGrid,
   Lightbulb,
   ListChecks,
-  Route,
   Settings,
   Sparkles,
   Swords,
   TrendingUp,
   Trophy,
-  UserRound,
   type IconComponent,
 } from '@/components/icons/algo-icons-line'
 
@@ -32,7 +30,6 @@ export type AccountMenuItem = AppNavItem & {
 export const topNavItems: ReadonlyArray<AppNavItem> = [
   { label: 'Dashboard', to: '/dashboard', icon: LayoutGrid },
   { label: 'Coach', to: '/coach', icon: Sparkles },
-  { label: 'Pathway', to: '/pathway', icon: Route },
   { label: 'Recommendations', to: '/recommendations', icon: Lightbulb },
   { label: 'Progress', to: '/progress', icon: TrendingUp },
   { label: 'Insights', to: '/analytics', icon: BarChart3 },
@@ -108,12 +105,6 @@ export const accountMenuGroups: ReadonlyArray<{
     label: 'Your account',
     items: [
       {
-        label: 'Profile',
-        to: '/profile',
-        icon: UserRound,
-        chip: 'bg-[#0b0c0e] text-[#f4f1ea] dark:bg-[#f4f1ea] dark:text-[#0b0c0e]',
-      },
-      {
         label: 'Memory',
         to: '/memory',
         icon: Brain,
@@ -130,6 +121,7 @@ export const accountMenuGroups: ReadonlyArray<{
 ]
 
 // Pages reachable from the profile dropdown, used to mark it active.
-export const accountMenuPaths = accountMenuGroups.flatMap((group) =>
-  group.items.map((item) => item.to),
-)
+export const accountMenuPaths = [
+  '/profile',
+  ...accountMenuGroups.flatMap((group) => group.items.map((item) => item.to)),
+]

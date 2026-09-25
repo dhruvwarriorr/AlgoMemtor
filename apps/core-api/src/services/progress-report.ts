@@ -436,7 +436,7 @@ export function buildProgressReport(input: {
       id: 'stale-topic',
       tone: 'warning',
       text: `You have not practiced ${stale.name} in ${stale.evidence.recentDays} days. A revision session is recommended before your next contest.`,
-      link: { target: 'pathway', label: 'Open learning pathway' },
+      link: { target: 'recommendations', label: 'Get practice problems' },
     })
   }
   const recentAccuracy = accuracy.slice(-4)
@@ -525,7 +525,7 @@ export function buildProgressReport(input: {
       id: 'revisions-due',
       tone: 'neutral',
       text: `${input.revisionsDue} ${input.revisionsDue === 1 ? 'revision is' : 'revisions are'} due. Revisit ${input.revisionsDue === 1 ? 'it' : 'them'} to make the learning stick.`,
-      link: { target: 'pathway', label: 'Review now' },
+      link: { target: 'upsolve', label: 'Open upsolve queue' },
     })
   }
   if (currentStreak >= 3) {

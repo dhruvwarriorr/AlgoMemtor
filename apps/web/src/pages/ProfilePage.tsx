@@ -7,7 +7,6 @@ import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { buttonVariants } from '@/components/ui/button'
 import { useAuth } from '@/features/auth/useAuth'
 import { ProfileBanner } from '@/features/profile/components/ProfileBanner'
-import { LearnerMemoryPanel } from '@/features/memory/components/LearnerMemoryPanel'
 import { learnerProfileErrorMessage } from '@/features/profile/api/learner-profile'
 import { providerAccountErrorMessage } from '@/features/profile/api/provider-accounts'
 import { useLearnerProfile } from '@/features/profile/hooks/useLearnerProfile'
@@ -182,22 +181,6 @@ function ProfilePage() {
             ))}
           </ul>
         )}
-      </section>
-
-      <section aria-labelledby="profile-memory-heading" className="space-y-4">
-        <div>
-          <h2
-            className="text-xl font-semibold tracking-tight text-foreground"
-            id="profile-memory-heading"
-          >
-            Learner memory controls
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Review, correct, archive, restore, or delete the memory signals used
-            for future recommendations.
-          </p>
-        </div>
-        <LearnerMemoryPanel />
       </section>
     </PageContainer>
   )

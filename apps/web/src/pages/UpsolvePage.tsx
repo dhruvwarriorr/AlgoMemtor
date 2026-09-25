@@ -388,9 +388,6 @@ function UpsolvePage() {
             {revisionsDue === 1 ? 'problem is' : 'problems are'} due for
             revision.
           </p>
-          <Link className={buttonVariants({ size: 'sm' })} to="/pathway">
-            Review now
-          </Link>
         </div>
       ) : null}
 

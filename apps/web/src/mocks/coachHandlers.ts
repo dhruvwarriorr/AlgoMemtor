@@ -1,19 +1,13 @@
 import {
   CoachActionProposalResponseSchema,
-  CoachCheckInResponseSchema,
-  CoachCheckInsResponseSchema,
   CoachConversationEnvelopeSchema,
   CoachConversationResponseSchema,
   CoachConversationsResponseSchema,
   CoachMessageSchema,
-  CoachPreferencesResponseSchema,
   CoachResponseSchema,
-  CoachRoadmapNoteResponseSchema,
   ImprovementRoadmapResponseSchema,
-  RoadmapRefreshResponseSchema,
   type CoachConversation,
   type CoachMessage,
-  type CoachPreferences,
   type ImprovementRoadmap,
 } from '@algomemtor/shared-contracts'
 import { http, HttpResponse, type RequestHandler } from 'msw'
@@ -28,15 +22,6 @@ const id = (seed?: string) => {
 
 const conversations = new Map<string, CoachConversation>()
 const messages = new Map<string, CoachMessage[]>()
-const preferences: CoachPreferences = {
-  weeklyEnabled: false,
-  weeklyDay: 0,
-  weeklyTime: '09:00',
-  eventEnabled: false,
-  timezone: 'UTC',
-  updatedAt: now(),
-}
-
 function conversationFor(idValue: string) {
   const existing = conversations.get(idValue)
   if (existing !== undefined) return existing
@@ -202,8 +187,8 @@ export const coachHandlers: RequestHandler[] = [
         evidence: [
           {
             source: 'roadmap',
-            label: 'Your roadmap',
-            detail: 'This mock response is grounded in the current roadmap.',
+            label: 'Your topic assessment',
+            detail: 'This mock response is grounded in your current progress.',
             completeness: 'partial',
             stale: false,
           },
@@ -219,7 +204,7 @@ export const coachHandlers: RequestHandler[] = [
                 {
                   label: 'Current focus',
                   value: 'Arrays',
-                  detail: 'Manual roadmap statuses remain authoritative.',
+                  detail: 'Manual topic statuses remain authoritative.',
                   citationIds: ['roadmap-assessment'],
                 },
                 {
@@ -235,7 +220,7 @@ export const coachHandlers: RequestHandler[] = [
               datasetId: 'topic-assessments',
               chartType: 'bar',
               title: 'Topic readiness comparison',
-              summary: 'Deterministic assessment signals from your roadmap.',
+              summary: 'Deterministic signals from your topic assessment.',
               series: [
                 { key: 'score', label: 'Assessment score' },
                 { key: 'confidence', label: 'Confidence' },
@@ -257,7 +242,7 @@ export const coachHandlers: RequestHandler[] = [
             {
               id: 'roadmap-assessment',
               source: 'learner',
-              title: 'Roadmap assessment',
+              title: 'Topic assessment',
               detail: 'Mock deterministic assessment.',
               retrievedAt: timestamp,
               stale: true,
@@ -292,93 +277,9 @@ export const coachHandlers: RequestHandler[] = [
       ImprovementRoadmapResponseSchema.parse({ data: roadmap() }),
     ),
   ),
-  http.post('/api/coach/roadmap/refresh', () =>
-    HttpResponse.json(
-      RoadmapRefreshResponseSchema.parse({
-        data: {
-          ...roadmap(),
-          lastRefreshedAt: new Date().toISOString(),
-          refreshHint: { suggested: false, reasons: [] },
-        },
-        meta: { platforms: [{ provider: 'codeforces', status: 'refreshed' }] },
-      }),
-    ),
-  ),
   http.patch('/api/coach/roadmap/topics/:topic/status', () =>
     HttpResponse.json(
       ImprovementRoadmapResponseSchema.parse({ data: roadmap() }),
-    ),
-  ),
-  http.post('/api/coach/roadmap/notes', async ({ request }) => {
-    const body = (await request.json().catch(() => ({}))) as {
-      note?: string
-    }
-    const note = (body.note ?? '').toLowerCase()
-    const matchedTopic = roadmap().topics.find((candidate) =>
-      note.includes(candidate.name.toLowerCase()),
-    )
-    const status =
-      matchedTopic === undefined
-        ? null
-        : /skip|stop|not interested/.test(note)
-          ? 'skip_for_now'
-          : /good|comfortable|know this|practiced|mastered|done/.test(note)
-            ? 'practiced'
-            : /revisit|rusty|unsure|come back/.test(note)
-              ? 'revisit'
-              : null
-    return HttpResponse.json(
-      CoachRoadmapNoteResponseSchema.parse({
-        data: {
-          topic: matchedTopic?.topic ?? null,
-          note: body.note ?? '',
-          previousStatus: matchedTopic?.manualStatus ?? null,
-          status,
-          statusChanged: status !== null,
-          rationale:
-            matchedTopic === undefined
-              ? "The note didn't clearly name a topic from your learning plan, so nothing was updated."
-              : status === null
-                ? "The note didn't clearly indicate a status change, so nothing was updated."
-                : `Your note suggested marking ${matchedTopic.name} as "${status.replaceAll('_', ' ')}".`,
-          createdAt: now(),
-        },
-      }),
-    )
-  }),
-  http.get('/api/coach/preferences', () =>
-    HttpResponse.json(
-      CoachPreferencesResponseSchema.parse({ data: preferences }),
-    ),
-  ),
-  http.put('/api/coach/preferences', async ({ request }) => {
-    Object.assign(
-      preferences,
-      (await request.json().catch(() => ({}))) as Partial<CoachPreferences>,
-      { updatedAt: now() },
-    )
-    return HttpResponse.json(
-      CoachPreferencesResponseSchema.parse({ data: preferences }),
-    )
-  }),
-  http.get('/api/coach/check-ins', () =>
-    HttpResponse.json(
-      CoachCheckInsResponseSchema.parse({ data: [], meta: { unread: 0 } }),
-    ),
-  ),
-  http.patch('/api/coach/check-ins/:checkInId', () =>
-    HttpResponse.json(
-      CoachCheckInResponseSchema.parse({
-        data: {
-          id: id('check-in'),
-          type: 'weekly_review',
-          title: 'Weekly review',
-          content: 'No new check-in.',
-          evidence: [],
-          read: true,
-          createdAt: now(),
-        },
-      }),
     ),
   ),
   http.post('/api/coach/action-proposals/:proposalId/confirm', ({ params }) =>
@@ -388,7 +289,7 @@ export const coachHandlers: RequestHandler[] = [
           id: String(params.proposalId),
           actionType: 'set_topic_status',
           status: 'confirmed',
-          label: 'Update roadmap',
+          label: 'Update learning focus',
           reason: 'Confirmed in mock mode.',
           topic: 'arrays',
           topicStatus: 'working_on',

@@ -1,20 +1,15 @@
 import { randomUUID } from 'node:crypto'
 
 import {
-  CoachCheckInSchema,
   CoachConversationResponseSchema,
   CoachConversationSchema,
   CoachMessageSchema,
-  CoachPreferencesSchema,
   CoachActionProposalSchema,
   ImprovementRoadmapSchema,
   type CoachActionProposal,
-  type CoachCheckIn,
-  type CoachCheckInActionRequest,
   type CoachConversation,
   type CoachConversationResponse,
   type CoachMessage,
-  type CoachPreferences,
   type CoachRoadmapLane,
   type CoachManualTopicStatus,
   type ImprovementRoadmap,
@@ -79,31 +74,6 @@ export type CoachRepository = {
     userId: string,
     eventId: string,
   ): Promise<{ note: string; occurredAt: Date } | null>
-  getPreferences(userId: string): Promise<CoachPreferences>
-  listCheckInSchedules?(): Promise<
-    Array<{
-      authUserId: string
-      weeklyEnabled: boolean
-      weeklyDay: number
-      weeklyTime: string
-      eventEnabled: boolean
-      timezone: string
-    }>
-  >
-  savePreferences(
-    userId: string,
-    input: Omit<CoachPreferences, 'updatedAt'>,
-  ): Promise<CoachPreferences>
-  listCheckIns(userId: string): Promise<CoachCheckIn[]>
-  createCheckIn(
-    userId: string,
-    input: Omit<CoachCheckIn, 'id' | 'createdAt' | 'read' | 'dismissed'>,
-  ): Promise<CoachCheckIn>
-  markCheckIn(
-    userId: string,
-    checkInId: string,
-    patch: CoachCheckInActionRequest,
-  ): Promise<CoachCheckIn | null>
   saveProposal(
     userId: string,
     conversationId: string,
@@ -151,8 +121,6 @@ export class InMemoryCoachRepository implements CoachRepository {
       occurredAt: Date
     }
   >()
-  private readonly preferences = new Map<string, CoachPreferences>()
-  private readonly checkIns = new Map<string, CoachCheckIn[]>()
   private readonly proposals = new Map<
     string,
     { userId: string; conversationId: string; proposal: CoachActionProposal }
@@ -307,8 +275,6 @@ export class InMemoryCoachRepository implements CoachRepository {
     for (const [eventId, event] of this.topicNoteEvents) {
       if (event.userId === userId) this.topicNoteEvents.delete(eventId)
     }
-    this.preferences.delete(userId)
-    this.checkIns.delete(userId)
     for (const [proposalId, proposal] of this.proposals) {
       if (proposal.userId === userId) this.proposals.delete(proposalId)
     }
@@ -392,95 +358,6 @@ export class InMemoryCoachRepository implements CoachRepository {
     const event = this.topicNoteEvents.get(eventId)
     if (event === undefined || event.userId !== userId) return null
     return { note: event.note, occurredAt: event.occurredAt }
-  }
-
-  async getPreferences(userId: string) {
-    const existing = this.preferences.get(userId)
-    if (existing !== undefined) return CoachPreferencesSchema.parse(existing)
-    const preferences = CoachPreferencesSchema.parse({
-      weeklyEnabled: false,
-      weeklyDay: 0,
-      weeklyTime: '09:00',
-      eventEnabled: false,
-      timezone: 'UTC',
-      updatedAt: this.now().toISOString(),
-    })
-    this.preferences.set(userId, preferences)
-    return preferences
-  }
-
-  async listCheckInSchedules() {
-    return [...this.preferences.entries()]
-      .filter(
-        ([, preferences]) =>
-          preferences.weeklyEnabled || preferences.eventEnabled,
-      )
-      .map(([authUserId, preferences]) => ({
-        authUserId,
-        weeklyEnabled: preferences.weeklyEnabled,
-        weeklyDay: preferences.weeklyDay,
-        weeklyTime: preferences.weeklyTime,
-        eventEnabled: preferences.eventEnabled,
-        timezone: preferences.timezone,
-      }))
-  }
-
-  async savePreferences(
-    userId: string,
-    input: Omit<CoachPreferences, 'updatedAt'>,
-  ) {
-    const preferences = CoachPreferencesSchema.parse({
-      ...input,
-      updatedAt: this.now().toISOString(),
-    })
-    this.preferences.set(userId, preferences)
-    return preferences
-  }
-
-  async listCheckIns(userId: string) {
-    return (this.checkIns.get(userId) ?? [])
-      .slice()
-      .sort(
-        (left, right) =>
-          Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
-          left.id.localeCompare(right.id),
-      )
-      .map((value) => CoachCheckInSchema.parse(value))
-  }
-
-  async createCheckIn(
-    userId: string,
-    input: Omit<CoachCheckIn, 'id' | 'createdAt' | 'read' | 'dismissed'>,
-  ) {
-    const checkIn = CoachCheckInSchema.parse({
-      ...input,
-      id: randomUUID(),
-      read: false,
-      dismissed: false,
-      createdAt: this.now().toISOString(),
-    })
-    const values = this.checkIns.get(userId) ?? []
-    values.push(checkIn)
-    this.checkIns.set(userId, values)
-    return checkIn
-  }
-
-  async markCheckIn(
-    userId: string,
-    checkInId: string,
-    patch: { read?: boolean; dismissed?: boolean },
-  ) {
-    const values = this.checkIns.get(userId) ?? []
-    const index = values.findIndex((value) => value.id === checkInId)
-    const existing = values[index]
-    if (existing === undefined) return null
-    const updated = CoachCheckInSchema.parse({
-      ...existing,
-      ...(patch.read === undefined ? {} : { read: patch.read }),
-      ...(patch.dismissed === undefined ? {} : { dismissed: patch.dismissed }),
-    })
-    values[index] = updated
-    return updated
   }
 
   async saveProposal(
@@ -753,8 +630,6 @@ export class PrismaCoachRepository implements CoachRepository {
       this.prisma.coachRoadmap.deleteMany({ where: { userId } }),
       this.prisma.coachTopicStatus.deleteMany({ where: { userId } }),
       this.prisma.coachTopicStatusEvent.deleteMany({ where: { userId } }),
-      this.prisma.coachPreferences.deleteMany({ where: { userId } }),
-      this.prisma.coachCheckIn.deleteMany({ where: { userId } }),
       this.prisma.coachActionProposal.deleteMany({ where: { userId } }),
     ])
   }
@@ -864,152 +739,6 @@ export class PrismaCoachRepository implements CoachRepository {
     })
     if (event === null || event.note === null) return null
     return { note: event.note, occurredAt: event.createdAt }
-  }
-
-  async getPreferences(authUserId: string) {
-    const userId = await this.userId(authUserId)
-    const record = await this.prisma.coachPreferences.upsert({
-      where: { userId },
-      create: { userId },
-      update: {},
-    })
-    return CoachPreferencesSchema.parse({
-      weeklyEnabled: record.weeklyEnabled,
-      weeklyDay: record.weeklyDay,
-      weeklyTime: record.weeklyTime,
-      eventEnabled: record.eventEnabled,
-      timezone: record.timezone,
-      updatedAt: record.updatedAt.toISOString(),
-    })
-  }
-
-  async listCheckInSchedules() {
-    const records = await this.prisma.coachPreferences.findMany({
-      where: { OR: [{ weeklyEnabled: true }, { eventEnabled: true }] },
-      select: {
-        weeklyEnabled: true,
-        weeklyDay: true,
-        weeklyTime: true,
-        eventEnabled: true,
-        timezone: true,
-        user: { select: { authUserId: true } },
-      },
-    })
-    return records.map((record) => ({
-      authUserId: record.user.authUserId,
-      weeklyEnabled: record.weeklyEnabled,
-      weeklyDay: record.weeklyDay,
-      weeklyTime: record.weeklyTime,
-      eventEnabled: record.eventEnabled,
-      timezone: record.timezone,
-    }))
-  }
-
-  async savePreferences(
-    authUserId: string,
-    input: Omit<CoachPreferences, 'updatedAt'>,
-  ) {
-    const userId = await this.userId(authUserId)
-    const record = await this.prisma.coachPreferences.upsert({
-      where: { userId },
-      create: { userId, ...input },
-      update: input,
-    })
-    return CoachPreferencesSchema.parse({
-      weeklyEnabled: record.weeklyEnabled,
-      weeklyDay: record.weeklyDay,
-      weeklyTime: record.weeklyTime,
-      eventEnabled: record.eventEnabled,
-      timezone: record.timezone,
-      updatedAt: record.updatedAt.toISOString(),
-    })
-  }
-
-  async listCheckIns(authUserId: string) {
-    const userId = await this.userId(authUserId)
-    const records = await this.prisma.coachCheckIn.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-    })
-    return records.map((record) =>
-      CoachCheckInSchema.parse({
-        id: record.id,
-        ...(record.eventKey === null ? {} : { eventKey: record.eventKey }),
-        type: record.type,
-        title: record.title,
-        content: record.content,
-        evidence: record.evidence,
-        read: record.read,
-        dismissed: record.dismissed,
-        ...(record.fallback ? { fallback: true } : {}),
-        createdAt: record.createdAt.toISOString(),
-      }),
-    )
-  }
-
-  async createCheckIn(
-    authUserId: string,
-    input: Omit<CoachCheckIn, 'id' | 'createdAt' | 'read' | 'dismissed'>,
-  ) {
-    const userId = await this.userId(authUserId)
-    const record = await this.prisma.coachCheckIn.create({
-      data: {
-        userId,
-        ...(input.eventKey === undefined ? {} : { eventKey: input.eventKey }),
-        type: input.type,
-        title: input.title,
-        content: input.content,
-        evidence: jsonValue(input.evidence),
-        fallback: input.fallback ?? false,
-      },
-    })
-    return CoachCheckInSchema.parse({
-      id: record.id,
-      ...(record.eventKey === null ? {} : { eventKey: record.eventKey }),
-      type: record.type,
-      title: record.title,
-      content: record.content,
-      evidence: record.evidence,
-      read: record.read,
-      dismissed: record.dismissed,
-      ...(record.fallback ? { fallback: true } : {}),
-      createdAt: record.createdAt.toISOString(),
-    })
-  }
-
-  async markCheckIn(
-    authUserId: string,
-    checkInId: string,
-    patch: { read?: boolean; dismissed?: boolean },
-  ) {
-    const userId = await this.userId(authUserId)
-    const result = await this.prisma.coachCheckIn.updateMany({
-      where: { id: checkInId, userId },
-      data: {
-        ...(patch.read === undefined ? {} : { read: patch.read }),
-        ...(patch.dismissed === undefined
-          ? {}
-          : { dismissed: patch.dismissed }),
-      },
-    })
-    if (result.count === 0) return null
-    const record = await this.prisma.coachCheckIn.findFirst({
-      where: { id: checkInId, userId },
-    })
-    return record === null
-      ? null
-      : CoachCheckInSchema.parse({
-          id: record.id,
-          ...(record.eventKey === null ? {} : { eventKey: record.eventKey }),
-          type: record.type,
-          title: record.title,
-          content: record.content,
-          evidence: record.evidence,
-          read: record.read,
-          dismissed: record.dismissed,
-          ...(record.fallback ? { fallback: true } : {}),
-          createdAt: record.createdAt.toISOString(),
-        })
   }
 
   async saveProposal(

@@ -6,10 +6,10 @@ import type {
 import { extractCoachUrls, providerProblemFromUrl } from './coach-links.js'
 
 // The Coach is the chat. Problem-specific hints and debugging, solution
-// exploration, upsolving, contest analysis, progress reports and the learning
-// pathway each have a dedicated section. A message that clearly asks for one
-// of them gets a deterministic pointer to that section instead of a model
-// call. Anything ambiguous stays in the chat.
+// exploration, upsolving, contest analysis and progress reports each have a
+// dedicated section. A message that clearly asks for one of them gets a
+// deterministic pointer to that section instead of a model call. Anything
+// ambiguous stays in the chat.
 
 export type CoachFeatureRoute = {
   feature: MentorFeature
@@ -32,8 +32,6 @@ const contestAnalysis =
   /\b(?:analy[sz]e|analysis|review|breakdown|post-?mortem|debrief)\b.{0,40}\bcontests?\b|\bcontests?\b.{0,40}\b(?:analy[sz]e|analysis|performance|strategy|went wrong|time management|mistakes)\b|\b(?:rating|elo)\s+(?:drop|dropped|dropping|fell|fall|went down|decreased|decrease|loss)\b|\bwhy did (?:my rating|i lose)\b|\bpanic(?:ked|king)?\b.{0,30}\bcontests?\b/
 const progressReport =
   /\bprogress report\b|\bhow (?:am i|i am|have i been|i have been) (?:progressing|doing|improving)\b|\bam i (?:improving|getting better|making progress)\b|\bmy (?:progress|growth|improvement)\b|\bhint dependency\b|\baccuracy trend\b|\brating projection\b|\binsight report\b/
-const pathway =
-  /\blearning (?:path|pathway)\b|\bmy (?:learning |study )?(?:plan|roadmap|path|pathway)\b|\b(?:update|refresh|change|rebuild|adjust|show|open)\s+(?:my\s+)?(?:learning\s+|study\s+)?(?:plan|roadmap|pathway)\b|\bstudy plan for me\b/
 
 export function routeCoachFeature(content: string): CoachFeatureRoute | null {
   const text = content.toLowerCase().replace(/\s+/g, ' ').trim()
@@ -68,7 +66,6 @@ export function routeCoachFeature(content: string): CoachFeatureRoute | null {
   if (upsolve.test(text)) return { feature: 'upsolve' }
   if (contestAnalysis.test(text)) return { feature: 'contest_analysis' }
   if (progressReport.test(text)) return { feature: 'progress_report' }
-  if (pathway.test(text)) return { feature: 'pathway' }
   return null
 }
 
@@ -115,14 +112,6 @@ const copy: Record<
     actionLabel: 'Open progress report',
     answer:
       'Your **Progress Report** tracks exactly this: topic progress, first-try accuracy, contest solving speed, rating trajectory, consistency and how much you rely on hints, with specific insights about what to do next.',
-  },
-  pathway: {
-    title: 'Learning Pathway',
-    description:
-      'Your focus topics, what to learn next, optional practice and the revision schedule for problems you upsolved.',
-    actionLabel: 'Open learning pathway',
-    answer:
-      'Your plan lives in the **Learning Pathway**. You can see your focus topics and what comes next, tell it what changed in plain words, refresh it from your latest solves, and work through your revision schedule there.',
   },
 }
 

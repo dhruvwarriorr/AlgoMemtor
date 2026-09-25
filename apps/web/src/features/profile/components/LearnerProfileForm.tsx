@@ -13,6 +13,7 @@ import {
   type SaveLearnerProfileRequest,
 } from '@algomemtor/shared-contracts'
 
+import { X } from '@/components/icons/algo-icons'
 import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { Button } from '@/components/ui/button'
@@ -73,48 +74,64 @@ const goalOptions: readonly Option<LearnerGoal>[] = [
   },
 ]
 
-const topicOptions: readonly Option<OnboardingTopic>[] = [
-  { value: 'implementation', label: 'Implementation' },
-  { value: 'arrays', label: 'Arrays' },
-  { value: 'hashing', label: 'Hashing' },
-  { value: 'sliding-window', label: 'Sliding Window' },
-  { value: 'linked-lists', label: 'Linked Lists' },
-  {
-    value: 'heaps-and-priority-queues',
-    label: 'Heaps and Priority Queues',
-  },
-  { value: 'tries', label: 'Tries' },
-  { value: 'math', label: 'Math' },
-  { value: 'number-theory', label: 'Number Theory' },
-  { value: 'sorting', label: 'Sorting' },
-  { value: 'binary-search', label: 'Binary Search' },
-  { value: 'two-pointers', label: 'Two Pointers' },
-  { value: 'prefix-sums', label: 'Prefix Sums' },
-  { value: 'greedy', label: 'Greedy' },
-  { value: 'strings', label: 'Strings' },
-  {
-    value: 'recursion-and-backtracking',
-    label: 'Recursion and Backtracking',
-  },
-  { value: 'stacks-and-queues', label: 'Stacks and Queues' },
-  { value: 'trees', label: 'Trees' },
-  { value: 'graphs', label: 'Graphs' },
-  { value: 'bfs-and-dfs', label: 'BFS and DFS' },
-  { value: 'dynamic-programming', label: 'Dynamic Programming' },
-  { value: 'bit-manipulation', label: 'Bit Manipulation' },
-  { value: 'segment-trees', label: 'Segment Trees' },
-  { value: 'fenwick-trees', label: 'Fenwick Trees' },
-  { value: 'disjoint-set-union', label: 'Disjoint Set Union' },
-  { value: 'shortest-paths', label: 'Shortest Paths' },
-  { value: 'minimum-spanning-trees', label: 'Minimum Spanning Trees' },
-  { value: 'topological-sort', label: 'Topological Sort' },
-  {
-    value: 'advanced-dynamic-programming',
-    label: 'Advanced Dynamic Programming',
-  },
-  { value: 'geometry', label: 'Geometry' },
-  { value: 'combinatorics', label: 'Combinatorics' },
-]
+const topicLabels: Record<OnboardingTopic, string> = {
+  implementation: 'Implementation',
+  arrays: 'Arrays',
+  hashing: 'Hashing',
+  'sliding-window': 'Sliding Window',
+  'linked-lists': 'Linked Lists',
+  'heaps-and-priority-queues': 'Heaps and Priority Queues',
+  tries: 'Tries',
+  math: 'Math',
+  'number-theory': 'Number Theory',
+  sorting: 'Sorting',
+  'binary-search': 'Binary Search',
+  'two-pointers': 'Two Pointers',
+  'prefix-sums': 'Prefix Sums',
+  greedy: 'Greedy',
+  strings: 'Strings',
+  'recursion-and-backtracking': 'Recursion and Backtracking',
+  'stacks-and-queues': 'Stacks and Queues',
+  trees: 'Trees',
+  graphs: 'Graphs',
+  'bfs-and-dfs': 'BFS and DFS',
+  'dynamic-programming': 'Dynamic Programming',
+  'bit-manipulation': 'Bit Manipulation',
+  'segment-trees': 'Segment Trees',
+  'fenwick-trees': 'Fenwick Trees',
+  'disjoint-set-union': 'Disjoint Set Union',
+  'shortest-paths': 'Shortest Paths',
+  'minimum-spanning-trees': 'Minimum Spanning Trees',
+  'topological-sort': 'Topological Sort',
+  'advanced-dynamic-programming': 'Advanced Dynamic Programming',
+  geometry: 'Geometry',
+  combinatorics: 'Combinatorics',
+}
+
+// Profile setup should ask for broad interests, not expose the complete
+// provider-normalization taxonomy used by recommendations and progress.
+const majorTopicValues = [
+  'arrays',
+  'strings',
+  'hashing',
+  'sorting',
+  'linked-lists',
+  'stacks-and-queues',
+  'heaps-and-priority-queues',
+  'trees',
+  'graphs',
+  'binary-search',
+  'greedy',
+  'dynamic-programming',
+  'recursion-and-backtracking',
+  'math',
+  'bit-manipulation',
+] as const satisfies readonly OnboardingTopic[]
+
+const majorTopicSet = new Set<OnboardingTopic>(majorTopicValues)
+const topicOptions: readonly Option<OnboardingTopic>[] = majorTopicValues.map(
+  (value) => ({ value, label: topicLabels[value] }),
+)
 
 const platformOptions: readonly Option<PracticePlatform>[] = [
   { value: 'codeforces', label: 'Codeforces' },
@@ -393,6 +410,44 @@ function FieldError({ id, message }: { id: string; message?: string }) {
   ) : null
 }
 
+function SavedSpecificTopics({
+  onRemove,
+  topics,
+}: {
+  onRemove: (topic: OnboardingTopic) => void
+  topics: readonly OnboardingTopic[]
+}) {
+  if (topics.length === 0) {
+    return null
+  }
+
+  return (
+    <div className="rounded-lg border border-dashed border-border p-3">
+      <p className="text-xs font-medium text-muted-foreground">
+        Saved specific topics
+      </p>
+      <ul className="mt-2 flex flex-wrap gap-2">
+        {topics.map((topic) => (
+          <li
+            className="inline-flex items-center gap-1.5 rounded-md bg-secondary px-2 py-1 text-xs text-foreground"
+            key={topic}
+          >
+            <span>{topicLabels[topic]}</span>
+            <button
+              aria-label={`Remove ${topicLabels[topic]}`}
+              className="grid size-5 place-items-center rounded text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => onRemove(topic)}
+              type="button"
+            >
+              <X aria-hidden="true" className="size-3" />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 function SelectField<T extends string>({
   disabled,
   error,
@@ -457,6 +512,12 @@ function LearnerProfileFormFields({
   const validationSummaryRef = useRef<HTMLDivElement>(null)
   const topicSelectionCount = state.topics.length
   const preferredTopicSelectionCount = state.preferredTopics.length
+  const savedSpecificTopics = state.topics.filter(
+    (topic) => !majorTopicSet.has(topic),
+  )
+  const savedSpecificPreferredTopics = state.preferredTopics.filter(
+    (topic) => !majorTopicSet.has(topic),
+  )
 
   function changed() {
     onChange?.()
@@ -739,6 +800,10 @@ function LearnerProfileFormFields({
                 </label>
               ))}
             </div>
+            <SavedSpecificTopics
+              onRemove={toggleTopic}
+              topics={savedSpecificTopics}
+            />
             <FieldError
               id={`${idPrefix}-topics-error`}
               message={errors.topics}
@@ -780,6 +845,10 @@ function LearnerProfileFormFields({
               </label>
             ))}
           </div>
+          <SavedSpecificTopics
+            onRemove={togglePreferredTopic}
+            topics={savedSpecificPreferredTopics}
+          />
           <FieldError
             id={`${idPrefix}-preferred-topics-error`}
             message={errors.preferredTopics}

@@ -7,7 +7,6 @@ import {
   BarChart3,
   BookOpen,
   Crosshair,
-  Route,
   Swords,
   Trophy,
   TrendingUp,
@@ -60,13 +59,6 @@ export const mentorTools: Record<MentorFeature, MentorTool> = {
     path: '/progress/report',
     description: 'Accuracy, speed, rating trajectory and hint reliance.',
     icon: TrendingUp,
-  },
-  pathway: {
-    feature: 'pathway',
-    label: 'Pathway',
-    path: '/pathway',
-    description: 'Your learning plan and revision schedule.',
-    icon: Route,
   },
 }
 

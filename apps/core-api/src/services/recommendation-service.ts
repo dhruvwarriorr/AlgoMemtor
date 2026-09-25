@@ -577,7 +577,6 @@ export class RecommendationService {
       consent,
       topicStatuses,
       storedRoadmap,
-      coachPreferences,
       ratingChanges,
       steeringRecords,
     ] = await Promise.all([
@@ -593,9 +592,6 @@ export class RecommendationService {
       this.options.coachRepository?.getTopicStatuses(authUserId),
       this.options.coachRepository?.getRoadmap(authUserId).catch(() => null) ??
         Promise.resolve(null),
-      this.options.coachRepository
-        ?.getPreferences(authUserId)
-        .catch(() => undefined) ?? Promise.resolve(undefined),
       this.options.providerDataRepository
         .listRatingChanges(authUserId)
         .catch(() => []),
@@ -761,7 +757,7 @@ export class RecommendationService {
         availableProblemIds.has(identity(item.provider, item.externalId)),
       ) ?? false
     // Picks rotate once per calendar day in the learner's time zone.
-    const timeZone = coachPreferences?.timezone ?? 'UTC'
+    const timeZone = profile?.timezone ?? 'UTC'
     const latestBatchIsToday =
       latestBatch !== undefined &&
       learnerDayKey(latestBatch.createdAt, timeZone) ===

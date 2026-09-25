@@ -79,6 +79,35 @@ describe('LearnerProfileForm', () => {
     expect(markup).not.toContain('type="email"')
   })
 
+  it('uses the compact major-topic picker shared by onboarding and settings', () => {
+    const markup = renderToStaticMarkup(<LearnerProfileForm {...baseProps} />)
+
+    expect(markup).toContain('Arrays')
+    expect(markup).toContain('Dynamic Programming')
+    expect(markup).toContain('Bit Manipulation')
+    expect(markup).not.toContain('Sliding Window')
+    expect(markup).not.toContain('Fenwick Trees')
+    expect(markup).not.toContain('Minimum Spanning Trees')
+    expect(markup).not.toContain('Advanced Dynamic Programming')
+  })
+
+  it('keeps previously saved specific topics visible and removable', () => {
+    const profile = LearnerProfileSchema.parse({
+      ...savedProfile,
+      topicPreference: { mode: 'selected', topics: ['segment-trees'] },
+      preferredTopics: ['geometry'],
+    })
+    const markup = renderToStaticMarkup(
+      <LearnerProfileForm {...baseProps} initialProfile={profile} />,
+    )
+
+    expect(markup.match(/Saved specific topics/g)).toHaveLength(2)
+    expect(markup).toContain('Segment Trees')
+    expect(markup).toContain('aria-label="Remove Segment Trees"')
+    expect(markup).toContain('Geometry')
+    expect(markup).toContain('aria-label="Remove Geometry"')
+  })
+
   it('hydrates a saved recommendation note for editing', () => {
     const markup = renderToStaticMarkup(
       <LearnerProfileForm {...baseProps} initialProfile={savedProfile} />,

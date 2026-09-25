@@ -3,9 +3,9 @@ import { Link, useLocation } from 'react-router-dom'
 import type { ProviderKey } from '@algomemtor/shared-contracts'
 import {
   ArrowDown,
+  ArrowLeft,
   ArrowRight,
   ArrowUp,
-  Bell,
   BookOpen,
   Code2,
   Compass,
@@ -13,14 +13,11 @@ import {
   Lock,
   Crosshair,
   LoaderCircle,
-  MessageCircle,
   Paperclip,
   Pencil,
   Plus,
-  RefreshCw,
   Route,
   Search,
-  SlidersHorizontal,
   Sparkles,
   Trash2,
   X,
@@ -34,20 +31,16 @@ import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { useUserIdentity } from '@/features/auth/user-identity'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
-import { AiLoader, type AiLoaderStep } from '@/components/motion/AiLoader'
+import { TetrisLoader } from '@/components/motion/TetrisLoader'
 import { useNotification } from '@/app/useNotification'
 import {
-  useCoachCheckIns,
   useCoachConversation,
   useCoachConversations,
-  useCoachPreferences,
   useCoachRoadmap,
   useConfirmCoachAction,
   useCreateCoachConversation,
   useDeleteCoachConversation,
-  useMarkCoachCheckIn,
   useRenameCoachConversation,
-  useSaveCoachPreferences,
   useSendCoachMessage,
 } from '@/features/coach/hooks'
 import { cn } from '@/lib/utils'
@@ -135,11 +128,6 @@ const attachmentExtensions: Record<string, CoachAttachmentType> = {
   webm: 'video/webm',
 }
 
-const coachWorkingSteps: readonly AiLoaderStep[] = [
-  { label: 'Thinking', indicator: 'dots' },
-  { label: 'Reading your solves and verdicts', indicator: 'bar' },
-  { label: 'Checking your roadmap and memory', indicator: 'grid' },
-]
 function attachmentMimeType(file: File): CoachAttachmentType | null {
   if (Object.hasOwn(coachAttachmentTypes, file.type)) {
     return file.type as CoachAttachmentType
@@ -180,44 +168,9 @@ function formatDate(value: string) {
   }
 }
 
-function EvidenceList({
-  evidence,
-}: {
-  evidence: readonly {
-    label: string
-    detail: string
-    completeness: 'complete' | 'partial' | 'unknown'
-    stale: boolean
-  }[]
-}) {
-  if (evidence.length === 0) return null
-  return (
-    <details
-      className="mt-3 rounded-lg border border-border/70 bg-muted/30 p-3"
-      aria-label="Information used by the coach"
-    >
-      <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
-        Why this answer
-      </summary>
-      <ul className="mt-3 space-y-3">
-        {evidence.map((item, index) => (
-          <li className="text-xs" key={`${item.label}-${index}`}>
-            <p className="font-medium text-foreground">{item.label}</p>
-            <p className="mt-1 leading-5 text-muted-foreground">
-              {item.detail}
-            </p>
-          </li>
-        ))}
-      </ul>
-    </details>
-  )
-}
-
 function CoachPage() {
   const conversationsQuery = useCoachConversations()
   const roadmapQuery = useCoachRoadmap()
-  const preferencesQuery = useCoachPreferences()
-  const checkInsQuery = useCoachCheckIns()
   const createConversation = useCreateCoachConversation()
   const renameConversation = useRenameCoachConversation()
   const deleteConversation = useDeleteCoachConversation()
@@ -225,8 +178,6 @@ function CoachPage() {
   const dismissProblem = useDismissProblem()
   const dismissalsQuery = useRecommendationDismissals()
   const confirmAction = useConfirmCoachAction()
-  const savePreferences = useSaveCoachPreferences()
-  const markCheckIn = useMarkCoachCheckIn()
   const { notify } = useNotification()
   const identity = useUserIdentity()
   const location = useLocation()
@@ -239,7 +190,7 @@ function CoachPage() {
   const [transientContext, setTransientContext] = useState('')
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
   const attachmentInputRef = useRef<HTMLInputElement | null>(null)
-  const [view, setView] = useState<'chat' | 'checkins' | 'preferences'>('chat')
+  const [sidebarExpanded, setSidebarExpanded] = useState(true)
   const [search, setSearch] = useState('')
   const [showContext, setShowContext] = useState(false)
   const [isDraft, setIsDraft] = useState(false)
@@ -275,7 +226,6 @@ function CoachPage() {
     setShowJumpToLatest(false)
     setSelectedAnswerId(null)
     setIsDraft(true)
-    setView('chat')
     setContent('')
   }
 
@@ -382,35 +332,7 @@ function CoachPage() {
     setAttachmentFile(file)
   }
 
-  function updatePreferences(
-    patch: Partial<NonNullable<typeof preferencesQuery.data>['data']>,
-  ) {
-    const current = preferencesQuery.data?.data
-    if (current === undefined || savePreferences.isPending) return
-    void savePreferences
-      .mutateAsync({
-        weeklyEnabled: current.weeklyEnabled,
-        weeklyDay: current.weeklyDay,
-        weeklyTime: current.weeklyTime,
-        eventEnabled: current.eventEnabled,
-        timezone: current.timezone,
-        ...patch,
-      })
-      .catch((error: unknown) =>
-        notify({
-          title: 'Check-in preference was not saved',
-          description:
-            error instanceof Error ? error.message : 'Try again shortly.',
-          tone: 'error',
-        }),
-      )
-  }
-
-  if (
-    conversationsQuery.isPending ||
-    roadmapQuery.isPending ||
-    preferencesQuery.isPending
-  ) {
+  if (conversationsQuery.isPending || roadmapQuery.isPending) {
     return (
       <PageContainer>
         <PageHeader
@@ -422,11 +344,7 @@ function CoachPage() {
     )
   }
 
-  if (
-    conversationsQuery.isError ||
-    roadmapQuery.isError ||
-    preferencesQuery.isError
-  ) {
+  if (conversationsQuery.isError || roadmapQuery.isError) {
     return (
       <PageContainer>
         <PageHeader
@@ -438,7 +356,6 @@ function CoachPage() {
           onRetry={() => {
             void conversationsQuery.refetch()
             void roadmapQuery.refetch()
-            void preferencesQuery.refetch()
           }}
           title="Coach unavailable"
         />
@@ -501,16 +418,9 @@ function CoachPage() {
   const filteredConversations = query
     ? conversations.filter((item) => item.title.toLowerCase().includes(query))
     : conversations
-  const unreadCheckIns = checkInsQuery.data?.meta.unread ?? 0
   const activeTitle = hasConversation
     ? (conversationQuery.data?.data.title ?? 'Conversation')
     : 'New conversation'
-
-  const views = [
-    { id: 'chat', label: 'Chat', icon: MessageCircle },
-    { id: 'checkins', label: 'Check-ins', icon: Bell },
-    { id: 'preferences', label: 'Preferences', icon: SlidersHorizontal },
-  ] as const
 
   const composerForm = (
     <form
@@ -655,76 +565,85 @@ function CoachPage() {
       {/* History column */}
       <aside
         aria-label="Saved coaching conversations"
-        className="flex min-h-0 flex-col gap-4 border-b border-border p-4 lg:w-[18.5rem] lg:shrink-0 lg:border-r lg:border-b-0 lg:p-5"
+        className={cn(
+          'flex min-h-0 flex-col gap-4 border-b border-border p-4 lg:shrink-0 lg:border-r lg:border-b-0 lg:py-5',
+          sidebarExpanded ? 'lg:w-[18.5rem] lg:px-5' : 'lg:w-[4.5rem] lg:px-3',
+        )}
       >
-        <div className="flex items-center gap-2.5">
+        <div
+          className={cn(
+            'flex items-center gap-2.5',
+            !sidebarExpanded && 'lg:flex-col',
+          )}
+        >
           <span aria-hidden="true" className="coach-orb size-9 shrink-0" />
-          <div className="min-w-0">
+          <div className={cn('min-w-0', !sidebarExpanded && 'lg:hidden')}>
             <h1 className="text-lg leading-tight">Your AI coach</h1>
             <p className="truncate text-xs text-muted-foreground">
               Knows your profile and CP journey
             </p>
           </div>
+          <button
+            aria-expanded={sidebarExpanded}
+            aria-label={
+              sidebarExpanded
+                ? 'Collapse conversation sidebar'
+                : 'Expand conversation sidebar'
+            }
+            className={cn(
+              'ml-auto hidden size-8 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:grid',
+              !sidebarExpanded && 'lg:ml-0',
+            )}
+            onClick={() => setSidebarExpanded((expanded) => !expanded)}
+            title={sidebarExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
+            type="button"
+          >
+            {sidebarExpanded ? (
+              <ArrowLeft aria-hidden="true" className="size-4" />
+            ) : (
+              <ArrowRight aria-hidden="true" className="size-4" />
+            )}
+          </button>
         </div>
 
         <button
-          className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-ink text-sm font-medium text-ink-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.14)] transition-transform duration-300 active:scale-[0.98]"
+          aria-label="Start a new chat"
+          className={cn(
+            'flex h-11 w-full items-center justify-center gap-2 rounded-md bg-ink text-sm font-medium text-ink-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.14)] transition-transform duration-300 active:scale-[0.98]',
+            !sidebarExpanded && 'lg:px-0',
+          )}
           onClick={startNewChat}
+          title={!sidebarExpanded ? 'New chat' : undefined}
           type="button"
         >
           <Plus aria-hidden="true" className="size-4" />
-          New chat
+          <span className={cn(!sidebarExpanded && 'lg:sr-only')}>New chat</span>
         </button>
 
-        <label className="relative hidden lg:block">
-          <span className="sr-only">Search conversations</span>
-          <Search
-            aria-hidden="true"
-            className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground"
-            strokeWidth={1.7}
-          />
-          <input
-            className="h-10 w-full rounded-md border border-input bg-card pr-3 pl-10 text-sm text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search"
-            type="search"
-            value={search}
-          />
-        </label>
+        {sidebarExpanded ? (
+          <label className="relative hidden lg:block">
+            <span className="sr-only">Search conversations</span>
+            <Search
+              aria-hidden="true"
+              className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground"
+              strokeWidth={1.7}
+            />
+            <input
+              className="h-10 w-full rounded-md border border-input bg-card pr-3 pl-10 text-sm text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search"
+              type="search"
+              value={search}
+            />
+          </label>
+        ) : null}
 
-        <nav
-          aria-label="Coach views"
-          className="flex gap-1 overflow-x-auto lg:flex-col"
+        <div
+          className={cn(
+            'hidden min-h-0 flex-1 flex-col gap-4 overflow-y-auto border-t border-border pt-4',
+            sidebarExpanded && 'lg:flex',
+          )}
         >
-          {views.map((item) => (
-            <button
-              aria-current={view === item.id ? 'page' : undefined}
-              className={cn(
-                'flex h-10 shrink-0 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors',
-                view === item.id
-                  ? 'bg-ink text-ink-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.12)]'
-                  : 'text-foreground/70 hover:bg-card hover:text-foreground',
-              )}
-              key={item.id}
-              onClick={() => setView(item.id)}
-              type="button"
-            >
-              <item.icon
-                aria-hidden="true"
-                className={cn('size-4', view === item.id && 'text-primary')}
-                strokeWidth={1.7}
-              />
-              {item.label}
-              {item.id === 'checkins' && unreadCheckIns > 0 ? (
-                <span className="ml-auto rounded-md bg-primary px-2 py-0.5 text-xs text-primary-foreground">
-                  {unreadCheckIns}
-                </span>
-              ) : null}
-            </button>
-          ))}
-        </nav>
-
-        <div className="hidden min-h-0 flex-1 flex-col gap-4 overflow-y-auto border-t border-border pt-4 lg:flex">
           {conversations.length === 0 ? (
             <p className="text-sm leading-6 text-muted-foreground">
               Start with a guided question. Safe chat text is saved until you
@@ -737,8 +656,7 @@ function CoachPage() {
           ) : (
             <ul className="flex flex-col gap-0.5">
               {filteredConversations.map((conversation) => {
-                const active =
-                  activeConversationId === conversation.id && view === 'chat'
+                const active = activeConversationId === conversation.id
                 return (
                   <li className="group/item relative" key={conversation.id}>
                     <button
@@ -750,9 +668,8 @@ function CoachPage() {
                       )}
                       onClick={() => {
                         selectConversation(conversation.id)
-                        setView('chat')
                       }}
-                      title={`${conversation.title} · ${conversation.messageCount} messages`}
+                      title={`${conversation.title}, ${conversation.messageCount} messages`}
                       type="button"
                     >
                       {conversation.title}
@@ -820,13 +737,11 @@ function CoachPage() {
               className="truncate font-sans text-sm font-medium text-foreground"
               id="conversation-heading"
             >
-              {view === 'chat'
-                ? activeTitle
-                : views.find((item) => item.id === view)?.label}
+              {activeTitle}
             </h2>
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            {view === 'chat' && !showGreeting && selectedDetails.hasContent ? (
+            {!showGreeting && selectedDetails.hasContent ? (
               <Button
                 className="xl:hidden"
                 onClick={() => setDetailsOpen(true)}
@@ -840,8 +755,7 @@ function CoachPage() {
           </div>
         </header>
 
-        {view === 'chat' ? (
-          showGreeting ? (
+        {showGreeting ? (
             <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-4 py-6 sm:px-8">
               <div className="my-auto flex w-full max-w-[52rem] flex-col items-center">
                 <CoachStatStrip className="animate-rise" roadmap={roadmap} />
@@ -861,8 +775,8 @@ function CoachPage() {
                   style={{ '--i': 2 } as CSSProperties}
                 >
                   I know your linked profiles, solved history, contests and
-                  roadmap. Ask about a concept, a failed attempt, your rating or
-                  what to practice next.
+                  learning progress. Ask about a concept, a failed attempt, your
+                  rating or what to practice next.
                 </p>
                 <div
                   className="animate-rise mt-6 w-full"
@@ -931,24 +845,22 @@ function CoachPage() {
                     Or jump straight to a mentor tool
                   </p>
                   <ul className="mt-3 flex flex-wrap justify-center gap-2">
-                    {[...orderedMentorTools, mentorTools.pathway].map(
-                      (tool) => (
-                        <li key={tool.feature}>
-                          <Link
-                            className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-sm text-foreground/85 transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                            title={tool.description}
-                            to={tool.path}
-                          >
-                            <tool.icon
-                              aria-hidden="true"
-                              className="size-4 text-primary"
-                              strokeWidth={1.8}
-                            />
-                            {tool.label}
-                          </Link>
-                        </li>
-                      ),
-                    )}
+                    {orderedMentorTools.map((tool) => (
+                      <li key={tool.feature}>
+                        <Link
+                          className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-sm text-foreground/85 transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          title={tool.description}
+                          to={tool.path}
+                        >
+                          <tool.icon
+                            aria-hidden="true"
+                            className="size-4 text-primary"
+                            strokeWidth={1.8}
+                          />
+                          {tool.label}
+                        </Link>
+                      </li>
+                    ))}
                   </ul>
                 </nav>
               </div>
@@ -1113,18 +1025,18 @@ function CoachPage() {
                     ) : null}
                     <div aria-hidden="true" ref={messageEndRef} />
                     {sendMessage.isPending ? (
-                      <div
-                        className="flex items-start gap-3 text-sm text-muted-foreground"
-                        role="status"
-                      >
-                        <span className="sr-only">
-                          Your coach is checking your profile, history and
-                          roadmap.
-                        </span>
-                        <AiLoader
-                          steps={coachWorkingSteps}
-                          title="Your coach is working"
-                        />
+                      <div className="flex flex-wrap items-start gap-3 text-sm text-muted-foreground">
+                        <div className="flex min-w-0 items-center gap-3 rounded-lg border border-border bg-[color-mix(in_oklab,var(--card)_80%,transparent)] px-3 py-2 shadow-soft backdrop-blur-md">
+                          <TetrisLoader
+                            cellSize={4}
+                            gap={1}
+                            label="Your coach is working"
+                            rows={6}
+                          />
+                          <p className="text-xs font-semibold text-foreground">
+                            Your coach is working
+                          </p>
+                        </div>
                         <Button
                           className="ml-auto"
                           onClick={() => sendAbortController.current?.abort()}
@@ -1191,225 +1103,8 @@ function CoachPage() {
                 </div>
               ) : null}
             </div>
-          )
-        ) : null}
+          )}
 
-        {view === 'checkins' ? (
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-8">
-            <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <h3 className="text-2xl" id="check-ins-heading">
-                  Check-in inbox
-                </h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Reviews and reminders based on your learning activity.
-                </p>
-              </div>
-              <Button
-                onClick={() => void checkInsQuery.refetch()}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                <RefreshCw aria-hidden="true" /> Refresh
-              </Button>
-            </div>
-            {checkInsQuery.isPending ? (
-              <p className="text-sm text-muted-foreground" role="status">
-                Checking for new nudges…
-              </p>
-            ) : checkInsQuery.isError ? (
-              <p className="text-sm text-destructive" role="alert">
-                Check-ins are temporarily unavailable.
-              </p>
-            ) : checkInsQuery.data?.data.length ? (
-              <ul className="grid gap-3 xl:grid-cols-2">
-                {checkInsQuery.data.data.map((checkIn) => (
-                  <li
-                    className={cn(
-                      'rounded-2xl border p-5',
-                      checkIn.dismissed
-                        ? 'border-border bg-muted/50 opacity-75'
-                        : checkIn.read
-                          ? 'border-border bg-card'
-                          : 'border-primary/40 bg-primary/5',
-                    )}
-                    key={checkIn.id}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-medium text-muted-foreground capitalize">
-                          {checkIn.type.replaceAll('_', ' ')}
-                          {checkIn.dismissed ? ' · dismissed' : ''}
-                        </p>
-                        <h4 className="mt-1 font-heading font-semibold text-foreground">
-                          {checkIn.title}
-                        </h4>
-                      </div>
-                      {!checkIn.read && !checkIn.dismissed ? (
-                        <span
-                          aria-label="Unread"
-                          className="size-2 shrink-0 rounded-full bg-primary"
-                        />
-                      ) : null}
-                    </div>
-                    <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                      {checkIn.content}
-                    </p>
-                    <EvidenceList evidence={checkIn.evidence} />
-                    <div className="mt-3 flex items-center justify-between gap-2">
-                      <time
-                        className="text-xs text-muted-foreground"
-                        dateTime={checkIn.createdAt}
-                      >
-                        {formatDate(checkIn.createdAt)}
-                      </time>
-                      <div className="flex flex-wrap justify-end gap-2">
-                        {!checkIn.read && !checkIn.dismissed ? (
-                          <Button
-                            onClick={() =>
-                              void markCheckIn.mutateAsync({
-                                checkInId: checkIn.id,
-                                read: true,
-                              })
-                            }
-                            size="sm"
-                            type="button"
-                            variant="outline"
-                          >
-                            Mark read
-                          </Button>
-                        ) : null}
-                        {checkIn.dismissed ? (
-                          <Button
-                            onClick={() =>
-                              void markCheckIn.mutateAsync({
-                                checkInId: checkIn.id,
-                                dismissed: false,
-                              })
-                            }
-                            size="sm"
-                            type="button"
-                            variant="outline"
-                          >
-                            Restore
-                          </Button>
-                        ) : (
-                          <Button
-                            onClick={() =>
-                              void markCheckIn.mutateAsync({
-                                checkInId: checkIn.id,
-                                read: true,
-                                dismissed: true,
-                              })
-                            }
-                            size="sm"
-                            type="button"
-                            variant="ghost"
-                          >
-                            Dismiss
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="rounded-2xl border border-dashed border-border p-5 text-sm text-muted-foreground">
-                No check-ins yet. They will appear here after a weekly review or
-                meaningful change.
-              </p>
-            )}
-          </div>
-        ) : null}
-
-        {view === 'preferences' ? (
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-8">
-            <h3 className="text-2xl" id="check-in-settings-heading">
-              Check-in preferences
-            </h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Choose when you want weekly reviews and activity-based reminders.
-            </p>
-            {preferencesQuery.data?.data ? (
-              <div className="mt-6 max-w-3xl divide-y divide-border rounded-xl border border-border bg-card">
-                <label className="flex items-center justify-between gap-6 p-5">
-                  <span>
-                    <span className="block font-medium text-foreground">
-                      Weekly review
-                    </span>
-                    <span className="block text-sm text-muted-foreground">
-                      A summary of the week with your next focus.
-                    </span>
-                  </span>
-                  <input
-                    checked={preferencesQuery.data.data.weeklyEnabled}
-                    className="switch"
-                    onChange={(event) =>
-                      updatePreferences({ weeklyEnabled: event.target.checked })
-                    }
-                    role="switch"
-                    type="checkbox"
-                  />
-                </label>
-                <div className="grid gap-4 p-5 sm:grid-cols-2">
-                  <label className="text-sm font-medium text-foreground">
-                    Day
-                    <select
-                      className="mt-1.5 block h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
-                      onChange={(event) =>
-                        updatePreferences({
-                          weeklyDay: Number(event.target.value),
-                        })
-                      }
-                      value={preferencesQuery.data.data.weeklyDay}
-                    >
-                      <option value="0">Sunday</option>
-                      <option value="1">Monday</option>
-                      <option value="2">Tuesday</option>
-                      <option value="3">Wednesday</option>
-                      <option value="4">Thursday</option>
-                      <option value="5">Friday</option>
-                      <option value="6">Saturday</option>
-                    </select>
-                  </label>
-                  <label className="text-sm font-medium text-foreground">
-                    Local time
-                    <input
-                      className="mt-1.5 block h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
-                      onChange={(event) =>
-                        updatePreferences({ weeklyTime: event.target.value })
-                      }
-                      type="time"
-                      value={preferencesQuery.data.data.weeklyTime}
-                    />
-                  </label>
-                </div>
-                <label className="flex items-center justify-between gap-6 p-5">
-                  <span>
-                    <span className="block font-medium text-foreground">
-                      Meaningful event nudges
-                    </span>
-                    <span className="block text-sm text-muted-foreground">
-                      A note when a rating change or streak break needs
-                      attention.
-                    </span>
-                  </span>
-                  <input
-                    checked={preferencesQuery.data.data.eventEnabled}
-                    className="switch"
-                    onChange={(event) =>
-                      updatePreferences({ eventEnabled: event.target.checked })
-                    }
-                    role="switch"
-                    type="checkbox"
-                  />
-                </label>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
       </section>
 
       <Dialog

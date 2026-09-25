@@ -468,7 +468,6 @@ export const MentorFeatureSchema = z.enum([
   'upsolve',
   'contest_analysis',
   'progress_report',
-  'pathway',
 ])
 export type MentorFeature = z.infer<typeof MentorFeatureSchema>
 
@@ -721,92 +720,12 @@ export const CoachResponseSchema = z
   .strict()
 export type CoachResponse = z.infer<typeof CoachResponseSchema>
 
-export const CoachPreferencesSchema = z
-  .object({
-    weeklyEnabled: z.boolean(),
-    weeklyDay: z.number().int().min(0).max(6),
-    weeklyTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
-    eventEnabled: z.boolean(),
-    timezone: nonEmptyStringSchema.max(64),
-    updatedAt: dateSchema,
-  })
-  .strict()
-export type CoachPreferences = z.infer<typeof CoachPreferencesSchema>
-
-export const CoachPreferencesResponseSchema = z
-  .object({ data: CoachPreferencesSchema })
-  .strict()
-export type CoachPreferencesResponse = z.infer<
-  typeof CoachPreferencesResponseSchema
->
-
-export const SaveCoachPreferencesRequestSchema = z
-  .object({
-    weeklyEnabled: z.boolean(),
-    weeklyDay: z.number().int().min(0).max(6),
-    weeklyTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
-    eventEnabled: z.boolean(),
-    timezone: nonEmptyStringSchema.max(64),
-  })
-  .strict()
-export type SaveCoachPreferencesRequest = z.infer<
-  typeof SaveCoachPreferencesRequestSchema
->
-
-export const CoachCheckInTypeSchema = z.enum([
-  'weekly_review',
-  'contest_result',
-  'repeated_failures',
-  'focus_transition',
-  'focus_progress',
-  'inactivity',
-  'spaced_repetition_due',
-  'goal_progress_milestone',
-  'goal_off_track',
-  'streak_risk',
-  'difficulty_plateau',
-  'topic_mastery_achieved',
-  'contest_prep_reminder',
-  'morning_warm_up',
-  'insight_of_the_day',
-])
-export type CoachCheckInType = z.infer<typeof CoachCheckInTypeSchema>
-
-export const CoachCheckInSchema = z
-  .object({
-    id: identifierSchema,
-    eventKey: nonEmptyStringSchema.max(160).optional(),
-    type: CoachCheckInTypeSchema,
-    title: nonEmptyStringSchema.max(160),
-    content: nonEmptyStringSchema.max(4_000),
-    evidence: z.array(CoachEvidenceReferenceSchema).max(12),
-    read: z.boolean(),
-    dismissed: z.boolean().default(false),
-    fallback: z.boolean().optional(),
-    createdAt: dateSchema,
-  })
-  .strict()
-export type CoachCheckIn = z.infer<typeof CoachCheckInSchema>
-
-export const CoachCheckInResponseSchema = z
-  .object({ data: CoachCheckInSchema })
-  .strict()
-export type CoachCheckInResponse = z.infer<typeof CoachCheckInResponseSchema>
-
 export const CoachActionProposalResponseSchema = z
   .object({ data: CoachActionProposalSchema })
   .strict()
 export type CoachActionProposalResponse = z.infer<
   typeof CoachActionProposalResponseSchema
 >
-
-export const CoachCheckInsResponseSchema = z
-  .object({
-    data: z.array(CoachCheckInSchema),
-    meta: z.object({ unread: z.number().int().nonnegative() }).strict(),
-  })
-  .strict()
-export type CoachCheckInsResponse = z.infer<typeof CoachCheckInsResponseSchema>
 
 export const CreateCoachConversationRequestSchema = z
   .object({ title: z.string().trim().min(1).max(120).optional() })
@@ -904,23 +823,4 @@ export const ConfirmCoachActionRequestSchema = z
   .strict()
 export type ConfirmCoachActionRequest = z.infer<
   typeof ConfirmCoachActionRequestSchema
->
-
-export const CoachCheckInActionRequestSchema = z
-  .object({
-    read: z.boolean().optional(),
-    dismissed: z.boolean().optional(),
-  })
-  .strict()
-  .superRefine((value, context) => {
-    if (value.read === undefined && value.dismissed === undefined) {
-      context.addIssue({
-        code: 'custom',
-        message: 'A check-in update must change read or dismissed state.',
-        path: ['read'],
-      })
-    }
-  })
-export type CoachCheckInActionRequest = z.infer<
-  typeof CoachCheckInActionRequestSchema
 >

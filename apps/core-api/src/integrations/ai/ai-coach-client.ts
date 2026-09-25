@@ -2,7 +2,6 @@ import { z } from 'zod'
 
 import {
   CoachActionProposalSchema,
-  CoachCheckInTypeSchema,
   CoachEvidenceReferenceSchema,
   CoachCitationSchema,
   CoachRichContentSchema,
@@ -54,13 +53,6 @@ const aiCoachResponseSchema = z
   })
   .strict()
 
-const aiCoachCheckInResponseSchema = z
-  .object({
-    content: z.string().trim().min(1).max(4_000),
-    evidence: z.array(CoachEvidenceReferenceSchema).max(12),
-  })
-  .strict()
-
 export type AiCoachRequest = {
   requestId: string
   learnerId: string
@@ -73,23 +65,8 @@ export type AiCoachRequest = {
 }
 
 export type AiCoachResult = z.infer<typeof aiCoachResponseSchema>
-export type AiCoachCheckInRequest = {
-  requestId: string
-  learnerId: string
-  conversationId: string
-  type: z.infer<typeof CoachCheckInTypeSchema>
-  title: string
-  deterministicContent: string
-  evidence: z.infer<typeof CoachEvidenceReferenceSchema>[]
-  context: Record<string, unknown>
-}
-export type AiCoachCheckInResult = z.infer<typeof aiCoachCheckInResponseSchema>
-
 export interface AiCoachClient {
   respond(request: AiCoachRequest): Promise<AiCoachResult>
-  generateCheckIn?(
-    request: AiCoachCheckInRequest,
-  ): Promise<AiCoachCheckInResult>
   deleteConversation?(learnerId: string, conversationId: string): Promise<void>
   deleteLearnerAudits?(learnerId: string): Promise<void>
 }
@@ -106,10 +83,6 @@ export class AiCoachClientError extends Error {
 
 export class UnavailableAiCoachClient implements AiCoachClient {
   async respond(): Promise<AiCoachResult> {
-    throw new AiCoachClientError('AI_COACH_NOT_CONFIGURED')
-  }
-
-  async generateCheckIn(): Promise<AiCoachCheckInResult> {
     throw new AiCoachClientError('AI_COACH_NOT_CONFIGURED')
   }
 
@@ -165,51 +138,6 @@ export class HttpAiCoachClient implements AiCoachClient {
         throw new AiCoachClientError('AI_COACH_INVALID_RESPONSE')
       }
       const parsed = aiCoachResponseSchema.safeParse(payload)
-      if (!parsed.success) {
-        throw new AiCoachClientError('AI_COACH_INVALID_RESPONSE')
-      }
-      return parsed.data
-    } catch (error) {
-      if (error instanceof AiCoachClientError) throw error
-      throw new AiCoachClientError(
-        error instanceof DOMException && error.name === 'AbortError'
-          ? 'AI_COACH_TIMEOUT'
-          : 'AI_COACH_TRANSPORT_ERROR',
-      )
-    } finally {
-      clearTimeout(timeout)
-    }
-  }
-
-  async generateCheckIn(request: AiCoachCheckInRequest) {
-    const controller = new AbortController()
-    const timeout = setTimeout(
-      () => controller.abort(new Error('AI coach timed out.')),
-      this.options.timeoutMs ?? 125_000,
-    )
-    try {
-      const response = await (this.options.fetchImplementation ?? fetch)(
-        new URL('/internal/coach/check-ins/generate', this.options.baseUrl),
-        {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'x-internal-service-token': this.options.internalServiceToken,
-          },
-          body: JSON.stringify(request),
-          signal: controller.signal,
-        },
-      )
-      if (!response.ok) {
-        throw new AiCoachClientError('AI_COACH_UNAVAILABLE')
-      }
-      let payload: unknown
-      try {
-        payload = await response.json()
-      } catch {
-        throw new AiCoachClientError('AI_COACH_INVALID_RESPONSE')
-      }
-      const parsed = aiCoachCheckInResponseSchema.safeParse(payload)
       if (!parsed.success) {
         throw new AiCoachClientError('AI_COACH_INVALID_RESPONSE')
       }

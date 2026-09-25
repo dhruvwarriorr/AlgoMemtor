@@ -19,7 +19,6 @@ const LoginPage = lazy(() => import('@/pages/LoginPage'))
 const MemoryPage = lazy(() => import('@/pages/MemoryPage'))
 const NotFoundPage = lazy(() => import('@/pages/NotFoundPage'))
 const OnboardingPage = lazy(() => import('@/pages/OnboardingPage'))
-const PathwayPage = lazy(() => import('@/pages/PathwayPage'))
 const ProblemsPage = lazy(() => import('@/pages/ProblemsPage'))
 const ProblemDetailPage = lazy(() => import('@/pages/ProblemDetailPage'))
 const ProfilePage = lazy(() => import('@/pages/ProfilePage'))
@@ -84,10 +83,6 @@ function AppRouter() {
           <Route
             path="coach"
             element={page(<CoachPage />, 'Loading your coach')}
-          />
-          <Route
-            path="pathway"
-            element={page(<PathwayPage />, 'Loading your pathway')}
           />
           <Route
             path="doubt-helper"

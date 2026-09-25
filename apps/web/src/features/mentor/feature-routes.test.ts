@@ -21,7 +21,7 @@ describe('mentor tool routes', () => {
       '/doubt-helper?problem=https%3A%2F%2Fcodeforces.com%2Fproblemset%2Fproblem%2F2266%2FG',
     )
     expect(insightTargetPath('recommendations')).toBe('/recommendations')
-    expect(insightTargetPath('pathway')).toBe('/pathway')
+    expect(insightTargetPath('upsolve')).toBe('/upsolve')
   })
 
   it('renders section redirects inline instead of in the details panel', () => {

@@ -29,7 +29,7 @@ const themeChoices: ReadonlyArray<{
 ]
 
 const itemClass =
-  'group/item flex items-center gap-3.5 rounded-xl px-2.5 py-2 outline-none transition-colors duration-200 hover:bg-secondary focus-visible:bg-secondary focus-visible:ring-2 focus-visible:ring-ring'
+  'group/item grid min-h-14 grid-cols-[2.5rem_minmax(0,1fr)] items-center gap-3.5 rounded-xl px-2.5 py-2 outline-none transition-colors duration-200 hover:bg-secondary focus-visible:bg-secondary focus-visible:ring-2 focus-visible:ring-ring'
 
 // Profile dropdown: a two-column mega-menu holding every page that is not in
 // the top bar, plus theme and sign out. On small screens it also carries the
@@ -113,25 +113,27 @@ function AccountMenu() {
               {user?.email ?? 'Signed in'}
             </p>
           </div>
-          <Link
-            aria-label="Edit name and avatar"
-            className="grid size-9 shrink-0 place-items-center rounded-md border border-border text-foreground/70 transition-colors hover:bg-secondary hover:text-foreground"
-            title="Edit name and avatar"
-            to="/settings#profile"
-          >
-            <Pencil aria-hidden="true" className="size-4" strokeWidth={1.8} />
-          </Link>
-          <Link
-            className="shrink-0 rounded-md border border-border px-3.5 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
-            to="/profile"
-          >
-            View profile
-          </Link>
+          <div className="flex shrink-0 items-center gap-2">
+            <Link
+              aria-label="Edit name and avatar"
+              className="grid size-9 shrink-0 place-items-center rounded-md border border-border text-foreground/70 transition-colors hover:bg-secondary hover:text-foreground"
+              title="Edit name and avatar"
+              to="/settings#profile"
+            >
+              <Pencil aria-hidden="true" className="size-4" strokeWidth={1.8} />
+            </Link>
+            <Link
+              className="inline-flex h-9 shrink-0 items-center rounded-md border border-border px-3.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary"
+              to="/profile"
+            >
+              View profile
+            </Link>
+          </div>
         </div>
 
         <nav
           aria-label="More pages"
-          className="grid max-h-[min(60dvh,32rem)] gap-x-4 gap-y-2 overflow-y-auto p-3 sm:grid-cols-2"
+          className="grid max-h-[min(60dvh,32rem)] content-start items-start gap-x-4 gap-y-2 overflow-y-auto p-3 sm:grid-cols-2"
         >
           {/* The top-bar pages only exist in this menu below the lg breakpoint. */}
           <div className="p-1 sm:col-span-2 lg:hidden">

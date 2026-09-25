@@ -1,23 +1,14 @@
 import {
   CoachActionProposalResponseSchema,
-  CoachCheckInResponseSchema,
-  CoachCheckInsResponseSchema,
   CoachConversationEnvelopeSchema,
   CoachConversationResponseSchema,
   CoachConversationsResponseSchema,
-  CoachPreferencesResponseSchema,
   CoachResponseSchema,
-  CoachRoadmapNoteRequestSchema,
-  CoachRoadmapNoteResponseSchema,
   ConfirmCoachActionRequestSchema,
   CreateCoachConversationRequestSchema,
   ImprovementRoadmapResponseSchema,
-  RoadmapRefreshResponseSchema,
-  SaveCoachPreferencesRequestSchema,
   SendCoachMessageRequestSchema,
   SetCoachTopicStatusRequestSchema,
-  type CoachPreferences,
-  type CoachRoadmapNoteRequest,
   type ConfirmCoachActionRequest,
   type CreateCoachConversationRequest,
   type SendCoachMessageRequest,
@@ -124,15 +115,6 @@ export function fetchCoachRoadmap({ signal }: RequestOptions = {}) {
   })
 }
 
-// Pulls the newest platform data, then rebuilds the plan.
-export function refreshCoachRoadmap() {
-  return requestJson('/api/coach/roadmap/refresh', {
-    authentication: 'required',
-    method: 'POST',
-    schema: RoadmapRefreshResponseSchema,
-  })
-}
-
 export function setCoachTopicStatus(
   topic: string,
   input: SetCoachTopicStatusRequest,
@@ -148,59 +130,6 @@ export function setCoachTopicStatus(
       schema: ImprovementRoadmapResponseSchema,
     },
   )
-}
-
-export function submitCoachRoadmapNote(input: CoachRoadmapNoteRequest) {
-  const parsed = CoachRoadmapNoteRequestSchema.parse(input)
-  return requestJson('/api/coach/roadmap/notes', {
-    authentication: 'required',
-    body: JSON.stringify(parsed),
-    headers: jsonHeaders,
-    method: 'POST',
-    schema: CoachRoadmapNoteResponseSchema,
-  })
-}
-
-export function fetchCoachPreferences({ signal }: RequestOptions = {}) {
-  return requestJson('/api/coach/preferences', {
-    authentication: 'required',
-    schema: CoachPreferencesResponseSchema,
-    signal,
-  })
-}
-
-export function saveCoachPreferences(
-  input: Omit<CoachPreferences, 'updatedAt'>,
-) {
-  const parsed = SaveCoachPreferencesRequestSchema.parse(input)
-  return requestJson('/api/coach/preferences', {
-    authentication: 'required',
-    body: JSON.stringify(parsed),
-    headers: jsonHeaders,
-    method: 'PUT',
-    schema: CoachPreferencesResponseSchema,
-  })
-}
-
-export function fetchCoachCheckIns({ signal }: RequestOptions = {}) {
-  return requestJson('/api/coach/check-ins', {
-    authentication: 'required',
-    schema: CoachCheckInsResponseSchema,
-    signal,
-  })
-}
-
-export function markCoachCheckIn(
-  checkInId: string,
-  input: { read?: boolean; dismissed?: boolean },
-) {
-  return requestJson(`/api/coach/check-ins/${encodeURIComponent(checkInId)}`, {
-    authentication: 'required',
-    body: JSON.stringify(input),
-    headers: jsonHeaders,
-    method: 'PATCH',
-    schema: CoachCheckInResponseSchema,
-  })
 }
 
 export function confirmCoachAction(

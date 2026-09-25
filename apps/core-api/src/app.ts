@@ -68,12 +68,7 @@ import {
   CoachConversationsResponseSchema,
   CoachConversationEnvelopeSchema,
   CoachConversationResponseSchema,
-  CoachPreferencesResponseSchema,
-  SaveCoachPreferencesRequestSchema,
-  CoachCheckInsResponseSchema,
-  CoachCheckInResponseSchema,
   CoachActionProposalResponseSchema,
-  CoachCheckInActionRequestSchema,
   ImprovementRoadmapResponseSchema,
   RoadmapRefreshResponseSchema,
   SetCoachTopicStatusRequestSchema,
@@ -277,7 +272,6 @@ import { ProviderProfileService } from './services/provider-profile-service.js'
 import {
   CoachConsentRequiredError,
   CoachConversationNotFoundError,
-  CoachCheckInNotFoundError,
   CoachMemoryUnavailableError,
   CoachUnknownTopicError,
   CoachProposalNotFoundError,
@@ -430,8 +424,7 @@ const respondWithCoachError = (error: unknown, response: Response) => {
   }
   if (
     error instanceof CoachConversationNotFoundError ||
-    error instanceof CoachProposalNotFoundError ||
-    error instanceof CoachCheckInNotFoundError
+    error instanceof CoachProposalNotFoundError
   ) {
     response.status(404).json(createApiError(error.code, error.message))
     return true
@@ -1538,46 +1531,6 @@ export const createApp = (options: CreateAppOptions = {}) => {
         response.json({ data: linkedProblemFromContent(result.content) })
       } catch (error) {
         if (!respondWithProviderError(error, response)) throw error
-      }
-    },
-  )
-
-  app.post(
-    '/internal/coach/check-ins/refresh',
-    requireInternalService,
-    async (request, response) => {
-      const input = z
-        .object({ learnerId: z.uuid() })
-        .strict()
-        .safeParse(request.body ?? {})
-      if (!input.success) {
-        response
-          .status(400)
-          .json(
-            createApiError(
-              'INVALID_COACH_CHECK_IN_REFRESH',
-              'The coach check-in refresh request is invalid.',
-            ),
-          )
-        return
-      }
-      if (await progressRepository.hasPendingDeletion?.(input.data.learnerId)) {
-        response
-          .status(409)
-          .json(
-            createApiError(
-              'LEARNER_DATA_DELETION_PENDING',
-              'Learner data is temporarily hidden while deletion finishes.',
-              { retryable: true },
-            ),
-          )
-        return
-      }
-      try {
-        const created = await coachService.refreshCheckIns(input.data.learnerId)
-        response.json({ created: created.length })
-      } catch (error) {
-        if (!respondWithCoachError(error, response)) throw error
       }
     },
   )
@@ -3800,112 +3753,6 @@ export const createApp = (options: CreateAppOptions = {}) => {
             data: await coachService.submitRoadmapNote(
               authenticatedSubject(response),
               input.data.note,
-            ),
-          }),
-        )
-      } catch (error) {
-        if (!respondWithCoachError(error, response)) throw error
-      }
-    },
-  )
-
-  app.get(
-    '/api/coach/preferences',
-    requireAuthenticated,
-    async (_request, response) => {
-      response.json(
-        CoachPreferencesResponseSchema.parse({
-          data: await coachService.getPreferences(
-            authenticatedSubject(response),
-          ),
-        }),
-      )
-    },
-  )
-
-  app.put(
-    '/api/coach/preferences',
-    requireAuthenticated,
-    async (request, response) => {
-      const input = SaveCoachPreferencesRequestSchema.safeParse(
-        request.body ?? {},
-      )
-      if (!input.success) {
-        response
-          .status(400)
-          .json(
-            createApiError(
-              'INVALID_COACH_PREFERENCES',
-              'The coaching preferences are invalid.',
-              { details: input.error.issues },
-            ),
-          )
-        return
-      }
-      response.json(
-        CoachPreferencesResponseSchema.parse({
-          data: await coachService.savePreferences(
-            authenticatedSubject(response),
-            input.data,
-          ),
-        }),
-      )
-    },
-  )
-
-  app.get(
-    '/api/coach/check-ins',
-    requireAuthenticated,
-    async (_request, response) => {
-      try {
-        const data = await coachService.listCheckIns(
-          authenticatedSubject(response),
-        )
-        response.json(
-          CoachCheckInsResponseSchema.parse({
-            data,
-            meta: {
-              unread: data.filter((item) => !item.read && !item.dismissed)
-                .length,
-            },
-          }),
-        )
-      } catch (error) {
-        if (!respondWithCoachError(error, response)) throw error
-      }
-    },
-  )
-
-  app.patch(
-    '/api/coach/check-ins/:checkInId',
-    requireAuthenticated,
-    async (request, response) => {
-      const checkInId = pathParam(request, 'checkInId')
-      const input = CoachCheckInActionRequestSchema.safeParse(
-        request.body ?? {},
-      )
-      if (
-        checkInId === undefined ||
-        !z.uuid().safeParse(checkInId).success ||
-        !input.success
-      ) {
-        response
-          .status(400)
-          .json(
-            createApiError(
-              'INVALID_COACH_CHECK_IN',
-              'The coaching check-in update is invalid.',
-            ),
-          )
-        return
-      }
-      try {
-        response.json(
-          CoachCheckInResponseSchema.parse({
-            data: await coachService.markCheckIn(
-              authenticatedSubject(response),
-              checkInId,
-              input.data,
             ),
           }),
         )

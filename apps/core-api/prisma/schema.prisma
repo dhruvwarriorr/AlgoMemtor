@@ -43,8 +43,6 @@ model CoreUser {
   coachRoadmapRevisions  CoachRoadmapRevision[]
   coachTopicStatuses     CoachTopicStatus[]
   coachTopicStatusEvents CoachTopicStatusEvent[]
-  coachPreferences       CoachPreferences?
-  coachCheckIns          CoachCheckIn[]
   avatar                 UserAvatar?
   recommendationSteering RecommendationSteering[]
   problemHelpSessions    ProblemHelpSession[]
@@ -807,42 +805,6 @@ model CoachTopicStatusEvent {
 
   @@index([userId, topic, createdAt])
   @@map("coach_topic_status_events")
-  @@schema("core")
-}
-
-model CoachPreferences {
-  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId        String   @unique @map("user_id") @db.Uuid
-  weeklyEnabled Boolean  @default(false) @map("weekly_enabled")
-  weeklyDay     Int      @default(0) @map("weekly_day")
-  weeklyTime    String   @default("09:00") @map("weekly_time") @db.VarChar(5)
-  eventEnabled  Boolean  @default(false) @map("event_enabled")
-  timezone      String   @default("UTC") @db.VarChar(64)
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
-  user          CoreUser @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("coach_preferences")
-  @@schema("core")
-}
-
-model CoachCheckIn {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId    String   @map("user_id") @db.Uuid
-  eventKey  String?  @map("event_key") @db.VarChar(160)
-  type      String   @db.VarChar(32)
-  title     String   @db.VarChar(160)
-  content   String   @db.VarChar(4000)
-  evidence  Json     @default("[]") @db.JsonB
-  read      Boolean  @default(false)
-  dismissed Boolean  @default(false)
-  fallback  Boolean  @default(false)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  user      CoreUser @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId, createdAt])
-  @@index([userId, read])
-  @@map("coach_check_ins")
   @@schema("core")
 }
 

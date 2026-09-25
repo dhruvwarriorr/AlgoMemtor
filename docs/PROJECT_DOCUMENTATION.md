@@ -244,7 +244,7 @@ The onboarding form captures:
 - experience level;
 - learning goal;
 - comfortable difficulty;
-- preferred topics or automatic topic suggestions;
+- up to five broad preferred topics or automatic topic suggestions;
 - preferred providers;
 - learning preferences;
 - additional considerations;
@@ -257,6 +257,9 @@ notes are optional context and are bounded before they can reach Gemini.
 Settings presents the recommendation preference and other practice
 considerations in one editable note. The existing two bounded profile fields
 remain in the API so previously saved notes stay available.
+Onboarding and Settings share the same compact major-topic picker. The broader
+internal topic taxonomy remains valid for provider normalization,
+recommendations, progress, and previously saved profile selections.
 
 ### 4.3 Unified problem discovery
 
@@ -463,11 +466,10 @@ active `user_instruction` memory without a model call.
 ### 4.13 Mentor tools outside the Coach chat
 
 The Coach is a chat. Problem-specific help, solution exploration, upsolving,
-contest analysis, progress evaluation and the learning pathway each have a
-dedicated section. Every mentor call receives a bounded learner snapshot
-(experience, goal, learning preferences, latest ratings, pathway topic
-exposure, and up to eight active learner memories) so hints and reports are
-calibrated to the learner.
+contest analysis and progress evaluation each have a dedicated section. Every
+mentor call receives a bounded learner snapshot (experience, goal, learning
+preferences, latest ratings, topic-assessment evidence, and up to eight active
+learner memories) so hints and reports are calibrated to the learner.
 
 - **Doubt Helper** (`/doubt-helper`, `/doubt-helper/:sessionId`). Intake:
   problem link (Codeforces, CodeChef, LeetCode, CSES, or any public page) or a
@@ -526,15 +528,11 @@ calibrated to the learner.
   per-contest slope and 90-day projection, and Doubt Helper hint dependency.
   Evidence-based insight statements link to the relevant section. An optional
   weekly AI insight report interprets the same numbers.
-- **Learning Pathway** (`/pathway`). The roadmap lanes, manual topic status,
-  plain-language notes, refresh, and the revision schedule, moved out of the
-  Coach.
-
 #### Decision: mentor tools are separate sections; the Coach is chat-only (2026-09-24)
 
 Context: the Coach answered "help me with <problem link>" with the full key
-observation and code, and roadmap, contest analysis and progress questions
-competed with open-ended chat. Decision: each capability has its own page and
+observation and code, while contest analysis and progress questions competed
+with open-ended chat. Decision: each dedicated capability has its own page and
 server-owned state; a deterministic router in Express
 (`coach-feature-routing.ts`) answers clear requests for those capabilities in
 the chat with a `feature_redirect` rich block and no model call, carrying only a
@@ -573,9 +571,7 @@ Memory page (correct, archive, delete, add) and full data reset.
 - `/problems/:provider/:externalId` — problem detail.
 - `/recommendations` — ranked practice feed.
 - `/coach` — chat with saved conversations, rich evidence, in-app check-ins,
-  and redirect cards to the mentor tools. The learning plan moved to
-  `/pathway`.
-- `/pathway` — learning plan lanes, notes, refresh and revision schedule.
+  and redirect cards to the mentor tools.
 - `/doubt-helper` and `/doubt-helper/:sessionId` — guided hints and debugging.
 - `/solutions` — Solution Explorer.
 - `/upsolve` — upsolve queue and completion tracking.
@@ -587,7 +583,7 @@ Memory page (correct, archive, delete, add) and full data reset.
 - `/progress` — recent practice analytics and visualizations.
 - `/bookmarks` — saved problems.
 - `/memory` — learner memory controls.
-- `/profile` — unified provider profile.
+- `/profile` — learner summary and linked public profiles.
 - `/settings` — profile and goals; **Accounts** (Google connect/disconnect,
   change password after re-entering the current one, set a password for
   Google-only accounts, reset-link fallback); linked platforms; appearance;
@@ -2402,9 +2398,6 @@ destructive reset against a shared database.
 11. Google sign-in and "Connect Google" require the Google provider (and manual
     identity linking) to be enabled in the Supabase Dashboard, with
     `/dashboard`, `/settings` and `/reset-password` on the redirect allowlist.
-12. `GET /api/coach/roadmap` rebuilds the plan on every read, so the Pathway
-    page can take several seconds for learners with large histories.
-
 ### Safe next work
 
 - Add a provider-approved API or user-controlled local connector for complete

@@ -37,10 +37,7 @@ import { useUserIdentity } from '@/features/auth/user-identity'
 import PageContainer from '@/components/layout/PageContainer'
 import PageHeader from '@/components/layout/PageHeader'
 import { SyncPlatformsButton } from '@/features/connector/SyncPlatformsButton'
-import {
-  mentorTools,
-  orderedMentorTools,
-} from '@/features/mentor/feature-routes'
+import { orderedMentorTools } from '@/features/mentor/feature-routes'
 import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { useCoachRoadmap, useSetCoachTopicStatus } from '@/features/coach/hooks'
@@ -415,7 +412,7 @@ function DashboardPage() {
         aria-label="Mentor tools"
         className="animate-rise -mt-1 flex min-w-0 gap-2 overflow-x-auto pb-1"
       >
-        {[...orderedMentorTools, mentorTools.pathway].map((tool) => (
+        {orderedMentorTools.map((tool) => (
           <Link
             className="group inline-flex shrink-0 items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground/85 transition-[border-color,color] hover:border-[color-mix(in_oklab,var(--primary)_40%,var(--border))] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             key={tool.feature}
@@ -549,7 +546,8 @@ function DashboardPage() {
           </div>
           {roadmapQuery.isError ? (
             <p className={cn(noticeClass, 'mt-4')} role="status">
-              Your roadmap is temporarily unavailable. Open Coach to retry it.
+              Your coaching focus is temporarily unavailable. Open Coach to
+              retry it.
             </p>
           ) : leadTopic ? (
             <>

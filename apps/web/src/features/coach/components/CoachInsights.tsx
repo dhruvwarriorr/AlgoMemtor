@@ -133,7 +133,7 @@ export function CoachStatStrip({
         detail={
           signals.needsWork.length > 0
             ? `${signals.needsWork.length} need attention`
-            : 'roadmap focus'
+            : 'learning focus'
         }
         icon={<Target aria-hidden="true" className="size-3.5" />}
         label="Focus"

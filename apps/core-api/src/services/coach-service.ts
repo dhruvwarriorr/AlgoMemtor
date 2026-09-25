@@ -7,15 +7,12 @@ import {
   ImprovementRoadmapSchema,
   isSafeCoachPublicUrl,
   type CoachActionProposal,
-  type CoachCheckIn,
-  type CoachCheckInActionRequest,
   type CoachConversation,
   type CoachConversationResponse,
   type CoachEvidenceReference,
   type CoachCitation,
   type CoachManualTopicStatus,
   type CoachMessage,
-  type CoachPreferences,
   type CoachRichContent,
   type CoachResponse,
   type CreateCoachConversationRequest,
@@ -40,9 +37,7 @@ import type {
 
 import {
   AiCoachClientError,
-  type AiCoachCheckInRequest,
   type AiCoachClient,
-  type AiCoachCheckInResult,
   type AiCoachRequest,
   type AiCoachResult,
 } from '../integrations/ai/ai-coach-client.js'
@@ -130,15 +125,6 @@ export class CoachMemoryUnavailableError extends Error {
   constructor() {
     super('The learner memory service is temporarily unavailable.')
     this.name = 'CoachMemoryUnavailableError'
-  }
-}
-
-export class CoachCheckInNotFoundError extends Error {
-  readonly code = 'COACH_CHECK_IN_NOT_FOUND'
-
-  constructor() {
-    super('The coaching check-in could not be found.')
-    this.name = 'CoachCheckInNotFoundError'
   }
 }
 
@@ -1122,7 +1108,6 @@ export type CoachContextSnapshot = {
   learnerId: string
   excludedTopics: string[]
   profile: Awaited<ReturnType<LearnerProfileRepository['findByAuthUserId']>>
-  preferences: CoachPreferences
   roadmap: ImprovementRoadmap
   roadmapTransitions?: Array<{
     version: number
@@ -1788,7 +1773,7 @@ export type CoachServiceOptions = {
     externalId: string,
   ) => Promise<ProblemContent | null>
   // Point feature requests (problem hints, solutions, upsolving, contest
-  // analysis, progress reports, the pathway) to their dedicated sections.
+  // analysis and progress reports) to their dedicated sections.
   featureRouting?: boolean
   now?: () => Date
 }
@@ -1868,708 +1853,9 @@ export class CoachService {
     }
   }
 
-  async getPreferences(userId: string) {
-    const preferences = await this.options.repository.getPreferences(userId)
-    const profile =
-      await this.options.learnerProfileRepository.findByAuthUserId(userId)
-    if (preferences.timezone === 'UTC' && profile?.timezone !== undefined) {
-      return this.options.repository.savePreferences(userId, {
-        weeklyEnabled: preferences.weeklyEnabled,
-        weeklyDay: preferences.weeklyDay,
-        weeklyTime: preferences.weeklyTime,
-        eventEnabled: preferences.eventEnabled,
-        timezone: profile.timezone,
-      })
-    }
-    return preferences
-  }
-
-  async savePreferences(
-    userId: string,
-    input: Omit<CoachPreferences, 'updatedAt'>,
-  ) {
-    return this.options.repository.savePreferences(userId, input)
-  }
-
   async clearDerivedConversationSummaries(userId: string) {
     await this.options.repository.clearConversationSummaries?.(userId)
   }
-
-  async queueCheckInRefresh(userId: string) {
-    const consent = await this.options.progressRepository.getConsent(userId)
-    if (
-      consent?.enabled !== true ||
-      consent.policyVersion !== COACH_POLICY_VERSION
-    )
-      return null
-    const preferences = await this.getPreferences(userId)
-    const local = localDateParts(this.now(), preferences.timezone)
-    const weeklyDue =
-      preferences.weeklyEnabled &&
-      local.weekday === preferences.weeklyDay &&
-      local.time >= preferences.weeklyTime
-    if (!preferences.eventEnabled && !weeklyDue) return null
-    const phase = weeklyDue ? 'weekly' : 'events'
-    return this.options.progressRepository.enqueueJob({
-      authUserId: userId,
-      jobType: 'coach_check_in_refresh',
-      evidenceType: 'coach_check_in',
-      idempotencyKey: `coach-check-in-refresh:${userId}:${local.date}:${phase}`,
-    })
-  }
-
-  async listCheckIns(userId: string) {
-    try {
-      await this.queueCheckInRefresh(userId)
-    } catch {
-      this.options.logger.warn('coach_check_in_enqueue_failed', {
-        errorCode: 'OUTBOX_UNAVAILABLE',
-      })
-    }
-    await this.refreshCheckIns(userId)
-    return this.options.repository.listCheckIns(userId)
-  }
-
-  private sanitizeCheckInResult(
-    result: AiCoachCheckInResult,
-    fallbackEvidence: CoachEvidenceReference[],
-    excludedTopics: readonly string[] = [],
-  ) {
-    if (
-      !isSafeCoachText(result.content) ||
-      containsExcludedCoachTopic(result.content, excludedTopics) ||
-      result.evidence.some(
-        (item) =>
-          !isSafeCoachText(item.label) ||
-          !isSafeCoachText(item.detail) ||
-          containsExcludedCoachTopic(item.label, excludedTopics) ||
-          containsExcludedCoachTopic(item.detail, excludedTopics),
-      )
-    ) {
-      throw new Error('The AI coach returned unsafe check-in text.')
-    }
-    return {
-      content: result.content.slice(0, 4_000),
-      evidence: result.evidence.length > 0 ? result.evidence : fallbackEvidence,
-    }
-  }
-
-  private async createCheckIn(
-    userId: string,
-    input: {
-      type: CoachCheckIn['type']
-      eventKey: string
-      title: string
-      content: string
-      evidence: CoachEvidenceReference[]
-    },
-  ) {
-    let content = input.content
-    let evidence = input.evidence
-    let fallback = true
-    const generateCheckIn = this.options.aiCoachClient.generateCheckIn
-    if (generateCheckIn !== undefined) {
-      try {
-        const context = await this.buildContext(userId, randomUUID())
-        const generated = await generateCheckIn({
-          requestId: randomUUID(),
-          learnerId: userId,
-          conversationId: randomUUID(),
-          type: input.type,
-          title: input.title,
-          deterministicContent: input.content,
-          evidence: input.evidence,
-          context: coachContextForAi(context),
-        } satisfies AiCoachCheckInRequest)
-        const safe = this.sanitizeCheckInResult(
-          generated,
-          input.evidence,
-          context.excludedTopics,
-        )
-        content = safe.content
-        evidence = safe.evidence
-        fallback = false
-      } catch {
-        this.options.logger.warn('coach_check_in_ai_fallback', {
-          errorCode: 'AI_COACH_CHECK_IN_UNAVAILABLE',
-        })
-      }
-    }
-    return this.options.repository.createCheckIn(userId, {
-      eventKey: input.eventKey,
-      type: input.type,
-      title: input.title,
-      content,
-      evidence,
-      fallback,
-    })
-  }
-
-  async refreshCheckIns(userId: string) {
-    const consent = await this.options.progressRepository.getConsent(userId)
-    if (
-      consent?.enabled !== true ||
-      consent.policyVersion !== COACH_POLICY_VERSION
-    ) {
-      return []
-    }
-    const preferences = await this.getPreferences(userId)
-    const now = this.now()
-    const local = localDateParts(now, preferences.timezone)
-    const safeList = <T>(value: Promise<T[]>) =>
-      value.catch(() => {
-        this.options.logger.warn('coach_check_in_evidence_unavailable', {
-          errorCode: 'PROVIDER_DATA_UNAVAILABLE',
-        })
-        return [] as T[]
-      })
-    const [existing, previousRoadmap] = await Promise.all([
-      this.options.repository.listCheckIns(userId),
-      this.options.repository.getRoadmap(userId),
-    ])
-    const profile =
-      await this.options.learnerProfileRepository.findByAuthUserId(userId)
-    const excludedTopics = extractCoachTopicExclusions(
-      [profile?.recommendationPreference, profile?.additionalConsiderations]
-        .filter((value): value is string => value !== undefined)
-        .join('\n'),
-    )
-    let currentRoadmap: ImprovementRoadmap | undefined
-    const ensureRoadmap = async () => {
-      currentRoadmap ??= await this.getRoadmap(userId)
-      return currentRoadmap
-    }
-    const recentEventCount = existing.filter(
-      (checkIn) =>
-        checkIn.type !== 'weekly_review' &&
-        now.getTime() - Date.parse(checkIn.createdAt) < 7 * 86_400_000,
-    ).length
-    const created: CoachCheckIn[] = []
-    const hasRecentEvent = (eventKey: string) =>
-      existing.some(
-        (checkIn) =>
-          checkIn.eventKey === eventKey &&
-          now.getTime() - Date.parse(checkIn.createdAt) < 72 * 3_600_000,
-      ) || created.some((checkIn) => checkIn.eventKey === eventKey)
-    const addEvent = async (
-      type: Exclude<CoachCheckIn['type'], 'weekly_review'>,
-      eventKey: string,
-      title: string,
-      content: string,
-      evidence: CoachEvidenceReference[],
-    ) => {
-      const createdEventCount = created.filter(
-        (checkIn) => checkIn.type !== 'weekly_review',
-      ).length
-      if (recentEventCount + createdEventCount >= 2 || hasRecentEvent(eventKey))
-        return
-      created.push(
-        await this.createCheckIn(userId, {
-          eventKey,
-          type,
-          title,
-          content,
-          evidence,
-        }),
-      )
-    }
-
-    if (
-      preferences.weeklyEnabled &&
-      local.weekday === preferences.weeklyDay &&
-      local.time >= preferences.weeklyTime
-    ) {
-      const eventKey = `weekly:${local.date}`
-      if (!hasRecentEvent(eventKey)) {
-        const roadmap = await ensureRoadmap()
-        const focus = roadmap.topics
-          .filter(
-            (topic) =>
-              topic.lane === 'current_focus' &&
-              !excludedTopics.includes(canonicalTopic(topic.topic)),
-          )
-          .slice(0, 3)
-        const focusText =
-          focus.length === 0
-            ? 'Your roadmap is still gathering concrete evidence.'
-            : `Current focus: ${focus.map((topic) => topic.name).join(', ')}.`
-        created.push(
-          await this.createCheckIn(userId, {
-            eventKey,
-            type: 'weekly_review',
-            title: 'Your weekly coaching review',
-            content: `Deterministic review: ${focusText} Ask the coach to turn this into a small practice block. Provider data may be partial or stale, so treat this as a checkpoint rather than a complete history.`,
-            evidence: [
-              fallbackEvidence(
-                'roadmap',
-                `Roadmap version ${roadmap.version} is ready for review.`,
-                roadmap.dataCompleteness,
-                roadmap.staleProviders.length > 0,
-              ),
-            ],
-          }),
-        )
-      }
-    }
-
-    if (preferences.eventEnabled) {
-      const [
-        contests,
-        ratings,
-        submissions,
-        solved,
-        reflections,
-        timers,
-        actions,
-        recommendationFeedback,
-      ] = await Promise.all([
-        safeList(
-          this.options.providerDataRepository.listContestParticipations(userId),
-        ),
-        safeList(this.options.providerDataRepository.listRatingChanges(userId)),
-        safeList(this.options.providerDataRepository.listSubmissions(userId)),
-        safeList(
-          this.options.providerDataRepository.listSolvedProblems(userId),
-        ),
-        safeList(this.options.progressRepository.listReflections(userId)),
-        safeList(this.options.progressRepository.listTimerSessions(userId)),
-        safeList(this.options.problemActionRepository.listByAuthUserId(userId)),
-        safeList(
-          this.options.recommendationRepository?.listFeedbackByAuthUserId(
-            userId,
-          ) ?? Promise.resolve([]),
-        ),
-      ])
-      const latestContest = contests
-        .slice()
-        .sort(
-          (left, right) =>
-            Date.parse(right.attendedAt ?? right.provenance.fetchedAt) -
-            Date.parse(left.attendedAt ?? left.provenance.fetchedAt),
-        )[0]
-      const latestRating = ratings
-        .slice()
-        .sort(
-          (left, right) =>
-            Date.parse(right.occurredAt) - Date.parse(left.occurredAt),
-        )[0]
-      if (latestContest !== undefined) {
-        const eventKey = `contest:${latestContest.provider}:${latestContest.contestId}`
-        await addEvent(
-          'contest_result',
-          eventKey,
-          'Debrief your latest contest',
-          `A new ${latestContest.provider} contest result is available. Ask the coach to review the result and turn it into one or two focused follow-ups.`,
-          [
-            fallbackEvidence(
-              'contest',
-              'A provider contest participation was observed.',
-              latestContest.provenance.completeness,
-              latestContest.provenance.stale,
-            ),
-          ],
-        )
-      } else if (latestRating !== undefined) {
-        const eventKey = `rating:${latestRating.provider}:${latestRating.occurredAt}:${latestRating.delta}`
-        await addEvent(
-          'contest_result',
-          eventKey,
-          'Review your latest rating movement',
-          `Your ${latestRating.provider} rating changed by ${latestRating.delta >= 0 ? '+' : ''}${latestRating.delta}. Ask the coach to connect this result to your current focus.`,
-          [
-            fallbackEvidence(
-              'contest',
-              'A provider rating change was observed.',
-              latestRating.provenance.completeness,
-              latestRating.provenance.stale,
-            ),
-          ],
-        )
-      }
-
-      const recentCutoff = now.getTime() - 14 * 86_400_000
-      const recentFailures = submissions.filter(
-        (submission) =>
-          !submission.isAccepted &&
-          submission.occurredAt !== undefined &&
-          Date.parse(submission.occurredAt) >= recentCutoff,
-      )
-      if (recentFailures.length >= 3) {
-        // A submission carries a provider problem identity but not topic
-        // metadata. Resolve those identities through the trusted catalog (and
-        // observed solved metadata) before applying the same-topic threshold;
-        // unresolvable failures must not trigger a falsely personalized nudge.
-        const catalogSettled = await Promise.allSettled(
-          this.options.providers.map((provider) => provider.search({})),
-        )
-        const topicByProblem = new Map<string, Set<string>>()
-        const mapProblemTopics = (
-          provider: ProviderKey,
-          externalId: string,
-          topics: readonly string[],
-        ) => {
-          const key = identity(provider, externalId)
-          const mapped = topicByProblem.get(key) ?? new Set<string>()
-          topics.forEach((value) => {
-            const topic = canonicalTopic(value)
-            if (
-              definitionBySlug.has(topic) &&
-              !excludedTopics.includes(topic)
-            ) {
-              mapped.add(topic)
-            }
-          })
-          if (mapped.size > 0) topicByProblem.set(key, mapped)
-        }
-        catalogSettled.forEach((result) => {
-          if (result.status !== 'fulfilled') return
-          result.value.problems.forEach((problem) =>
-            mapProblemTopics(problem.provider, problem.externalId, [
-              ...problem.topics,
-              ...problem.providerTags,
-            ]),
-          )
-        })
-        solved.forEach((problem) =>
-          mapProblemTopics(problem.provider, problem.externalId, [
-            ...(problem.topics ?? []),
-            ...(problem.providerTags ?? []),
-          ]),
-        )
-        const failuresByTopic = new Map<string, typeof recentFailures>()
-        recentFailures.forEach((submission) => {
-          const topics = topicByProblem.get(
-            identity(submission.provider, submission.externalId),
-          )
-          topics?.forEach((topic) => {
-            const values = failuresByTopic.get(topic) ?? []
-            values.push(submission)
-            failuresByTopic.set(topic, values)
-          })
-        })
-        for (const [topic, failures] of failuresByTopic) {
-          const failureProblems = new Set(
-            failures.map((submission) =>
-              identity(submission.provider, submission.externalId),
-            ),
-          )
-          if (failures.length < 3 || failureProblems.size < 2) continue
-          const failureEvidenceKey = createHash('sha256')
-            .update(
-              failures
-                .map(
-                  (submission) =>
-                    `${submission.provider}:${submission.eventId}`,
-                )
-                .sort()
-                .join(','),
-            )
-            .digest('hex')
-            .slice(0, 32)
-          const eventKey = `failures:${topic}:${failureEvidenceKey}`
-          const topicName = definitionBySlug.get(topic)?.name ?? topic
-          await addEvent(
-            'repeated_failures',
-            eventKey,
-            `${topicName} needs a closer look`,
-            `At least ${failures.length} non-accepted submissions across ${failureProblems.size} ${topicName} problems were observed in the last 14 days. Bring one attempt to the coach for a failure-pattern debrief; this is not a verdict on your complete history.`,
-            [
-              fallbackEvidence(
-                'activity',
-                `At least ${failures.length} recent non-accepted submissions were mapped to ${topicName}.`,
-                'partial',
-                failures.some((submission) => submission.provenance.stale),
-              ),
-            ],
-          )
-        }
-      }
-
-      const roadmap = await ensureRoadmap()
-      const observedSolvedKeys = new Set([
-        ...solved.map((problem) =>
-          identity(problem.provider, problem.externalId),
-        ),
-        ...actions
-          .filter(
-            (action) =>
-              action.actionType === 'status_changed' &&
-              action.learnerStatus === 'solved',
-          )
-          .map((action) => identity(action.provider, action.externalId)),
-      ])
-      const solvedMilestone = Math.floor(observedSolvedKeys.size / 5) * 5
-      if (solvedMilestone >= 5) {
-        const solvedCompleteness =
-          solved.length > 0 &&
-          solved.every(
-            (problem) => problem.provenance.completeness === 'complete',
-          )
-            ? 'complete'
-            : solved.length > 0
-              ? 'partial'
-              : 'unknown'
-        await addEvent(
-          'goal_progress_milestone',
-          `goal-milestone:${solvedMilestone}`,
-          `You reached ${solvedMilestone} observed solves`,
-          `You have at least ${solvedMilestone} observed solved problems across your connected activity. Keep the next practice block small and deliberate, then ask the coach whether the current goal should move to a harder band.`,
-          [
-            fallbackEvidence(
-              'activity',
-              `At least ${solvedMilestone} unique solved observations are available.`,
-              solvedCompleteness,
-              solved.some((problem) => problem.provenance.stale),
-            ),
-          ],
-        )
-      }
-      const recentFeedbackCutoff = now.getTime() - 30 * 86_400_000
-      const recentHardFeedback = recommendationFeedback.filter(
-        (feedback) =>
-          feedback.perceivedDifficulty === 'too_hard' &&
-          feedback.createdAt.getTime() >= recentFeedbackCutoff,
-      )
-      if (recentHardFeedback.length >= 3) {
-        await addEvent(
-          'difficulty_plateau',
-          `difficulty-plateau:${recentHardFeedback
-            .map((feedback) => feedback.createdAt.toISOString())
-            .sort()
-            .slice(-3)
-            .join(',')}`,
-          'Your current difficulty may be too steep',
-          `At least ${recentHardFeedback.length} recent recommendation ratings marked the problem as too hard. Treat that as a calibration signal, not a verdict: ask the coach for one foundation problem and a progressive hint ladder before increasing difficulty again.`,
-          [
-            fallbackEvidence(
-              'recommendations',
-              `${recentHardFeedback.length} recent difficulty ratings were marked too hard.`,
-              'complete',
-              false,
-            ),
-          ],
-        )
-      }
-      if (
-        previousRoadmap !== null &&
-        roadmap.version > previousRoadmap.version
-      ) {
-        const changedTopics = roadmap.topics.filter((topic) => {
-          const prior = previousRoadmap.topics.find(
-            (item) => item.topic === topic.topic,
-          )
-          return (
-            prior !== undefined &&
-            (prior.lane === 'current_focus' ||
-              topic.lane === 'current_focus') &&
-            (prior.lane !== topic.lane || prior.assessment !== topic.assessment)
-          )
-        })
-        for (const topic of changedTopics.slice(0, 3)) {
-          await addEvent(
-            'focus_transition',
-            `focus-transition:${topic.topic}:${roadmap.version}`,
-            `${topic.name} changed on your roadmap`,
-            `Your ${topic.name} assessment moved to ${topic.assessment.replace('_', ' ')}. Ask the coach whether to consolidate the current focus or choose a smaller next step. Manual statuses remain authoritative.`,
-            [
-              fallbackEvidence(
-                'roadmap',
-                topic.reason,
-                topic.evidence.completeness,
-              ),
-            ],
-          )
-        }
-      }
-      for (const topic of roadmap.topics.filter(
-        (item) => item.lane === 'current_focus',
-      )) {
-        const focusSolveCutoff = now.getTime() - 30 * 86_400_000
-        const focusSolvedProblems = solved.filter(
-          (problem) =>
-            [...(problem.topics ?? []), ...(problem.providerTags ?? [])].some(
-              (value) => canonicalTopic(value) === topic.topic,
-            ) &&
-            Date.parse(problem.occurredAt ?? problem.firstObservedAt) >=
-              focusSolveCutoff,
-        )
-        const focusSolvedKeys = new Set(
-          focusSolvedProblems.map((problem) =>
-            identity(problem.provider, problem.externalId),
-          ),
-        )
-        const solvedInFocus = focusSolvedKeys.size
-        if (solvedInFocus < 3) continue
-        const latestFocusSolve = focusSolvedProblems
-          .map((problem) => problem.occurredAt ?? problem.firstObservedAt)
-          .sort((left, right) => Date.parse(right) - Date.parse(left))[0]
-        await addEvent(
-          'focus_progress',
-          `focus-progress:${topic.topic}:${solvedInFocus}:${latestFocusSolve ?? 'unknown'}`,
-          `${topic.name} is moving`,
-          `At least ${solvedInFocus} observed solves map to your current ${topic.name} focus. Ask the coach whether to consolidate or increase the difficulty next.`,
-          [
-            fallbackEvidence(
-              'roadmap',
-              topic.reason,
-              topic.evidence.completeness,
-            ),
-          ],
-        )
-      }
-
-      const latestActivity = [
-        ...actions
-          .filter(
-            (item) =>
-              item.actionType === 'status_changed' &&
-              (item.learnerStatus === 'attempted' ||
-                item.learnerStatus === 'solved'),
-          )
-          .map((item) => item.occurredAt.toISOString()),
-        ...submissions
-          .map((item) => item.occurredAt)
-          .filter((value): value is string => value !== undefined),
-        ...solved.map(
-          (item) =>
-            item.occurredAt ?? item.lastObservedAt ?? item.firstObservedAt,
-        ),
-        ...reflections.map((item) => item.createdAt),
-        ...timers.flatMap((item) => [
-          item.createdAt,
-          ...(item.completedAt === undefined ? [] : [item.completedAt]),
-        ]),
-      ]
-        .map((value) => Date.parse(value))
-        .sort((left, right) => right - left)[0]
-      if (
-        latestActivity !== undefined &&
-        now.getTime() - latestActivity >= 7 * 86_400_000
-      ) {
-        await addEvent(
-          'inactivity',
-          `inactivity:${local.date}`,
-          'A gentle practice nudge',
-          'No meaningful practice activity has been observed for seven full local days. A ten-minute review or one foundation problem is enough to restart the loop.',
-          [
-            fallbackEvidence(
-              'activity',
-              'Provider activity is quiet for at least seven days.',
-              'partial',
-              submissions.some((submission) => submission.provenance.stale) ||
-                solved.some((problem) => problem.provenance.stale),
-            ),
-          ],
-        )
-      }
-      if (
-        profile?.goal !== undefined &&
-        latestActivity !== undefined &&
-        now.getTime() - latestActivity >= 14 * 86_400_000
-      ) {
-        await addEvent(
-          'goal_off_track',
-          `goal-off-track:${profile.goal}:${local.date}`,
-          'Your learning goal needs a reset point',
-          `Your recorded activity has been quiet for at least two weeks while your goal is ${profile.goal.replaceAll('_', ' ')}. This is a planning signal, not a judgment: choose a ten-minute restart step or adjust the target with the coach before adding more difficulty.`,
-          [
-            fallbackEvidence(
-              'profile',
-              `The active learner goal is ${profile.goal.replaceAll('_', ' ')}.`,
-              'complete',
-              false,
-            ),
-            fallbackEvidence(
-              'activity',
-              'No meaningful activity has been observed for at least 14 days.',
-              'partial',
-              true,
-            ),
-          ],
-        )
-      }
-      const reviewTopics = roadmap.topics
-        .filter(
-          (topic) =>
-            topic.assessment === 'revisit' || topic.lane === 'revisit_later',
-        )
-        .slice(0, 3)
-      if (reviewTopics.length > 0) {
-        await addEvent(
-          'spaced_repetition_due',
-          `review-due:${reviewTopics.map((topic) => topic.topic).join(',')}`,
-          'A few topics are due for review',
-          `A short retrieval review would reinforce ${reviewTopics.map((topic) => topic.name).join(', ')}. Manual roadmap statuses remain authoritative; ask the coach for one small recall prompt per topic.`,
-          [
-            fallbackEvidence(
-              'roadmap',
-              `${reviewTopics.length} topic assessment${reviewTopics.length === 1 ? '' : 's'} indicate a revisit window.`,
-              roadmap.dataCompleteness,
-              roadmap.staleProviders.length > 0,
-            ),
-          ],
-        )
-      }
-      const newlyComfortable = roadmap.topics.filter((topic) => {
-        const prior = previousRoadmap?.topics.find(
-          (candidate) => candidate.topic === topic.topic,
-        )
-        return (
-          topic.assessment === 'comfortable' &&
-          prior !== undefined &&
-          prior.assessment !== 'comfortable'
-        )
-      })
-      if (newlyComfortable.length > 0) {
-        await addEvent(
-          'topic_mastery_achieved',
-          `mastery:${roadmap.version}:${newlyComfortable.map((topic) => topic.topic).join(',')}`,
-          'You crossed a topic milestone',
-          `${newlyComfortable.map((topic) => topic.name).join(', ')} now has comfortable evidence. Celebrate the progress, then choose whether to reinforce it or move to a prerequisite-adjacent challenge.`,
-          [
-            fallbackEvidence(
-              'roadmap',
-              `The deterministic assessment moved to comfortable for ${newlyComfortable.map((topic) => topic.name).join(', ')}.`,
-              roadmap.dataCompleteness,
-              roadmap.staleProviders.length > 0,
-            ),
-          ],
-        )
-      }
-      if (
-        latestActivity !== undefined &&
-        now.getTime() - latestActivity >= 2 * 86_400_000 &&
-        now.getTime() - latestActivity < 7 * 86_400_000
-      ) {
-        await addEvent(
-          'streak_risk',
-          `streak-risk:${local.date}`,
-          'Keep your practice streak gentle',
-          'No meaningful practice has been observed for two local days. A ten-minute review or one easy trusted problem is enough; adjust the plan if your schedule changed.',
-          [
-            fallbackEvidence(
-              'activity',
-              'Recent activity is quieter than the previous practice window.',
-              'partial',
-              true,
-            ),
-          ],
-        )
-      }
-    }
-    return created
-  }
-
-  async markCheckIn(
-    userId: string,
-    id: string,
-    patch: CoachCheckInActionRequest,
-  ) {
-    const checkIn = await this.options.repository.markCheckIn(userId, id, patch)
-    if (checkIn === null) throw new CoachCheckInNotFoundError()
-    return checkIn
-  }
-
   async setTopicStatus(
     userId: string,
     topic: string,
@@ -3670,7 +2956,6 @@ export class CoachService {
       profile,
       roadmap,
       roadmapRevisions,
-      preferences,
       analytics,
       submissions,
       solved,
@@ -3692,7 +2977,6 @@ export class CoachService {
         this.options.repository.listRoadmapRevisions?.(userId) ??
           Promise.resolve([]),
       ),
-      this.getPreferences(userId),
       this.options.progressService.analytics(userId, 30).catch(() => {
         contextDataFailed = true
         return null
@@ -3759,6 +3043,7 @@ export class CoachService {
           .map((topic) => topic.topic),
       ]),
     ]
+    const timezone = profile?.timezone ?? 'UTC'
     // The newest user message is the current question (sent separately), and
     // failed "coach unavailable" turns carry no information for the model.
     const priorMessages = (conversation?.messages ?? []).filter(
@@ -3796,7 +3081,7 @@ export class CoachService {
     try {
       workspaceResult = buildCoachWorkspace({
         now: this.now(),
-        timezone: preferences.timezone,
+        timezone,
         providerProfiles,
         solved,
         submissions,
@@ -3826,7 +3111,7 @@ export class CoachService {
       actions,
       submissions,
       solved,
-      preferences.timezone,
+      timezone,
       this.now(),
     )
     const momentum = coachMomentum(activityTrends)
@@ -3898,7 +3183,6 @@ export class CoachService {
         ? {}
         : { currentRecommendations }),
       profile: safeLearnerProfile(profile, excludedTopics),
-      preferences,
       roadmap,
       roadmapTransitions,
       analytics,

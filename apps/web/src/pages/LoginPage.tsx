@@ -146,7 +146,7 @@ function LoginPage() {
             Your coach remembers where you left off.
           </p>
           <p className="mt-4 max-w-sm text-[#101012]/75 dark:text-[#f4f1ea]/75">
-            Your roadmap, streak, memory and next problem are saved to your
+            Your progress, streak, memory and next problem are saved to your
             account.
           </p>
         </div>

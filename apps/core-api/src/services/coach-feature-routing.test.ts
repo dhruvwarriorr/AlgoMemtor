@@ -20,8 +20,6 @@ describe('coach feature routing', () => {
     ['Analyze my recent contests', 'contest_analysis'],
     ['Why did my rating drop yesterday?', 'contest_analysis'],
     ['How am I progressing this month?', 'progress_report'],
-    ['Update my roadmap please', 'pathway'],
-    ['Open my learning pathway', 'pathway'],
   ])('routes %j to %s', (message, feature) => {
     expect(routeCoachFeature(message)?.feature).toBe(feature)
   })
@@ -31,6 +29,8 @@ describe('coach feature routing', () => {
     'What is the difference between BFS and DFS?',
     'What should I practice next?',
     'What is the roadmap to learn dynamic programming?',
+    'Update my study plan please',
+    'Open my learning path',
     'hello',
   ])('keeps %j in the chat', (message) => {
     expect(routeCoachFeature(message)).toBeNull()
@@ -39,7 +39,7 @@ describe('coach feature routing', () => {
   it('carries a problem link only to problem-specific sections', () => {
     const route = routeCoachFeature(`hint please ${url}`)
     expect(route).toEqual({ feature: 'doubt_helper', problemUrl: url })
-    const redirect = coachFeatureRedirect(route ?? { feature: 'pathway' })
+    const redirect = coachFeatureRedirect(route ?? { feature: 'upsolve' })
     expect(redirect.block).toMatchObject({
       type: 'feature_redirect',
       feature: 'doubt_helper',

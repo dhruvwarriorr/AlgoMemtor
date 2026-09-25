@@ -7,18 +7,12 @@ import {
   confirmCoachAction,
   createCoachConversation,
   deleteCoachConversation,
-  fetchCoachCheckIns,
   fetchCoachConversation,
   fetchCoachConversations,
-  fetchCoachPreferences,
   fetchCoachRoadmap,
-  markCoachCheckIn,
-  refreshCoachRoadmap,
   renameCoachConversation,
-  saveCoachPreferences,
   sendCoachMessage,
   setCoachTopicStatus,
-  submitCoachRoadmapNote,
 } from './api'
 
 const coachKey = (userId: string) => ['coach', userId] as const
@@ -52,25 +46,6 @@ export function useCoachRoadmap() {
     queryKey: [...coachKey(user?.id ?? 'signed-out'), 'roadmap'],
     queryFn: ({ signal }) => fetchCoachRoadmap({ signal }),
     enabled: user !== null,
-  })
-}
-
-export function useCoachPreferences() {
-  const { user } = useAuth()
-  return useQuery({
-    queryKey: [...coachKey(user?.id ?? 'signed-out'), 'preferences'],
-    queryFn: ({ signal }) => fetchCoachPreferences({ signal }),
-    enabled: user !== null,
-  })
-}
-
-export function useCoachCheckIns() {
-  const { user } = useAuth()
-  return useQuery({
-    queryKey: [...coachKey(user?.id ?? 'signed-out'), 'check-ins'],
-    queryFn: ({ signal }) => fetchCoachCheckIns({ signal }),
-    enabled: user !== null,
-    refetchInterval: 60_000,
   })
 }
 
@@ -179,30 +154,6 @@ export function useSendCoachMessage() {
   })
 }
 
-export function useRefreshCoachRoadmap() {
-  const queryClient = useQueryClient()
-  const { user } = useAuth()
-  return useMutation({
-    mutationFn: refreshCoachRoadmap,
-    onSuccess: (result) => {
-      if (!user) return
-      queryClient.setQueryData([...coachKey(user.id), 'roadmap'], {
-        data: result.data,
-      })
-      // Fresh platform data feeds picks, analytics and the dashboard too.
-      void Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: ['recommendations', user.id],
-        }),
-        queryClient.invalidateQueries({ queryKey: ['platform', user.id] }),
-        queryClient.invalidateQueries({
-          queryKey: ['progress', 'analytics', user.id],
-        }),
-      ])
-    },
-  })
-}
-
 export function useSetCoachTopicStatus() {
   const queryClient = useQueryClient()
   const { user } = useAuth()
@@ -225,58 +176,6 @@ export function useSetCoachTopicStatus() {
           }),
         ])
       }
-    },
-  })
-}
-
-export function useSubmitCoachRoadmapNote() {
-  const queryClient = useQueryClient()
-  const { user } = useAuth()
-  return useMutation({
-    mutationFn: (note: string) => submitCoachRoadmapNote({ note }),
-    onSuccess: () => {
-      if (user) {
-        void queryClient.invalidateQueries({
-          queryKey: [...coachKey(user.id), 'roadmap'],
-        })
-        void queryClient.invalidateQueries({
-          queryKey: ['recommendations', user.id],
-        })
-      }
-    },
-  })
-}
-
-export function useSaveCoachPreferences() {
-  const queryClient = useQueryClient()
-  const { user } = useAuth()
-  return useMutation({
-    mutationFn: saveCoachPreferences,
-    onSuccess: (data) => {
-      if (user)
-        queryClient.setQueryData([...coachKey(user.id), 'preferences'], data)
-    },
-  })
-}
-
-export function useMarkCoachCheckIn() {
-  const queryClient = useQueryClient()
-  const { user } = useAuth()
-  return useMutation({
-    mutationFn: ({
-      checkInId,
-      read,
-      dismissed,
-    }: {
-      checkInId: string
-      read?: boolean
-      dismissed?: boolean
-    }) => markCoachCheckIn(checkInId, { read, dismissed }),
-    onSuccess: () => {
-      if (user)
-        void queryClient.invalidateQueries({
-          queryKey: [...coachKey(user.id), 'check-ins'],
-        })
     },
   })
 }

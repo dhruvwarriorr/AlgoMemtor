@@ -5,8 +5,6 @@ import {
   CoachMessageSchema,
   CoachProblemSuggestionStatusSchema,
   CoachRichContentSchema,
-  CoachCheckInActionRequestSchema,
-  CoachCheckInSchema,
   CoachCitationSchema,
   ImprovementRoadmapSchema,
   SendCoachMessageRequestSchema,
@@ -106,30 +104,6 @@ describe('coach contracts', () => {
         reason: 'The evidence supports a focus change.',
       }).success,
     ).toBe(false)
-  })
-
-  it('requires a real state change for check-in actions', () => {
-    expect(CoachCheckInActionRequestSchema.safeParse({}).success).toBe(false)
-    expect(CoachCheckInActionRequestSchema.parse({ dismissed: true })).toEqual({
-      dismissed: true,
-    })
-  })
-
-  it('accepts dismissed and fallback check-in state', () => {
-    const checkIn = CoachCheckInSchema.parse({
-      id: '00000000-0000-4000-8000-000000000002',
-      type: 'weekly_review',
-      title: 'Weekly review',
-      content: 'Review one focused practice block.',
-      evidence: [],
-      read: true,
-      dismissed: true,
-      fallback: true,
-      createdAt: timestamp,
-    })
-
-    expect(checkIn.dismissed).toBe(true)
-    expect(checkIn.fallback).toBe(true)
   })
 
   it('keeps roadmap topic and suggestion bounds runtime-validated', () => {

@@ -411,13 +411,13 @@ function ReportBody({ report }: { report: ProgressReport }) {
       </div>
 
       <SectionCard
-        description="Assessed from your provider evidence and learning pathway."
+        description="Assessed from your provider evidence and recent practice."
         id="topics-heading"
         title="Topic progress"
       >
         {report.topicProgress.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Topic progress appears once your pathway has evidence.
+            Topic progress appears once enough practice evidence is available.
           </p>
         ) : (
           <ul className="grid gap-3 md:grid-cols-2">
