@@ -1030,11 +1030,11 @@ function CoachPage() {
                           <TetrisLoader
                             cellSize={4}
                             gap={1}
-                            label="Your coach is working"
+                            label="Thinking"
                             rows={6}
                           />
                           <p className="text-xs font-semibold text-foreground">
-                            Your coach is working
+                            Thinking
                           </p>
                         </div>
                         <Button
