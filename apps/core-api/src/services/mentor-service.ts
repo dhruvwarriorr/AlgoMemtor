@@ -77,6 +77,7 @@ import {
   buildContestMetrics,
   codeforcesContestsFromSubmissions,
   contestPatterns,
+  contestPlatformSummaries,
   contestSubmissions,
   matchContest,
   metricsForAi,
@@ -1639,6 +1640,11 @@ export class MentorService {
         ),
       })),
       patterns: contestPatterns(contests),
+      platforms: contestPlatformSummaries({
+        participations: activity.participations,
+        ratingChanges: activity.ratingChanges,
+        contests,
+      }),
       ...(parsedPatterns.success
         ? { patternsReport: parsedPatterns.data }
         : {}),

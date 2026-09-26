@@ -2,6 +2,7 @@ import {
   BarChart3,
   LayoutGrid,
   Lightbulb,
+  Shapes,
   Sparkles,
   TrendingUp,
   type IconComponent,
@@ -40,6 +41,7 @@ export const topNavItems: ReadonlyArray<AppNavItem> = [
   { label: 'Recommendations', to: '/recommendations', icon: Lightbulb },
   { label: 'Progress', to: '/progress', icon: TrendingUp },
   { label: 'Insights', to: '/analytics', icon: BarChart3 },
+  { label: 'Visualizer', to: '/visualizer', icon: Shapes },
 ]
 
 // Everything else lives in the profile dropdown.
@@ -133,8 +135,11 @@ export const accountMenuGroups: ReadonlyArray<{
   },
 ]
 
-// Pages reachable from the profile dropdown, used to mark it active.
+// Pages reachable from the profile dropdown, used to mark it active. Pages
+// that also have a top-bar link mark that link instead.
 export const accountMenuPaths = [
   '/profile',
-  ...accountMenuGroups.flatMap((group) => group.items.map((item) => item.to)),
+  ...accountMenuGroups
+    .flatMap((group) => group.items.map((item) => item.to))
+    .filter((to) => !topNavItems.some((item) => item.to === to)),
 ]

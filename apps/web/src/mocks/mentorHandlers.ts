@@ -242,6 +242,7 @@ export const mentorHandlers: RequestHandler[] = [
             recurringUnsolvedTopics: [],
             stuckPositions: [],
           },
+          platforms: [],
         },
       }),
     ),

@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent, type ReactNode } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { Link, useNavigate } from 'react-router-dom'
 
@@ -8,13 +8,29 @@ import { SyncPlatformsButton } from '@/features/connector/SyncPlatformsButton'
 import {
   dashEase as ease,
   dayLabel,
-  mixHex,
 } from '@/features/dashboard/dashboard-format'
 import { orderedMentorTools } from '@/features/mentor/feature-routes'
 import { useTypedExample } from '@/lib/use-typed-example'
 import { cn } from '@/lib/utils'
 
 type TrendDay = { date: string; attempted: number; solved: number }
+
+// Solid bar colours in steps of a day's solves against the busiest day in the
+// window (a quarter each, lowest first). Days with no solve are grey.
+const SOLVED_STEP_COLORS = ['#38bdf8', '#2dd4bf', '#4ade80', '#fbbf24'] as const
+const NO_SOLVE_COLOR = 'rgba(255,255,255,0.22)'
+// Today's bar is always red so the current day stands out.
+const TODAY_COLOR = '#ef4444'
+
+const solvedColor = (solved: number, most: number) =>
+  solved <= 0
+    ? NO_SOLVE_COLOR
+    : SOLVED_STEP_COLORS[
+        Math.min(
+          SOLVED_STEP_COLORS.length - 1,
+          Math.ceil((solved / most) * SOLVED_STEP_COLORS.length) - 1,
+        )
+      ]
 
 const askExamples = [
   'What should I practise today?',
@@ -148,7 +164,6 @@ function MomentumDial({
   solved: number
 }) {
   const reduceMotion = useReducedMotion()
-  const id = useId().replace(/[^\w-]/g, '')
   const [active, setActive] = useState<number | null>(null)
   const most = Math.max(1, ...trend.map((day) => day.solved))
   const step = 360 / Math.max(1, trend.length)
@@ -176,11 +191,9 @@ function MomentumDial({
       start: polar(R0, angle),
       end: polar(R0 + length, angle),
       color:
-        day.solved > 0
-          ? mixHex('#38bdf8', '#4ade80', intensity)
-          : day.attempted > 0
-            ? '#fbbf24'
-            : 'rgba(255,255,255,0.22)',
+        index === trend.length - 1
+          ? TODAY_COLOR
+          : solvedColor(day.solved, most),
     }
   })
   const todayBar = bars.at(-1)
@@ -195,12 +208,6 @@ function MomentumDial({
           role="img"
           viewBox="0 0 320 320"
         >
-          <defs>
-            <linearGradient id={`${id}-ring`} x1="0" x2="1" y1="0" y2="1">
-              <stop offset="0%" stopColor="#38bdf8" />
-              <stop offset="100%" stopColor="#4ade80" />
-            </linearGradient>
-          </defs>
           <g
             className={reduceMotion ? undefined : 'memory-orbit'}
             style={{
@@ -263,7 +270,7 @@ function MomentumDial({
               reduceMotion ? false : { strokeDasharray: `0 ${ringLength}` }
             }
             r={RING}
-            stroke={`url(#${id}-ring)`}
+            stroke="#4ade80"
             strokeLinecap="round"
             strokeWidth="6"
             transform={`rotate(-90 ${C} ${C})`}
@@ -292,7 +299,7 @@ function MomentumDial({
                   reduceMotion ? false : { x2: bar.start.x, y2: bar.start.y }
                 }
                 stroke={bar.color}
-                strokeLinecap="round"
+                strokeLinecap="butt"
                 strokeWidth={width}
                 transition={{
                   x2: {
@@ -331,11 +338,7 @@ function MomentumDial({
               cy={todayBar.end.y}
               fill="none"
               pointerEvents="none"
-              stroke={
-                todayBar.color === 'rgba(255,255,255,0.22)'
-                  ? '#7dd3fc'
-                  : todayBar.color
-              }
+              stroke={TODAY_COLOR}
               strokeWidth="2"
               transition={{ duration: 2.4, repeat: Infinity, delay: 1.6 }}
             />

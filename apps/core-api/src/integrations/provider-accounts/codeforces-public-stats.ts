@@ -549,11 +549,17 @@ export class CodeforcesPublicStatsFetcher
       },
     )
     let ratingChanges: ProviderRatingChange[] = []
+    // The standing in each rated contest, which the rating-change contract
+    // does not carry; it belongs on the contest participation.
+    const ranks = new Map<string, number>()
     try {
       const ratingResult = await this.fetchRating(handle, signal)
-      ratingChanges = ratingResult.map((change) =>
+      ratingChanges = ratingResult.map(({ change }) =>
         ProviderRatingChangeSchema.parse(change),
       )
+      for (const { change, rank } of ratingResult) {
+        if (rank !== undefined) ranks.set(change.eventId, rank)
+      }
     } catch {
       // The activity feed remains useful when the optional rating endpoint is
       // unavailable; completeness communicates the missing dimension.
@@ -565,6 +571,9 @@ export class CodeforcesPublicStatsFetcher
         ? {}
         : { contestName: change.contestName }),
       attendedAt: change.occurredAt,
+      ...(ranks.get(change.eventId) === undefined
+        ? {}
+        : { rank: ranks.get(change.eventId) }),
       ratingChange: change.delta,
       oldRating: change.oldRating,
       newRating: change.newRating,
@@ -636,27 +645,30 @@ export class CodeforcesPublicStatsFetcher
       if (!Number.isFinite(occurredAt.getTime())) return []
       const eventId = String(row.data.contestId)
       return [
-        ProviderRatingChangeSchema.parse({
-          provider: this.provider,
-          eventId,
-          contestId: String(row.data.contestId),
-          contestName: row.data.contestName,
-          occurredAt: occurredAt.toISOString(),
-          oldRating: row.data.oldRating,
-          newRating: row.data.newRating,
-          delta: row.data.newRating - row.data.oldRating,
-          provenance: {
+        {
+          ...(row.data.rank === undefined ? {} : { rank: row.data.rank }),
+          change: ProviderRatingChangeSchema.parse({
             provider: this.provider,
-            providerId: eventId,
-            canonicalUrl: `https://codeforces.com/contest/${row.data.contestId}`,
-            sourceUrl: endpoint.toString(),
-            extractionStrategy: 'official_json',
-            schemaVersion: 'codeforces-user-rating-v1',
-            completeness: 'complete',
-            fetchedAt: this.now().toISOString(),
-            stale: false,
-          },
-        }),
+            eventId,
+            contestId: String(row.data.contestId),
+            contestName: row.data.contestName,
+            occurredAt: occurredAt.toISOString(),
+            oldRating: row.data.oldRating,
+            newRating: row.data.newRating,
+            delta: row.data.newRating - row.data.oldRating,
+            provenance: {
+              provider: this.provider,
+              providerId: eventId,
+              canonicalUrl: `https://codeforces.com/contest/${row.data.contestId}`,
+              sourceUrl: endpoint.toString(),
+              extractionStrategy: 'official_json',
+              schemaVersion: 'codeforces-user-rating-v1',
+              completeness: 'complete',
+              fetchedAt: this.now().toISOString(),
+              stale: false,
+            },
+          }),
+        },
       ]
     })
   }

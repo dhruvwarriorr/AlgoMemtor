@@ -2,6 +2,7 @@ import {
   ContestMetricsSchema,
   type ContestMetrics,
   type ContestPatternMetrics,
+  type ContestPlatformSummary,
   type ContestProblemBreakdown,
   type ProviderKey,
 } from '@algomemtor/shared-contracts'
@@ -9,6 +10,7 @@ import {
 import {
   problemRef,
   type ActivityParticipation,
+  type ActivityRatingChange,
   type ActivitySubmission,
   type CatalogContest,
   type ProblemMeta,
@@ -484,6 +486,97 @@ export function contestPatterns(
       .slice(0, 8)
       .map(([label, count]) => ({ label, count })),
   }
+}
+
+const CONTEST_PLATFORMS: readonly ProviderKey[] = [
+  'codeforces',
+  'codechef',
+  'leetcode',
+]
+
+// Per-platform contest record. Counts, ratings and ranks cover the stored
+// history; `recent` runs the pattern metrics over only this platform's
+// contests in the analysed window, which is newest-first across platforms.
+export function contestPlatformSummaries(input: {
+  participations: readonly ActivityParticipation[]
+  ratingChanges: readonly ActivityRatingChange[]
+  contests: readonly AnalyzedContest[]
+}): ContestPlatformSummary[] {
+  return CONTEST_PLATFORMS.flatMap((provider) => {
+    const participations = input.participations.filter(
+      (item) =>
+        item.provider === provider && (item.mode ?? 'rated') !== 'practice',
+    )
+    const changes = input.ratingChanges
+      .filter((item) => item.provider === provider)
+      .sort(
+        (left, right) => left.occurredAt.getTime() - right.occurredAt.getTime(),
+      )
+    const recentContests = input.contests.filter(
+      (item) => item.participation.provider === provider,
+    )
+    if (
+      participations.length === 0 &&
+      changes.length === 0 &&
+      recentContests.length === 0
+    ) {
+      return []
+    }
+    const ratedPoints = [
+      ...changes.map((item) => ({
+        at: item.occurredAt,
+        rating: item.newRating,
+      })),
+      ...(changes.length > 0
+        ? []
+        : participations.flatMap((item) =>
+            item.attendedAt === undefined || item.newRating === undefined
+              ? []
+              : [{ at: item.attendedAt, rating: item.newRating }],
+          )),
+    ].sort((left, right) => left.at.getTime() - right.at.getTime())
+    const ratings = [
+      ...ratedPoints.map((point) => point.rating),
+      ...participations.flatMap((item) =>
+        [item.oldRating, item.newRating].filter(
+          (value): value is number => value !== undefined,
+        ),
+      ),
+    ]
+    const ranks = participations
+      .map((item) => item.rank)
+      .filter((value): value is number => value !== undefined && value > 0)
+    const attended = participations
+      .map((item) => item.attendedAt?.getTime())
+      .filter((value): value is number => value !== undefined)
+    const current = ratedPoints.at(-1)?.rating
+    const averageRank = average(ranks)
+    return [
+      {
+        provider,
+        contests: participations.length,
+        ...(current === undefined
+          ? {}
+          : { currentRating: Math.round(current) }),
+        ...(ratings.length === 0
+          ? {}
+          : { peakRating: Math.round(Math.max(...ratings)) }),
+        ...(ranks.length === 0 ? {} : { bestRank: Math.min(...ranks) }),
+        ...(averageRank === null
+          ? {}
+          : { averageRank: Math.max(1, Math.round(averageRank)) }),
+        ...(attended.length === 0
+          ? {}
+          : { lastContestAt: new Date(Math.max(...attended)).toISOString() }),
+        ratingTrend: ratedPoints.slice(-24).map((point) => ({
+          at: point.at.toISOString(),
+          rating: Math.round(point.rating),
+        })),
+        recentContests: recentContests.length,
+        recent: contestPatterns(recentContests),
+      },
+    ]
+  })
 }
 
 // Compact metrics for the AI service: no identifiers beyond problem labels.

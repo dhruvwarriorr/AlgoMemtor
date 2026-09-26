@@ -536,6 +536,8 @@ export {
   ContestPatternsReportSchema,
   type ContestPatternsReport,
   ContestAnalysisOverviewResponseSchema,
+  ContestPlatformSummarySchema,
+  type ContestPlatformSummary,
   type ContestAnalysisOverviewResponse,
   ContestAnalysisResponseSchema,
   type ContestAnalysisResponse,

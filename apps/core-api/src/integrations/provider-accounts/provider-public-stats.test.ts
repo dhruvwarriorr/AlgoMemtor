@@ -62,6 +62,40 @@ describe('public provider solved-count fetchers', () => {
     ])
   })
 
+  it('keeps the Codeforces contest rank on each participation', async () => {
+    const fetcher = new CodeforcesPublicStatsFetcher({
+      baseUrl: 'https://codeforces.test/api',
+      fetchImpl: vi.fn(async (input) =>
+        Response.json(
+          String(input).includes('user.rating')
+            ? {
+                status: 'OK',
+                result: [
+                  {
+                    contestId: 2237,
+                    contestName: 'Codeforces Round 1104',
+                    handle: 'learner',
+                    rank: 183,
+                    ratingUpdateTimeSeconds: 1_700_000_000,
+                    oldRating: 1500,
+                    newRating: 1565,
+                  },
+                ],
+              }
+            : { status: 'OK', result: [] },
+        ),
+      ),
+      requestGate: noWaitGate(),
+      now: () => fetchedAt,
+    })
+
+    const activity = await fetcher.fetchActivityData('learner')
+
+    expect(activity.contestParticipations).toMatchObject([
+      { contestId: '2237', rank: 183, ratingChange: 65, newRating: 1565 },
+    ])
+  })
+
   it('normalizes accepted Codeforces activity and keeps the earliest accepted event', async () => {
     const fetcher = new CodeforcesPublicStatsFetcher({
       baseUrl: 'https://codeforces.test/api',

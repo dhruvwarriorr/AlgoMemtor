@@ -11,10 +11,9 @@ import { ProviderKeySchema } from './problem-catalog.js'
 const identifierSchema = z.uuid()
 const nonEmptyStringSchema = z.string().trim().min(1)
 const dateSchema = z.iso.datetime()
-const publicHttpsUrlSchema = z
-  .string()
-  .url()
-  .refine(isSafeCoachPublicUrl, { message: 'Only public HTTPS URLs are allowed.' })
+const publicHttpsUrlSchema = z.string().url().refine(isSafeCoachPublicUrl, {
+  message: 'Only public HTTPS URLs are allowed.',
+})
 const topicListSchema = z.array(nonEmptyStringSchema.max(64)).max(12)
 const versionSchema = z.number().int().positive()
 
@@ -765,12 +764,36 @@ export const ContestPatternsReportSchema = z
   .strict()
 export type ContestPatternsReport = z.infer<typeof ContestPatternsReportSchema>
 
+// One platform's contest record. All-time fields come from its rating
+// history; `recent` repeats the pattern metrics over only this platform's
+// contests in the analysed window.
+export const ContestPlatformSummarySchema = z
+  .object({
+    provider: ProviderKeySchema,
+    contests: z.number().int().nonnegative(),
+    currentRating: z.number().finite().optional(),
+    peakRating: z.number().finite().optional(),
+    bestRank: z.number().int().positive().optional(),
+    averageRank: z.number().int().positive().optional(),
+    lastContestAt: dateSchema.optional(),
+    ratingTrend: z
+      .array(z.object({ at: dateSchema, rating: z.number().finite() }).strict())
+      .max(24),
+    recentContests: z.number().int().nonnegative(),
+    recent: ContestPatternMetricsSchema,
+  })
+  .strict()
+export type ContestPlatformSummary = z.infer<
+  typeof ContestPlatformSummarySchema
+>
+
 export const ContestAnalysisOverviewResponseSchema = z
   .object({
     data: z
       .object({
         contests: z.array(ContestSummarySchema).max(30),
         patterns: ContestPatternMetricsSchema,
+        platforms: z.array(ContestPlatformSummarySchema).max(4),
         patternsReport: ContestPatternsReportSchema.optional(),
       })
       .strict(),

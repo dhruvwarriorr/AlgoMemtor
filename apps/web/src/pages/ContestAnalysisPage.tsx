@@ -43,6 +43,7 @@ import {
   RatingJourney,
   StartLanes,
 } from '@/features/mentor/components/contest-visuals'
+import { PlatformContestCards } from '@/features/mentor/components/contest-platforms'
 import {
   ProviderProblemLink,
   SectionCard,
@@ -954,7 +955,8 @@ function ContestAnalysisPage() {
     )
   }
 
-  const { contests, patterns, patternsReport } = overviewQuery.data.data
+  const { contests, patterns, patternsReport, platforms } =
+    overviewQuery.data.data
   if (contests.length === 0) {
     return (
       <PageContainer>
@@ -992,6 +994,7 @@ function ContestAnalysisPage() {
         <StartSpeedChart data={chartData} />
         <PressureCard patterns={patterns} />
       </div>
+      <PlatformContestCards platforms={platforms} />
       <PatternReport patterns={patterns} report={patternsReport} />
 
       <section

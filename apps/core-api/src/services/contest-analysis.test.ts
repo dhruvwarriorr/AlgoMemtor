@@ -11,6 +11,7 @@ import {
   codeforcesContestsFromSubmissions,
   practiceSession,
   contestPatterns,
+  contestPlatformSummaries,
   matchContest,
 } from './contest-analysis.js'
 
@@ -254,5 +255,81 @@ describe('practice sessions', () => {
     )
     expect(session.start.toISOString()).toBe('2026-09-22T01:41:00.000Z')
     expect(session.end.toISOString()).toBe('2026-09-22T04:11:00.000Z')
+  })
+})
+
+describe('contestPlatformSummaries', () => {
+  it('keeps each platform separate and skips platforms without contests', () => {
+    const day = (value: string) => new Date(`${value}T12:00:00.000Z`)
+    const summaries = contestPlatformSummaries({
+      participations: [
+        { ...participation, rank: 3120, attendedAt: day('2026-06-18') },
+        {
+          ...participation,
+          contestId: '2240',
+          rank: 1500,
+          attendedAt: day('2026-07-01'),
+        },
+        {
+          ...participation,
+          contestId: '2250',
+          mode: 'practice',
+          attendedAt: day('2026-07-09'),
+        },
+        {
+          provider: 'leetcode',
+          contestId: 'weekly-400',
+          canonicalUrl: 'https://leetcode.com/contest/',
+          rank: 900,
+          attendedAt: day('2026-07-05'),
+          completeness: 'partial',
+        },
+      ],
+      ratingChanges: [
+        {
+          provider: 'codeforces',
+          occurredAt: day('2026-07-01'),
+          newRating: 1520,
+          delta: 40,
+        },
+        {
+          provider: 'codeforces',
+          occurredAt: day('2026-06-18'),
+          newRating: 1480,
+          delta: -24,
+        },
+        {
+          provider: 'leetcode',
+          occurredAt: day('2026-07-05'),
+          newRating: 1914.2,
+          delta: 30,
+        },
+      ],
+      contests: [],
+    })
+
+    expect(summaries.map((item) => item.provider)).toEqual([
+      'codeforces',
+      'leetcode',
+    ])
+    expect(summaries[0]).toMatchObject({
+      contests: 2,
+      currentRating: 1520,
+      peakRating: 1520,
+      bestRank: 1500,
+      averageRank: 2310,
+      lastContestAt: '2026-07-01T12:00:00.000Z',
+      ratingTrend: [
+        { at: '2026-06-18T12:00:00.000Z', rating: 1480 },
+        { at: '2026-07-01T12:00:00.000Z', rating: 1520 },
+      ],
+      recentContests: 0,
+      recent: { contestsAnalyzed: 0 },
+    })
+    expect(summaries[1]).toMatchObject({
+      contests: 1,
+      currentRating: 1914,
+      bestRank: 900,
+    })
   })
 })

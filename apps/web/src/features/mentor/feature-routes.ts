@@ -69,7 +69,6 @@ export const orderedMentorTools: readonly MentorTool[] = [
   mentorTools.solution_explorer,
   mentorTools.upsolve,
   mentorTools.contest_analysis,
-  mentorTools.progress_report,
 ]
 
 export function mentorToolPath(feature: MentorFeature, problemUrl?: string) {
