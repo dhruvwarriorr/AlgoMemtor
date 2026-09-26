@@ -337,6 +337,7 @@ export function SpeedDumbbells({
   )
   const scale = Math.ceil(max / 10) * 10
   const at = (value: number) => `${(value / scale) * 100}%`
+  const ticks = [0, scale / 2, scale]
   return (
     <div className="flex flex-1 flex-col justify-center">
       <ol aria-label="Solving speed by difficulty" className="grid gap-5">
@@ -349,12 +350,23 @@ export function SpeedDumbbells({
             earlier !== null && recent !== null && earlier > 0
               ? Math.round(((earlier - recent) / earlier) * 100)
               : null
+          // The server splits each band's solves by date: the older half is
+          // "earlier", the newer half (the larger one when odd) is "recent".
+          const earlierCount = row.samples < 2 ? 0 : Math.floor(row.samples / 2)
+          const recentCount = row.samples - earlierCount
           const low = Math.min(earlier ?? recent ?? 0, recent ?? earlier ?? 0)
           const high = Math.max(earlier ?? recent ?? 0, recent ?? earlier ?? 0)
           return (
             <li className="grid gap-1.5" key={row.band}>
               <div className="flex items-baseline justify-between gap-2 text-sm">
-                <span className="font-medium text-foreground">{row.band}</span>
+                <span className="min-w-0">
+                  <span className="font-medium text-foreground">
+                    {row.band}
+                  </span>
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {row.samples} solved problem{row.samples === 1 ? '' : 's'}
+                  </span>
+                </span>
                 {change !== null ? (
                   <span
                     className={cn(
@@ -370,7 +382,7 @@ export function SpeedDumbbells({
                   </span>
                 ) : (
                   <span className="text-xs text-muted-foreground">
-                    Needs both periods
+                    Needs 2+ solves to compare
                   </span>
                 )}
               </div>
@@ -415,27 +427,79 @@ export function SpeedDumbbells({
                   />
                 ) : null}
               </span>
-              <p className="flex justify-between font-mono text-[0.68rem] text-muted-foreground">
+              <p className="flex justify-between gap-2 text-[0.7rem] text-muted-foreground">
                 <span>
-                  earlier {earlier === null ? '–' : `${Math.round(earlier)}m`}
+                  Earlier half:{' '}
+                  <span className="font-mono text-foreground/80">
+                    {earlier === null ? '–' : `${Math.round(earlier)} min`}
+                  </span>
+                  {earlierCount > 0
+                    ? ` (${earlierCount} solve${earlierCount === 1 ? '' : 's'})`
+                    : ''}
                 </span>
-                <span>
-                  recent {recent === null ? '–' : `${Math.round(recent)}m`}
+                <span className="text-right">
+                  Recent half:{' '}
+                  <span className="font-mono text-foreground/80">
+                    {recent === null ? '–' : `${Math.round(recent)} min`}
+                  </span>
+                  {recentCount > 0
+                    ? ` (${recentCount} solve${recentCount === 1 ? '' : 's'})`
+                    : ''}
                 </span>
               </p>
             </li>
           )
         })}
       </ol>
-      <p className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        <span className="inline-flex items-center gap-1.5">
-          <span className="size-2.5 rounded-full bg-muted-foreground/70" />{' '}
-          Earlier contests
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="size-2.5 rounded-full bg-[#0ea5e9]" /> Recent
-          contests
-        </span>
+      <div
+        aria-hidden="true"
+        className="relative mt-3 h-4 border-t border-dashed border-border font-mono text-[0.65rem] text-muted-foreground"
+      >
+        {ticks.map((tick, index) => (
+          <span
+            className={cn(
+              'absolute top-1',
+              index === 0
+                ? 'left-0'
+                : index === ticks.length - 1
+                  ? 'right-0'
+                  : '-translate-x-1/2',
+            )}
+            key={tick}
+            style={
+              index === 0 || index === ticks.length - 1
+                ? undefined
+                : { left: at(tick) }
+            }
+          >
+            {Math.round(tick)} min
+          </span>
+        ))}
+      </div>
+      <p className="mt-1 text-[0.68rem] text-muted-foreground">
+        ← faster · slower →
+      </p>
+      <ul className="mt-3 grid gap-1.5 text-xs text-muted-foreground sm:grid-cols-2">
+        <li className="inline-flex items-center gap-1.5">
+          <span className="size-2.5 shrink-0 rounded-full bg-muted-foreground/70" />
+          Earlier half: median of your older solves
+        </li>
+        <li className="inline-flex items-center gap-1.5">
+          <span className="size-2.5 shrink-0 rounded-full bg-[#0ea5e9]" />
+          Recent half: as fast or faster
+        </li>
+        <li className="inline-flex items-center gap-1.5">
+          <span className="size-2.5 shrink-0 rounded-full bg-[#ef4444]" />
+          Recent half: slower than before
+        </li>
+        <li className="inline-flex items-center gap-1.5">
+          <span className="h-1 w-4 shrink-0 rounded-full bg-[#22c55e]/60" />
+          Line: the change (green faster, red slower)
+        </li>
+      </ul>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Unrated covers contest problems with no difficulty rating on record.
+        Rows with few solves can swing a lot.
       </p>
     </div>
   )

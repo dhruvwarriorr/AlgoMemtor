@@ -116,7 +116,7 @@ export const mentorHandlers: RequestHandler[] = [
         mentorTurn(
           'hint',
           1,
-          '## Hint 1 · Nudge\n\nMock mode: think about what the constraints allow.\n\n## Your turn\n\nWhat is the largest input size?',
+          '## Hint 1 · Nudge\n\nMock mode: think about what the constraints allow.',
         ),
       ],
     })

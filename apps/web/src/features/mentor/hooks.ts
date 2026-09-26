@@ -7,9 +7,11 @@ import type {
   SolutionChatRequest,
   StartProblemHelpRequest,
   UpdateUpsolveItemRequest,
+  UpsolveResponse,
 } from '@algomemtor/shared-contracts'
 
 import { useAuth } from '@/features/auth/useAuth'
+import { applyUpsolveState } from '@/features/mentor/upsolve-optimistic'
 
 import {
   askSolutionChat,
@@ -175,7 +177,23 @@ export function useUpdateUpsolveItem() {
       updateUpsolveItem(input.provider, input.externalId, {
         state: input.state,
       }),
-    onSuccess: () => {
+    // Show the change at once; rebuilding the queue (which may ask the AI
+    // mentor for a replacement) happens in the background refetch.
+    onMutate: async (input) => {
+      const queryKey = [...key, 'upsolve']
+      await queryClient.cancelQueries({ queryKey })
+      const previous = queryClient.getQueryData<UpsolveResponse>(queryKey)
+      if (previous !== undefined) {
+        queryClient.setQueryData(queryKey, applyUpsolveState(previous, input))
+      }
+      return { previous }
+    },
+    onError: (_error, _input, context) => {
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData([...key, 'upsolve'], context.previous)
+      }
+    },
+    onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: [...key, 'upsolve'] })
     },
   })

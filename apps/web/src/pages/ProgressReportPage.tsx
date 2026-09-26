@@ -528,7 +528,7 @@ function ReportBody({ report }: { report: ProgressReport }) {
       <div className="grid min-w-0 gap-4 lg:grid-cols-12">
         <ChartCard
           className="lg:col-span-7"
-          description="Median minutes per solved contest problem, earlier against recent contests, by difficulty."
+          description="How long a solved contest problem takes you, by difficulty. Minutes run from your previous accepted solve (or the contest start) to this one's accepted submission; each row compares the median of your older half of solves with your newer half."
           title="Solving speed"
         >
           {report.solvingSpeed.length === 0 ? (

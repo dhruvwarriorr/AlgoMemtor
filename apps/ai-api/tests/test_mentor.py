@@ -30,6 +30,7 @@ from app.mentor_service import (
     code_lines,
     coerce_to_schema,
     disclosure_violation,
+    drop_your_turn,
     editorial_excerpt,
     editorial_link,
     get_mentor_service,
@@ -846,3 +847,14 @@ def test_visualizer_endpoint_requires_the_token_and_validates() -> None:
         assert client.post(path, json=body, headers=token).status_code == 503
     finally:
         app.dependency_overrides.clear()
+
+
+def test_doubt_helper_answers_drop_the_your_turn_section() -> None:
+    assert (
+        drop_your_turn("## Hint 1 · Nudge\n\nSort first.\n\n## Your turn\n\nWhat is n?")
+        == "## Hint 1 · Nudge\n\nSort first."
+    )
+    assert drop_your_turn("Your turning point is the prefix sum.") == (
+        "Your turning point is the prefix sum."
+    )
+    assert "Your turn" not in UNREADABLE_PROBLEM_ANSWER

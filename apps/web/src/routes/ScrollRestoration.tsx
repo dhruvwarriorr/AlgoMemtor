@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 
-import { scrollLocationKey } from './scroll-location'
+import { keepsScroll, scrollLocationKey } from './scroll-location'
 
 export function ScrollRestoration() {
   const location = useLocation()
@@ -26,14 +26,17 @@ export function ScrollRestoration() {
       })
     }
 
-    const stored = Number(window.sessionStorage.getItem(key))
-    window.requestAnimationFrame(() => {
-      window.scrollTo({
-        behavior: 'auto',
-        left: 0,
-        top: Number.isFinite(stored) && stored >= 0 ? stored : 0,
+    // An in-page change marked with keepScrollState stays where it is.
+    if (!keepsScroll(location.state)) {
+      const stored = Number(window.sessionStorage.getItem(key))
+      window.requestAnimationFrame(() => {
+        window.scrollTo({
+          behavior: 'auto',
+          left: 0,
+          top: Number.isFinite(stored) && stored >= 0 ? stored : 0,
+        })
       })
-    })
+    }
     window.addEventListener('scroll', save, { passive: true })
 
     return () => {

@@ -133,9 +133,20 @@ UNREADABLE_PROBLEM_ANSWER = (
     "## I could not read this problem\n\n"
     "I was not able to load the problem statement from that link, and I do not want "
     "to guess what it asks. Paste the full statement (including constraints and "
-    "samples) into the **Problem statement** box and try again.\n\n"
-    "## Your turn\n\nPaste the statement, then ask for help again."
+    "samples) into the **Problem statement** box and try again."
 )
+
+# A trailing "Your turn" section (a question back to the learner) is not part
+# of a Doubt Helper or Solution Explorer chat answer; drop it if the model
+# still writes one.
+_YOUR_TURN_SECTION = re.compile(
+    r"\n*^#{1,6}[ \t]*\**[ \t]*your turn\b[^\n]*\n[\s\S]*\Z",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def drop_your_turn(answer: str) -> str:
+    return _YOUR_TURN_SECTION.sub("", answer).rstrip()
 
 
 class MentorNotConfiguredError(RuntimeError):
@@ -881,7 +892,8 @@ class MentorService:
             if disclosure_violation(answer, request.phase, request.hintLevel):
                 answer = withhold_excess_code(answer, request.hintLevel)
         answer = keep_teaching_links(
-            plain_math(redact_text(answer, keep_urls=True)), request.problem.url
+            plain_math(redact_text(drop_your_turn(answer), keep_urls=True)),
+            request.problem.url,
         ).strip()
         if not answer:
             raise MentorGenerationError("The model returned an empty reply.")
@@ -1269,7 +1281,8 @@ class MentorService:
             )
         )
         answer = keep_teaching_links(
-            plain_math(redact_text(answer, keep_urls=True)), request.problem.url
+            plain_math(redact_text(drop_your_turn(answer), keep_urls=True)),
+            request.problem.url,
         ).strip()
         if not answer:
             raise MentorGenerationError("The model returned an empty reply.")

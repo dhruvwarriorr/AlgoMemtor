@@ -68,6 +68,7 @@ import {
   useRefreshContestOverview,
 } from '@/features/mentor/hooks'
 import { cn } from '@/lib/utils'
+import { keepScrollState } from '@/routes/scroll-location'
 
 const narrativeSteps: readonly AiLoaderStep[] = [
   { label: 'Replaying your submission timeline', indicator: 'bar' },
@@ -1010,7 +1011,9 @@ function ContestAnalysisPage() {
         <div className="grid min-w-0 gap-6 xl:grid-cols-[21rem_minmax(0,1fr)]">
           <ContestList
             contests={contests}
-            onSelect={(key) => setSearchParams({ contest: key })}
+            onSelect={(key) =>
+              setSearchParams({ contest: key }, { state: keepScrollState })
+            }
             selected={selected}
           />
           <div className="min-w-0">

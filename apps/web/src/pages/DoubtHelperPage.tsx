@@ -72,6 +72,7 @@ import {
   inputClass,
   mentorErrorMessage,
   useRememberedLanguage,
+  withoutYourTurn,
 } from '@/features/mentor/format'
 import {
   useHelpSession,
@@ -397,7 +398,10 @@ function Transcript({ turns }: { turns: readonly ProblemHelpTurn[] }) {
                 {turnHeading(turn)}
               </h3>
               <div className="text-[0.95rem] [&>div]:mt-2">
-                <CoachMessageContent content={turn.content} role="assistant" />
+                <CoachMessageContent
+                  content={withoutYourTurn(turn.content)}
+                  role="assistant"
+                />
               </div>
             </article>
           </motion.li>

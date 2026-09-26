@@ -66,3 +66,11 @@ export function useRememberedLanguage(initial?: string) {
 
 export const inputClass =
   'w-full rounded-lg border border-input bg-background px-3.5 py-2.5 text-base text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15 disabled:opacity-60 sm:text-sm'
+
+// Older Doubt Helper and Solution Explorer chat answers end with a "Your turn"
+// question; it is no longer part of an answer, so hide the trailing section.
+export function withoutYourTurn(content: string) {
+  return content
+    .replace(/\n*^#{1,6}[ \t]*\**[ \t]*your turn\b[^\n]*(?:\n[\s\S]*)?$/im, '')
+    .trimEnd()
+}

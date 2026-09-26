@@ -102,12 +102,27 @@ function DashboardPage() {
     (point) => point.attempted > 0 || point.solved > 0,
   ).length
 
-  const focusTopics = (roadmapQuery.data?.data?.topics ?? []).filter(
-    (topic) =>
-      topic.lane === 'current_focus' ||
-      topic.lane === 'needs_more_practice' ||
-      topic.lane === 'revisit_later',
-  )
+  // The card shows the topic's own practice counts, not the planner's
+  // internal reasoning.
+  const focusTopics = (roadmapQuery.data?.data?.topics ?? [])
+    .filter(
+      (topic) =>
+        topic.lane === 'current_focus' ||
+        topic.lane === 'needs_more_practice' ||
+        topic.lane === 'revisit_later',
+    )
+    .map((topic) => {
+      const { solvedProblems: solved, attemptedProblems: attempted } =
+        topic.evidence
+      return {
+        topic: topic.topic,
+        name: topic.name,
+        detail:
+          solved === 0 && attempted === 0
+            ? 'Not practised yet'
+            : `${solved.toLocaleString()} solved · ${attempted.toLocaleString()} attempted`,
+      }
+    })
 
   return (
     <PageContainer accent="sky" className="dash-flat gap-5 xl:py-7">

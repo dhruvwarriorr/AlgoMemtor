@@ -44,6 +44,7 @@ import {
   inputClass,
   mentorErrorMessage,
   useRememberedLanguage,
+  withoutYourTurn,
 } from '@/features/mentor/format'
 import { mentorToolPath } from '@/features/mentor/feature-routes'
 import {
@@ -592,7 +593,7 @@ function SolutionExplorerPage() {
                     {
                       id: crypto.randomUUID(),
                       role: 'mentor',
-                      content: response.data.answer,
+                      content: withoutYourTurn(response.data.answer),
                     },
                   ],
                 }

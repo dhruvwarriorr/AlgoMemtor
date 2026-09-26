@@ -7,7 +7,7 @@ import { ThinkingOrbs } from '@/components/motion/ThinkingOrbs'
 import { dashEase as ease } from '@/features/dashboard/dashboard-format'
 import { cn } from '@/lib/utils'
 
-type FocusTopic = { topic: string; name: string; reason: string }
+type FocusTopic = { topic: string; name: string; detail: string }
 
 // Where each topic sits in the 320×200 network, lead topic first.
 const slots = [
@@ -41,7 +41,7 @@ export function CoachCore({
 }) {
   const reduceMotion = useReducedMotion()
   const id = useId().replace(/[^\w-]/g, '')
-  const [lead, ...others] = topics
+  const [lead] = topics
   const nodes = topics.slice(0, 4)
 
   return (
@@ -204,7 +204,7 @@ export function CoachCore({
             {lead.name}
           </p>
           <p className="mt-1 line-clamp-2 text-sm text-white/70">
-            {lead.reason}
+            {lead.detail}
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <button
@@ -215,11 +215,6 @@ export function CoachCore({
             >
               Dismiss this focus
             </button>
-            {others.length > 0 ? (
-              <span className="text-xs text-white/55">
-                +{others.length} more in your plan
-              </span>
-            ) : null}
           </div>
           {dismissFailed ? (
             <p className="mt-2 text-xs" role="alert">
