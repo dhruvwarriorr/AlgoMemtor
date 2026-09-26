@@ -541,7 +541,7 @@ export function ProviderAccountLinks({ idPrefix }: { idPrefix: string }) {
   return (
     <section
       aria-labelledby={`${idPrefix}-provider-links-heading`}
-      className="flex w-full max-w-4xl min-w-0 flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:p-6"
+      className="flex w-full max-w-4xl min-w-0 flex-col gap-4 rounded-2xl border border-border bg-card p-4 shadow-soft sm:p-6"
     >
       <h2
         className="text-xl font-semibold tracking-tight text-foreground"

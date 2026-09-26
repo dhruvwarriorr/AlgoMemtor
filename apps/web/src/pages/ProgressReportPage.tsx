@@ -1,24 +1,12 @@
+import { useState } from 'react'
+import { motion, useReducedMotion } from 'motion/react'
 import { Link } from 'react-router-dom'
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
 import type {
   ProgressInsight,
   ProgressNarrative,
   ProgressReport,
 } from '@algomemtor/shared-contracts'
 
-import { ProviderLogo } from '@/components/brand/ProviderLogo'
 import {
   ArrowRight,
   CalendarCheck,
@@ -31,32 +19,31 @@ import {
   Sparkles,
   Target,
   TrendingDown,
+  TrendingUp,
 } from '@/components/icons/algo-icons'
-import { RadialProgress } from '@/components/motion/RadialProgress'
 import { AiLoader, type AiLoaderStep } from '@/components/motion/AiLoader'
+import { GradientCard } from '@/components/motion/GradientCard'
+import { PanelStyle } from '@/components/kit/Panel'
 import PageContainer from '@/components/layout/PageContainer'
+import { HeroStat } from '@/components/kit/stat-cards'
 import PageHeader from '@/components/layout/PageHeader'
 import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { useNotification } from '@/app/useNotification'
-import {
-  axisTick,
-  chartColors,
-  providerColors,
-  tooltipStyle,
-} from '@/features/mentor/chart-theme'
 import { SectionCard } from '@/features/mentor/components/shared'
+import {
+  AccuracyTubes,
+  HintLadder,
+  SpeedDumbbells,
+  WeekDots,
+} from '@/features/mentor/components/report-visuals'
 import {
   ChartCard,
   ChartEmpty,
   KpiTile,
 } from '@/features/mentor/components/visuals'
-import {
-  formatDateTime,
-  mentorErrorMessage,
-  providerLabels,
-} from '@/features/mentor/format'
+import { formatDateTime, mentorErrorMessage } from '@/features/mentor/format'
 import { insightTargetPath } from '@/features/mentor/feature-routes'
 import {
   useProgressNarrative,
@@ -73,61 +60,92 @@ const narrativeSteps: readonly AiLoaderStep[] = [
 const pct = (value: number | null) =>
   value === null ? '-' : `${Math.round(value * 100)}%`
 
-const shortDate = (value: string) => {
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      month: 'short',
-      day: 'numeric',
-    }).format(new Date(`${value}T00:00:00`))
-  } catch {
-    return value
-  }
+const insightTones = {
+  positive: {
+    label: 'Win',
+    icon: CheckCircle2,
+    gradient: 'green',
+    decoration: TrendingUp,
+  },
+  warning: {
+    label: 'Watch',
+    icon: TrendingDown,
+    gradient: 'sand',
+    decoration: TrendingDown,
+  },
+  neutral: {
+    label: 'Note',
+    icon: Sparkles,
+    gradient: 'sky',
+    decoration: Lightbulb,
+  },
+} as const
+
+// The change an insight states, when it states one ("from 87% to 81%"),
+// to show large above the sentence.
+function statedChange(text: string) {
+  const match = /(\d+(?:\.\d+)?%?)\s+to\s+(\d+(?:\.\d+)?%?)/.exec(text)
+  return match ? { from: match[1] ?? '', to: match[2] ?? '' } : null
 }
 
-function InsightItem({ insight }: { insight: ProgressInsight }) {
-  const Icon =
-    insight.tone === 'positive'
-      ? CheckCircle2
-      : insight.tone === 'warning'
-        ? TrendingDown
-        : Sparkles
+// An insight in the same soft gradient tile as the KPIs below: the tone as
+// the label, a stated change as the big value, and the sentence under it.
+function InsightCard({
+  insight,
+  index,
+}: {
+  insight: ProgressInsight
+  index: number
+}) {
+  const reduceMotion = useReducedMotion()
+  const tone = insightTones[insight.tone]
+  const Icon = tone.icon
+  const change = statedChange(insight.text)
   return (
-    <li
-      className={cn(
-        'flex min-w-0 flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between',
-        insight.tone === 'positive'
-          ? 'border-go/40 bg-go-soft/60'
-          : insight.tone === 'warning'
-            ? 'border-sun/50 bg-sun-soft/60'
-            : 'border-border bg-card',
-      )}
+    <motion.li
+      className="min-w-0"
+      initial={reduceMotion ? false : { opacity: 0, y: 16 }}
+      transition={{
+        duration: 0.5,
+        ease: [0.16, 1, 0.3, 1],
+        delay: 0.08 * index,
+      }}
+      viewport={{ once: true, margin: '-40px' }}
+      whileInView={{ opacity: 1, y: 0 }}
     >
-      <p className="flex min-w-0 gap-2.5 text-sm leading-6 text-foreground">
-        <Icon
-          aria-hidden="true"
-          className={cn(
-            'mt-0.5 size-4 shrink-0',
-            insight.tone === 'positive'
-              ? 'text-go-foreground'
-              : insight.tone === 'warning'
-                ? 'text-sun-foreground'
-                : 'text-primary',
-          )}
-        />
-        <span>{insight.text}</span>
-      </p>
-      {insight.link ? (
-        <Link
-          className={cn(
-            buttonVariants({ size: 'sm', variant: 'outline' }),
-            'shrink-0',
-          )}
-          to={insightTargetPath(insight.link.target)}
-        >
-          {insight.link.label} <ArrowRight aria-hidden="true" />
-        </Link>
-      ) : null}
-    </li>
+      <GradientCard
+        className="flex h-full min-w-0 flex-col gap-3 p-5 pr-20"
+        icon={tone.decoration}
+        tone={tone.gradient}
+      >
+        <p className="flex items-center gap-2 text-sm font-medium opacity-75">
+          <Icon aria-hidden="true" className="size-4" />
+          {tone.label}
+        </p>
+        {change !== null ? (
+          <p
+            aria-hidden="true"
+            className="flex items-center gap-2 font-heading text-[1.9rem] leading-none font-bold tracking-[-0.01em] tabular-nums"
+          >
+            <span className="opacity-55">{change.from}</span>
+            <ArrowRight className="size-5 opacity-60" />
+            <span>{change.to}</span>
+          </p>
+        ) : null}
+        <p className="text-sm leading-6">{insight.text}</p>
+        {insight.link ? (
+          <Link
+            className={cn(
+              buttonVariants({ size: 'sm', variant: 'outline' }),
+              'mt-auto self-start bg-card/70 backdrop-blur',
+            )}
+            to={insightTargetPath(insight.link.target)}
+          >
+            {insight.link.label} <ArrowRight aria-hidden="true" />
+          </Link>
+        ) : null}
+      </GradientCard>
+    </motion.li>
   )
 }
 
@@ -196,73 +214,286 @@ function ReportKpis({ report }: { report: ProgressReport }) {
     .find((week) => week.rate !== null)
   const hints = report.hintDependency
   return (
-    <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-      <KpiTile
-        detail={`Longest ${report.consistency.longestStreak} days`}
-        icon={Flame}
-        label="Current streak"
-        tone="accent"
-        value={`${report.consistency.currentStreak}d`}
+    <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)]">
+      <HeroStat
+        item={{
+          label: 'Current streak',
+          value: `${report.consistency.currentStreak}d`,
+          hint: `Longest ${report.consistency.longestStreak} days`,
+          icon: Flame,
+          color: '#f59e0b',
+        }}
       />
-      <KpiTile
-        detail="Of the last 30 days"
-        icon={CalendarCheck}
-        label="Active days"
-        tone="green"
-        value={report.consistency.activeDaysLast30}
-      />
-      <KpiTile
-        detail={
-          latestAccuracy === undefined
-            ? 'No attempts yet'
-            : `${latestAccuracy.firstTryAccepted} of ${latestAccuracy.attempted} in the latest week`
-        }
-        icon={Target}
-        label="First-try accuracy"
-        tone="sky"
-        value={pct(latestAccuracy?.rate ?? null)}
-      />
-      <KpiTile
-        detail="Doubt Helper, last 12 weeks"
-        icon={Crosshair}
-        label="Help sessions"
-        tone="sand"
-        value={hints.sessions}
-      />
-      <KpiTile
-        detail="1 nudge to 5 full solution"
-        icon={Lightbulb}
-        label="Average hint"
-        tone="sky"
-        value={hints.averageHintLevel ?? '-'}
-      />
-      <KpiTile
-        detail="Sessions that revealed the solution"
-        icon={Lock}
-        label="Full reveals"
-        tone="sand"
-        value={pct(hints.solutionRevealRate)}
-      />
-    </dl>
+      <dl className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-6">
+        <KpiTile
+          className="sm:col-span-2"
+          detail="Of the last 30 days"
+          icon={CalendarCheck}
+          label="Active days"
+          tone="green"
+          value={report.consistency.activeDaysLast30}
+        />
+        <KpiTile
+          className="sm:col-span-2"
+          detail={
+            latestAccuracy === undefined
+              ? 'No attempts yet'
+              : `${latestAccuracy.firstTryAccepted} of ${latestAccuracy.attempted} in the latest week`
+          }
+          icon={Target}
+          label="First-try accuracy"
+          tone="sky"
+          value={pct(latestAccuracy?.rate ?? null)}
+        />
+        <KpiTile
+          className="sm:col-span-2"
+          detail="Doubt Helper, last 12 weeks"
+          icon={Crosshair}
+          label="Help sessions"
+          tone="sand"
+          value={hints.sessions}
+        />
+        <KpiTile
+          className="sm:col-span-3"
+          detail="1 nudge to 5 full solution"
+          icon={Lightbulb}
+          label="Average hint"
+          tone="sky"
+          value={hints.averageHintLevel ?? '-'}
+        />
+        <KpiTile
+          className="col-span-2 sm:col-span-3"
+          detail="Sessions that revealed the solution"
+          icon={Lock}
+          label="Full reveals"
+          tone="sand"
+          value={pct(hints.solutionRevealRate)}
+        />
+      </dl>
+    </div>
+  )
+}
+
+const assessmentStyles: Record<string, { label: string; color: string }> = {
+  comfortable: { label: 'Comfortable', color: '#22c55e' },
+  developing: { label: 'Developing', color: '#0ea5e9' },
+  revisit: { label: 'Revisit', color: '#f59e0b' },
+  needs_practice: { label: 'Needs practice', color: '#ef4444' },
+  insufficient_evidence: { label: 'Too early', color: '#94a3b8' },
+}
+
+const assessmentStyle = (assessment: string) =>
+  assessmentStyles[assessment] ?? {
+    label: assessment.replaceAll('_', ' '),
+    color: '#94a3b8',
+  }
+
+type TopicRow = ProgressReport['topicProgress'][number]
+
+// recentDays counts days since the topic was last practised; 0 means no date.
+const freshnessKey = [
+  { label: 'Practised this week', color: '#22c55e', max: 7 },
+  { label: 'Fading', color: '#f59e0b', max: 13 },
+  { label: 'Stale (2+ weeks)', color: '#ef4444', max: Infinity },
+] as const
+
+function freshness(recentDays: number) {
+  if (recentDays === 0) {
+    return { label: 'No recent practice date', color: '#94a3b8' }
+  }
+  return freshnessKey.find((item) => recentDays <= item.max) ?? freshnessKey[2]
+}
+
+// One line per topic: a status dot, the name, a score bar and the solve
+// count, sorted by score. The chips above filter by assessment.
+function TopicProgress({ topics }: { topics: readonly TopicRow[] }) {
+  const [filter, setFilter] = useState<string | null>(null)
+  const reduceMotion = useReducedMotion()
+  const groups = [...new Set(topics.map((topic) => topic.assessment))].sort(
+    (left, right) =>
+      Object.keys(assessmentStyles).indexOf(left) -
+      Object.keys(assessmentStyles).indexOf(right),
+  )
+  const active = filter !== null && groups.includes(filter) ? filter : null
+  const ranked = [...topics].sort((left, right) => right.score - left.score)
+  const strongest = ranked[0]
+  const weakest = ranked.at(-1)
+  const visible = topics
+    .filter((topic) => active === null || topic.assessment === active)
+    .sort((left, right) => right.score - left.score)
+  const chip = (key: string | null, label: string, count: number) => (
+    <button
+      aria-pressed={active === key}
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+        active === key
+          ? 'border-foreground bg-foreground text-background'
+          : 'border-border text-muted-foreground hover:text-foreground',
+      )}
+      key={key ?? 'all'}
+      onClick={() => setFilter(key)}
+      type="button"
+    >
+      {key === null ? null : (
+        <span
+          aria-hidden="true"
+          className="size-2 rounded-full"
+          style={{ background: assessmentStyle(key).color }}
+        />
+      )}
+      {label}
+      <span className="tabular-nums opacity-70">{count}</span>
+    </button>
+  )
+  return (
+    <ChartCard
+      description="Assessed from your provider evidence and recent practice."
+      title="Topic progress"
+    >
+      {topics.length === 0 ? (
+        <ChartEmpty>
+          Topic progress appears once enough practice evidence is available.
+        </ChartEmpty>
+      ) : (
+        <>
+          {strongest && weakest && strongest.topic !== weakest.topic ? (
+            <div className="mb-4 grid gap-2 sm:grid-cols-2">
+              {[
+                { label: 'Strongest', topic: strongest, color: '#22c55e' },
+                {
+                  label: 'Needs the most work',
+                  topic: weakest,
+                  color: '#ef4444',
+                },
+              ].map((item) => (
+                <div
+                  className="flex items-center gap-3 rounded-xl border border-border bg-background/60 px-3 py-2"
+                  key={item.label}
+                >
+                  <span
+                    aria-hidden="true"
+                    className="h-8 w-1 rounded-full"
+                    style={{ background: item.color }}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[0.68rem] text-muted-foreground">
+                      {item.label}
+                    </span>
+                    <span className="block truncate text-sm font-semibold text-foreground">
+                      {item.topic.name}
+                    </span>
+                  </span>
+                  <span className="font-heading text-xl font-bold tabular-nums">
+                    {Math.round(item.topic.score * 100)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <div className="flex flex-wrap gap-1.5">
+            {chip(null, 'All', topics.length)}
+            {groups.map((group) =>
+              chip(
+                group,
+                assessmentStyle(group).label,
+                topics.filter((topic) => topic.assessment === group).length,
+              ),
+            )}
+          </div>
+          <ul className="mt-4 grid gap-x-8 gap-y-3 md:grid-cols-2">
+            {visible.map((topic, row) => {
+              const style = assessmentStyle(topic.assessment)
+              const score = Math.round(topic.score * 100)
+              const lit = Math.round(topic.score * 10)
+              const fresh = freshness(topic.recentDays)
+              const recency =
+                topic.recentDays === 0
+                  ? 'no recent practice date'
+                  : `last practised ${topic.recentDays}d ago`
+              return (
+                <li
+                  className="group grid min-w-0 grid-cols-[minmax(0,7rem)_minmax(0,1fr)_2rem_3.75rem] items-center gap-2.5 rounded-lg px-1 py-0.5 text-sm transition-colors hover:bg-secondary/50 sm:grid-cols-[minmax(0,9rem)_minmax(0,1fr)_2.25rem_5rem] sm:gap-3"
+                  key={topic.topic}
+                  title={`${topic.name}: ${style.label}, ${topic.solved} solved, ${recency}`}
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span
+                      aria-hidden="true"
+                      className="size-2 shrink-0 rounded-full"
+                      style={{ background: style.color }}
+                    />
+                    <span className="truncate font-medium text-foreground">
+                      {topic.name}
+                    </span>
+                  </span>
+                  <span
+                    aria-label={`${topic.name} score ${score}%, ${style.label}`}
+                    className="flex h-3 gap-0.5"
+                    role="img"
+                  >
+                    {Array.from({ length: 10 }, (_, segment) => (
+                      <motion.span
+                        animate={{
+                          opacity: segment < lit ? 1 : 0.22,
+                          scaleY: segment < lit ? 1 : 0.6,
+                        }}
+                        className="flex-1 rounded-[2px] transition-transform duration-200 group-hover:scale-y-110"
+                        initial={
+                          reduceMotion ? false : { opacity: 0.1, scaleY: 0.3 }
+                        }
+                        key={segment}
+                        style={{
+                          background:
+                            segment < lit
+                              ? `color-mix(in oklab, ${style.color} ${55 + segment * 5}%, transparent)`
+                              : 'color-mix(in oklab, var(--muted-foreground) 45%, transparent)',
+                        }}
+                        transition={{
+                          duration: 0.25,
+                          delay: Math.min(row, 10) * 0.04 + segment * 0.035,
+                        }}
+                      />
+                    ))}
+                  </span>
+                  <span className="text-right font-heading font-bold tabular-nums">
+                    {score}
+                  </span>
+                  <span className="flex items-center justify-end gap-1.5 text-xs text-muted-foreground">
+                    <span className="truncate">{topic.solved} solved</span>
+                    <span
+                      aria-hidden="true"
+                      className="size-1.5 shrink-0 rounded-full"
+                      style={{ background: fresh.color }}
+                      title={fresh.label}
+                    />
+                    <span className="sr-only">, {recency}</span>
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+          <p className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            {freshnessKey.map((item) => (
+              <span
+                className="inline-flex items-center gap-1.5"
+                key={item.label}
+              >
+                <span
+                  aria-hidden="true"
+                  className="size-1.5 rounded-full"
+                  style={{ background: item.color }}
+                />
+                {item.label}
+              </span>
+            ))}
+          </p>
+        </>
+      )}
+    </ChartCard>
   )
 }
 
 function ReportBody({ report }: { report: ProgressReport }) {
-  const accuracy = report.accuracy.map((week) => ({
-    label: shortDate(week.weekStart),
-    rate: week.rate === null ? null : Math.round(week.rate * 100),
-  }))
-  const weekly = report.consistency.weekly.map((week) => ({
-    label: shortDate(week.weekStart),
-    solved: week.solved,
-    activeDays: week.activeDays,
-  }))
-  const speed = report.solvingSpeed.map((row) => ({
-    band: row.band,
-    earlier: row.earlierMedianMinutes,
-    recent: row.recentMedianMinutes,
-  }))
-  const hints = report.hintDependency
   return (
     <>
       <ReportKpis report={report} />
@@ -273,68 +504,12 @@ function ReportBody({ report }: { report: ProgressReport }) {
           description="Share of new problems accepted on the first submission, by week."
           title="First-attempt accuracy"
         >
-          {accuracy.every((week) => week.rate === null) ? (
+          {report.accuracy.every((week) => week.rate === null) ? (
             <ChartEmpty>
               Accuracy appears once you attempt new problems.
             </ChartEmpty>
           ) : (
-            <div
-              aria-label="First-attempt accuracy by week"
-              className="h-56 w-full"
-              role="img"
-            >
-              <ResponsiveContainer height="100%" width="100%">
-                <AreaChart
-                  data={accuracy}
-                  margin={{ top: 6, right: 6, left: -22, bottom: 0 }}
-                >
-                  <defs>
-                    <linearGradient
-                      id="accuracy-fill"
-                      x1="0"
-                      x2="0"
-                      y1="0"
-                      y2="1"
-                    >
-                      <stop
-                        offset="0%"
-                        stopColor={chartColors.accent}
-                        stopOpacity={0.4}
-                      />
-                      <stop
-                        offset="100%"
-                        stopColor={chartColors.accent}
-                        stopOpacity={0}
-                      />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid
-                    stroke="var(--border)"
-                    strokeDasharray="3 3"
-                    vertical={false}
-                  />
-                  <XAxis dataKey="label" tick={axisTick} tickLine={false} />
-                  <YAxis
-                    domain={[0, 100]}
-                    tick={axisTick}
-                    tickFormatter={(value: number) => `${value}%`}
-                    tickLine={false}
-                  />
-                  <Tooltip
-                    contentStyle={tooltipStyle}
-                    formatter={(value) => [`${String(value)}%`, 'First try']}
-                  />
-                  <Area
-                    connectNulls
-                    dataKey="rate"
-                    fill="url(#accuracy-fill)"
-                    stroke={chartColors.accent}
-                    strokeWidth={2.2}
-                    type="monotone"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+            <AccuracyTubes weeks={report.accuracy} />
           )}
         </ChartCard>
         <ChartCard
@@ -342,127 +517,13 @@ function ReportBody({ report }: { report: ProgressReport }) {
           description="Problems solved and active days per week."
           title="Consistency"
         >
-          {weekly.length === 0 ? (
+          {report.consistency.weekly.length === 0 ? (
             <ChartEmpty>Weekly activity appears once you practice.</ChartEmpty>
           ) : (
-            <div
-              aria-label="Problems solved by week"
-              className="h-56 w-full"
-              role="img"
-            >
-              <ResponsiveContainer height="100%" width="100%">
-                <BarChart
-                  data={weekly}
-                  margin={{ top: 6, right: 6, left: -24, bottom: 0 }}
-                >
-                  <CartesianGrid
-                    stroke="var(--border)"
-                    strokeDasharray="3 3"
-                    vertical={false}
-                  />
-                  <XAxis dataKey="label" tick={axisTick} tickLine={false} />
-                  <YAxis
-                    allowDecimals={false}
-                    tick={axisTick}
-                    tickLine={false}
-                  />
-                  <Tooltip
-                    contentStyle={tooltipStyle}
-                    cursor={{ fill: 'var(--muted)', opacity: 0.4 }}
-                  />
-                  <Bar
-                    dataKey="solved"
-                    fill={chartColors.solved}
-                    name="Solved"
-                    radius={[4, 4, 0, 0]}
-                  />
-                  <Bar
-                    dataKey="activeDays"
-                    fill={chartColors.accent}
-                    name="Active days"
-                    radius={[4, 4, 0, 0]}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            <WeekDots weeks={report.consistency.weekly} />
           )}
         </ChartCard>
       </div>
-
-      <ChartCard
-        description="Rating after each recent contest, the change per contest, and a projection if the pace holds. Projections are estimates, not promises."
-        title="Rating trajectory"
-      >
-        {report.ratingTrend.length === 0 ? (
-          <ChartEmpty>
-            No rated contests yet. Take part in one to start your trajectory.
-          </ChartEmpty>
-        ) : (
-          <ul className="grid gap-4 md:grid-cols-2">
-            {report.ratingTrend.map((trend) => (
-              <li
-                className="rounded-xl bg-secondary/40 p-4"
-                key={trend.provider}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <p className="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
-                    <ProviderLogo
-                      className="size-5"
-                      provider={trend.provider}
-                    />
-                    {providerLabels[trend.provider]}
-                  </p>
-                  <p className="font-heading text-2xl font-bold tabular-nums text-foreground">
-                    {trend.current ?? '-'}
-                  </p>
-                </div>
-                {trend.points.length >= 2 ? (
-                  <div
-                    aria-label={`${providerLabels[trend.provider]} rating`}
-                    className="mt-2 h-28 w-full"
-                    role="img"
-                  >
-                    <ResponsiveContainer height="100%" width="100%">
-                      <LineChart
-                        data={trend.points.map((point) => ({
-                          label: shortDate(point.date.slice(0, 10)),
-                          rating: Math.round(point.rating),
-                        }))}
-                        margin={{ top: 6, right: 6, left: -18, bottom: 0 }}
-                      >
-                        <XAxis dataKey="label" hide />
-                        <YAxis
-                          domain={['dataMin - 40', 'dataMax + 40']}
-                          tick={axisTick}
-                          tickLine={false}
-                          width={48}
-                        />
-                        <Tooltip contentStyle={tooltipStyle} />
-                        <Line
-                          dataKey="rating"
-                          dot={{ r: 2.5 }}
-                          name="Rating"
-                          stroke={providerColors[trend.provider]}
-                          strokeWidth={2.2}
-                          type="monotone"
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                ) : null}
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {trend.changePerContest === null
-                    ? 'Needs three rated contests for a trend.'
-                    : `${trend.changePerContest > 0 ? '+' : ''}${trend.changePerContest} per contest`}
-                  {trend.projection90d === null
-                    ? ''
-                    : `, about ${trend.projection90d} in 90 days at this pace`}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </ChartCard>
 
       <div className="grid min-w-0 gap-4 lg:grid-cols-12">
         <ChartCard
@@ -470,48 +531,12 @@ function ReportBody({ report }: { report: ProgressReport }) {
           description="Median minutes per solved contest problem, earlier against recent contests, by difficulty."
           title="Solving speed"
         >
-          {speed.length === 0 ? (
+          {report.solvingSpeed.length === 0 ? (
             <ChartEmpty>
               Solving speed comes from contest submissions.
             </ChartEmpty>
           ) : (
-            <div
-              aria-label="Solving speed by difficulty"
-              className="h-56 w-full"
-              role="img"
-            >
-              <ResponsiveContainer height="100%" width="100%">
-                <BarChart
-                  data={speed}
-                  margin={{ top: 6, right: 6, left: -22, bottom: 0 }}
-                >
-                  <CartesianGrid
-                    stroke="var(--border)"
-                    strokeDasharray="3 3"
-                    vertical={false}
-                  />
-                  <XAxis dataKey="band" tick={axisTick} tickLine={false} />
-                  <YAxis tick={axisTick} tickLine={false} />
-                  <Tooltip
-                    contentStyle={tooltipStyle}
-                    cursor={{ fill: 'var(--muted)', opacity: 0.4 }}
-                  />
-                  <Bar
-                    dataKey="earlier"
-                    fill="var(--muted-foreground)"
-                    fillOpacity={0.45}
-                    name="Earlier (min)"
-                    radius={[4, 4, 0, 0]}
-                  />
-                  <Bar
-                    dataKey="recent"
-                    fill={chartColors.accent}
-                    name="Recent (min)"
-                    radius={[4, 4, 0, 0]}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            <SpeedDumbbells rows={report.solvingSpeed} />
           )}
         </ChartCard>
         <ChartCard
@@ -519,76 +544,11 @@ function ReportBody({ report }: { report: ProgressReport }) {
           description="How much you lean on the Doubt Helper. Lower hint levels mean growing independence."
           title="Hint dependency"
         >
-          <div className="flex flex-1 flex-col items-center justify-center gap-3">
-            <RadialProgress
-              className="size-36"
-              thickness={10}
-              value={(hints.averageHintLevel ?? 0) / 5}
-            >
-              <span className="text-center">
-                <span className="block font-heading text-3xl font-bold tabular-nums">
-                  {hints.averageHintLevel ?? '-'}
-                </span>
-                <span className="text-xs text-muted-foreground">of 5</span>
-              </span>
-            </RadialProgress>
-            <p className="text-center text-sm text-muted-foreground">
-              {hints.trend === 'insufficient_data'
-                ? 'Not enough sessions for a trend yet.'
-                : hints.trend === 'falling'
-                  ? 'Hint levels are falling: you need less help.'
-                  : hints.trend === 'rising'
-                    ? 'Hint levels are rising lately.'
-                    : 'Hint levels are steady.'}
-            </p>
-          </div>
+          <HintLadder hints={report.hintDependency} />
         </ChartCard>
       </div>
 
-      <ChartCard
-        description="Assessed from your provider evidence and recent practice."
-        title="Topic progress"
-      >
-        {report.topicProgress.length === 0 ? (
-          <ChartEmpty>
-            Topic progress appears once enough practice evidence is available.
-          </ChartEmpty>
-        ) : (
-          <ul className="grid gap-x-6 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
-            {report.topicProgress.map((topic) => (
-              <li className="min-w-0" key={topic.topic}>
-                <div className="flex items-baseline justify-between gap-2 text-sm">
-                  <span className="truncate font-medium text-foreground">
-                    {topic.name}
-                  </span>
-                  <span className="shrink-0 font-heading font-bold tabular-nums">
-                    {Math.round(topic.score * 100)}
-                  </span>
-                </div>
-                <div
-                  aria-label={`${topic.name} score ${Math.round(topic.score * 100)}%`}
-                  className="mt-1.5 h-2 overflow-hidden rounded-full bg-secondary"
-                  role="img"
-                >
-                  <div
-                    className="h-full rounded-full bg-linear-to-r from-[var(--brand-a)] to-[var(--brand-b)]"
-                    style={{ width: `${Math.max(3, topic.score * 100)}%` }}
-                  />
-                </div>
-                <p className="mt-1 text-[0.7rem] text-muted-foreground">
-                  <span className="capitalize">
-                    {topic.assessment.replaceAll('_', ' ')}
-                  </span>
-                  , {topic.solved} solved,{' '}
-                  {topic.recentDays === 0
-                    ? 'not recent'
-                    : `${topic.recentDays}d ago`}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </ChartCard>
+      <TopicProgress topics={report.topicProgress} />
     </>
   )
 }
@@ -630,7 +590,7 @@ function ProgressReportPage() {
           ) : null}
         </>
       }
-      description="Your growth, interpreted: topic progress, first-try accuracy, solving speed, rating trajectory, consistency and how much you rely on hints."
+      description="Your growth, interpreted: topic progress, first-try accuracy, solving speed, consistency and how much you rely on hints."
       title="Progress report"
     />
   )
@@ -698,9 +658,9 @@ function ProgressReportPage() {
             compare.
           </p>
         ) : (
-          <ul className="grid gap-2">
-            {report.insights.map((insight) => (
-              <InsightItem insight={insight} key={insight.id} />
+          <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {report.insights.map((insight, index) => (
+              <InsightCard index={index} insight={insight} key={insight.id} />
             ))}
           </ul>
         )}
@@ -711,4 +671,12 @@ function ProgressReportPage() {
   )
 }
 
-export default ProgressReportPage
+function ProgressReportPageWithPanels() {
+  return (
+    <PanelStyle variant="classic">
+      <ProgressReportPage />
+    </PanelStyle>
+  )
+}
+
+export default ProgressReportPageWithPanels

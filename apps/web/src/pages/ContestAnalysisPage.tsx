@@ -1,18 +1,6 @@
 import type { ReactNode } from 'react'
+import { motion, useReducedMotion } from 'motion/react'
 import { useSearchParams } from 'react-router-dom'
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  ReferenceLine,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
 import type {
   ContestMetrics,
   ContestNarrative,
@@ -40,6 +28,7 @@ import {
 } from '@/components/icons/algo-icons'
 import { RadialProgress } from '@/components/motion/RadialProgress'
 import { AiLoader, type AiLoaderStep } from '@/components/motion/AiLoader'
+import { PanelStyle } from '@/components/kit/Panel'
 import PageContainer from '@/components/layout/PageContainer'
 import PageHeader from '@/components/layout/PageHeader'
 import { EmptyState } from '@/components/states/EmptyState'
@@ -47,13 +36,13 @@ import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { useNotification } from '@/app/useNotification'
+import { providerShort, shortDay } from '@/features/mentor/chart-theme'
 import {
-  axisTick,
-  chartColors,
-  providerShort,
-  shortDay,
-  tooltipStyle,
-} from '@/features/mentor/chart-theme'
+  PressureMeters,
+  ProblemScoreboard,
+  RatingJourney,
+  StartLanes,
+} from '@/features/mentor/components/contest-visuals'
 import {
   ProviderProblemLink,
   SectionCard,
@@ -107,6 +96,7 @@ function parseContestKey(value: string | null) {
 }
 
 function Timeline({ metrics }: { metrics: ContestMetrics }) {
+  const reduceMotion = useReducedMotion()
   const rows = metrics.problems.filter((problem) => problem.attempts > 0)
   if (rows.length === 0) return null
   const duration = metrics.durationMinutes
@@ -115,8 +105,19 @@ function Timeline({ metrics }: { metrics: ContestMetrics }) {
       <figcaption className="sr-only">
         Submissions over the contest, one row per problem.
       </figcaption>
-      <div className="grid gap-2">
-        {rows.map((problem) => {
+      <div className="relative grid gap-2">
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 right-0 left-13 grid grid-cols-4"
+        >
+          {[0, 1, 2, 3].map((quarter) => (
+            <span
+              className="border-l border-dashed border-border/70"
+              key={quarter}
+            />
+          ))}
+        </span>
+        {rows.map((problem, rowIndex) => {
           const events = metrics.timeline.filter(
             (event) => event.label === problem.label,
           )
@@ -125,13 +126,25 @@ function Timeline({ metrics }: { metrics: ContestMetrics }) {
               className="flex min-w-0 items-center gap-3"
               key={problem.label}
             >
-              <span className="w-10 shrink-0 font-mono text-xs font-semibold text-foreground">
+              <span className="w-10 shrink-0 text-xs font-semibold text-foreground">
                 {problem.label}
               </span>
-              <div className="relative h-6 min-w-0 flex-1 rounded-md bg-secondary/70">
+              <div className="relative h-7 min-w-0 flex-1 rounded-lg bg-secondary/50">
                 {problem.firstSubmitMinute !== undefined ? (
-                  <span
-                    className="absolute inset-y-2 rounded-full bg-border"
+                  <motion.span
+                    animate={{ scaleX: 1, opacity: 1 }}
+                    className={cn(
+                      'absolute inset-y-2.5 origin-left rounded-full',
+                      problem.solved
+                        ? 'bg-linear-to-r from-destructive/60 to-go'
+                        : 'bg-destructive/40',
+                    )}
+                    initial={reduceMotion ? false : { scaleX: 0, opacity: 0 }}
+                    transition={{
+                      duration: 0.8,
+                      ease: [0.16, 1, 0.3, 1],
+                      delay: rowIndex * 0.1,
+                    }}
                     style={{
                       left: `${(problem.firstSubmitMinute / duration) * 100}%`,
                       width: `${(((problem.solvedMinute ?? events.at(-1)?.minute ?? problem.firstSubmitMinute) - problem.firstSubmitMinute) / duration) * 100}%`,
@@ -139,17 +152,27 @@ function Timeline({ metrics }: { metrics: ContestMetrics }) {
                   />
                 ) : null}
                 {events.map((event, index) => (
-                  <span
+                  <motion.span
+                    animate={{ scale: 1 }}
                     aria-hidden="true"
                     className={cn(
-                      'absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-card',
-                      event.accepted ? 'bg-go' : 'bg-destructive',
+                      'absolute top-1/2 -mt-1.5 -ml-1.5 size-3 rounded-full ring-2 ring-card',
+                      event.accepted
+                        ? 'size-3.5 bg-go shadow-[0_0_10px_var(--go)]'
+                        : 'bg-destructive',
                     )}
+                    initial={reduceMotion ? false : { scale: 0 }}
                     key={`${event.minute}-${index}`}
                     style={{
                       left: `${Math.min(100, (event.minute / duration) * 100)}%`,
                     }}
                     title={`${event.verdict} at ${Math.round(event.minute)} min`}
+                    transition={{
+                      type: 'spring',
+                      stiffness: 500,
+                      damping: 20,
+                      delay: 0.3 + rowIndex * 0.1 + index * 0.05,
+                    }}
                   />
                 ))}
               </div>
@@ -212,7 +235,7 @@ function NarrativeView({ narrative }: { narrative: ContestNarrative }) {
         {list('Weak contest topics', narrative.weakTopics)}
         {list('What drove the rating change', narrative.ratingChangeCauses)}
       </div>
-      <div className="rounded-lg border-l-2 border-primary bg-primary/5 px-4 py-3">
+      <div className="rounded-lg border border-[color-mix(in_oklab,var(--primary)_30%,var(--border))] bg-primary/5 px-4 py-3">
         {list('Strategy for your next contest', narrative.strategy)}
       </div>
       <p className="text-xs text-muted-foreground">
@@ -277,6 +300,17 @@ function ContestDetail({
             title={metrics.name}
           />
         </h2>
+        {metrics.oldRating !== undefined && metrics.newRating !== undefined ? (
+          <p className="mt-2 inline-flex items-center gap-2 rounded-md bg-secondary px-2.5 py-1 text-xs tabular-nums">
+            <span className="text-muted-foreground">
+              {Math.round(metrics.oldRating)}
+            </span>
+            <span aria-hidden="true">→</span>
+            <span className="font-semibold text-foreground">
+              {Math.round(metrics.newRating)}
+            </span>
+          </p>
+        ) : null}
         <dl className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
           <KpiTile
             detail={`${metrics.attemptedCount} attempted`}
@@ -368,7 +402,7 @@ function ContestDetail({
                     <span className="flex items-center gap-2">
                       <span
                         className={cn(
-                          'grid size-7 shrink-0 place-items-center rounded-md font-mono text-xs font-semibold',
+                          'grid size-7 shrink-0 place-items-center rounded-md text-xs font-semibold',
                           problem.solved
                             ? 'bg-go text-white'
                             : problem.attempts > 0
@@ -408,7 +442,23 @@ function ContestDetail({
                       : 'Unsolved'}
                   </td>
                   <td className="px-2 py-2 tabular-nums">
-                    {minutes(problem.minutesSpent)}
+                    <span className="flex items-center gap-2">
+                      <span
+                        aria-hidden="true"
+                        className="h-1.5 w-16 overflow-hidden rounded-full bg-muted"
+                      >
+                        <span
+                          className={cn(
+                            'block h-full rounded-full',
+                            problem.solved ? 'bg-go' : 'bg-destructive/70',
+                          )}
+                          style={{
+                            width: `${Math.min(100, ((problem.minutesSpent ?? 0) / Math.max(1, ...metrics.problems.map((item) => item.minutesSpent ?? 0))) * 100)}%`,
+                          }}
+                        />
+                      </span>
+                      {minutes(problem.minutesSpent)}
+                    </span>
                   </td>
                   <td className="px-2 py-2 text-xs text-muted-foreground">
                     {problem.tags.slice(0, 3).map(humanTopic).join(', ')}
@@ -463,7 +513,6 @@ function ContestDetail({
   )
 }
 
-// Headline numbers across the analyzed contests.
 function PatternKpis({ patterns }: { patterns: ContestPatternMetrics }) {
   return (
     <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
@@ -530,98 +579,18 @@ function chartContests(contests: readonly ContestSummary[]): ChartContest[] {
     }))
 }
 
-function ContestTick({
-  x,
-  y,
-  payload,
-}: {
-  x?: number
-  y?: number
-  payload?: { value?: string }
-}) {
-  const [platform = '', day = ''] = (payload?.value ?? '').split('|')
-  return (
-    <text
-      fill="var(--muted-foreground)"
-      fontSize={10}
-      textAnchor="middle"
-      x={x}
-      y={y}
-    >
-      <tspan dy="0.9em" fontWeight={600} x={x}>
-        {platform}
-      </tspan>
-      <tspan dy="1.25em" x={x}>
-        {day}
-      </tspan>
-    </text>
-  )
-}
-
-function nameFor(data: readonly ChartContest[], label: unknown) {
-  return data.find((item) => item.label === label)?.name ?? String(label)
-}
-
 // Solved against the problems in each contest, oldest to newest.
 function SolvedChart({ data }: { data: readonly ChartContest[] }) {
-  const rows = data.map((item) => ({
-    label: item.label,
-    solved: item.solvedCount,
-    unsolved: Math.max(
-      0,
-      (item.problemCount ?? item.solvedCount) - item.solvedCount,
-    ),
-  }))
   return (
     <ChartCard
       className="lg:col-span-7"
       description="Problems solved in each contest against its full problem set."
       title="Solved per contest"
     >
-      {rows.length === 0 ? (
+      {data.length === 0 ? (
         <ChartEmpty>Analyzed contests appear here.</ChartEmpty>
       ) : (
-        <div aria-label="Solved per contest" className="h-60 w-full" role="img">
-          <ResponsiveContainer height="100%" width="100%">
-            <BarChart
-              data={rows}
-              margin={{ top: 6, right: 6, left: -24, bottom: 0 }}
-            >
-              <CartesianGrid
-                stroke="var(--border)"
-                strokeDasharray="3 3"
-                vertical={false}
-              />
-              <XAxis
-                dataKey="label"
-                height={34}
-                interval={0}
-                tick={<ContestTick />}
-                tickLine={false}
-              />
-              <YAxis allowDecimals={false} tick={axisTick} tickLine={false} />
-              <Tooltip
-                contentStyle={tooltipStyle}
-                cursor={{ fill: 'var(--muted)', opacity: 0.4 }}
-                labelFormatter={(label) => nameFor(data, label)}
-              />
-              <Bar
-                dataKey="solved"
-                fill={chartColors.solved}
-                name="Solved"
-                radius={[0, 0, 4, 4]}
-                stackId="p"
-              />
-              <Bar
-                dataKey="unsolved"
-                fill={chartColors.open}
-                name="Unsolved"
-                radius={[4, 4, 0, 0]}
-                stackId="p"
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        <ProblemScoreboard contests={data} />
       )}
     </ChartCard>
   )
@@ -629,12 +598,7 @@ function SolvedChart({ data }: { data: readonly ChartContest[] }) {
 
 // Rating change per rated contest, green up and red down.
 function RatingChart({ data }: { data: readonly ChartContest[] }) {
-  const rows = data
-    .filter((item) => item.ratingChange !== undefined)
-    .map((item) => ({
-      label: item.label,
-      delta: Math.round(item.ratingChange ?? 0),
-    }))
+  const rows = data.filter((item) => item.ratingChange !== undefined)
   return (
     <ChartCard
       className="lg:col-span-5"
@@ -644,48 +608,7 @@ function RatingChart({ data }: { data: readonly ChartContest[] }) {
       {rows.length === 0 ? (
         <ChartEmpty>No rated contests in this window.</ChartEmpty>
       ) : (
-        <div
-          aria-label="Rating change per contest"
-          className="h-60 w-full"
-          role="img"
-        >
-          <ResponsiveContainer height="100%" width="100%">
-            <BarChart
-              data={rows}
-              margin={{ top: 6, right: 6, left: -18, bottom: 0 }}
-            >
-              <CartesianGrid
-                stroke="var(--border)"
-                strokeDasharray="3 3"
-                vertical={false}
-              />
-              <XAxis
-                dataKey="label"
-                height={34}
-                interval={0}
-                tick={<ContestTick />}
-                tickLine={false}
-              />
-              <YAxis tick={axisTick} tickLine={false} />
-              <ReferenceLine stroke="var(--border)" y={0} />
-              <Tooltip
-                contentStyle={tooltipStyle}
-                cursor={{ fill: 'var(--muted)', opacity: 0.4 }}
-                labelFormatter={(label) => nameFor(data, label)}
-              />
-              <Bar dataKey="delta" name="Rating change" radius={[4, 4, 4, 4]}>
-                {rows.map((row) => (
-                  <Cell
-                    fill={
-                      row.delta >= 0 ? chartColors.solved : chartColors.wrong
-                    }
-                    key={row.label}
-                  />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        <RatingJourney contests={data} />
       )}
     </ChartCard>
   )
@@ -693,13 +616,7 @@ function RatingChart({ data }: { data: readonly ChartContest[] }) {
 
 // Minutes to the first accepted submission, a proxy for how fast you start.
 function StartSpeedChart({ data }: { data: readonly ChartContest[] }) {
-  const rows = data
-    .filter((item) => item.firstAcceptedMinute !== undefined)
-    .map((item) => ({
-      label: item.label,
-      minute: Math.round(item.firstAcceptedMinute ?? 0),
-      wrong: item.wrongSubmissions ?? 0,
-    }))
+  const rows = data.filter((item) => item.firstAcceptedMinute !== undefined)
   return (
     <ChartCard
       className="lg:col-span-7"
@@ -709,67 +626,7 @@ function StartSpeedChart({ data }: { data: readonly ChartContest[] }) {
       {rows.length === 0 ? (
         <ChartEmpty>No accepted submissions yet.</ChartEmpty>
       ) : (
-        <div
-          aria-label="Start speed per contest"
-          className="h-56 w-full"
-          role="img"
-        >
-          <ResponsiveContainer height="100%" width="100%">
-            <AreaChart
-              data={rows}
-              margin={{ top: 6, right: 6, left: -24, bottom: 0 }}
-            >
-              <defs>
-                <linearGradient id="start-fill" x1="0" x2="0" y1="0" y2="1">
-                  <stop
-                    offset="0%"
-                    stopColor={chartColors.accent}
-                    stopOpacity={0.4}
-                  />
-                  <stop
-                    offset="100%"
-                    stopColor={chartColors.accent}
-                    stopOpacity={0}
-                  />
-                </linearGradient>
-              </defs>
-              <CartesianGrid
-                stroke="var(--border)"
-                strokeDasharray="3 3"
-                vertical={false}
-              />
-              <XAxis
-                dataKey="label"
-                height={34}
-                interval={0}
-                tick={<ContestTick />}
-                tickLine={false}
-              />
-              <YAxis allowDecimals={false} tick={axisTick} tickLine={false} />
-              <Tooltip
-                contentStyle={tooltipStyle}
-                labelFormatter={(label) => nameFor(data, label)}
-              />
-              <Area
-                dataKey="minute"
-                fill="url(#start-fill)"
-                name="First accept (min)"
-                stroke={chartColors.accent}
-                strokeWidth={2.2}
-                type="monotone"
-              />
-              <Area
-                dataKey="wrong"
-                fill="transparent"
-                name="Wrong submissions"
-                stroke={chartColors.wrong}
-                strokeDasharray="4 3"
-                strokeWidth={1.5}
-                type="monotone"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
+        <StartLanes contests={data} />
       )}
     </ChartCard>
   )
@@ -777,7 +634,6 @@ function StartSpeedChart({ data }: { data: readonly ChartContest[] }) {
 
 // Pressure habits counted across analyzed contests.
 function PressureCard({ patterns }: { patterns: ContestPatternMetrics }) {
-  const total = Math.max(1, patterns.contestsAnalyzed)
   const signals: [string, number, string][] = [
     [
       'Slow starts',
@@ -798,37 +654,20 @@ function PressureCard({ patterns }: { patterns: ContestPatternMetrics }) {
       description={`Out of ${patterns.contestsAnalyzed} analyzed contests.`}
       title="Pressure signals"
     >
-      <ul className="grid gap-3">
-        {signals.map(([label, count, hint]) => (
-          <li key={label}>
-            <div className="flex items-baseline justify-between gap-2 text-sm">
-              <span className="font-medium text-foreground">{label}</span>
-              <span className="font-heading font-bold tabular-nums">
-                {count}
-                <span className="font-sans text-xs font-normal text-muted-foreground">
-                  /{patterns.contestsAnalyzed}
-                </span>
-              </span>
-            </div>
-            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
-              <div
-                className={cn(
-                  'h-full rounded-full',
-                  count / total >= 0.5 ? 'bg-destructive' : 'bg-primary',
-                )}
-                style={{ width: `${(count / total) * 100}%` }}
-              />
-            </div>
-            <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>
-          </li>
-        ))}
-      </ul>
+      <PressureMeters
+        signals={signals.map(([label, count, hint]) => ({
+          label,
+          count,
+          hint,
+        }))}
+        total={patterns.contestsAnalyzed}
+      />
       {patterns.recurringUnsolvedTopics.length > 0 ||
       patterns.stuckPositions.length > 0 ? (
         <div className="mt-4 flex flex-wrap gap-1.5">
           {patterns.recurringUnsolvedTopics.map((item) => (
             <span
-              className="rounded-md bg-sun-soft px-2 py-0.5 text-xs text-sun-foreground"
+              className="rounded-full bg-[#f59e0b]/12 px-2.5 py-0.5 text-xs text-[#b45309] dark:text-[#fcd34d]"
               key={item.topic}
             >
               {humanTopic(item.topic)} unsolved {item.count}x
@@ -836,7 +675,7 @@ function PressureCard({ patterns }: { patterns: ContestPatternMetrics }) {
           ))}
           {patterns.stuckPositions.map((item) => (
             <span
-              className="rounded-md bg-secondary px-2 py-0.5 text-xs text-secondary-foreground"
+              className="rounded-full bg-secondary px-2.5 py-0.5 text-xs text-secondary-foreground"
               key={item.label}
             >
               Stuck at {item.label} {item.count}x
@@ -922,7 +761,7 @@ function PatternReport({
         </div>
       ) : report !== undefined ? (
         <div className="grid gap-4">
-          <p className="rounded-lg border-l-2 border-primary bg-primary/5 px-4 py-3 text-base font-medium text-foreground">
+          <p className="rounded-lg border border-[color-mix(in_oklab,var(--primary)_30%,var(--border))] bg-primary/5 px-4 py-3 text-base font-medium text-foreground">
             {report.headline}
           </p>
           <div className="grid gap-3 md:grid-cols-3">
@@ -991,7 +830,7 @@ function ContestList({
               <button
                 aria-current={active ? 'true' : undefined}
                 className={cn(
-                  'flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition-[border-color,background-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-55',
+                  'flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition-[border-color,background-color,box-shadow] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-55',
                   active
                     ? 'border-primary bg-primary/5 shadow-soft'
                     : 'border-border bg-card hover:shadow-soft',
@@ -1185,4 +1024,12 @@ function ContestAnalysisPage() {
   )
 }
 
-export default ContestAnalysisPage
+function ContestAnalysisPageWithPanels() {
+  return (
+    <PanelStyle variant="classic">
+      <ContestAnalysisPage />
+    </PanelStyle>
+  )
+}
+
+export default ContestAnalysisPageWithPanels

@@ -1,8 +1,11 @@
 import { useId, useRef, useState, type FormEvent } from 'react'
+import { motion, useReducedMotion } from 'motion/react'
 import type { RecommendationSteering } from '@algomemtor/shared-contracts'
 
 import {
   ArrowUp,
+  Brain,
+  MessageCircle,
   LoaderCircle,
   Plus,
   SlidersHorizontal,
@@ -10,6 +13,7 @@ import {
   X,
 } from '@/components/icons/algo-icons'
 import { useNotification } from '@/app/useNotification'
+import { useTypedExample } from '@/lib/use-typed-example'
 import {
   useRecommendationSteering,
   useRemoveRecommendationSteering,
@@ -26,6 +30,61 @@ const examples = [
   'These are too easy',
   'Skip geometry',
 ]
+
+const applySteps = [
+  { label: 'You ask', icon: MessageCircle },
+  { label: 'Picks re-rank', icon: SlidersHorizontal },
+  { label: 'Remembered', icon: Brain },
+] as const
+
+// What happens to a request, as three stops with a dot travelling between.
+function ApplyFlow({ busy }: { busy: boolean }) {
+  const reduceMotion = useReducedMotion()
+  return (
+    <ol
+      aria-label="What happens to your request"
+      className="mt-auto flex items-center gap-2 pt-5"
+    >
+      {applySteps.map((step, index) => {
+        const Icon = step.icon
+        return (
+          <li
+            className="flex min-w-0 flex-1 items-center gap-2"
+            key={step.label}
+          >
+            <span className="flex min-w-0 items-center gap-2 rounded-xl border border-border bg-background/60 px-2.5 py-2">
+              <span className="grid size-6 shrink-0 place-items-center rounded-lg bg-acc-soft text-acc-ink">
+                <Icon aria-hidden="true" className="size-3.5" />
+              </span>
+              <span className="sr-only truncate text-xs font-medium text-foreground sm:not-sr-only">
+                {step.label}
+              </span>
+            </span>
+            {index < applySteps.length - 1 ? (
+              <span
+                aria-hidden="true"
+                className="relative h-px min-w-4 flex-1 bg-border"
+              >
+                {reduceMotion ? null : (
+                  <motion.span
+                    animate={{ left: ['0%', '100%'], opacity: [0, 1, 0] }}
+                    className="absolute -top-[3px] size-[7px] rounded-full bg-acc shadow-[0_0_8px_var(--acc)]"
+                    transition={{
+                      duration: busy ? 0.7 : 1.8,
+                      repeat: Infinity,
+                      ease: 'easeInOut',
+                      delay: index * (busy ? 0.35 : 0.9),
+                    }}
+                  />
+                )}
+              </span>
+            ) : null}
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
 
 function instructionLabel(item: RecommendationSteering) {
   return item.applied.length > 0 ? item.applied.join(' · ') : item.text
@@ -44,6 +103,9 @@ export function RecommendationSteeringBar() {
   const [text, setText] = useState('')
   // Open by default until the learner has saved an instruction.
   const [open, setOpen] = useState<boolean | null>(null)
+  const reduceMotion = useReducedMotion()
+  const typing = !reduceMotion && text === '' && !save.isPending
+  const typed = useTypedExample(examples, typing)
 
   const instructions = steeringQuery.data?.data ?? []
   const expanded =
@@ -108,25 +170,39 @@ export function RecommendationSteeringBar() {
   return (
     <section
       aria-label="Tell AlgoMemtor what you want"
-      className="animate-rise min-w-0 rounded-xl border border-border bg-card p-4 sm:p-5"
+      className="relative isolate flex h-full min-w-0 flex-col overflow-hidden rounded-3xl border border-border bg-card p-5 shadow-soft"
     >
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute -bottom-24 -left-16 -z-10 size-64 rounded-full bg-[radial-gradient(closest-side,color-mix(in_oklab,var(--acc)_22%,transparent),transparent)] blur-2xl"
+      />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-accent text-accent-foreground">
-            <SlidersHorizontal aria-hidden="true" className="size-4" />
+          <span className="relative grid size-10 shrink-0 place-items-center">
+            {reduceMotion ? null : (
+              <motion.span
+                animate={{ rotate: 360 }}
+                aria-hidden="true"
+                className="absolute inset-0 rounded-full bg-[conic-gradient(from_0deg,var(--acc),transparent_40%,var(--acc-2),transparent_80%,var(--acc))] p-[2px] [mask:linear-gradient(#000_0_0)_content-box_exclude,linear-gradient(#000_0_0)]"
+                transition={{ duration: 6, repeat: Infinity, ease: 'linear' }}
+              />
+            )}
+            <span className="grid size-8 place-items-center rounded-full bg-acc text-white [--icon-node:#fff] dark:text-[#0b0c0e] dark:[--icon-node:#0b0c0e]">
+              <SlidersHorizontal aria-hidden="true" className="size-4" />
+            </span>
           </span>
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-foreground">
+            <h2 className="text-base font-semibold text-foreground">
               Shape your picks
             </h2>
             <p className="text-xs text-muted-foreground">
-              Say which platforms, topics or ratings you want or want to skip.
+              Platforms, topics or ratings to want or skip.
             </p>
           </div>
         </div>
         {!expanded ? (
           <button
-            className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => {
               setOpen(true)
               window.requestAnimationFrame(() => inputRef.current?.focus())
@@ -148,7 +224,7 @@ export function RecommendationSteeringBar() {
         >
           {instructions.map((item) => (
             <li
-              className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border bg-secondary/60 py-1 pr-1 pl-2.5 text-xs text-foreground"
+              className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[color-mix(in_oklab,var(--acc)_35%,var(--border))] bg-acc-soft py-1 pr-1 pl-2.5 text-xs text-acc-ink"
               key={item.id}
               title={item.text}
             >
@@ -159,7 +235,7 @@ export function RecommendationSteeringBar() {
               <span className="min-w-0 truncate">{instructionLabel(item)}</span>
               <button
                 aria-label={`Remove instruction: ${item.text}`}
-                className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:opacity-50"
+                className="grid size-5 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:opacity-50"
                 disabled={remove.isPending}
                 onClick={() => removeInstruction(item)}
                 type="button"
@@ -172,19 +248,29 @@ export function RecommendationSteeringBar() {
       ) : null}
 
       {expanded ? (
-        <form className="mt-3" onSubmit={submit}>
+        <form className="mt-4" onSubmit={submit}>
           <label className="sr-only" htmlFor={inputId}>
             What kind of problems do you want?
           </label>
           <div
             className={cn(
-              'flex items-center gap-2 rounded-xl border border-input bg-background py-1.5 pr-1.5 pl-3.5 transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-4 focus-within:ring-ring/15',
+              'relative flex items-center gap-2 rounded-2xl border border-input bg-background py-2 pr-2 pl-3.5 transition-[border-color,box-shadow] focus-within:border-acc focus-within:ring-4 focus-within:ring-[color-mix(in_oklab,var(--acc)_18%,transparent)]',
               save.isPending && 'opacity-80',
             )}
           >
+            <Sparkles aria-hidden="true" className="size-4 shrink-0 text-acc" />
+            {typing ? (
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute left-10 truncate text-base text-muted-foreground sm:text-sm"
+              >
+                {typed}
+                <span className="blink-caret ml-px inline-block h-4 w-px translate-y-0.5 bg-acc" />
+              </span>
+            ) : null}
             <input
               autoComplete="off"
-              className="h-9 min-w-0 flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground sm:text-sm"
+              className="h-10 min-w-0 flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground sm:text-sm"
               disabled={save.isPending}
               id={inputId}
               maxLength={MAX_LENGTH}
@@ -194,7 +280,11 @@ export function RecommendationSteeringBar() {
                   setOpen(false)
                 }
               }}
-              placeholder="e.g. no LeetCode, more DP around 1600, skip Sereja and Brackets"
+              placeholder={
+                typing
+                  ? ''
+                  : 'e.g. no LeetCode, more DP around 1600, skip Sereja and Brackets'
+              }
               ref={inputRef}
               value={text}
             />
@@ -210,7 +300,7 @@ export function RecommendationSteeringBar() {
             ) : null}
             <button
               aria-label={save.isPending ? 'Updating your picks' : 'Apply'}
-              className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
+              className="grid size-9 shrink-0 place-items-center rounded-xl bg-acc text-white transition-[opacity,transform] hover:scale-105 hover:opacity-90 disabled:opacity-40 dark:text-[#0b0c0e]"
               disabled={text.trim() === '' || save.isPending}
               type="submit"
             >
@@ -229,24 +319,35 @@ export function RecommendationSteeringBar() {
               Updating your picks and saving this to memory…
             </p>
           ) : (
-            <div className="mt-2.5 flex flex-wrap gap-1.5">
-              {examples.map((example) => (
-                <button
-                  className="rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--border))] hover:text-foreground"
-                  key={example}
-                  onClick={() => {
-                    setText(example)
-                    inputRef.current?.focus()
-                  }}
-                  type="button"
-                >
-                  {example}
-                </button>
-              ))}
+            <div className="mt-4">
+              <p className="text-[0.68rem] font-medium text-muted-foreground">
+                Try one
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {examples.map((example, index) => (
+                  <motion.button
+                    animate={{ opacity: 1, y: 0 }}
+                    className="inline-flex items-center gap-1 rounded-full border border-border bg-background/60 px-3 py-1.5 text-xs text-muted-foreground transition-[border-color,color,transform] hover:-translate-y-0.5 hover:border-acc hover:text-foreground"
+                    initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+                    key={example}
+                    transition={{ delay: 0.05 * index }}
+                    onClick={() => {
+                      setText(example)
+                      inputRef.current?.focus()
+                    }}
+                    type="button"
+                  >
+                    <Plus aria-hidden="true" className="size-3" />
+                    {example}
+                  </motion.button>
+                ))}
+              </div>
             </div>
           )}
         </form>
       ) : null}
+
+      <ApplyFlow busy={save.isPending} />
     </section>
   )
 }

@@ -1,7 +1,9 @@
-import { useState, type ReactNode } from 'react'
+import { useId, useState, type ReactNode } from 'react'
+import { motion, useReducedMotion } from 'motion/react'
 import type { ProviderKey } from '@algomemtor/shared-contracts'
 
 import { ArrowUpRight } from '@/components/icons/algo-icons'
+import { Panel } from '@/components/kit/Panel'
 import { languageChoices, providerLabels } from '@/features/mentor/format'
 import { cn } from '@/lib/utils'
 
@@ -40,7 +42,7 @@ export function ProviderBadge({
   provider: ProviderKey | 'other'
 }) {
   return (
-    <span className="inline-flex shrink-0 items-center rounded-md border border-border bg-secondary/60 px-2 py-0.5 text-[0.7rem] font-medium text-secondary-foreground">
+    <span className="inline-flex shrink-0 items-center rounded-full border border-border bg-secondary/60 px-2.5 py-0.5 text-[0.7rem] font-medium text-secondary-foreground">
       {providerLabels[provider]}
     </span>
   )
@@ -95,31 +97,15 @@ export function SectionCard({
   id?: string
 }) {
   return (
-    <section
-      aria-labelledby={id}
-      className={cn(
-        'min-w-0 rounded-xl border border-border bg-card p-4 sm:p-5',
-        className,
-      )}
+    <Panel
+      action={action}
+      className={className}
+      description={description}
+      title={title}
+      {...(id === undefined ? {} : { headingId: id })}
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2
-            className="text-base font-semibold text-foreground sm:text-lg"
-            id={id}
-          >
-            {title}
-          </h2>
-          {description ? (
-            <p className="mt-0.5 max-w-2xl text-sm leading-6 text-muted-foreground">
-              {description}
-            </p>
-          ) : null}
-        </div>
-        {action}
-      </div>
-      <div className="mt-4">{children}</div>
-    </section>
+      {children}
+    </Panel>
   )
 }
 
@@ -136,45 +122,56 @@ export function LanguagePicker({
 }) {
   const isPreset = (languageChoices as readonly string[]).includes(value)
   const [custom, setCustom] = useState(!isPreset)
+  const layoutId = useId()
+  const reduceMotion = useReducedMotion()
+  const options = [
+    ...languageChoices.map((choice) => ({
+      key: choice,
+      label: choice,
+      selected: !custom && value === choice,
+      onSelect: () => {
+        setCustom(false)
+        onChange(choice)
+      },
+    })),
+    {
+      key: 'other',
+      label: 'Other',
+      selected: custom,
+      onSelect: () => {
+        setCustom(true)
+        if (isPreset) onChange('')
+      },
+    },
+  ]
   return (
     <fieldset className="min-w-0" disabled={disabled}>
       <legend className="text-sm font-medium text-foreground">Language</legend>
-      <div className="mt-2 flex flex-wrap gap-2">
-        {languageChoices.map((choice) => (
+      <div className="mt-2 inline-flex max-w-full flex-wrap gap-1 rounded-xl border border-border bg-muted/60 p-1">
+        {options.map((option) => (
           <button
-            aria-pressed={!custom && value === choice}
+            aria-pressed={option.selected}
             className={cn(
-              'h-9 rounded-md border px-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-              !custom && value === choice
-                ? 'border-primary bg-primary/10 text-primary'
-                : 'border-border text-foreground/75 hover:bg-secondary',
+              'relative h-8 rounded-lg px-3.5 text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+              option.selected
+                ? 'text-foreground'
+                : 'text-muted-foreground hover:text-foreground',
             )}
-            key={choice}
-            onClick={() => {
-              setCustom(false)
-              onChange(choice)
-            }}
+            key={option.key}
+            onClick={option.onSelect}
             type="button"
           >
-            {choice}
+            {option.selected ? (
+              <motion.span
+                aria-hidden="true"
+                className="absolute inset-0 rounded-lg border border-border bg-card shadow-soft"
+                layoutId={reduceMotion ? undefined : layoutId}
+                transition={{ type: 'spring', stiffness: 460, damping: 34 }}
+              />
+            ) : null}
+            <span className="relative">{option.label}</span>
           </button>
         ))}
-        <button
-          aria-pressed={custom}
-          className={cn(
-            'h-9 rounded-md border px-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            custom
-              ? 'border-primary bg-primary/10 text-primary'
-              : 'border-border text-foreground/75 hover:bg-secondary',
-          )}
-          onClick={() => {
-            setCustom(true)
-            if (isPreset) onChange('')
-          }}
-          type="button"
-        >
-          Other
-        </button>
       </div>
       {custom ? (
         <div className="mt-2">
@@ -182,7 +179,7 @@ export function LanguagePicker({
             Other language
           </label>
           <input
-            className="h-10 w-full max-w-xs rounded-md border border-input bg-background px-3 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
+            className="h-10 w-full max-w-xs rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
             id={`${idPrefix}-language-other`}
             maxLength={64}
             onChange={(event) => onChange(event.target.value)}

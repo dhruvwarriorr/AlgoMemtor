@@ -1,5 +1,5 @@
 import type { VisualizerFinding } from '@algomemtor/shared-contracts'
-import { MotionConfig } from 'motion/react'
+import { MotionConfig, motion } from 'motion/react'
 import {
   useCallback,
   useEffect,
@@ -13,11 +13,15 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import {
   ArrowLeft,
+  BookOpen,
+  Code2,
   Pencil,
   RefreshCw,
   Sparkles,
   X,
 } from '@/components/icons/algo-icons'
+import { TestCaseVisualizerIcon } from '@/components/icons/mentor-icons'
+import { PageHero } from '@/components/kit/PageHero'
 import PageContainer from '@/components/layout/PageContainer'
 import { AiLoader, type AiLoaderStep } from '@/components/motion/AiLoader'
 import { Button } from '@/components/ui/button'
@@ -33,6 +37,7 @@ import {
 } from '@/features/visualizer/analysis'
 import { CodeView } from '@/features/visualizer/components/CodeView'
 import { IoPanel } from '@/features/visualizer/components/IoPanel'
+import { PlayIcon } from '@/features/visualizer/components/player-icons'
 import type {
   JumpTarget,
   Speed,
@@ -59,6 +64,7 @@ import {
   CodeComposer,
   ExampleGallery,
 } from '@/features/visualizer/stage/Composer'
+import { ShapeMarquee } from '@/features/visualizer/stage/ShapeMarquee'
 import { Legend } from '@/features/visualizer/stage/Legend'
 import { Stage } from '@/features/visualizer/stage/Stage'
 import { traceMarkers, type Marker } from '@/features/visualizer/stage/markers'
@@ -679,59 +685,74 @@ function TestCaseVisualizerPage() {
     { id: 'visualize', label: 'Visualization', disabled: result === null },
   ]
 
+  const tabIcons: Record<PageView, ReactNode> = {
+    code: <Code2 aria-hidden="true" className="size-3.5" />,
+    examples: <BookOpen aria-hidden="true" className="size-3.5" />,
+    visualize: <PlayIcon aria-hidden="true" className="size-3.5" />,
+  }
+
   const header = (
-    <header className="flex min-w-0 flex-col gap-4">
-      <div className="min-w-0">
-        <h1 className="text-[1.8rem] leading-[1.1] text-foreground sm:text-[2.2rem]">
-          Test Case Visualizer
-        </h1>
-        <p className="mt-1.5 max-w-3xl text-sm leading-6 text-muted-foreground">
-          Run your C++, Java or Python code on a test case and watch every
-          array, pointer, stack, queue, map, tree, graph and recursive call move
-          step by step. The AI Debugger shows where it goes wrong.
-        </p>
-      </div>
-      <div
-        aria-label="Visualizer sections"
-        className="flex min-w-0 items-center gap-1 overflow-x-auto border-b border-border"
-        role="tablist"
-      >
-        {tabs.map((tab) => (
-          <button
-            aria-controls={`visualizer-panel-${tab.id}`}
-            aria-selected={view === tab.id}
-            className={cn(
-              'relative -mb-px inline-flex h-10 shrink-0 items-center gap-2 border-b-2 px-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40',
-              view === tab.id
-                ? 'border-primary text-foreground'
-                : 'border-transparent text-muted-foreground hover:text-foreground',
-            )}
-            disabled={tab.disabled}
-            id={`visualizer-tab-${tab.id}`}
-            key={tab.id}
-            onClick={() => {
-              setPlaying(false)
-              setView(tab.id)
-            }}
-            role="tab"
-            type="button"
-          >
-            {tab.label}
-            {tab.id === 'visualize' && verdict !== null ? (
-              <span
-                aria-hidden="true"
-                className={cn(
-                  'size-2 rounded-full',
-                  verdict.tone === 'ok' && 'bg-go',
-                  verdict.tone === 'bad' && 'bg-destructive',
-                  verdict.tone === 'neutral' && 'bg-muted-foreground',
-                )}
-              />
-            ) : null}
-          </button>
-        ))}
-      </div>
-    </header>
+    <PageHero
+      actions={
+        <div
+          aria-label="Visualizer sections"
+          className="flex min-w-0 items-center gap-1 overflow-x-auto rounded-xl border border-border bg-muted/60 p-1"
+          role="tablist"
+        >
+          {tabs.map((tab) => (
+            <button
+              aria-controls={`visualizer-panel-${tab.id}`}
+              aria-selected={view === tab.id}
+              className={cn(
+                'relative inline-flex h-8 shrink-0 items-center gap-2 rounded-lg px-3.5 text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40',
+                view === tab.id
+                  ? 'text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+              disabled={tab.disabled}
+              id={`visualizer-tab-${tab.id}`}
+              key={tab.id}
+              onClick={() => {
+                setPlaying(false)
+                setView(tab.id)
+              }}
+              role="tab"
+              type="button"
+            >
+              {view === tab.id ? (
+                <motion.span
+                  aria-hidden="true"
+                  className="absolute inset-0 rounded-lg border border-border bg-card shadow-soft"
+                  layoutId="visualizer-tab"
+                />
+              ) : null}
+              <span className="relative inline-flex items-center gap-2">
+                {tabIcons[tab.id]}
+                {tab.label}
+                {tab.id === 'visualize' && verdict !== null ? (
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      'size-2 rounded-full',
+                      verdict.tone === 'ok' && 'bg-go',
+                      verdict.tone === 'bad' && 'bg-destructive',
+                      verdict.tone === 'neutral' && 'bg-muted-foreground',
+                    )}
+                  />
+                ) : null}
+              </span>
+            </button>
+          ))}
+        </div>
+      }
+      eyebrow="Test Case Visualizer"
+      icon={TestCaseVisualizerIcon}
+      info="Run your C++, Java or Python code on a test case and watch every array, pointer, stack, queue, map, tree, graph and recursive call move step by step. Code runs only in this browser tab. The AI Debugger shows where it goes wrong."
+      subtitle="Watch your code run on a test case, step by step."
+      title="Test Case Visualizer"
+    >
+      {result === null && view === 'code' ? <ShapeMarquee /> : null}
+    </PageHero>
   )
 
   let panel: ReactNode
@@ -1077,7 +1098,7 @@ function TestCaseVisualizerPage() {
         duration: Math.min(0.45, 0.9 / speed),
       }}
     >
-      <PageContainer className="gap-5">
+      <PageContainer accent="violet" className="gap-5">
         {header}
         {contextBar}
         <div

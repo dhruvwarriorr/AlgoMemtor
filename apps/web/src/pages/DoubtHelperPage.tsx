@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from 'react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import {
   Link,
   useLocation,
@@ -22,26 +29,34 @@ import {
   BookOpen,
   Check,
   CheckCheck,
-  CloudOff,
   Code2,
-  Compass,
   Crosshair,
-  Gauge,
   Lightbulb,
+  Link2,
   Lock,
   MessageCircle,
   Plus,
-  ShieldCheck,
-  XCircle,
-  type IconComponent,
 } from '@/components/icons/algo-icons'
+import {
+  ApproachReviewIcon,
+  CompilationErrorIcon,
+  FindApproachIcon,
+  GeneralHelpIcon,
+  LimitExceededIcon,
+  NoOutputIcon,
+  UnderstandProblemIcon,
+  WrongAnswerIcon,
+  type DoubtIconComponent,
+} from '@/components/icons/doubt-icons'
+import { CapsuleStats } from '@/components/kit/stat-cards'
+import { PageHero } from '@/components/kit/PageHero'
+import { OrbField } from '@/components/kit/surfaces'
 import { AiLoader, type AiLoaderStep } from '@/components/motion/AiLoader'
 import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { useNotification } from '@/app/useNotification'
 import { CoachMessageContent } from '@/features/coach/components/CoachMessageContent'
-import { KpiTile } from '@/features/mentor/components/visuals'
 import {
   MentorChatDock,
   type DockMessage,
@@ -65,7 +80,10 @@ import {
   useStartHelpSession,
 } from '@/features/mentor/hooks'
 import { mentorToolPath } from '@/features/mentor/feature-routes'
-import { TestCaseVisualizerIcon } from '@/components/icons/mentor-icons'
+import {
+  DoubtHelperIcon,
+  TestCaseVisualizerIcon,
+} from '@/components/icons/mentor-icons'
 import {
   VISUALIZER_PATH,
   readDoubtIntake,
@@ -78,59 +96,68 @@ import {
 } from '@/features/visualizer/handoff'
 import { cn } from '@/lib/utils'
 
-const doubtIcons: Record<ProblemHelpDoubtType, IconComponent> = {
-  understand_problem: BookOpen,
-  find_approach: Compass,
-  approach_review: ShieldCheck,
-  compilation_error: Code2,
-  no_output: CloudOff,
-  wrong_answer: XCircle,
-  performance_tle_mle: Gauge,
-  general: MessageCircle,
+const doubtIcons: Record<ProblemHelpDoubtType, DoubtIconComponent> = {
+  understand_problem: UnderstandProblemIcon,
+  find_approach: FindApproachIcon,
+  approach_review: ApproachReviewIcon,
+  compilation_error: CompilationErrorIcon,
+  no_output: NoOutputIcon,
+  wrong_answer: WrongAnswerIcon,
+  performance_tle_mle: LimitExceededIcon,
+  general: GeneralHelpIcon,
 }
 
 const doubtOptions: readonly {
   value: ProblemHelpDoubtType
+  short: string
   label: string
   hint: string
 }[] = [
   {
     value: 'understand_problem',
+    short: 'Understand it',
     label: 'I cannot understand the problem',
     hint: 'Restate it, walk through samples, flag tricky wording.',
   },
   {
     value: 'find_approach',
+    short: 'Find an approach',
     label: 'I do not know how to approach it',
     hint: 'Brute force first, then a nudge toward the right idea.',
   },
   {
     value: 'approach_review',
+    short: 'Review my idea',
     label: 'Check my approach before I submit',
     hint: 'Catch wrong or too-slow ideas before you code them.',
   },
   {
     value: 'compilation_error',
+    short: 'Compile error',
     label: 'Compilation error',
     hint: 'Explain the compiler message and the exact cause.',
   },
   {
     value: 'no_output',
+    short: 'No output',
     label: 'My code prints nothing',
     hint: 'Trace execution to find where output is lost.',
   },
   {
     value: 'wrong_answer',
+    short: 'Wrong answer',
     label: 'Wrong answer',
     hint: 'Find the failing case and the broken assumption.',
   },
   {
     value: 'performance_tle_mle',
+    short: 'TLE / MLE',
     label: 'Time or memory limit exceeded',
     hint: 'Locate the bottleneck against the constraints.',
   },
   {
     value: 'general',
+    short: 'General help',
     label: 'General help with this problem',
     hint: 'Understanding plus solving mindset, no spoilers.',
   },
@@ -188,49 +215,59 @@ const workingSteps: readonly AiLoaderStep[] = [
   { label: 'Writing one step at a time', indicator: 'dots' },
 ]
 
+const levelDetails = [
+  'A pointer in the right direction',
+  'The idea or technique it needs',
+  'How the solution fits together',
+  'The one piece of code that matters',
+  'Everything, only when you confirm',
+]
+
+// Five rising steps: one per hint level, lit as you climb.
 function HintLadder({ level, stage }: { level: number; stage: string }) {
+  const reduceMotion = useReducedMotion()
   return (
     <ol
       aria-label={`Hint ${Math.min(level, 5)} of 5`}
-      className="grid grid-cols-5"
+      className="grid grid-cols-5 items-end gap-1.5"
     >
       {levelNames.map((name, index) => {
         const reached = index < level
         const current = index === level - 1
         return (
-          <li
-            className="relative flex min-w-0 flex-col items-center"
-            key={name}
-          >
-            {index > 0 ? (
-              <span
-                aria-hidden="true"
-                className={cn(
-                  'absolute top-4 right-1/2 h-0.5 w-full -translate-y-1/2',
-                  reached ? 'bg-primary' : 'bg-border',
-                )}
-              />
-            ) : null}
-            <span
+          <li className="flex min-w-0 flex-col gap-1.5" key={name}>
+            <motion.span
+              animate={{ scaleY: 1 }}
+              aria-hidden="true"
               className={cn(
-                'relative grid size-8 place-items-center rounded-full font-heading text-sm font-bold transition-colors',
+                'relative grid origin-bottom place-items-start justify-center rounded-md pt-1',
                 reached
                   ? index === 4
-                    ? 'bg-sun text-sun-foreground'
-                    : 'mesh-card text-white'
-                  : 'border border-border bg-card text-muted-foreground',
-                current && 'ring-4 ring-primary/20',
+                    ? 'bg-linear-to-t from-[#f59e0b] to-[#f43f5e] text-white'
+                    : 'bg-acc text-white dark:text-[#0b0c0e]'
+                  : 'bg-muted text-muted-foreground',
+                current &&
+                  'shadow-[0_0_0_3px_color-mix(in_oklab,var(--acc)_25%,transparent),0_10px_24px_-10px_var(--acc)]',
               )}
+              initial={reduceMotion ? false : { scaleY: 0 }}
+              style={{ height: `${14 + index * 9}px` }}
+              transition={{
+                duration: 0.7,
+                ease: [0.16, 1, 0.3, 1],
+                delay: 0.06 * index,
+              }}
             >
               {reached && !current ? (
-                <Check aria-hidden="true" className="size-4" />
+                <Check className="size-3" />
               ) : (
-                index + 1
+                <span className="font-mono text-[0.6rem] leading-none font-bold">
+                  {index + 1}
+                </span>
               )}
-            </span>
+            </motion.span>
             <span
               className={cn(
-                'mt-1.5 max-w-full truncate text-center text-[0.7rem]',
+                'truncate text-center text-[0.68rem]',
                 current
                   ? 'font-semibold text-foreground'
                   : 'text-muted-foreground',
@@ -263,36 +300,37 @@ function HelpStats() {
     sessions.reduce((sum, item) => sum + Math.min(item.hintLevel, 5), 0) /
     sessions.length
   return (
-    <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-      <KpiTile
-        detail="Problems you asked about"
-        icon={Crosshair}
-        label="Help sessions"
-        tone="accent"
-        value={sessions.length}
-      />
-      <KpiTile
-        detail="Marked solved"
-        icon={CheckCheck}
-        label="Solved"
-        tone="green"
-        value={solved}
-      />
-      <KpiTile
-        detail="Lower means more independence"
-        icon={Lightbulb}
-        label="Average hint"
-        tone="sky"
-        value={average.toFixed(1)}
-      />
-      <KpiTile
-        detail="Sessions that revealed the solution"
-        icon={Lock}
-        label="Full reveals"
-        tone="sand"
-        value={reveals}
-      />
-    </dl>
+    <CapsuleStats
+      items={[
+        {
+          label: 'Help sessions',
+          value: sessions.length,
+          hint: 'Problems you asked about',
+          icon: Crosshair,
+        },
+        {
+          label: 'Solved',
+          value: solved,
+          hint: 'Marked solved',
+          icon: CheckCheck,
+          color: '#22c55e',
+        },
+        {
+          label: 'Average hint',
+          value: average.toFixed(1),
+          hint: 'Lower means more independence',
+          icon: Lightbulb,
+          color: '#f59e0b',
+        },
+        {
+          label: 'Full reveals',
+          value: reveals,
+          hint: 'Sessions that revealed the solution',
+          icon: Lock,
+          color: '#ef4444',
+        },
+      ]}
+    />
   )
 }
 
@@ -307,12 +345,19 @@ function turnHeading(turn: ProblemHelpTurn) {
 }
 
 function Transcript({ turns }: { turns: readonly ProblemHelpTurn[] }) {
+  const reduceMotion = useReducedMotion()
   return (
-    <ol className="flex flex-col gap-6">
+    <ol className="relative flex flex-col gap-6 before:absolute before:top-3 before:bottom-3 before:left-4 before:w-px before:bg-linear-to-b before:from-acc/60 before:via-border before:to-transparent">
       {turns.map((turn) =>
         turn.role === 'learner' ? (
-          <li className="flex flex-col items-end" key={turn.id}>
-            <div className="max-w-[88%] rounded-xl rounded-br-md border border-border bg-secondary px-4 py-3 text-sm leading-6 text-foreground [&_em]:text-muted-foreground [&_p]:my-0.5 [&_strong]:font-semibold">
+          <motion.li
+            animate={{ opacity: 1, x: 0 }}
+            className="flex flex-col items-end"
+            initial={reduceMotion ? false : { opacity: 0, x: 12 }}
+            key={turn.id}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+          >
+            <div className="max-w-[88%] rounded-2xl rounded-br-md border border-border bg-secondary px-4 py-3 text-sm leading-6 text-foreground [&_em]:text-muted-foreground [&_p]:my-0.5 [&_strong]:font-semibold">
               <CoachMessageContent content={turn.content} role="assistant" />
             </div>
             <time
@@ -326,25 +371,153 @@ function Transcript({ turns }: { turns: readonly ProblemHelpTurn[] }) {
                   : 'Your question'}{' '}
               · {formatDateTime(turn.createdAt)}
             </time>
-          </li>
+          </motion.li>
         ) : (
-          <li className="flex gap-3" key={turn.id}>
+          <motion.li
+            animate={{ opacity: 1, y: 0 }}
+            className="relative flex gap-3"
+            initial={reduceMotion ? false : { opacity: 0, y: 12 }}
+            key={turn.id}
+            transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+          >
             <span
               aria-hidden="true"
               className="coach-orb mt-0.5 size-8 shrink-0"
             />
             <article className="min-w-0 flex-1">
-              <h3 className="font-sans text-sm font-semibold text-foreground">
+              <h3 className="inline-flex items-center gap-1.5 rounded-full bg-acc-soft px-2.5 py-0.5 font-sans text-xs font-semibold text-acc-ink">
+                {turn.kind === 'hint' && turn.hintLevel !== undefined ? (
+                  <span
+                    aria-hidden="true"
+                    className="grid size-4 place-items-center rounded-full bg-acc font-mono text-[0.6rem] text-white dark:text-[#0b0c0e]"
+                  >
+                    {turn.hintLevel}
+                  </span>
+                ) : null}
                 {turnHeading(turn)}
               </h3>
-              <div className="text-[0.95rem] [&>div]:mt-1.5">
+              <div className="text-[0.95rem] [&>div]:mt-2">
                 <CoachMessageContent content={turn.content} role="assistant" />
               </div>
             </article>
-          </li>
+          </motion.li>
         ),
       )}
     </ol>
+  )
+}
+
+// One numbered stop on the intake form's rail.
+function FormStep({
+  step,
+  title,
+  aside,
+  children,
+}: {
+  step: number
+  title: string
+  aside?: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <section className="relative grid grid-cols-[2rem_minmax(0,1fr)] gap-x-4">
+      <span
+        aria-hidden="true"
+        className="relative z-10 grid size-8 place-items-center rounded-full border border-border bg-card font-mono text-xs font-bold text-foreground shadow-soft"
+      >
+        {step}
+      </span>
+      <div className="min-w-0 pb-1">
+        <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
+          <h3 className="font-sans text-[0.95rem] font-semibold text-foreground">
+            {title}
+          </h3>
+          {aside}
+        </div>
+        <div className="mt-3">{children}</div>
+      </div>
+    </section>
+  )
+}
+
+// The side of the intake form: the chosen kind of doubt, and the hint
+// staircase the session will climb.
+function IntakeAside({
+  doubtType,
+}: {
+  doubtType: ProblemHelpDoubtType | null
+}) {
+  const option = doubtOptions.find((item) => item.value === doubtType)
+  const Icon = option ? doubtIcons[option.value] : DoubtHelperIcon
+  return (
+    <aside
+      aria-label="How help works"
+      className="relative isolate hidden overflow-hidden rounded-2xl border border-border bg-card p-5 xl:sticky xl:top-[calc(var(--app-header)+1.5rem)] xl:block"
+    >
+      <OrbField intensity={0.7} />
+      <AnimatePresence initial={false} mode="wait">
+        <motion.div
+          animate={{ opacity: 1, y: 0 }}
+          data-selected="true"
+          exit={{ opacity: 0, y: -8 }}
+          initial={{ opacity: 0, y: 8 }}
+          key={option?.value ?? 'none'}
+          transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+        >
+          <span className="grid size-20 place-items-center rounded-2xl border border-border bg-card/80 text-foreground shadow-soft backdrop-blur">
+            <Icon aria-hidden="true" className="size-12" />
+          </span>
+          <p className="mt-4 font-heading text-lg leading-6 font-semibold text-foreground">
+            {option ? option.label : 'Pick what you are stuck on'}
+          </p>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            {option
+              ? option.hint
+              : 'The mentor tailors the first hint to the kind of doubt.'}
+          </p>
+        </motion.div>
+      </AnimatePresence>
+      <ol className="mt-6 flex flex-col gap-2" aria-label="Hint levels">
+        {levelNames.map((name, index) => (
+          <motion.li
+            animate={{ opacity: 1, x: 0 }}
+            className="flex items-center gap-3"
+            initial={{ opacity: 0, x: -8 }}
+            key={name}
+            transition={{ delay: 0.15 + index * 0.07 }}
+          >
+            <span aria-hidden="true" className="flex w-14 shrink-0 justify-end">
+              <span
+                className={cn(
+                  'h-2 rounded-full',
+                  index === 4
+                    ? 'bg-linear-to-r from-[#f59e0b] to-[#f43f5e]'
+                    : 'bg-acc',
+                )}
+                style={{
+                  width: `${14 + index * 10}px`,
+                  opacity: 0.4 + index * 0.15,
+                }}
+              />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-medium text-foreground">
+                {index + 1}. {name}
+                {index === 4 ? (
+                  <Lock
+                    aria-hidden="true"
+                    className="ml-1 inline size-3 text-muted-foreground"
+                  />
+                ) : null}
+              </span>
+              <span className="block truncate text-xs text-muted-foreground">
+                {levelDetails[index]}
+              </span>
+            </span>
+          </motion.li>
+        ))}
+      </ol>
+    </aside>
   )
 }
 
@@ -475,228 +648,313 @@ function IntakeForm({
   if (start.isPending) {
     return (
       <div
-        className="rounded-xl border border-border bg-card p-6"
+        className="relative isolate overflow-hidden rounded-2xl border border-border bg-card p-6"
         role="status"
       >
+        <OrbField intensity={0.6} />
         <AiLoader steps={workingSteps} title="Preparing your first hint" />
       </div>
     )
   }
 
+  const selectedOption = doubtOptions.find((item) => item.value === doubtType)
+
   return (
-    <form
-      aria-describedby={fieldError ? 'doubt-form-error' : undefined}
-      className="flex min-w-0 flex-col gap-6 rounded-xl border border-border bg-card p-4 sm:p-6"
-      noValidate
-      onSubmit={submit}
-    >
-      <div>
-        <h2 className="text-lg font-semibold text-foreground">
-          What are you stuck on?
-        </h2>
-        <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          Hints come one level at a time: nudge, concept, structure, key code,
-          then a full walkthrough only when you confirm it.
-        </p>
-      </div>
+    <div className="grid min-w-0 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_19rem]">
+      <form
+        aria-describedby={fieldError ? 'doubt-form-error' : undefined}
+        className="relative flex min-w-0 flex-col gap-7 rounded-2xl border border-border bg-card p-4 before:absolute before:top-10 before:bottom-24 before:left-[2rem] before:w-px before:bg-border sm:p-6 sm:before:left-[2.5rem]"
+        noValidate
+        onSubmit={submit}
+      >
+        <h2 className="sr-only">What are you stuck on?</h2>
 
-      <div className="flex flex-col gap-2">
-        <label
-          className="text-sm font-medium text-foreground"
-          htmlFor="doubt-problem-url"
-        >
-          Problem link {showStatement ? '(optional)' : ''}
-        </label>
-        <input
-          className={inputClass}
-          id="doubt-problem-url"
-          inputMode="url"
-          onChange={(event) => setProblemUrl(event.target.value)}
-          placeholder="https://codeforces.com/problemset/problem/2266/G"
-          type="url"
-          value={problemUrl}
-        />
-        <p className="text-xs text-muted-foreground">
-          Codeforces, CodeChef, LeetCode and CSES links are read directly. Other
-          public pages are read for each answer and never stored.
-        </p>
-        {!needsStatement ? (
-          <button
-            className="self-start text-xs font-medium text-primary underline-offset-4 hover:underline"
-            onClick={() => setPasteMode((value) => !value)}
-            type="button"
-          >
-            {pasteMode ? 'Use a link instead' : 'No link? Paste the statement'}
-          </button>
-        ) : null}
-      </div>
-
-      {showStatement ? (
-        <div className="grid gap-4 rounded-lg border border-border bg-background/50 p-4">
-          {needsStatement ? (
-            <p className="text-sm text-sun-foreground" role="status">
-              The problem could not be read from that link. Paste the statement
-              so the mentor does not have to guess.
-            </p>
-          ) : null}
-          {problemUrl.trim() === '' ? (
-            <label className="flex flex-col gap-2 text-sm font-medium text-foreground">
-              Problem name
-              <input
-                className={inputClass}
-                maxLength={200}
-                onChange={(event) => setProblemTitle(event.target.value)}
-                placeholder="e.g. Grid Paths"
-                value={problemTitle}
-              />
-            </label>
-          ) : null}
-          <label className="flex flex-col gap-2 text-sm font-medium text-foreground">
-            Problem statement
-            <textarea
-              className={cn(inputClass, 'min-h-40 resize-y font-mono text-xs')}
-              maxLength={20_000}
-              onChange={(event) => setStatement(event.target.value)}
-              placeholder="Paste the full statement, constraints and samples."
-              value={statement}
-            />
-          </label>
-        </div>
-      ) : null}
-
-      <fieldset className="min-w-0">
-        <legend className="text-sm font-medium text-foreground">
-          Type of doubt
-        </legend>
-        <div className="mt-2 grid gap-2 sm:grid-cols-2">
-          {doubtOptions.map((option) => {
-            const Icon = doubtIcons[option.value]
-            const chosen = doubtType === option.value
-            return (
-              <label
-                className={cn(
-                  'flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-[border-color,background-color,box-shadow] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring',
-                  chosen
-                    ? 'border-primary bg-primary/5 shadow-soft'
-                    : 'border-border hover:bg-secondary/60',
-                )}
-                key={option.value}
+        <FormStep
+          aside={
+            !needsStatement ? (
+              <button
+                className="text-xs font-medium text-acc underline-offset-4 hover:underline"
+                onClick={() => setPasteMode((value) => !value)}
+                type="button"
               >
-                <input
-                  checked={chosen}
-                  className="sr-only"
-                  name="doubt-type"
-                  onChange={() => setDoubtType(option.value)}
-                  type="radio"
-                  value={option.value}
+                {pasteMode
+                  ? 'Use a link instead'
+                  : 'No link? Paste the statement'}
+              </button>
+            ) : null
+          }
+          step={1}
+          title="The problem"
+        >
+          <label className="sr-only" htmlFor="doubt-problem-url">
+            Problem link {showStatement ? '(optional)' : ''}
+          </label>
+          <div className="relative">
+            <Link2
+              aria-hidden="true"
+              className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground"
+            />
+            <input
+              aria-describedby="doubt-problem-url-hint"
+              className={cn(inputClass, 'pl-10')}
+              id="doubt-problem-url"
+              inputMode="url"
+              onChange={(event) => setProblemUrl(event.target.value)}
+              placeholder="https://codeforces.com/problemset/problem/2266/G"
+              type="url"
+              value={problemUrl}
+            />
+          </div>
+          <p
+            className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"
+            id="doubt-problem-url-hint"
+          >
+            {['Codeforces', 'CodeChef', 'LeetCode', 'CSES'].map((name) => (
+              <span
+                className="rounded-full border border-border px-2 py-0.5 text-[0.68rem]"
+                key={name}
+              >
+                {name}
+              </span>
+            ))}
+            <span>read directly · other pages never stored</span>
+          </p>
+
+          {showStatement ? (
+            <motion.div
+              animate={{ opacity: 1, height: 'auto' }}
+              className="mt-4 grid gap-4 overflow-hidden rounded-xl border border-border bg-background/50 p-4"
+              initial={{ opacity: 0, height: 0 }}
+            >
+              {needsStatement ? (
+                <p className="text-sm text-sun-foreground" role="status">
+                  The problem could not be read from that link. Paste the
+                  statement so the mentor does not have to guess.
+                </p>
+              ) : null}
+              {problemUrl.trim() === '' ? (
+                <label className="flex flex-col gap-2 text-sm font-medium text-foreground">
+                  Problem name
+                  <input
+                    className={inputClass}
+                    maxLength={200}
+                    onChange={(event) => setProblemTitle(event.target.value)}
+                    placeholder="e.g. Grid Paths"
+                    value={problemTitle}
+                  />
+                </label>
+              ) : null}
+              <label className="flex flex-col gap-2 text-sm font-medium text-foreground">
+                Problem statement
+                <textarea
+                  className={cn(
+                    inputClass,
+                    'min-h-40 resize-y font-mono text-xs',
+                  )}
+                  maxLength={20_000}
+                  onChange={(event) => setStatement(event.target.value)}
+                  placeholder="Paste the full statement, constraints and samples."
+                  value={statement}
                 />
+              </label>
+            </motion.div>
+          ) : null}
+        </FormStep>
+
+        <FormStep step={2} title="Type of doubt">
+          <fieldset className="min-w-0">
+            <legend className="sr-only">Type of doubt</legend>
+            <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
+              {doubtOptions.map((option, index) => {
+                const Icon = doubtIcons[option.value]
+                const chosen = doubtType === option.value
+                return (
+                  <motion.label
+                    animate={{ opacity: 1, y: 0 }}
+                    className={cn(
+                      'di-host group relative flex cursor-pointer flex-col items-start gap-3 overflow-hidden rounded-2xl border p-3.5 transition-[border-color,background-color,box-shadow,transform] duration-300 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring hover:-translate-y-0.5',
+                      chosen
+                        ? 'border-transparent shadow-lift'
+                        : 'border-border bg-background/40 hover:border-[color-mix(in_oklab,var(--foreground)_18%,var(--border))]',
+                    )}
+                    data-selected={chosen}
+                    initial={{ opacity: 0, y: 10 }}
+                    key={option.value}
+                    style={
+                      chosen
+                        ? {
+                            background: `linear-gradient(160deg, color-mix(in oklab, ${Icon.hue} 16%, var(--card)), var(--card) 70%)`,
+                            boxShadow: `inset 0 0 0 1.5px ${Icon.hue}`,
+                          }
+                        : undefined
+                    }
+                    transition={{ delay: 0.03 * index, duration: 0.4 }}
+                  >
+                    <input
+                      checked={chosen}
+                      className="sr-only"
+                      name="doubt-type"
+                      onChange={() => setDoubtType(option.value)}
+                      type="radio"
+                      value={option.value}
+                    />
+                    <Icon
+                      aria-hidden="true"
+                      className="size-10 text-foreground transition-transform duration-300 group-hover:scale-110"
+                    />
+                    <span className="min-w-0 text-sm leading-5 font-semibold text-foreground">
+                      {option.short}
+                      <span className="sr-only">: {option.label}</span>
+                    </span>
+                    <AnimatePresence>
+                      {chosen ? (
+                        <motion.span
+                          animate={{ scale: 1, opacity: 1 }}
+                          aria-hidden="true"
+                          className="absolute top-2.5 right-2.5 grid size-5 place-items-center rounded-full text-white"
+                          exit={{ scale: 0, opacity: 0 }}
+                          initial={{ scale: 0, opacity: 0 }}
+                          style={{ background: Icon.hue }}
+                          transition={{
+                            type: 'spring',
+                            stiffness: 500,
+                            damping: 26,
+                          }}
+                        >
+                          <Check className="size-3" />
+                        </motion.span>
+                      ) : null}
+                    </AnimatePresence>
+                  </motion.label>
+                )
+              })}
+            </div>
+            <AnimatePresence initial={false} mode="wait">
+              {selectedOption ? (
+                <motion.p
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mt-3 text-sm text-muted-foreground xl:hidden"
+                  exit={{ opacity: 0, y: -4 }}
+                  initial={{ opacity: 0, y: 4 }}
+                  key={selectedOption.value}
+                >
+                  {selectedOption.hint}
+                </motion.p>
+              ) : null}
+            </AnimatePresence>
+          </fieldset>
+        </FormStep>
+
+        <FormStep step={3} title="Your attempt">
+          <div className="flex flex-col gap-5">
+            <LanguagePicker
+              idPrefix="doubt"
+              onChange={setLanguage}
+              value={language}
+            />
+
+            <label className="flex flex-col gap-2 text-sm font-medium text-foreground">
+              What have you tried?
+              <textarea
+                className={cn(inputClass, 'min-h-24 resize-y')}
+                maxLength={1_000}
+                onChange={(event) => setAttempt(event.target.value)}
+                placeholder={
+                  doubtType === 'understand_problem'
+                    ? 'Which part of the statement is confusing?'
+                    : 'Your idea so far, what you observed, or where you got stuck.'
+                }
+                value={attempt}
+              />
+              <span className="flex items-center gap-2 text-xs font-normal text-muted-foreground">
                 <span
                   aria-hidden="true"
-                  className={cn(
-                    'grid size-9 shrink-0 place-items-center rounded-lg transition-colors',
-                    chosen
-                      ? 'mesh-card text-white'
-                      : 'bg-accent text-accent-foreground',
-                  )}
+                  className="h-1 w-16 overflow-hidden rounded-full bg-muted"
                 >
-                  <Icon className="size-4" />
+                  <span
+                    className="block h-full rounded-full bg-acc transition-[width] duration-300"
+                    style={{ width: `${Math.min(100, attempt.length / 10)}%` }}
+                  />
                 </span>
-                <span className="min-w-0">
-                  <span className="block text-sm font-medium text-foreground">
-                    {option.label}
-                  </span>
-                  <span className="block text-xs leading-5 text-muted-foreground">
-                    {option.hint}
-                  </span>
-                </span>
-              </label>
-            )
-          })}
-        </div>
-      </fieldset>
-
-      <LanguagePicker
-        idPrefix="doubt"
-        onChange={setLanguage}
-        value={language}
-      />
-
-      <label className="flex flex-col gap-2 text-sm font-medium text-foreground">
-        What have you tried?
-        <textarea
-          className={cn(inputClass, 'min-h-24 resize-y')}
-          maxLength={1_000}
-          onChange={(event) => setAttempt(event.target.value)}
-          placeholder={
-            doubtType === 'understand_problem'
-              ? 'Which part of the statement is confusing?'
-              : 'Your idea so far, what you observed, or where you got stuck.'
-          }
-          value={attempt}
-        />
-        <span className="text-xs font-normal text-muted-foreground">
-          {attempt.length}/1000 · saved so you can resume this session.
-        </span>
-      </label>
-
-      {doubtType !== null &&
-      doubtType !== 'understand_problem' &&
-      doubtType !== 'find_approach' ? (
-        <div className="grid gap-4 rounded-lg border border-border bg-background/50 p-4">
-          <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Lock aria-hidden="true" className="size-3.5" />
-            Used for this answer only and never saved.
-          </p>
-          <label className="flex flex-col gap-2 text-sm font-medium text-foreground">
-            <span>Your code {codeRequired ? '' : '(optional)'}</span>
-            <textarea
-              className={cn(inputClass, 'min-h-44 resize-y font-mono text-xs')}
-              maxLength={12_000}
-              onChange={(event) => setCode(event.target.value)}
-              placeholder="Paste the code you are working on."
-              spellCheck={false}
-              value={code}
-            />
-          </label>
-          {errorCopy !== undefined ? (
-            <label className="flex flex-col gap-2 text-sm font-medium text-foreground">
-              {errorCopy.label}
-              <textarea
-                className={cn(
-                  inputClass,
-                  'min-h-20 resize-y font-mono text-xs',
-                )}
-                maxLength={4_000}
-                onChange={(event) => setErrorText(event.target.value)}
-                placeholder={errorCopy.placeholder}
-                spellCheck={false}
-                value={errorText}
-              />
+                {attempt.length}/1000 · saved so you can resume this session.
+              </span>
             </label>
-          ) : null}
+
+            <AnimatePresence initial={false}>
+              {doubtType !== null &&
+              doubtType !== 'understand_problem' &&
+              doubtType !== 'find_approach' ? (
+                <motion.div
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="overflow-hidden"
+                  exit={{ opacity: 0, height: 0 }}
+                  initial={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                >
+                  <div className="grid gap-4 rounded-xl border border-border bg-background/50 p-4">
+                    <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Lock aria-hidden="true" className="size-3.5" />
+                      Used for this answer only and never saved.
+                    </p>
+                    <label className="flex flex-col gap-2 text-sm font-medium text-foreground">
+                      <span>Your code {codeRequired ? '' : '(optional)'}</span>
+                      <textarea
+                        className={cn(
+                          inputClass,
+                          'min-h-44 resize-y font-mono text-xs',
+                        )}
+                        maxLength={12_000}
+                        onChange={(event) => setCode(event.target.value)}
+                        placeholder="Paste the code you are working on."
+                        spellCheck={false}
+                        value={code}
+                      />
+                    </label>
+                    {errorCopy !== undefined ? (
+                      <label className="flex flex-col gap-2 text-sm font-medium text-foreground">
+                        {errorCopy.label}
+                        <textarea
+                          className={cn(
+                            inputClass,
+                            'min-h-20 resize-y font-mono text-xs',
+                          )}
+                          maxLength={4_000}
+                          onChange={(event) => setErrorText(event.target.value)}
+                          placeholder={errorCopy.placeholder}
+                          spellCheck={false}
+                          value={errorText}
+                        />
+                      </label>
+                    ) : null}
+                  </div>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+          </div>
+        </FormStep>
+
+        {fieldError ? (
+          <p
+            className="rounded-xl bg-danger-soft px-4 py-3 text-sm text-danger-foreground"
+            id="doubt-form-error"
+            role="alert"
+          >
+            {fieldError}
+          </p>
+        ) : null}
+
+        <div className="relative flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
+          <p className="text-xs text-muted-foreground">
+            Depth follows your level and learner memory.
+          </p>
+          <Button size="lg" type="submit">
+            Get my first hint
+            <ArrowRight aria-hidden="true" />
+          </Button>
         </div>
-      ) : null}
-
-      {fieldError ? (
-        <p
-          className="rounded-md bg-danger-soft px-4 py-3 text-sm text-danger-foreground"
-          id="doubt-form-error"
-          role="alert"
-        >
-          {fieldError}
-        </p>
-      ) : null}
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">
-          The mentor calibrates depth to your level and learner memory.
-        </p>
-        <Button size="lg" type="submit">
-          Get my first hint
-          <ArrowRight aria-hidden="true" />
-        </Button>
-      </div>
-    </form>
+      </form>
+      <IntakeAside doubtType={doubtType} />
+    </div>
   )
 }
 
@@ -870,8 +1128,17 @@ function SessionView({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="flex min-w-0 flex-col gap-5">
-      <header className="flex min-w-0 flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:p-5">
-        <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+      <header className="relative isolate flex min-w-0 flex-col gap-5 overflow-hidden rounded-2xl border border-border bg-card p-4 sm:p-5 lg:flex-row lg:items-end lg:justify-between">
+        <OrbField intensity={0.55} />
+        <div className="flex min-w-0 items-start gap-4" data-selected="true">
+          {(() => {
+            const Icon = doubtIcons[session.doubtType]
+            return (
+              <span className="grid size-14 shrink-0 place-items-center rounded-2xl border border-border bg-card/80 text-foreground backdrop-blur">
+                <Icon aria-hidden="true" className="size-9" />
+              </span>
+            )
+          })()}
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <ProviderBadge provider={session.problem.provider ?? 'other'} />
@@ -879,10 +1146,28 @@ function SessionView({ sessionId }: { sessionId: string }) {
                 {doubtLabel(session.doubtType)} · {session.language}
               </span>
               {session.bugCategory ? (
-                <span className="rounded-md bg-sun-soft px-2 py-0.5 text-[0.7rem] font-medium text-sun-foreground">
+                <span className="rounded-full bg-sun-soft px-2 py-0.5 text-[0.7rem] font-medium text-sun-foreground">
                   {bugLabels[session.bugCategory]}
                 </span>
               ) : null}
+              <span
+                className={cn(
+                  'rounded-full px-2.5 py-0.5 text-[0.7rem] font-semibold',
+                  session.stage === 'completed'
+                    ? 'bg-go-soft text-go-foreground'
+                    : session.stage === 'abandoned'
+                      ? 'bg-secondary text-secondary-foreground'
+                      : 'bg-acc-soft text-acc-ink',
+                )}
+              >
+                {session.stage === 'completed'
+                  ? 'Solved'
+                  : session.stage === 'abandoned'
+                    ? 'Ended'
+                    : session.stage === 'solution_revealed'
+                      ? 'Solution revealed'
+                      : 'In progress'}
+              </span>
             </div>
             <h2 className="mt-2 min-w-0 text-xl text-foreground sm:text-2xl">
               {session.problem.canonicalUrl ? (
@@ -896,26 +1181,10 @@ function SessionView({ sessionId }: { sessionId: string }) {
               )}
             </h2>
           </div>
-          <span
-            className={cn(
-              'rounded-md px-2.5 py-1 text-xs font-medium',
-              session.stage === 'completed'
-                ? 'bg-go-soft text-go-foreground'
-                : session.stage === 'abandoned'
-                  ? 'bg-secondary text-secondary-foreground'
-                  : 'bg-primary/10 text-primary',
-            )}
-          >
-            {session.stage === 'completed'
-              ? 'Solved'
-              : session.stage === 'abandoned'
-                ? 'Ended'
-                : session.stage === 'solution_revealed'
-                  ? 'Solution revealed'
-                  : 'In progress'}
-          </span>
         </div>
-        <HintLadder level={session.hintLevel} stage={session.stage} />
+        <div className="w-full shrink-0 lg:w-80">
+          <HintLadder level={session.hintLevel} stage={session.stage} />
+        </div>
       </header>
 
       <section
@@ -933,7 +1202,7 @@ function SessionView({ sessionId }: { sessionId: string }) {
       </section>
 
       {active && statementRequired ? (
-        <label className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4 text-sm font-medium text-foreground">
+        <label className="flex flex-col gap-2 rounded-2xl border border-border bg-card p-4 text-sm font-medium text-foreground">
           Problem statement (needed for each answer, never saved)
           <textarea
             className={cn(inputClass, 'min-h-28 resize-y font-mono text-xs')}
@@ -958,7 +1227,7 @@ function SessionView({ sessionId }: { sessionId: string }) {
       {session.stage === 'solution_confirmation' ? (
         <section
           aria-labelledby="reveal-heading"
-          className="rounded-xl border border-sun/50 bg-sun-soft p-4 sm:p-5"
+          className="relative isolate overflow-hidden rounded-2xl border border-sun/50 bg-sun-soft p-4 sm:p-5"
           role="alertdialog"
         >
           <h3
@@ -1003,7 +1272,7 @@ function SessionView({ sessionId }: { sessionId: string }) {
       ) : null}
 
       {active && session.stage !== 'solution_confirmation' ? (
-        <div className="sticky bottom-0 z-10 -mx-1 rounded-xl border border-border bg-background/95 p-3 shadow-soft backdrop-blur supports-[backdrop-filter]:bg-background/85 sm:p-4">
+        <div className="glass-card sticky bottom-3 z-10 rounded-2xl p-2.5 sm:p-3">
           <div className="flex flex-wrap items-center gap-2">
             {session.stage === 'hinting' ? (
               <Button
@@ -1100,7 +1369,7 @@ function SessionView({ sessionId }: { sessionId: string }) {
       ) : null}
 
       {!active || session.stage === 'solution_revealed' ? (
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-4">
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-dashed border-border bg-card/60 p-4">
           <p className="min-w-0 flex-1 text-sm text-muted-foreground">
             {session.stage === 'completed'
               ? 'Solved. See how else it can be solved, or start a new doubt.'
@@ -1244,39 +1513,87 @@ function SessionList({ activeId }: { activeId: string | undefined }) {
           Loading sessions…
         </p>
       ) : sessions.length === 0 ? (
-        <p className="text-sm leading-6 text-muted-foreground">
-          Your help sessions appear here so you can pick up where you left off.
-        </p>
+        <div className="rounded-2xl border border-dashed border-border p-4 text-center">
+          <div className="mx-auto flex w-fit -space-x-2" aria-hidden="true">
+            {[UnderstandProblemIcon, WrongAnswerIcon, LimitExceededIcon].map(
+              (Icon, index) => (
+                <span
+                  className="grid size-9 place-items-center rounded-xl border border-border bg-card text-foreground"
+                  key={index}
+                  style={{ rotate: `${(index - 1) * 8}deg` }}
+                >
+                  <Icon className="size-6" />
+                </span>
+              ),
+            )}
+          </div>
+          <p className="mt-3 text-xs leading-5 text-muted-foreground">
+            Your help sessions appear here so you can pick up where you left
+            off.
+          </p>
+        </div>
       ) : (
         <ul className="flex flex-col gap-1">
-          {sessions.map((session: ProblemHelpSession) => (
-            <li key={session.id}>
-              <Link
-                aria-current={session.id === activeId ? 'page' : undefined}
-                className={cn(
-                  'block rounded-lg px-3 py-2.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                  session.id === activeId
-                    ? 'bg-card shadow-soft ring-1 ring-border'
-                    : 'hover:bg-card/70',
-                )}
-                to={`/doubt-helper/${session.id}`}
-              >
-                <span className="block truncate text-sm font-medium text-foreground">
-                  {session.problem.title}
-                </span>
-                <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                  {session.stage === 'completed'
-                    ? 'Solved'
-                    : session.stage === 'abandoned'
-                      ? 'Ended'
-                      : session.stage === 'solution_revealed'
-                        ? 'Solution revealed'
-                        : `Hint ${session.hintLevel} of 5`}{' '}
-                  · {doubtLabel(session.doubtType)}
-                </span>
-              </Link>
-            </li>
-          ))}
+          {sessions.map((session: ProblemHelpSession) => {
+            const Icon = doubtIcons[session.doubtType]
+            const current = session.id === activeId
+            return (
+              <li key={session.id}>
+                <Link
+                  aria-current={current ? 'page' : undefined}
+                  className={cn(
+                    'di-host flex items-center gap-3 rounded-xl px-2.5 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                    current
+                      ? 'bg-card shadow-soft ring-1 ring-border'
+                      : 'hover:bg-card/70',
+                  )}
+                  to={`/doubt-helper/${session.id}`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className="grid size-9 shrink-0 place-items-center rounded-lg border border-border bg-background text-foreground"
+                  >
+                    <Icon className="size-6" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-foreground">
+                      {session.problem.title}
+                    </span>
+                    <span className="mt-1 flex items-center gap-2">
+                      <span aria-hidden="true" className="flex gap-0.5">
+                        {[1, 2, 3, 4, 5].map((level) => (
+                          <span
+                            className={cn(
+                              'h-1 w-2.5 rounded-full',
+                              session.stage === 'completed'
+                                ? 'bg-go'
+                                : level <= session.hintLevel
+                                  ? 'bg-acc'
+                                  : 'bg-muted',
+                            )}
+                            key={level}
+                          />
+                        ))}
+                      </span>
+                      <span className="truncate text-[0.7rem] text-muted-foreground">
+                        {session.stage === 'completed'
+                          ? 'Solved'
+                          : session.stage === 'abandoned'
+                            ? 'Ended'
+                            : session.stage === 'solution_revealed'
+                              ? 'Solution revealed'
+                              : `Hint ${session.hintLevel} of 5`}
+                        <span className="sr-only">
+                          {' '}
+                          · {doubtLabel(session.doubtType)}
+                        </span>
+                      </span>
+                    </span>
+                  </span>
+                </Link>
+              </li>
+            )
+          })}
         </ul>
       )}
     </aside>
@@ -1293,27 +1610,28 @@ function DoubtHelperPage() {
   return (
     <main
       className="flex w-full min-w-0 flex-1 flex-col gap-6 px-5 py-6 sm:px-8 sm:py-8 lg:px-10"
+      data-accent="amber"
       id="main-content"
     >
-      <header className="animate-rise flex min-w-0 flex-wrap items-end justify-between gap-4">
-        <div className="min-w-0">
-          <p className="inline-flex items-center gap-1.5 text-xs font-medium tracking-wide text-primary uppercase">
-            <Crosshair aria-hidden="true" className="size-3.5" /> Doubt Helper
-          </p>
-          <h1 className="mt-2 text-[2.1rem] leading-[1.05] text-foreground sm:text-[2.6rem]">
-            Get unstuck without spoilers
-          </h1>
-          <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground">
+      <PageHero
+        eyebrow="Doubt Helper"
+        icon={DoubtHelperIcon}
+        info={
+          <>
             Layered hints for a specific problem, and bug diagnosis for wrong
-            answers, TLE, compile errors or missing output. You stay in charge
-            of how much is revealed.
-          </p>
-        </div>
-      </header>
-      {sessionId === undefined ? <HelpStats /> : null}
-      <div className="grid min-w-0 gap-6 lg:grid-cols-[17rem_minmax(0,1fr)]">
+            answers, TLE, compile errors or missing output. Hints come one level
+            at a time: nudge, concept, structure, key code, then a full
+            walkthrough only when you confirm it.
+          </>
+        }
+        subtitle="Layered hints and bug diagnosis. You choose how much is revealed."
+        title="Get unstuck without spoilers"
+      >
+        {sessionId === undefined ? <HelpStats /> : null}
+      </PageHero>
+      <div className="grid min-w-0 gap-6 lg:grid-cols-[16rem_minmax(0,1fr)]">
         <SessionList activeId={sessionId} />
-        <div className="min-w-0 max-w-4xl">
+        <div className="min-w-0">
           {sessionId === undefined ? (
             <IntakeForm
               initialProblem={initialProblem}
@@ -1321,7 +1639,9 @@ function DoubtHelperPage() {
               key={`${initialProblem}|${intake === null ? '' : 'visualizer'}`}
             />
           ) : (
-            <SessionView key={sessionId} sessionId={sessionId} />
+            <div className="max-w-4xl">
+              <SessionView key={sessionId} sessionId={sessionId} />
+            </div>
           )}
         </div>
       </div>

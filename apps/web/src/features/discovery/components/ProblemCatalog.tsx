@@ -20,7 +20,7 @@ export function ProblemCatalog({ isFetching, problems }: ProblemCatalogProps) {
         </p>
       ) : null}
 
-      <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+      <ul className="flex min-w-0 flex-col gap-2.5">
         {problems.map((problem, index) => (
           <ProblemCard
             index={index}
@@ -28,7 +28,7 @@ export function ProblemCatalog({ isFetching, problems }: ProblemCatalogProps) {
             problem={problem}
           />
         ))}
-      </div>
+      </ul>
     </div>
   )
 }

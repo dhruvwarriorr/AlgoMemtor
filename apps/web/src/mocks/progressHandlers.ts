@@ -30,6 +30,8 @@ type StoredTimer = ProblemTimerSession
 
 const statuses = new Map<string, LearnerProblemStatus>()
 const bookmarks = new Map<string, string>()
+// Bookmark ids must be UUIDs; keep one per saved problem key.
+const bookmarkIds = new Map<string, string>()
 const timers = new Map<string, StoredTimer>()
 const history: Array<Record<string, unknown>> = []
 let aiConsent: {
@@ -37,6 +39,14 @@ let aiConsent: {
   policyVersion: string
   decidedAt?: string
 } | null = null
+
+function bookmarkIdFor(bookmarkKey: string) {
+  const existing = bookmarkIds.get(bookmarkKey)
+  if (existing !== undefined) return existing
+  const created = id()
+  bookmarkIds.set(bookmarkKey, created)
+  return created
+}
 
 function key(problem: ProblemReference) {
   return `${problem.provider}:${problem.externalId}`
@@ -482,7 +492,7 @@ export const progressHandlers: RequestHandler[] = [
         )
         return problem
           ? {
-              id: bookmarkKey,
+              id: bookmarkIdFor(bookmarkKey),
               problem: {
                 ...problem,
                 learnerStatus: statuses.get(bookmarkKey) ?? 'unsolved',
@@ -563,7 +573,7 @@ export const progressHandlers: RequestHandler[] = [
     return HttpResponse.json(
       BookmarkResponseSchema.parse({
         data: {
-          id: id(),
+          id: bookmarkIdFor(key(problem)),
           problem: {
             ...fixture,
             learnerStatus: statuses.get(key(problem)) ?? 'unsolved',

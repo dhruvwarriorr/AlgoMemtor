@@ -6,9 +6,7 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
-  BookOpen,
   Code2,
-  Compass,
   CornerDownLeft,
   Lock,
   Crosshair,
@@ -16,12 +14,10 @@ import {
   Paperclip,
   Pencil,
   Plus,
-  Route,
   Search,
   Sparkles,
   Trash2,
   X,
-  type IconComponent,
 } from '@/components/icons/algo-icons'
 
 import PageContainer from '@/components/layout/PageContainer'
@@ -51,47 +47,12 @@ import {
   coachCodeBlockId,
   featureRedirects,
 } from '@/features/coach/answer-details'
-import {
-  mentorToolPath,
-  mentorTools,
-  orderedMentorTools,
-} from '@/features/mentor/feature-routes'
+import { mentorToolPath, mentorTools } from '@/features/mentor/feature-routes'
 import { CoachMessageContent } from '@/features/coach/components/CoachMessageContent'
-import { CoachStatStrip } from '@/features/coach/components/CoachInsights'
 import {
   useDismissProblem,
   useRecommendationDismissals,
 } from '@/features/recommendations/hooks/useRecommendations'
-
-const guidedPrompts = [
-  {
-    label: 'What should I practice next?',
-    prompt:
-      'What should I practice next based on my current focus and recent progress?',
-  },
-  {
-    label: 'Review my weak topics',
-    prompt:
-      'Which topics are weakest right now, and what is the smallest practice step that would help?',
-  },
-  {
-    label: 'Plan my week',
-    prompt:
-      'Given my goals and recent activity, how should I split my practice time this week?',
-  },
-  {
-    label: 'Explain this concept',
-    prompt:
-      'Explain a CP/DSA concept I am working on with intuition and an example.',
-  },
-] as const
-
-const promptIcons: Record<string, IconComponent> = {
-  'What should I practice next?': Compass,
-  'Review my weak topics': Crosshair,
-  'Plan my week': Route,
-  'Explain this concept': BookOpen,
-}
 
 const coachAttachmentTypes = {
   'audio/webm': 'audio/webm',
@@ -168,6 +129,37 @@ function formatDate(value: string) {
   }
 }
 
+const sidebarModeKey = 'algomemtor.coach.sidebar'
+const detailsVisibleKey = 'algomemtor.coach.details'
+
+// A panel icon: a frame with its side column, filled when the panel shows.
+function PanelIcon({ side, open }: { side: 'left' | 'right'; open: boolean }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className="size-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      viewBox="0 0 24 24"
+    >
+      <rect height={16} rx={3} width={18} x={3} y={4} />
+      <path d={side === 'left' ? 'M9 4v16' : 'M15 4v16'} />
+      {open ? (
+        <rect
+          fill="currentColor"
+          height={16}
+          opacity={0.25}
+          stroke="none"
+          width={6}
+          x={side === 'left' ? 3 : 15}
+          y={4}
+        />
+      ) : null}
+    </svg>
+  )
+}
+
 function CoachPage() {
   const conversationsQuery = useCoachConversations()
   const roadmapQuery = useCoachRoadmap()
@@ -190,7 +182,42 @@ function CoachPage() {
   const [transientContext, setTransientContext] = useState('')
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
   const attachmentInputRef = useRef<HTMLInputElement | null>(null)
-  const [sidebarExpanded, setSidebarExpanded] = useState(true)
+  // Conversation sidebar: full list, a slim icon rail, or hidden. The
+  // choice is a per-browser convenience.
+  const [sidebarMode, setSidebarModeState] = useState<
+    'expanded' | 'rail' | 'hidden'
+  >(() => {
+    try {
+      const saved = window.localStorage.getItem(sidebarModeKey)
+      return saved === 'rail' || saved === 'hidden' ? saved : 'expanded'
+    } catch {
+      return 'expanded'
+    }
+  })
+  const setSidebarMode = (mode: 'expanded' | 'rail' | 'hidden') => {
+    setSidebarModeState(mode)
+    try {
+      window.localStorage.setItem(sidebarModeKey, mode)
+    } catch {
+      // Storage can be unavailable; the choice lasts for this visit.
+    }
+  }
+  const sidebarExpanded = sidebarMode === 'expanded'
+  const [detailsVisible, setDetailsVisibleState] = useState(() => {
+    try {
+      return window.localStorage.getItem(detailsVisibleKey) !== 'false'
+    } catch {
+      return true
+    }
+  })
+  const setDetailsVisible = (visible: boolean) => {
+    setDetailsVisibleState(visible)
+    try {
+      window.localStorage.setItem(detailsVisibleKey, String(visible))
+    } catch {
+      // Storage can be unavailable; the choice lasts for this visit.
+    }
+  }
   const [search, setSearch] = useState('')
   const [showContext, setShowContext] = useState(false)
   const [isDraft, setIsDraft] = useState(false)
@@ -254,7 +281,6 @@ function CoachPage() {
     conversationQuery.isPending,
     sendMessage.isPending,
   ])
-  const roadmap = roadmapQuery.data?.data
 
   async function ensureConversation() {
     if (activeConversationId !== null) return activeConversationId
@@ -566,8 +592,12 @@ function CoachPage() {
       <aside
         aria-label="Saved coaching conversations"
         className={cn(
-          'flex min-h-0 flex-col gap-4 border-b border-border p-4 lg:shrink-0 lg:border-r lg:border-b-0 lg:py-5',
-          sidebarExpanded ? 'lg:w-[18.5rem] lg:px-5' : 'lg:w-[4.5rem] lg:px-3',
+          'flex min-h-0 flex-col gap-4 overflow-hidden border-b border-border p-4 transition-[width,padding] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] lg:shrink-0 lg:border-r lg:border-b-0 lg:py-5',
+          sidebarMode === 'expanded'
+            ? 'lg:w-[18.5rem] lg:px-5'
+            : sidebarMode === 'rail'
+              ? 'lg:w-[4.5rem] lg:px-3'
+              : 'lg:hidden',
         )}
       >
         <div
@@ -594,7 +624,9 @@ function CoachPage() {
               'ml-auto hidden size-8 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:grid',
               !sidebarExpanded && 'lg:ml-0',
             )}
-            onClick={() => setSidebarExpanded((expanded) => !expanded)}
+            onClick={() =>
+              setSidebarMode(sidebarExpanded ? 'rail' : 'expanded')
+            }
             title={sidebarExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
             type="button"
           >
@@ -646,7 +678,7 @@ function CoachPage() {
         >
           {conversations.length === 0 ? (
             <p className="text-sm leading-6 text-muted-foreground">
-              Start with a guided question. Safe chat text is saved until you
+              Your conversations appear here. Safe chat text is saved until you
               delete it.
             </p>
           ) : filteredConversations.length === 0 ? (
@@ -729,6 +761,26 @@ function CoachPage() {
       >
         <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-border px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-2.5">
+            <button
+              aria-label={
+                sidebarMode === 'hidden'
+                  ? 'Show conversations'
+                  : 'Hide conversations'
+              }
+              aria-pressed={sidebarMode !== 'hidden'}
+              className="hidden size-8 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none lg:grid"
+              onClick={() =>
+                setSidebarMode(sidebarMode === 'hidden' ? 'expanded' : 'hidden')
+              }
+              title={
+                sidebarMode === 'hidden'
+                  ? 'Show conversations'
+                  : 'Hide conversations'
+              }
+              type="button"
+            >
+              <PanelIcon open={sidebarMode !== 'hidden'} side="left" />
+            </button>
             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-card py-1 pr-3 pl-1.5 text-xs font-medium text-foreground">
               <span aria-hidden="true" className="coach-orb size-4" />
               Coach
@@ -752,359 +804,288 @@ function CoachPage() {
                 <Sparkles aria-hidden="true" /> Details
               </Button>
             ) : null}
+            {!showGreeting && selectedDetails.hasContent ? (
+              <button
+                aria-label={
+                  detailsVisible ? 'Hide answer details' : 'Show answer details'
+                }
+                aria-pressed={detailsVisible}
+                className="hidden size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none xl:grid"
+                onClick={() => setDetailsVisible(!detailsVisible)}
+                title={
+                  detailsVisible ? 'Hide answer details' : 'Show answer details'
+                }
+                type="button"
+              >
+                <PanelIcon open={detailsVisible} side="right" />
+              </button>
+            ) : null}
           </div>
         </header>
 
         {showGreeting ? (
-            <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-4 py-6 sm:px-8">
-              <div className="my-auto flex w-full max-w-[52rem] flex-col items-center">
-                <CoachStatStrip className="animate-rise" roadmap={roadmap} />
-                <span
-                  aria-hidden="true"
-                  className="coach-orb animate-orb mt-10 size-20 sm:size-24"
-                />
-                <p
-                  className="animate-rise mt-6 text-center font-heading text-3xl font-bold tracking-[-0.01em] text-foreground sm:text-[2.6rem]"
-                  style={{ '--i': 1 } as CSSProperties}
-                >
-                  Hi, {identity.name}! How can I{' '}
-                  <span className="text-primary">help?</span>
-                </p>
-                <p
-                  className="animate-rise mt-3 max-w-xl text-center text-muted-foreground"
-                  style={{ '--i': 2 } as CSSProperties}
-                >
-                  I know your linked profiles, solved history, contests and
-                  learning progress. Ask about a concept, a failed attempt, your
-                  rating or what to practice next.
-                </p>
-                <div
-                  className="animate-rise mt-6 w-full"
-                  style={{ '--i': 3 } as CSSProperties}
-                >
-                  {composer}
-                </div>
-                <div
-                  className="animate-rise mt-4 grid w-full gap-3 sm:grid-cols-3"
-                  style={{ '--i': 4 } as CSSProperties}
-                >
-                  {guidedPrompts.slice(0, 3).map((item) => {
-                    const Icon = promptIcons[item.label] ?? Sparkles
-                    return (
-                      <button
-                        className="group flex flex-col items-start gap-3 rounded-xl border border-border bg-card p-4 text-left transition-[border-color,transform] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:-translate-y-0.5 hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--border))] disabled:pointer-events-none disabled:opacity-60"
-                        disabled={sendMessage.isPending}
-                        key={item.label}
-                        onClick={() => {
-                          setContent(item.prompt)
-                          void submitMessage(item.prompt)
-                        }}
-                        type="button"
-                      >
-                        <span className="grid size-9 place-items-center rounded-md bg-secondary text-primary">
-                          <Icon
-                            aria-hidden="true"
-                            className="size-4"
-                            strokeWidth={1.7}
-                          />
-                        </span>
-                        <span>
-                          <span className="block font-medium text-foreground">
-                            {item.label}
-                          </span>
-                          <span className="mt-1 line-clamp-2 block text-sm text-muted-foreground">
-                            {item.prompt}
-                          </span>
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-                <div className="mt-3 flex flex-wrap justify-center gap-2">
-                  {guidedPrompts.slice(3).map((item) => (
-                    <button
-                      className="rounded-md border border-border bg-card px-3.5 py-1.5 text-sm text-foreground/80 transition-colors hover:bg-secondary disabled:opacity-60"
-                      disabled={sendMessage.isPending}
-                      key={item.label}
-                      onClick={() => {
-                        setContent(item.prompt)
-                        void submitMessage(item.prompt)
-                      }}
-                      type="button"
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-                <nav
-                  aria-label="Mentor tools"
-                  className="animate-rise mt-8 w-full border-t border-border pt-5"
-                  style={{ '--i': 5 } as CSSProperties}
-                >
-                  <p className="text-center text-xs font-medium tracking-wide text-muted-foreground uppercase">
-                    Or jump straight to a mentor tool
-                  </p>
-                  <ul className="mt-3 flex flex-wrap justify-center gap-2">
-                    {orderedMentorTools.map((tool) => (
-                      <li key={tool.feature}>
-                        <Link
-                          className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-sm text-foreground/85 transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          title={tool.description}
-                          to={tool.path}
-                        >
-                          <tool.icon
-                            aria-hidden="true"
-                            className="size-4 text-primary"
-                            strokeWidth={1.8}
-                          />
-                          {tool.label}
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                </nav>
+          <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-4 py-6 sm:px-8">
+            <div className="my-auto flex w-full max-w-[52rem] flex-col items-center">
+              <span
+                aria-hidden="true"
+                className="coach-orb animate-orb size-16 sm:size-20"
+              />
+              <p
+                className="animate-rise mt-7 text-center font-heading text-3xl font-semibold tracking-[-0.02em] text-foreground sm:text-[2.4rem]"
+                style={{ '--i': 1 } as CSSProperties}
+              >
+                Hi, {identity.name}! How can I{' '}
+                <span className="text-primary">help?</span>
+              </p>
+              <p
+                className="animate-rise mt-3 max-w-xl text-center text-muted-foreground"
+                style={{ '--i': 2 } as CSSProperties}
+              >
+                I know your profiles, solves, contests and progress. Ask me
+                anything.
+              </p>
+              <div
+                className="animate-rise mt-8 w-full"
+                style={{ '--i': 3 } as CSSProperties}
+              >
+                {composer}
               </div>
             </div>
-          ) : (
-            <div className="flex min-h-0 flex-1">
-              <div className="flex min-w-0 flex-1 flex-col">
-                <div
-                  className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-6 sm:px-6"
-                  onScroll={(event) => {
-                    const element = event.currentTarget
-                    const nearBottom =
-                      element.scrollHeight -
-                        element.scrollTop -
-                        element.clientHeight <
-                      160
-                    nearPageBottomRef.current = nearBottom
-                    setShowJumpToLatest(!nearBottom)
-                  }}
-                  ref={messagesScrollRef}
-                >
-                  <div className="mx-auto flex w-full max-w-[52rem] flex-col gap-7">
-                    {conversationQuery.isPending ? (
-                      <p
-                        className="text-sm text-muted-foreground"
-                        role="status"
-                      >
-                        Loading conversation…
-                      </p>
-                    ) : (
-                      messages.map((message) =>
-                        message.role === 'user' ? (
-                          <article
-                            className="animate-rise flex flex-col items-end gap-1.5"
-                            key={message.id}
+          </div>
+        ) : (
+          <div className="flex min-h-0 flex-1">
+            <div className="flex min-w-0 flex-1 flex-col">
+              <div
+                className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-6 sm:px-6"
+                onScroll={(event) => {
+                  const element = event.currentTarget
+                  const nearBottom =
+                    element.scrollHeight -
+                      element.scrollTop -
+                      element.clientHeight <
+                    160
+                  nearPageBottomRef.current = nearBottom
+                  setShowJumpToLatest(!nearBottom)
+                }}
+                ref={messagesScrollRef}
+              >
+                <div className="mx-auto flex w-full max-w-[52rem] flex-col gap-7">
+                  {conversationQuery.isPending ? (
+                    <p className="text-sm text-muted-foreground" role="status">
+                      Loading conversation…
+                    </p>
+                  ) : (
+                    messages.map((message) =>
+                      message.role === 'user' ? (
+                        <article
+                          className="animate-rise flex flex-col items-end gap-1.5"
+                          key={message.id}
+                        >
+                          <div className="max-w-[80%] rounded-xl rounded-br-md bg-ink px-4 py-2.5 text-ink-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.1)]">
+                            <h3 className="sr-only">You</h3>
+                            <p className="text-[0.95rem] leading-6 whitespace-pre-wrap">
+                              {message.content}
+                            </p>
+                          </div>
+                          <time
+                            className="px-1 text-[0.7rem] text-muted-foreground"
+                            dateTime={message.createdAt}
                           >
-                            <div className="max-w-[80%] rounded-xl rounded-br-md bg-ink px-4 py-2.5 text-ink-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.1)]">
-                              <h3 className="sr-only">You</h3>
-                              <p className="text-[0.95rem] leading-6 whitespace-pre-wrap">
-                                {message.content}
-                              </p>
-                            </div>
-                            <time
-                              className="px-1 text-[0.7rem] text-muted-foreground"
-                              dateTime={message.createdAt}
-                            >
-                              {formatDate(message.createdAt)}
-                              {message.transientContextOmitted
-                                ? ' · pasted context not saved'
-                                : ''}
-                            </time>
-                          </article>
-                        ) : (
-                          <article
-                            className="animate-rise flex gap-3"
-                            key={message.id}
-                          >
-                            <span
-                              aria-hidden="true"
-                              className="coach-orb mt-0.5 size-8 shrink-0"
-                            />
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-baseline gap-2 text-xs">
-                                <h3 className="font-sans text-sm font-semibold text-foreground">
-                                  Coach
-                                </h3>
-                                <time
-                                  className="text-muted-foreground"
-                                  dateTime={message.createdAt}
-                                >
-                                  {formatDate(message.createdAt)}
-                                </time>
-                              </div>
-                              <div className="text-[0.95rem] [&>div]:mt-1.5">
-                                <CoachMessageContent
-                                  content={message.content}
-                                  onCodeBlock={(index) =>
-                                    showAnswerDetails(message.id, index)
-                                  }
-                                  role="assistant"
-                                />
-                              </div>
-                              {featureRedirects(message).map((block) => {
-                                const Icon = mentorTools[block.feature].icon
-                                return (
-                                  <Link
-                                    className="group mt-3 flex max-w-xl items-center gap-3 rounded-xl border border-[color-mix(in_oklab,var(--primary)_35%,var(--border))] bg-card p-3.5 transition-[transform,border-color] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                    key={block.feature}
-                                    to={mentorToolPath(
-                                      block.feature,
-                                      block.problemUrl,
-                                    )}
-                                  >
-                                    <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
-                                      <Icon
-                                        aria-hidden="true"
-                                        className="size-5"
-                                        strokeWidth={1.8}
-                                      />
-                                    </span>
-                                    <span className="min-w-0 flex-1">
-                                      <span className="block text-sm font-semibold text-foreground">
-                                        {block.title}
-                                      </span>
-                                      <span className="block text-xs leading-5 text-muted-foreground">
-                                        {block.description}
-                                      </span>
-                                    </span>
-                                    <span className="hidden shrink-0 items-center gap-1 rounded-md bg-ink px-3 py-1.5 text-xs font-medium text-ink-foreground sm:inline-flex">
-                                      {block.actionLabel}
-                                      <ArrowRight
-                                        aria-hidden="true"
-                                        className="size-3.5"
-                                      />
-                                    </span>
-                                  </Link>
-                                )
-                              })}
-                              {message.fallback !== true &&
-                              answerDetails(message).hasContent ? (
-                                <button
-                                  aria-pressed={
-                                    selectedAnswer?.id === message.id
-                                  }
-                                  className={cn(
-                                    'mt-3 inline-flex max-w-full items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                                    selectedAnswer?.id === message.id
-                                      ? 'border-[color-mix(in_oklab,var(--primary)_45%,var(--border))] text-foreground'
-                                      : 'border-border text-muted-foreground',
-                                  )}
-                                  onClick={() => showAnswerDetails(message.id)}
-                                  type="button"
-                                >
-                                  <Sparkles
-                                    aria-hidden="true"
-                                    className="size-3 shrink-0 text-primary"
-                                  />
-                                  <span className="truncate">
-                                    {answerDetailsSummary(
-                                      answerDetails(message),
-                                    )}
-                                  </span>
-                                </button>
-                              ) : null}
-                            </div>
-                          </article>
-                        ),
-                      )
-                    )}
-                    {pendingQuestion !== null ? (
-                      <article className="animate-rise flex flex-col items-end gap-1.5">
-                        <div className="max-w-[80%] rounded-xl rounded-br-md bg-ink px-4 py-2.5 text-ink-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.1)]">
-                          <h3 className="sr-only">You</h3>
-                          <p className="text-[0.95rem] leading-6 whitespace-pre-wrap">
-                            {pendingQuestion}
-                          </p>
-                        </div>
-                        <span className="px-1 text-[0.7rem] text-muted-foreground">
-                          Sending…
-                        </span>
-                      </article>
-                    ) : null}
-                    <div aria-hidden="true" ref={messageEndRef} />
-                    {sendMessage.isPending ? (
-                      <div className="flex flex-wrap items-start gap-3 text-sm text-muted-foreground">
-                        <div className="flex min-w-0 items-center gap-3 rounded-lg border border-border bg-[color-mix(in_oklab,var(--card)_80%,transparent)] px-3 py-2 shadow-soft backdrop-blur-md">
-                          <TetrisLoader
-                            cellSize={4}
-                            gap={1}
-                            label="Thinking"
-                            rows={6}
+                            {formatDate(message.createdAt)}
+                            {message.transientContextOmitted
+                              ? ' · pasted context not saved'
+                              : ''}
+                          </time>
+                        </article>
+                      ) : (
+                        <article
+                          className="animate-rise flex gap-3"
+                          key={message.id}
+                        >
+                          <span
+                            aria-hidden="true"
+                            className="coach-orb mt-0.5 size-8 shrink-0"
                           />
-                          <p className="text-xs font-semibold text-foreground">
-                            Thinking
-                          </p>
-                        </div>
-                        <Button
-                          className="ml-auto"
-                          onClick={() => sendAbortController.current?.abort()}
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          Cancel
-                        </Button>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-baseline gap-2 text-xs">
+                              <h3 className="font-sans text-sm font-semibold text-foreground">
+                                Coach
+                              </h3>
+                              <time
+                                className="text-muted-foreground"
+                                dateTime={message.createdAt}
+                              >
+                                {formatDate(message.createdAt)}
+                              </time>
+                            </div>
+                            <div className="text-[0.95rem] [&>div]:mt-1.5">
+                              <CoachMessageContent
+                                content={message.content}
+                                onCodeBlock={(index) =>
+                                  showAnswerDetails(message.id, index)
+                                }
+                                role="assistant"
+                              />
+                            </div>
+                            {featureRedirects(message).map((block) => {
+                              const Icon = mentorTools[block.feature].icon
+                              return (
+                                <Link
+                                  className="group mt-3 flex max-w-xl items-center gap-3 rounded-xl border border-[color-mix(in_oklab,var(--primary)_35%,var(--border))] bg-card p-3.5 transition-[transform,border-color] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                  key={block.feature}
+                                  to={mentorToolPath(
+                                    block.feature,
+                                    block.problemUrl,
+                                  )}
+                                >
+                                  <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                                    <Icon
+                                      aria-hidden="true"
+                                      className="size-5"
+                                      strokeWidth={1.8}
+                                    />
+                                  </span>
+                                  <span className="min-w-0 flex-1">
+                                    <span className="block text-sm font-semibold text-foreground">
+                                      {block.title}
+                                    </span>
+                                    <span className="block text-xs leading-5 text-muted-foreground">
+                                      {block.description}
+                                    </span>
+                                  </span>
+                                  <span className="hidden shrink-0 items-center gap-1 rounded-md bg-ink px-3 py-1.5 text-xs font-medium text-ink-foreground sm:inline-flex">
+                                    {block.actionLabel}
+                                    <ArrowRight
+                                      aria-hidden="true"
+                                      className="size-3.5"
+                                    />
+                                  </span>
+                                </Link>
+                              )
+                            })}
+                            {message.fallback !== true &&
+                            answerDetails(message).hasContent ? (
+                              <button
+                                aria-pressed={selectedAnswer?.id === message.id}
+                                className={cn(
+                                  'mt-3 inline-flex max-w-full items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                                  selectedAnswer?.id === message.id
+                                    ? 'border-[color-mix(in_oklab,var(--primary)_45%,var(--border))] text-foreground'
+                                    : 'border-border text-muted-foreground',
+                                )}
+                                onClick={() => showAnswerDetails(message.id)}
+                                type="button"
+                              >
+                                <Sparkles
+                                  aria-hidden="true"
+                                  className="size-3 shrink-0 text-primary"
+                                />
+                                <span className="truncate">
+                                  {answerDetailsSummary(answerDetails(message))}
+                                </span>
+                              </button>
+                            ) : null}
+                          </div>
+                        </article>
+                      ),
+                    )
+                  )}
+                  {pendingQuestion !== null ? (
+                    <article className="animate-rise flex flex-col items-end gap-1.5">
+                      <div className="max-w-[80%] rounded-xl rounded-br-md bg-ink px-4 py-2.5 text-ink-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.1)]">
+                        <h3 className="sr-only">You</h3>
+                        <p className="text-[0.95rem] leading-6 whitespace-pre-wrap">
+                          {pendingQuestion}
+                        </p>
                       </div>
-                    ) : null}
-                  </div>
-                </div>
-                <div className="shrink-0 px-4 pt-2 pb-4 sm:px-6 sm:pb-5">
-                  <div className="mx-auto w-full max-w-[52rem]">
-                    {showJumpToLatest ? (
-                      <div className="mb-2 flex justify-center">
-                        <Button
-                          onClick={() => {
-                            nearPageBottomRef.current = true
-                            setShowJumpToLatest(false)
-                            messagesScrollRef.current?.scrollTo({
-                              behavior: 'smooth',
-                              top: messagesScrollRef.current.scrollHeight,
-                            })
-                          }}
-                          size="sm"
-                          type="button"
-                          variant="outline"
-                        >
-                          <ArrowDown aria-hidden="true" /> Jump to latest
-                        </Button>
+                      <span className="px-1 text-[0.7rem] text-muted-foreground">
+                        Sending…
+                      </span>
+                    </article>
+                  ) : null}
+                  <div aria-hidden="true" ref={messageEndRef} />
+                  {sendMessage.isPending ? (
+                    <div className="flex flex-wrap items-start gap-3 text-sm text-muted-foreground">
+                      <div className="flex min-w-0 items-center gap-3 rounded-lg border border-border bg-[color-mix(in_oklab,var(--card)_80%,transparent)] px-3 py-2 shadow-soft backdrop-blur-md">
+                        <TetrisLoader
+                          cellSize={4}
+                          gap={1}
+                          label="Thinking"
+                          rows={6}
+                        />
+                        <p className="text-xs font-semibold text-foreground">
+                          Thinking
+                        </p>
                       </div>
-                    ) : null}
-                    {composer}
-                  </div>
+                      <Button
+                        className="ml-auto"
+                        onClick={() => sendAbortController.current?.abort()}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               </div>
+              <div className="shrink-0 px-4 pt-2 pb-4 sm:px-6 sm:pb-5">
+                <div className="mx-auto w-full max-w-[52rem]">
+                  {showJumpToLatest ? (
+                    <div className="mb-2 flex justify-center">
+                      <Button
+                        onClick={() => {
+                          nearPageBottomRef.current = true
+                          setShowJumpToLatest(false)
+                          messagesScrollRef.current?.scrollTo({
+                            behavior: 'smooth',
+                            top: messagesScrollRef.current.scrollHeight,
+                          })
+                        }}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        <ArrowDown aria-hidden="true" /> Jump to latest
+                      </Button>
+                    </div>
+                  ) : null}
+                  {composer}
+                </div>
+              </div>
+            </div>
+            {detailsVisible ? (
               <CoachAnswerPanel
                 className="hidden xl:flex"
                 {...answerPanelProps}
               />
-              {detailsOpen ? (
-                <div
-                  aria-label="Answer details"
-                  aria-modal="true"
-                  className="fixed inset-0 z-40 xl:hidden"
-                  onKeyDown={(event) => {
-                    if (event.key === 'Escape') setDetailsOpen(false)
-                  }}
-                  role="dialog"
-                >
-                  <button
-                    aria-label="Close answer details"
-                    className="absolute inset-0 bg-black/40"
-                    onClick={() => setDetailsOpen(false)}
-                    type="button"
-                  />
-                  <CoachAnswerPanel
-                    className="absolute inset-y-0 right-0 max-w-[calc(100vw-1.5rem)] bg-background shadow-2xl"
-                    onClose={() => setDetailsOpen(false)}
-                    {...answerPanelProps}
-                  />
-                </div>
-              ) : null}
-            </div>
-          )}
-
+            ) : null}
+            {detailsOpen ? (
+              <div
+                aria-label="Answer details"
+                aria-modal="true"
+                className="fixed inset-0 z-40 xl:hidden"
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') setDetailsOpen(false)
+                }}
+                role="dialog"
+              >
+                <button
+                  aria-label="Close answer details"
+                  className="absolute inset-0 bg-black/40"
+                  onClick={() => setDetailsOpen(false)}
+                  type="button"
+                />
+                <CoachAnswerPanel
+                  className="absolute inset-y-0 right-0 max-w-[calc(100vw-1.5rem)] bg-background shadow-2xl"
+                  onClose={() => setDetailsOpen(false)}
+                  {...answerPanelProps}
+                />
+              </div>
+            ) : null}
+          </div>
+        )}
       </section>
 
       <Dialog

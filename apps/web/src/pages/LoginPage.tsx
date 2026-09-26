@@ -1,15 +1,9 @@
-import { useState, type CSSProperties, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
-import {
-  Flame,
-  Sparkles,
-  Target,
-  TrendingUp,
-} from '@/components/icons/algo-icons'
-import { LogoMark } from '@/components/brand/LogoMark'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/features/auth/useAuth'
+import { LogoOrbit } from '@/components/brand/LogoOrbit'
 
 import { safeReturnTo } from '@/routes/return-to'
 
@@ -382,95 +376,12 @@ function GoogleMark() {
   )
 }
 
-// Big animated mark with the kinds of signals the coach keeps for you. Purely
-// decorative sample values, hidden from assistive technology.
+// The orbiting mark: the platforms AlgoMemtor reads on the inner ring and
+// the signals it keeps on the outer ring. Decorative.
 function BrandShowcase() {
-  const chip =
-    'animate-float absolute flex items-center gap-2.5 rounded-lg border border-white/60 bg-white/80 px-3 py-2 text-left shadow-[0_18px_40px_-20px_rgb(16_16_18/0.45)] backdrop-blur-md dark:border-white/10 dark:bg-[#18181b]/85'
   return (
-    <div
-      aria-hidden="true"
-      className="relative hidden flex-1 place-items-center lg:grid"
-    >
-      <div className="relative grid size-[22rem] place-items-center">
-        {[22, 17, 12].map((size, index) => (
-          <span
-            className="absolute rounded-full border border-[#101012]/10 dark:border-white/10"
-            key={size}
-            style={{
-              width: `${size}rem`,
-              height: `${size}rem`,
-              opacity: 1 - index * 0.15,
-            }}
-          />
-        ))}
-        <span className="absolute size-44 rounded-full bg-primary/25 blur-3xl" />
-        <LogoMark className="relative size-36 shadow-[0_30px_60px_-24px_rgb(255_77_18/0.6)]" />
-
-        <div
-          className={`${chip} -top-2 left-0`}
-          style={{ '--tilt': '-3deg' } as CSSProperties}
-        >
-          <span className="grid size-8 place-items-center rounded-md bg-go-soft text-go-foreground">
-            <TrendingUp className="size-4" />
-          </span>
-          <span>
-            <span className="block text-[0.68rem] text-muted-foreground">
-              Rating
-            </span>
-            <span className="block font-heading text-sm font-bold">
-              1665 <span className="text-go">+49</span>
-            </span>
-          </span>
-        </div>
-
-        <div
-          className={`${chip} top-8 -right-6 [animation-delay:-2s]`}
-          style={{ '--tilt': '3deg' } as CSSProperties}
-        >
-          <span className="grid size-8 place-items-center rounded-md bg-sun-soft text-sun-foreground">
-            <Flame className="size-4" />
-          </span>
-          <span>
-            <span className="block text-[0.68rem] text-muted-foreground">
-              Solve streak
-            </span>
-            <span className="block font-heading text-sm font-bold">
-              12 days
-            </span>
-          </span>
-        </div>
-
-        <div
-          className={`${chip} bottom-20 -left-10 [animation-delay:-4s]`}
-          style={{ '--tilt': '2deg' } as CSSProperties}
-        >
-          <span className="grid size-8 place-items-center rounded-md bg-primary/15 text-primary">
-            <Target className="size-4" />
-          </span>
-          <span>
-            <span className="block text-[0.68rem] text-muted-foreground">
-              Next problem
-            </span>
-            <span className="block font-heading text-sm font-bold">
-              Binary search · 1400
-            </span>
-          </span>
-        </div>
-
-        <div
-          className={`${chip} -right-6 -bottom-4 max-w-52 [animation-delay:-1s]`}
-          style={{ '--tilt': '-2deg' } as CSSProperties}
-        >
-          <span className="coach-orb size-8 shrink-0" />
-          <span className="text-xs leading-snug">
-            <span className="flex items-center gap-1 text-[0.68rem] text-muted-foreground">
-              <Sparkles className="size-3 text-primary" /> Coach
-            </span>
-            Your WA pattern is off-by-one. Try the invariant first.
-          </span>
-        </div>
-      </div>
+    <div className="relative hidden flex-1 place-items-center py-6 lg:grid">
+      <LogoOrbit className="max-w-[30rem]" />
     </div>
   )
 }

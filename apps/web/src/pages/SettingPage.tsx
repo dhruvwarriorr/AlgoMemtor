@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { motion, useReducedMotion } from 'motion/react'
 import type { SaveLearnerProfileRequest } from '@algomemtor/shared-contracts'
 import {
   ArrowUpRight,
@@ -11,12 +12,14 @@ import {
   Palette,
   ShieldCheck,
   Sun,
+  Target,
   UserRound,
   type IconComponent,
 } from '@/components/icons/algo-icons'
 
 import type { Theme } from '@/app/theme-context'
 import { useTheme } from '@/app/useTheme'
+import { ProviderLogo } from '@/components/brand/ProviderLogo'
 import { UserAvatar } from '@/components/brand/UserAvatar'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { useUserIdentity } from '@/features/auth/user-identity'
@@ -27,6 +30,8 @@ import { DataResetDialog } from '@/features/profile/components/DataResetDialog'
 import { IdentityEditor } from '@/features/profile/components/IdentityEditor'
 import { LearnerProfileForm } from '@/features/profile/components/LearnerProfileForm'
 import { ProfileBanner } from '@/features/profile/components/ProfileBanner'
+import { profileStrength } from '@/features/profile/components/profile-strength'
+import { useProviderAccounts } from '@/features/profile/hooks/useProviderAccounts'
 import { ProviderAccountLinks } from '@/features/profile/components/ProviderAccountLinks'
 import { BrowserConnectorCard } from '@/features/profile/components/BrowserConnectorCard'
 import { SyncPlatformsButton } from '@/features/connector/SyncPlatformsButton'
@@ -50,33 +55,61 @@ const sections: ReadonlyArray<{
   id: SectionId
   label: string
   icon: IconComponent
+  color: string
 }> = [
   {
     id: 'profile',
     label: 'Profile and goals',
     icon: UserRound,
+    color: '#38bdf8',
   },
   {
     id: 'accounts',
     label: 'Accounts',
     icon: ShieldCheck,
+    color: '#22c55e',
   },
   {
     id: 'platforms',
     label: 'Linked platforms',
     icon: Link2,
+    color: '#2d6cdf',
   },
   {
     id: 'appearance',
     label: 'Appearance',
     icon: Palette,
+    color: '#a78bfa',
   },
   {
     id: 'data',
     label: 'Data and reset',
     icon: Database,
+    color: '#ef4444',
   },
 ]
+
+const ease = [0.16, 1, 0.3, 1] as const
+
+// A card surface for a block of settings.
+function SettingsCard({
+  children,
+  className,
+}: {
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <div
+      className={cn(
+        'rounded-2xl border border-border bg-card p-5 shadow-soft sm:p-7',
+        className,
+      )}
+    >
+      {children}
+    </div>
+  )
+}
 
 function isSectionId(value: string): value is SectionId {
   return sections.some((section) => section.id === value)
@@ -85,18 +118,38 @@ function isSectionId(value: string): value is SectionId {
 function SectionTitle({
   title,
   description,
+  section,
+  icon,
 }: {
   title: string
   description: string
+  section?: SectionId
+  icon?: { icon: IconComponent; color: string }
 }) {
+  const found = sections.find((item) => item.id === section)
+  const meta = icon ?? found
   return (
-    <div className="border-b border-border pb-5">
-      <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-[1.65rem]">
-        {title}
-      </h2>
-      <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-[0.95rem]">
-        {description}
-      </p>
+    <div className="flex items-start gap-4 pb-5">
+      {meta ? (
+        <span
+          aria-hidden="true"
+          className="grid size-12 shrink-0 place-items-center rounded-2xl shadow-soft"
+          style={{
+            color: meta.color,
+            background: `linear-gradient(135deg, color-mix(in oklab, ${meta.color} 22%, transparent), color-mix(in oklab, ${meta.color} 6%, transparent))`,
+          }}
+        >
+          <meta.icon className="size-6" strokeWidth={1.8} />
+        </span>
+      ) : null}
+      <div className="min-w-0">
+        <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-[1.65rem]">
+          {title}
+        </h2>
+        <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted-foreground sm:text-[0.95rem]">
+          {description}
+        </p>
+      </div>
     </div>
   )
 }
@@ -111,7 +164,7 @@ function SettingRow({
   children: ReactNode
 }) {
   return (
-    <div className="grid gap-4 border-b border-border py-8 md:grid-cols-[minmax(0,13rem)_minmax(0,1fr)] md:gap-x-10">
+    <div className="mb-4 grid gap-4 rounded-2xl border border-border bg-card p-5 shadow-soft transition-shadow duration-300 hover:shadow-lift sm:p-7 md:grid-cols-[minmax(0,13rem)_minmax(0,1fr)] md:gap-x-10">
       <div>
         <h3 className="text-lg font-semibold text-foreground">{title}</h3>
         <p className="mt-1 text-sm text-muted-foreground">{description}</p>
@@ -203,6 +256,7 @@ function AppearanceSection() {
     <>
       <SectionTitle
         description="Choose how AlgoMemtor looks on this device and which coach pet comes along. These choices are saved in this browser."
+        section="appearance"
         title="Appearance"
       />
       <SettingRow
@@ -378,6 +432,15 @@ function SettingPage() {
   const saveProfile = useSaveLearnerProfile()
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [resetOpen, setResetOpen] = useState(false)
+  const reduceMotion = useReducedMotion()
+  const accountsQuery = useProviderAccounts()
+  const profile = profileQuery.data?.data
+  const strength = profile
+    ? profileStrength(
+        profile,
+        accountsQuery.isSuccess ? accountsQuery.data.data.length : undefined,
+      )
+    : undefined
   const hash = location.hash.replace('#', '')
   const active: SectionId = isSectionId(hash) ? hash : 'profile'
 
@@ -421,10 +484,10 @@ function SettingPage() {
                 <button
                   aria-current={selected ? 'page' : undefined}
                   className={cn(
-                    'group relative flex shrink-0 items-center gap-3 rounded-lg px-3 py-2.5 text-left outline-none transition-[background-color,color,transform] duration-200 focus-visible:ring-2 focus-visible:ring-ring lg:w-full',
+                    'group relative isolate flex shrink-0 items-center gap-3 rounded-xl px-2.5 py-2 text-left outline-none transition-[color,transform] duration-200 focus-visible:ring-2 focus-visible:ring-ring lg:w-full',
                     selected
-                      ? 'bg-sky-soft text-foreground dark:bg-accent'
-                      : 'text-muted-foreground hover:bg-muted/70 hover:text-foreground',
+                      ? 'text-foreground'
+                      : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground lg:hover:translate-x-0.5',
                   )}
                   key={section.id}
                   onClick={() =>
@@ -432,13 +495,26 @@ function SettingPage() {
                   }
                   type="button"
                 >
+                  {selected ? (
+                    <motion.span
+                      aria-hidden="true"
+                      className="absolute inset-0 -z-10 rounded-xl border border-border bg-background shadow-soft dark:bg-muted/60"
+                      layoutId="settings-active"
+                      transition={{
+                        type: 'spring',
+                        stiffness: 420,
+                        damping: 34,
+                      }}
+                    />
+                  ) : null}
                   <span
-                    className={cn(
-                      'grid size-7 shrink-0 place-items-center rounded-md transition-colors',
-                      selected
-                        ? 'text-primary'
-                        : 'text-muted-foreground group-hover:text-foreground',
-                    )}
+                    className="grid size-8 shrink-0 place-items-center rounded-lg transition-[background-color,color,transform] duration-300 group-hover:scale-105"
+                    style={{
+                      color: selected ? section.color : undefined,
+                      background: selected
+                        ? `color-mix(in oklab, ${section.color} 16%, transparent)`
+                        : undefined,
+                    }}
                   >
                     <section.icon
                       aria-hidden="true"
@@ -468,11 +544,14 @@ function SettingPage() {
         </div>
       </aside>
 
-      <div
-        className="min-w-0 px-5 py-6 sm:px-8 lg:px-10 lg:py-8 xl:px-14 xl:py-10"
-        key={active}
-      >
-        <div className="animate-rise mx-auto max-w-6xl">
+      <div className="min-w-0 px-5 py-6 sm:px-8 lg:px-10 lg:py-8 xl:px-14 xl:py-10">
+        <motion.div
+          animate={{ opacity: 1, y: 0 }}
+          className="mx-auto max-w-6xl"
+          initial={reduceMotion ? false : { opacity: 0, y: 14 }}
+          key={active}
+          transition={{ duration: 0.45, ease }}
+        >
           {active === 'profile' ? (
             <>
               <ProfileBanner
@@ -487,22 +566,25 @@ function SettingPage() {
                 }
                 email={user?.email}
                 profile={profileQuery.data?.data}
+                {...(strength === undefined ? {} : { strength })}
               />
               <div className="mt-8">
                 <SectionTitle
                   description="Update the details other AlgoMemtor surfaces use to identify you."
+                  section="profile"
                   title="Personal information"
                 />
-                <div className="pt-6">
+                <SettingsCard>
                   <IdentityEditor />
-                </div>
+                </SettingsCard>
               </div>
               <div className="mt-10">
                 <SectionTitle
                   description="These answers shape every recommendation and coaching reply. Your sign-in email is managed separately by Supabase Auth."
+                  icon={{ icon: Target, color: '#22c55e' }}
                   title="Learning profile"
                 />
-                <div className="pt-6">
+                <SettingsCard>
                   <LearnerProfileForm
                     combinePracticeNotes
                     idPrefix="settings-profile"
@@ -525,7 +607,7 @@ function SettingPage() {
                     submitLabel="Save profile changes"
                     successMessage={successMessage}
                   />
-                </div>
+                </SettingsCard>
               </div>
             </>
           ) : null}
@@ -534,11 +616,12 @@ function SettingPage() {
             <>
               <SectionTitle
                 description="How you sign in to AlgoMemtor: connect Google, change your password, or get a reset link."
+                section="accounts"
                 title="Accounts"
               />
-              <div className="pt-6">
+              <SettingsCard>
                 <AccountAccessSettings />
-              </div>
+              </SettingsCard>
             </>
           ) : null}
 
@@ -546,10 +629,32 @@ function SettingPage() {
             <>
               <SectionTitle
                 description="Link public handles so your coach can read verified solves, ratings and contest history."
+                section="platforms"
                 title="Linked platforms"
               />
-              <div className="flex flex-col gap-6 pt-8">
-                <SyncPlatformsButton />
+              <div className="flex flex-col gap-6">
+                <SettingsCard className="flex w-full max-w-4xl flex-wrap items-center justify-between gap-4 bg-linear-to-br from-card to-[color-mix(in_oklab,#2d6cdf_8%,var(--card))]">
+                  <div aria-hidden="true" className="flex -space-x-2">
+                    {(
+                      ['codeforces', 'leetcode', 'codechef', 'cses'] as const
+                    ).map((provider, index) => (
+                      <motion.span
+                        animate={{ opacity: 1, y: 0 }}
+                        className="grid size-10 place-items-center rounded-full border-2 border-card bg-white text-[#0b0c0e] shadow-soft"
+                        initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+                        key={provider}
+                        transition={{
+                          duration: 0.4,
+                          ease,
+                          delay: index * 0.07,
+                        }}
+                      >
+                        <ProviderLogo className="size-5" provider={provider} />
+                      </motion.span>
+                    ))}
+                  </div>
+                  <SyncPlatformsButton />
+                </SettingsCard>
                 <ProviderAccountLinks idPrefix="settings" />
                 <BrowserConnectorCard idPrefix="settings" />
               </div>
@@ -562,6 +667,7 @@ function SettingPage() {
             <>
               <SectionTitle
                 description="Manage the learner data stored for your account."
+                section="data"
                 title="Data and reset"
               />
               <SettingRow
@@ -584,7 +690,7 @@ function SettingPage() {
               </SettingRow>
             </>
           ) : null}
-        </div>
+        </motion.div>
       </div>
       <DataResetDialog onClose={() => setResetOpen(false)} open={resetOpen} />
     </main>

@@ -149,6 +149,11 @@ Conventions:
   `rel="noopener noreferrer"` when opening a new tab.
 - Preserve the established UI and interaction design unless a redesign is
   explicitly requested.
+- The design is flat (learner request, 2026-09-26): nothing casts a box
+  shadow, drop shadow, glow or text shadow. `--shadow-soft`/`--shadow-lift`
+  are `none` and a global rule in `index.css` clears Tailwind's shadow
+  layers. Only ring outlines, keyboard focus rings and the coach orb's inner
+  shading remain. Do not add shadows back.
 - Recommendation and bookmark screens may be honest non-persistent placeholders
   until their roadmap phases. Do not add fake persistence.
 - Provider-data staleness comes from API warnings such as `STALE_DATA`, not from
@@ -378,6 +383,47 @@ source, tests, and `git status` before relying on it.
   contract in `shared-contracts/src/visualizer.ts`) sends code, input and a run
   digest only when the learner asks; nothing is stored. Engine output is
   checked against real toolchains in `engines/corpus`.
+
+- 2026-09-26 (visual revamp): shared visuals live in
+  `apps/web/src/components/kit` (PageHero with InfoTip, surfaces, charts,
+  PipelineFlow, SegmentedControl, Panel, stat-cards). Each page sets an
+  accent with `PageContainer accent` / `data-accent`, and each page keeps its
+  own stat-card family and `PanelStyle` so no two pages repeat the same
+  cards: capsules (Doubt Helper), soft panels and no summary tiles (Upsolve).
+  Contest Analysis and Progress Report use the original look (`PageHeader`,
+  `GradientCard` KPI tiles, `PanelStyle variant="classic"`) with their
+  charts; Progress Report keeps the dark amber streak `HeroStat` and a
+  compact, filterable one-line-per-topic progress list. Doubt Helper doubt types use the illustrated icons in
+  `components/icons/doubt-icons.tsx`. At the learner's request, Insights
+  and Progress keep their original design (with `GradientCard` tiles); Insights keeps the revamp's provider pills, glass account cards and
+  hero sparkline, and Progress keeps the large mesh "Newly solved" card.
+  The Dashboard (`features/dashboard`) is the flagship page: an aurora
+  "Momentum core" hero (greeting, Ask bar, tools and a radial 30-day dial),
+  live KPI tiles with border beams, a rating flight path through rank bands
+  with a hover crosshair, a topic rose ("Topic bloom"), a coach core whose
+  beams run to focus topics, and a horizontal activity rail.
+  The landing (`features/landing`) sits on a tide-map background
+  (`TideField`: still, faint contour lines that only bend gently around
+  the pointer), keeps the intro, fills the brand word with liquid as
+  it scrolls (the same effect as the closing line) until its letters scatter
+  upward, then tells the story: a scroll-lit manifesto, a pinned loop
+  engine (read, remember, rank, practise), a tools bento with looping
+  illustrative demos, a trust section (problems stay home, consent,
+  in-browser runs, not affiliated), and a liquid closing call whose action
+  matches the top bar.
+  Insights charts below the account cards are crafted, scroll-revealed
+  visuals in `features/insights/insights-visuals.tsx` (no recharts), inside
+  the classic bordered `InsightCard`; the Weekly rhythm card shows the
+  insights `punchCard`.
+  Each tool page has one animated centrepiece: the Recommendations pick
+  engine, the Visualizer's shape marquee and two-pointer trace preview, the
+  Problems rating spectrum (`features/discovery/rating-bands.ts`), the
+  Memory core, and the Bookmarks shelf with a "Next up" card. The orbiting
+  logo (`components/brand/LogoOrbit.tsx`) lives on the sign-in page.
+  Profile and Settings share an aurora `ProfileBanner` with a profile
+  strength ring (`profile-strength.ts`); Profile is a bento of cards and
+  Settings has a sliding section marker and card-surface sections. Typed example
+  placeholders share `lib/use-typed-example.ts`.
 
 Important: this snapshot describes the working tree, which currently contains
 uncommitted Week 10 work. It is context, not permission to commit or rewrite it.

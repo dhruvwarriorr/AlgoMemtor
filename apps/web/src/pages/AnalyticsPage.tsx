@@ -14,6 +14,8 @@ import {
   type GradientTone,
 } from '@/components/motion/GradientCard'
 import { ProviderLogo } from '@/components/brand/ProviderLogo'
+import { Sparkline } from '@/components/kit/charts'
+import { SegmentedControl } from '@/components/kit/SegmentedControl'
 import {
   ActiveDaysIcon,
   BestDayIcon,
@@ -27,24 +29,27 @@ import PageContainer from '@/components/layout/PageContainer'
 import PageHeader from '@/components/layout/PageHeader'
 import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
+import { AccountCards, YearCalendar } from '@/features/insights/InsightsCharts'
 import {
-  AccountCards,
-  DifficultyGauge,
-  HardestSolves,
-  LanguageBars,
-  MonthlyVolume,
-  RatingLadder,
-  TopicPieChart,
-  TopicStrength,
-  VerdictDonut,
-  YearCalendar,
-} from '@/features/insights/InsightsCharts'
+  ContestPulse,
+  DifficultyRings,
+  LanguageCapsules,
+  MonthlySkyline,
+  RatingStaircase,
+  SummitPodium,
+  TopicBubbles,
+  TopicTugOfWar,
+  VerdictOrbit,
+  WeeklyRhythm,
+} from '@/features/insights/insights-visuals'
 import {
   mergeContestHistory,
   type ContestHistoryEntry,
 } from '@/features/platform/contest-history'
-import { ProviderFilter } from '@/features/platform/components/ProviderFilter'
-import { providerLabels } from '@/features/platform/components/provider-labels'
+import {
+  providerLabels,
+  providerOptions,
+} from '@/features/platform/components/provider-labels'
 import { useActivity, useAnalytics } from '@/features/platform/hooks'
 import {
   dashboardActivity,
@@ -141,12 +146,12 @@ function Headline({
 function ContestLog({ entries }: { entries: ContestHistoryEntry[] }) {
   if (entries.length === 0) return null
   return (
-    <section className="animate-rise rounded-xl border border-border bg-card p-4 sm:p-5">
+    <section className="animate-rise min-w-0 rounded-xl border border-border bg-card p-4 sm:p-5">
       <h3 className="text-lg font-semibold">Contest log</h3>
       <p className="mt-0.5 text-sm text-muted-foreground">
         Every synchronized contest with rank and rating change.
       </p>
-      <div className="mt-4 max-h-96 overflow-y-auto">
+      <div className="mt-4 max-h-96 overflow-auto">
         <table className="w-full text-left text-sm">
           <thead className="sticky top-0 bg-card text-xs text-muted-foreground">
             <tr>
@@ -243,7 +248,7 @@ function ActivityLog({ events }: { events: readonly ActivityEvent[] }) {
           No dated submissions yet. Sync a platform to fill this log.
         </p>
       ) : (
-        <div className="mt-4 max-h-96 overflow-y-auto">
+        <div className="mt-4 max-h-96 overflow-auto">
           <table className="w-full text-left text-sm">
             <thead className="sticky top-0 bg-card text-xs text-muted-foreground">
               <tr>
@@ -375,10 +380,21 @@ function AnalyticsPage() {
     <PageContainer>
       <PageHeader
         action={
-          <ProviderFilter
-            id="analytics-provider"
-            onChange={updateProvider}
-            value={provider}
+          <SegmentedControl
+            label="Provider"
+            onChange={(next) =>
+              updateProvider(next === 'all' ? undefined : next)
+            }
+            options={[
+              { value: 'all', label: 'All' },
+              ...providerOptions.map((option) => ({
+                value: option,
+                label: providerLabels[option],
+                icon: <ProviderLogo className="size-3.5" provider={option} />,
+              })),
+            ]}
+            size="sm"
+            value={provider ?? 'all'}
           />
         }
         description={description}
@@ -409,6 +425,13 @@ function AnalyticsPage() {
                 : ''}
             </p>
           </div>
+          {(insights?.monthly.length ?? 0) > 1 ? (
+            <Sparkline
+              className="h-16 w-full max-w-72 self-center"
+              color="#7dd3fc"
+              values={(insights?.monthly ?? []).map((month) => month.solved)}
+            />
+          ) : null}
           <dl className="grid grid-cols-3 gap-x-8 gap-y-3">
             {[
               ['Contests', contestHistory.length.toLocaleString()],
@@ -504,10 +527,10 @@ function AnalyticsPage() {
       />
 
       <div className="grid min-w-0 gap-4 lg:grid-cols-12">
-        <MonthlyVolume monthly={insights?.monthly ?? []} />
-        <DifficultyGauge difficulty={analytics.solvedByDifficulty} />
-        <RatingLadder bands={insights?.ratingBands ?? []} />
-        <VerdictDonut
+        <MonthlySkyline monthly={insights?.monthly ?? []} />
+        <DifficultyRings difficulty={analytics.solvedByDifficulty} />
+        <RatingStaircase bands={insights?.ratingBands ?? []} />
+        <VerdictOrbit
           total={insights?.totalSubmissions ?? 0}
           verdicts={
             insights?.verdicts ?? {
@@ -521,18 +544,24 @@ function AnalyticsPage() {
             }
           }
         />
-        <TopicPieChart topicCounts={analytics.topicCounts} />
-        <TopicStrength topics={insights?.topicStrength ?? []} />
-        <LanguageBars languages={analytics.languageCounts} />
-        <HardestSolves problems={insights?.hardestSolved ?? []} />
-        <section className="animate-rise flex flex-col justify-between gap-4 rounded-xl border border-border bg-card p-4 sm:p-5 lg:col-span-4">
+        <TopicBubbles topicCounts={analytics.topicCounts} />
+        <TopicTugOfWar topics={insights?.topicStrength ?? []} />
+        {insights === undefined ? null : (
+          <WeeklyRhythm
+            punchCard={insights.punchCard}
+            timezone={insights.timezone}
+          />
+        )}
+        <LanguageCapsules languages={analytics.languageCounts} />
+        <SummitPodium problems={insights?.hardestSolved ?? []} />
+        <section className="animate-rise flex flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:p-5 lg:col-span-6">
           <div>
             <h3 className="flex items-center gap-2 text-lg font-semibold">
               <Swords aria-hidden="true" className="size-4 text-primary" />
               Contest record
             </h3>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              Rated contest outcomes.
+              Rated contest outcomes, oldest to newest.
             </p>
           </div>
           <ContestRecord entries={contestHistory} />
@@ -541,7 +570,7 @@ function AnalyticsPage() {
 
       <div
         className={cn(
-          'grid min-w-0 gap-4',
+          'grid min-w-0 grid-cols-1 gap-4',
           contestHistory.length > 0 && 'xl:grid-cols-2',
         )}
       >
@@ -558,11 +587,23 @@ function AnalyticsPage() {
 }
 
 function ContestRecord({ entries }: { entries: ContestHistoryEntry[] }) {
-  const deltas = entries
-    .map(
-      (entry) => entry.ratingChange?.delta ?? entry.participation?.ratingChange,
+  const rated = entries
+    .map((entry) => ({
+      key: entry.key,
+      delta: entry.ratingChange?.delta ?? entry.participation?.ratingChange,
+      label:
+        entry.participation?.contestName ??
+        entry.ratingChange?.contestName ??
+        'Contest',
+      date:
+        entry.participation?.attendedAt ?? entry.ratingChange?.occurredAt ?? '',
+    }))
+    .filter(
+      (item): item is typeof item & { delta: number } =>
+        item.delta !== undefined,
     )
-    .filter((value): value is number => value !== undefined)
+    .sort((left, right) => left.date.localeCompare(right.date))
+  const deltas = rated.map((item) => item.delta)
   const gains = deltas.filter((value) => value > 0)
   const losses = deltas.filter((value) => value < 0)
   const best = deltas.length ? Math.max(...deltas) : undefined
@@ -571,18 +612,19 @@ function ContestRecord({ entries }: { entries: ContestHistoryEntry[] }) {
     ? Math.round((gains.length / deltas.length) * 100)
     : 0
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-1 flex-col gap-4">
       <div>
-        <div className="flex h-3 overflow-hidden rounded-md bg-muted">
-          <span className="bg-go" style={{ width: `${winRate}%` }} />
-          <span className="flex-1 bg-destructive/70" />
-        </div>
+        {rated.length > 0 ? (
+          <ContestPulse deltas={rated} />
+        ) : (
+          <div className="flex h-3 overflow-hidden rounded-md bg-muted" />
+        )}
         <p className="mt-2 flex justify-between text-xs text-muted-foreground">
           <span>{gains.length} rating gains</span>
           <span>{losses.length} drops</span>
         </p>
       </div>
-      <dl className="grid grid-cols-2 gap-2">
+      <dl className="mt-auto grid grid-cols-2 gap-2 sm:grid-cols-4">
         {[
           ['Win rate', deltas.length ? `${winRate}%` : '—'],
           ['Best gain', best === undefined ? '—' : `+${Math.round(best)}`],

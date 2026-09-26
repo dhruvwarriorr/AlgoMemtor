@@ -65,10 +65,13 @@ export function LogoOrbit({ className }: { className?: string }) {
   return (
     <div
       aria-hidden="true"
-      className={cn('relative aspect-square w-full max-w-[36rem]', className)}
+      className={cn(
+        'relative aspect-square w-full max-w-[36rem] [container-type:inline-size]',
+        className,
+      )}
     >
-      <span className="absolute inset-[4%] rounded-full border border-white/10" />
-      <span className="absolute inset-[20%] rounded-full border border-dashed border-white/12" />
+      <span className="absolute inset-[4%] rounded-full border border-foreground/10" />
+      <span className="absolute inset-[20%] rounded-full border border-dashed border-foreground/15" />
       <span className="absolute inset-[34%] rounded-full bg-[radial-gradient(closest-side,rgb(56_189_248/0.28),rgb(74_222_128/0.12),transparent)]" />
 
       {/* Outer ring: what the coach reads. */}
@@ -81,11 +84,11 @@ export function LogoOrbit({ className }: { className?: string }) {
             angle={(index / orbitSignals.length) * 360}
             duration={60}
             key={signal.label}
-            radius="clamp(8.5rem, 40vw, 16.5rem)"
+            radius="44cqw"
             reverse={false}
           >
-            <span className="glass-panel-strong flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium whitespace-nowrap text-white">
-              <signal.icon className="size-4 text-[#7dd3fc] [--icon-node:#4ade80]" />
+            <span className="glass-panel-strong flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium whitespace-nowrap text-foreground shadow-[0_12px_30px_-16px_rgb(0_0_0/0.5)]">
+              <signal.icon className="size-4 text-primary [--icon-node:#4ade80]" />
               {signal.label}
             </span>
           </OrbitItem>
@@ -102,19 +105,19 @@ export function LogoOrbit({ className }: { className?: string }) {
             angle={(index / orbitPlatforms.length) * 360 + 45}
             duration={40}
             key={platform}
-            radius="clamp(5.5rem, 26vw, 10.5rem)"
+            radius="29cqw"
             reverse
           >
-            <span className="grid size-14 place-items-center rounded-full border border-white/15 bg-white text-[#0b0c0e] shadow-[0_12px_30px_-10px_rgb(0_0_0/0.6)]">
-              <ProviderLogo className="size-8" provider={platform} />
+            <span className="grid size-[12cqw] max-h-14 max-w-14 place-items-center rounded-full border border-black/5 bg-white text-[#0b0c0e] shadow-[0_12px_30px_-10px_rgb(0_0_0/0.45)]">
+              <ProviderLogo className="size-[58%]" provider={platform} />
             </span>
           </OrbitItem>
         ))}
       </div>
 
       <div className="absolute inset-0 grid place-items-center">
-        <span className="animate-pulse-glow absolute size-44 rounded-full bg-[#38bdf8]/30 blur-2xl" />
-        <LogoMark className="relative size-32 shadow-[0_30px_80px_-20px_rgb(56_189_248/0.75)] ring-4 ring-white/10 sm:size-40" />
+        <span className="animate-pulse-glow absolute size-[36cqw] rounded-full bg-[#38bdf8]/30 blur-2xl" />
+        <LogoMark className="relative size-[28cqw] shadow-[0_30px_80px_-20px_rgb(56_189_248/0.75)] ring-4 ring-foreground/10" />
       </div>
     </div>
   )

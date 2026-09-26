@@ -39,7 +39,7 @@ function renderLandingPage(status: AuthStatus) {
 }
 
 describe('LandingPage', () => {
-  it('renders only the brand scene and the footer', () => {
+  it('renders the brand scene, the story and the footer', () => {
     for (const status of [
       'unauthenticated',
       'authenticated',
@@ -48,13 +48,29 @@ describe('LandingPage', () => {
       const markup = renderLandingPage(status)
 
       expect(markup).toContain('aria-label="AlgoMemtor"')
+      expect(markup).toContain('Why AlgoMemtor')
+      expect(markup).toContain('Every solve makes the next pick sharper.')
+      expect(markup).toContain('A mentor for every step of practice.')
+      expect(markup).toContain('Your practice stays yours.')
+      expect(markup).toContain('not affiliated with these platforms')
       expect(markup).toContain('Problems belong to their original platforms.')
-      expect(markup).not.toContain('One coach.')
-      expect(markup).not.toContain('How it')
-      // The single action lives in the top bar, not in the page body.
-      expect(markup).not.toContain('Get Started')
-      expect(markup).not.toContain('Go to Dashboard')
     }
+  })
+
+  it('ends with the same action as the top bar', () => {
+    const guest = renderLandingPage('unauthenticated')
+    expect(guest).toContain('Start practising')
+    expect(guest).toContain('href="/login"')
+    expect(guest).not.toContain('Open your dashboard')
+
+    const learner = renderLandingPage('authenticated')
+    expect(learner).toContain('Open your dashboard')
+    expect(learner).toContain('href="/dashboard"')
+    expect(learner).not.toContain('Start practising')
+
+    const loading = renderLandingPage('loading')
+    expect(loading).not.toContain('Start practising')
+    expect(loading).not.toContain('Open your dashboard')
   })
 
   it('plays the skippable intro only for guests', () => {

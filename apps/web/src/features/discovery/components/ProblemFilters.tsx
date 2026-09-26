@@ -1,20 +1,48 @@
 import { useState, type FormEvent } from 'react'
 import type {
   ExternalProblemCatalogQueryParams,
-  LearnerProblemStatus,
-  NormalizedDifficulty,
   ProviderKey,
 } from '@algomemtor/shared-contracts'
 
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+
+import { ProviderLogo } from '@/components/brand/ProviderLogo'
+import { Search, X } from '@/components/icons/algo-icons'
+import { SegmentedControl } from '@/components/kit/SegmentedControl'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 import { useProviders } from '../hooks/useProviders'
+import { RatingSpectrum } from './RatingSpectrum'
 import { useTopics } from '../hooks/useTopics'
 
 const fieldClassName =
   'h-10 w-full min-w-0 rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 text-sm text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15'
 
-const labelClassName = 'space-y-1.5 text-sm font-medium text-foreground'
+const difficultyLabels = {
+  easy: 'Easy',
+  medium: 'Medium',
+  hard: 'Hard',
+} as const
+
+const difficultyColors = {
+  easy: '#22c55e',
+  medium: '#f59e0b',
+  hard: '#ef4444',
+} as const
+
+const statusLabels = {
+  unsolved: 'Unsolved',
+  attempted: 'Attempted',
+  solved: 'Solved',
+} as const
+
+const providerNames: Record<ProviderKey, string> = {
+  codeforces: 'Codeforces',
+  codechef: 'CodeChef',
+  leetcode: 'LeetCode',
+  cses: 'CSES',
+}
 
 type ProblemFiltersProps = {
   filters: ExternalProblemCatalogQueryParams
@@ -55,6 +83,7 @@ export function ProblemFilters({
     filters.maxRating?.toString() ?? '',
   )
   const [ratingError, setRatingError] = useState<string>()
+  const reduceMotion = useReducedMotion()
 
   function submitTextFilters(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -84,196 +113,348 @@ export function ProblemFilters({
     })
   }
 
+  function pickRange(range: { min: number; max: number } | null) {
+    setRatingError(undefined)
+    setMinRatingDraft(range === null ? '' : String(range.min))
+    setMaxRatingDraft(range === null ? '' : String(range.max))
+    onUpdate({
+      search: searchDraft.trim() || undefined,
+      minRating: range?.min,
+      maxRating: range?.max,
+    })
+  }
+
+  const topicName =
+    filters.topic === undefined
+      ? undefined
+      : (topicsQuery.data?.data.find((topic) => topic.slug === filters.topic)
+          ?.name ?? filters.topic)
+  const activeChips: { key: string; label: string; clear: () => void }[] = [
+    ...(filters.search
+      ? [
+          {
+            key: 'search',
+            label: `“${filters.search}”`,
+            clear: () => onUpdate({ search: undefined }),
+          },
+        ]
+      : []),
+    ...(filters.minRating !== undefined || filters.maxRating !== undefined
+      ? [
+          {
+            key: 'rating',
+            label: `Rating ${filters.minRating ?? 'any'}–${filters.maxRating ?? 'any'}`,
+            clear: () => pickRange(null),
+          },
+        ]
+      : []),
+    ...(filters.difficulty
+      ? [
+          {
+            key: 'difficulty',
+            label: difficultyLabels[filters.difficulty],
+            clear: () => onUpdate({ difficulty: undefined }),
+          },
+        ]
+      : []),
+    ...(filters.status
+      ? [
+          {
+            key: 'status',
+            label: statusLabels[filters.status],
+            clear: () => onUpdate({ status: undefined }),
+          },
+        ]
+      : []),
+    ...(filters.provider
+      ? [
+          {
+            key: 'provider',
+            label: providerNames[filters.provider],
+            clear: () => onUpdate({ provider: undefined }),
+          },
+        ]
+      : []),
+    ...(topicName !== undefined
+      ? [
+          {
+            key: 'topic',
+            label: topicName,
+            clear: () => onUpdate({ topic: undefined }),
+          },
+        ]
+      : []),
+  ]
+
+  const selectClassName =
+    'h-9 min-w-0 rounded-xl border border-input bg-background px-3 text-sm text-foreground outline-none transition-[border-color,box-shadow] hover:border-acc focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15'
+
   return (
     <section
       aria-labelledby="problem-filters-heading"
-      className="rounded-xl border border-border bg-card p-5 sm:p-6"
+      className="relative isolate overflow-hidden rounded-3xl border border-border bg-card p-4 shadow-soft sm:p-5"
     >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2
-            className="text-xl font-semibold text-card-foreground"
-            id="problem-filters-heading"
-          >
-            Filter problems
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Filters are saved in the URL so you can return to this view.
-          </p>
-        </div>
-        <Button
-          disabled={!hasActiveFilters && filters.pageSize === 10}
-          onClick={onClear}
-          type="button"
-          variant="ghost"
-        >
-          Clear filters
-        </Button>
-      </div>
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute -top-24 -right-20 -z-10 size-72 rounded-full bg-[radial-gradient(closest-side,color-mix(in_oklab,var(--acc)_18%,transparent),transparent)] blur-2xl"
+      />
+      <h2 className="sr-only" id="problem-filters-heading">
+        Filter problems
+      </h2>
 
-      <form className="mt-5 space-y-4" onSubmit={submitTextFilters}>
-        <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-2">
-          <label className={`${labelClassName} sm:col-span-2 xl:col-span-2`}>
-            Search
+      <form className="grid min-w-0 gap-4" onSubmit={submitTextFilters}>
+        <div className="flex min-w-0 gap-2">
+          <label className="relative min-w-0 flex-1">
+            <span className="sr-only">Search</span>
+            <Search
+              aria-hidden="true"
+              className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-muted-foreground"
+            />
             <input
-              className={fieldClassName}
+              className={cn(fieldClassName, 'h-11 rounded-2xl pl-11')}
               onChange={(event) => setSearchDraft(event.target.value)}
               placeholder="Title, ID, or provider tag"
               type="search"
               value={searchDraft}
             />
           </label>
-
-          <label className={labelClassName}>
-            Provider
-            <select
-              className={fieldClassName}
-              disabled={providersQuery.isPending}
-              onChange={(event) =>
-                onUpdate({
-                  provider: event.target.value
-                    ? (event.target.value as ProviderKey)
-                    : undefined,
-                })
-              }
-              value={filters.provider ?? ''}
-            >
-              <option value="">All providers</option>
-              {providersQuery.data?.data.map((provider) => (
-                <option
-                  disabled={provider.availability === 'unavailable'}
-                  key={provider.key}
-                  value={provider.key}
-                >
-                  {provider.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className={labelClassName}>
-            Topic
-            <select
-              className={fieldClassName}
-              disabled={topicsQuery.isPending}
-              onChange={(event) =>
-                onUpdate({ topic: event.target.value || undefined })
-              }
-              value={filters.topic ?? ''}
-            >
-              <option value="">All topics</option>
-              {topicsQuery.data?.data.map((topic) => (
-                <option key={topic.id} value={topic.slug}>
-                  {topic.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className={labelClassName}>
-            Difficulty
-            <select
-              className={fieldClassName}
-              onChange={(event) =>
-                onUpdate({
-                  difficulty: event.target.value
-                    ? (event.target.value as NormalizedDifficulty)
-                    : undefined,
-                })
-              }
-              value={filters.difficulty ?? ''}
-            >
-              <option value="">All difficulties</option>
-              <option value="easy">Easy</option>
-              <option value="medium">Medium</option>
-              <option value="hard">Hard</option>
-            </select>
-          </label>
-
-          <label className={labelClassName}>
-            Status
-            <select
-              className={fieldClassName}
-              onChange={(event) =>
-                onUpdate({
-                  status: event.target.value
-                    ? (event.target.value as LearnerProblemStatus)
-                    : undefined,
-                })
-              }
-              value={filters.status ?? ''}
-            >
-              <option value="">All statuses</option>
-              <option value="unsolved">Unsolved</option>
-              <option value="attempted">Attempted</option>
-              <option value="solved">Solved</option>
-            </select>
-          </label>
-
-          <label className={labelClassName}>
-            Minimum rating
-            <input
-              className={fieldClassName}
-              inputMode="decimal"
-              min="0"
-              onChange={(event) => setMinRatingDraft(event.target.value)}
-              placeholder="Any"
-              step="any"
-              type="number"
-              value={minRatingDraft}
-            />
-          </label>
-
-          <label className={labelClassName}>
-            Maximum rating
-            <input
-              className={fieldClassName}
-              inputMode="decimal"
-              min="0"
-              onChange={(event) => setMaxRatingDraft(event.target.value)}
-              placeholder="Any"
-              step="any"
-              type="number"
-              value={maxRatingDraft}
-            />
-          </label>
-
-          <label className={labelClassName}>
-            Results per page
-            <select
-              className={fieldClassName}
-              onChange={(event) =>
-                onUpdate({ pageSize: Number(event.target.value) })
-              }
-              value={filters.pageSize}
-            >
-              {[10, 20, 50].includes(filters.pageSize) ? null : (
-                <option value={filters.pageSize}>{filters.pageSize}</option>
-              )}
-              <option value="10">10</option>
-              <option value="20">20</option>
-              <option value="50">50</option>
-            </select>
-          </label>
+          <Button className="h-11 rounded-2xl px-5" type="submit" variant="ink">
+            Apply<span className="sr-only"> search and ratings</span>
+          </Button>
         </div>
 
-        {ratingError ? (
-          <p className="text-sm text-destructive" role="alert">
-            {ratingError}
-          </p>
-        ) : null}
-
-        {providersQuery.isError || topicsQuery.isError ? (
-          <p className="text-sm text-muted-foreground" role="status">
-            Some filter options are temporarily unavailable. The catalog can
-            still be searched.
-          </p>
-        ) : null}
-
-        <Button className="w-full" type="submit" variant="ink">
-          Apply search and ratings
-        </Button>
+        <div className="min-w-0 rounded-2xl border border-border bg-background/50 p-3">
+          <div className="mb-2.5 flex min-w-0 flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-semibold text-foreground">
+              Rating
+              <span className="ml-1.5 font-normal text-muted-foreground">
+                tap a band or type a range
+              </span>
+            </p>
+            <div className="flex items-center gap-1.5">
+              <label className="min-w-0">
+                <span className="sr-only">Minimum rating</span>
+                <input
+                  className={cn(
+                    fieldClassName,
+                    'h-8 w-20 rounded-lg text-center font-mono text-xs',
+                  )}
+                  inputMode="decimal"
+                  min="0"
+                  onChange={(event) => setMinRatingDraft(event.target.value)}
+                  placeholder="Any"
+                  step="any"
+                  type="number"
+                  value={minRatingDraft}
+                />
+              </label>
+              <span aria-hidden="true" className="h-px w-2.5 bg-border" />
+              <label className="min-w-0">
+                <span className="sr-only">Maximum rating</span>
+                <input
+                  className={cn(
+                    fieldClassName,
+                    'h-8 w-20 rounded-lg text-center font-mono text-xs',
+                  )}
+                  inputMode="decimal"
+                  min="0"
+                  onChange={(event) => setMaxRatingDraft(event.target.value)}
+                  placeholder="Any"
+                  step="any"
+                  type="number"
+                  value={maxRatingDraft}
+                />
+              </label>
+            </div>
+          </div>
+          <RatingSpectrum
+            max={filters.maxRating}
+            min={filters.minRating}
+            onPick={pickRange}
+          />
+        </div>
       </form>
+
+      <div className="mt-4 flex min-w-0 flex-wrap items-center gap-2">
+        <SegmentedControl
+          label="Difficulty"
+          onChange={(value) =>
+            onUpdate({
+              difficulty: value === 'all' ? undefined : value,
+            })
+          }
+          options={[
+            { value: 'all', label: 'All' },
+            ...(['easy', 'medium', 'hard'] as const).map((value) => ({
+              value,
+              label: difficultyLabels[value],
+              icon: (
+                <span
+                  aria-hidden="true"
+                  className="size-2 rounded-full"
+                  style={{ background: difficultyColors[value] }}
+                />
+              ),
+            })),
+          ]}
+          size="sm"
+          value={filters.difficulty ?? 'all'}
+        />
+        <SegmentedControl
+          label="Status"
+          onChange={(value) =>
+            onUpdate({
+              status: value === 'all' ? undefined : value,
+            })
+          }
+          options={[
+            { value: 'all', label: 'Any status' },
+            { value: 'unsolved', label: 'Unsolved' },
+            { value: 'attempted', label: 'Attempted' },
+            { value: 'solved', label: 'Solved' },
+          ]}
+          size="sm"
+          value={filters.status ?? 'all'}
+        />
+        <div
+          aria-label="Provider"
+          className="inline-flex max-w-full flex-wrap gap-1 rounded-xl border border-border bg-muted/60 p-1"
+          role="group"
+        >
+          <button
+            aria-pressed={filters.provider === undefined}
+            className={cn(
+              'h-7 rounded-lg px-2.5 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+              filters.provider === undefined
+                ? 'bg-card text-foreground shadow-soft'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+            disabled={providersQuery.isPending}
+            onClick={() => onUpdate({ provider: undefined })}
+            type="button"
+          >
+            All
+          </button>
+          {providersQuery.data?.data.map((provider) => (
+            <button
+              aria-pressed={filters.provider === provider.key}
+              className={cn(
+                'inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-40',
+                filters.provider === provider.key
+                  ? 'bg-card text-foreground shadow-soft'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+              disabled={provider.availability === 'unavailable'}
+              key={provider.key}
+              onClick={() => onUpdate({ provider: provider.key })}
+              type="button"
+            >
+              <ProviderLogo className="size-3.5" provider={provider.key} />
+              {provider.label}
+            </button>
+          ))}
+        </div>
+        <label>
+          <span className="sr-only">Topic</span>
+          <select
+            className={selectClassName}
+            disabled={topicsQuery.isPending}
+            onChange={(event) =>
+              onUpdate({ topic: event.target.value || undefined })
+            }
+            value={filters.topic ?? ''}
+          >
+            <option value="">All topics</option>
+            {topicsQuery.data?.data.map((topic) => (
+              <option key={topic.id} value={topic.slug}>
+                {topic.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span className="sr-only">Results per page</span>
+          <select
+            className={selectClassName}
+            onChange={(event) =>
+              onUpdate({ pageSize: Number(event.target.value) })
+            }
+            value={filters.pageSize}
+          >
+            {[10, 20, 50].includes(filters.pageSize) ? null : (
+              <option value={filters.pageSize}>
+                {filters.pageSize} / page
+              </option>
+            )}
+            <option value="10">10 / page</option>
+            <option value="20">20 / page</option>
+            <option value="50">50 / page</option>
+          </select>
+        </label>
+      </div>
+
+      <AnimatePresence initial={false}>
+        {activeChips.length > 0 ? (
+          <motion.div
+            animate={{ height: 'auto', opacity: 1 }}
+            className="overflow-hidden"
+            exit={{ height: 0, opacity: 0 }}
+            initial={reduceMotion ? false : { height: 0, opacity: 0 }}
+          >
+            <ul
+              aria-label="Active filters"
+              className="mt-4 flex min-w-0 flex-wrap items-center gap-1.5 border-t border-border pt-3"
+            >
+              <AnimatePresence initial={false} mode="popLayout">
+                {activeChips.map((chip) => (
+                  <motion.li
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.7 }}
+                    initial={reduceMotion ? false : { opacity: 0, scale: 0.7 }}
+                    key={chip.key}
+                    layout={!reduceMotion}
+                  >
+                    <button
+                      aria-label={`Remove filter: ${chip.label}`}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-acc-soft py-1 pr-1.5 pl-3 text-xs font-medium text-acc-ink transition-colors hover:bg-[color-mix(in_oklab,var(--acc)_22%,transparent)]"
+                      onClick={chip.clear}
+                      type="button"
+                    >
+                      {chip.label}
+                      <X aria-hidden="true" className="size-3" />
+                    </button>
+                  </motion.li>
+                ))}
+              </AnimatePresence>
+              <li className="ml-auto">
+                <Button
+                  disabled={!hasActiveFilters && filters.pageSize === 10}
+                  onClick={onClear}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  <X aria-hidden="true" />
+                  Clear filters
+                </Button>
+              </li>
+            </ul>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {ratingError ? (
+        <p className="mt-3 text-sm text-destructive" role="alert">
+          {ratingError}
+        </p>
+      ) : null}
+
+      {providersQuery.isError || topicsQuery.isError ? (
+        <p className="mt-3 text-sm text-muted-foreground" role="status">
+          Some filter options are temporarily unavailable. The catalog can still
+          be searched.
+        </p>
+      ) : null}
     </section>
   )
 }

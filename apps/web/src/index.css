@@ -81,12 +81,10 @@
   --sidebar-border: #e3ddce;
   --sidebar-ring: #0284c7;
 
-  /* Shadows are neutral ink tint, kept faint — the border carries most
-   * of the definition. */
-  --shadow-soft:
-    0 1px 2px rgb(11 12 14 / 0.05), 0 10px 22px -16px rgb(11 12 14 / 0.16);
-  --shadow-lift:
-    0 2px 4px rgb(11 12 14 / 0.06), 0 26px 50px -22px rgb(11 12 14 / 0.3);
+  /* The design is flat: borders carry the definition, nothing casts a
+   * shadow. */
+  --shadow-soft: none;
+  --shadow-lift: none;
 
   /* Full-page app backdrop behind the content panel. */
   --shell-a: #f6f4ee;
@@ -157,8 +155,8 @@
   --sidebar-border: #27272a;
   --sidebar-ring: #38bdf8;
 
-  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 30px -16px rgb(0 0 0 / 0.7);
-  --shadow-lift: 0 2px 4px rgb(0 0 0 / 0.4), 0 28px 56px -22px rgb(0 0 0 / 0.8);
+  --shadow-soft: none;
+  --shadow-lift: none;
 
   --shell-a: #0a0a0b;
   --shell-b: #09090a;
@@ -285,13 +283,6 @@ body {
     background: color-mix(in oklab, var(--sun) 65%, transparent);
     color: #fff;
   }
-  /*
-   * Card surfaces across the app get the same faint lift, so every panel
-   * reads as one family without repeating shadow utilities in 60 places.
-   */
-  [class~='bg-card'] {
-    box-shadow: var(--shadow-soft);
-  }
   input[type='checkbox'],
   input[type='radio'] {
     accent-color: var(--primary);
@@ -340,7 +331,6 @@ body {
   background-size:
     auto,
     18px 18px;
-  box-shadow: inset 0 -1px 0 rgb(255 255 255 / 0.16);
 
   .dark & {
     background-color: #082f49;
@@ -373,17 +363,10 @@ body {
   background: color-mix(in oklab, var(--card) 92%, transparent);
   backdrop-filter: blur(16px) saturate(140%);
   -webkit-backdrop-filter: blur(16px) saturate(140%);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.6),
-    0 1px 2px rgb(16 16 18 / 0.05),
-    0 10px 22px -14px rgb(16 16 18 / 0.2);
 
   .dark & {
     border-color: rgb(255 255 255 / 0.08);
     background: rgb(19 19 21 / 0.82);
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.05),
-      0 12px 28px -14px rgb(0 0 0 / 0.8);
   }
 
   @media (prefers-reduced-transparency: reduce) {
@@ -420,6 +403,17 @@ body {
   }
 }
 
+@keyframes cell-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 @keyframes cloud-drift {
   from {
     transform: translateX(0);
@@ -446,6 +440,11 @@ body {
     animation: rise-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) backwards;
     animation-delay: calc(var(--i, 0) * 90ms);
   }
+  /* Heatmap cells popping in column by column (--d is the delay). */
+  .animate-cell-pop {
+    animation: cell-pop 0.45s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+    animation-delay: var(--d, 0ms);
+  }
   .animate-drift {
     animation: cloud-drift var(--drift-duration, 38s) ease-in-out infinite
       alternate;
@@ -469,14 +468,12 @@ body {
 .card-lift {
   transition:
     transform 180ms cubic-bezier(0.23, 1, 0.32, 1),
-    border-color 180ms cubic-bezier(0.23, 1, 0.32, 1),
-    box-shadow 180ms cubic-bezier(0.23, 1, 0.32, 1);
+    border-color 180ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
   .card-lift:hover {
     transform: translateY(-3px);
-    box-shadow: var(--shadow-lift);
   }
 }
 
@@ -531,8 +528,7 @@ body {
     radial-gradient(circle at 50% 50%, #3a3d42 0%, #16181b 55%, #0b0c0e 100%);
   box-shadow:
     inset -10px -14px 30px rgb(0 0 0 / 0.45),
-    inset 8px 10px 24px rgb(255 255 255 / 0.12),
-    0 20px 60px -10px rgb(56 189 248 / 0.5);
+    inset 8px 10px 24px rgb(255 255 255 / 0.12);
 }
 
 @keyframes orb-breathe {
@@ -572,7 +568,6 @@ body {
     height: 1.2rem;
     border-radius: 5px;
     background: #fff;
-    box-shadow: 0 1px 3px rgb(16 16 18 / 0.25);
     transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
   }
 
@@ -654,8 +649,7 @@ body {
 }
 
 @utility shadow-glow {
-  box-shadow: 0 20px 60px -20px
-    color-mix(in oklab, var(--primary) 70%, transparent);
+  box-shadow: none;
 }
 
 @keyframes float-slow {
@@ -803,40 +797,13 @@ body {
 @utility bezel-core {
   border-radius: 7px;
   background: var(--card);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.7),
-    0 1px 2px rgb(11 12 14 / 0.05),
-    0 12px 26px -18px rgb(11 12 14 / 0.25);
-
-  .dark & {
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.06),
-      0 14px 30px -18px rgb(0 0 0 / 0.8);
-  }
 }
 
-/* Pointer spotlight: set --mx/--my (px) on the element; a soft sky/green
- * light follows the cursor across its surface. */
+/* Pointer spotlight: TiltCard sets --mx/--my on the element. It no longer
+ * paints a tint under the pointer; the class only keeps stacking context. */
 @utility spotlight {
   position: relative;
   isolation: isolate;
-
-  &::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    border-radius: inherit;
-    pointer-events: none;
-    opacity: var(--spot, 0);
-    background: radial-gradient(
-      420px circle at var(--mx, 50%) var(--my, 50%),
-      color-mix(in oklab, var(--brand-a) 22%, transparent),
-      color-mix(in oklab, var(--brand-b) 10%, transparent) 40%,
-      transparent 70%
-    );
-    transition: opacity 0.5s cubic-bezier(0.32, 0.72, 0, 1);
-  }
 }
 
 /* Mesh gradient card: sky and green light pooled in deep ink. */
@@ -1185,7 +1152,6 @@ body {
   border: 3px solid var(--primary);
   border-radius: 9999px;
   background: var(--card);
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.25);
 }
 .visualizer-scrubber::-moz-range-thumb {
   width: 12px;
@@ -1202,4 +1168,577 @@ body {
 }
 .visualizer-scrubber:focus-visible::-moz-range-thumb {
   box-shadow: 0 0 0 4px color-mix(in oklab, var(--ring) 40%, transparent);
+}
+
+/* ==========================================================================
+ * Revamp kit ("Signal 2"). Each page picks an accent with `data-accent` on
+ * its root, so pages share one system but do not all wear the same colour.
+ * Surfaces: `spot-card` (a border light that follows the pointer),
+ * `beam-frame` (a light running around the border), `glass-card` (frosted
+ * over coloured light), `ticket` (notched edges) and `grid-fade` (a hairline
+ * grid fading out). All motion stops under reduced motion.
+ * ======================================================================== */
+:root,
+[data-accent='sky'] {
+  --acc: #0284c7;
+  --acc-2: #22c55e;
+  --acc-soft: #e0f2fe;
+  --acc-ink: #075985;
+}
+[data-accent='green'] {
+  --acc: #16a34a;
+  --acc-2: #0ea5e9;
+  --acc-soft: #dcfce7;
+  --acc-ink: #14532d;
+}
+[data-accent='violet'] {
+  --acc: #7c3aed;
+  --acc-2: #0ea5e9;
+  --acc-soft: #ede9fe;
+  --acc-ink: #4c1d95;
+}
+[data-accent='amber'] {
+  --acc: #d97706;
+  --acc-2: #f43f5e;
+  --acc-soft: #fef3c7;
+  --acc-ink: #78350f;
+}
+[data-accent='rose'] {
+  --acc: #e11d48;
+  --acc-2: #f59e0b;
+  --acc-soft: #ffe4e6;
+  --acc-ink: #881337;
+}
+[data-accent='teal'] {
+  --acc: #0d9488;
+  --acc-2: #8b5cf6;
+  --acc-soft: #ccfbf1;
+  --acc-ink: #134e4a;
+}
+.dark,
+.dark [data-accent='sky'] {
+  --acc: #38bdf8;
+  --acc-2: #4ade80;
+  --acc-soft: #0c2433;
+  --acc-ink: #bae6fd;
+}
+.dark [data-accent='green'] {
+  --acc: #4ade80;
+  --acc-2: #38bdf8;
+  --acc-soft: #0b2a17;
+  --acc-ink: #bbf7d0;
+}
+.dark [data-accent='violet'] {
+  --acc: #a78bfa;
+  --acc-2: #38bdf8;
+  --acc-soft: #1e1537;
+  --acc-ink: #ddd6fe;
+}
+.dark [data-accent='amber'] {
+  --acc: #fbbf24;
+  --acc-2: #fb7185;
+  --acc-soft: #2a1d08;
+  --acc-ink: #fde68a;
+}
+.dark [data-accent='rose'] {
+  --acc: #fb7185;
+  --acc-2: #fbbf24;
+  --acc-soft: #2c0f17;
+  --acc-ink: #fecdd3;
+}
+.dark [data-accent='teal'] {
+  --acc: #2dd4bf;
+  --acc-2: #a78bfa;
+  --acc-soft: #0a2624;
+  --acc-ink: #99f6e4;
+}
+
+@theme inline {
+  --color-acc: var(--acc);
+  --color-acc-2: var(--acc-2);
+  --color-acc-soft: var(--acc-soft);
+  --color-acc-ink: var(--acc-ink);
+}
+
+@property --beam-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+/* A light that follows the pointer along the border (no fill tint).
+ * Set --mx/--my/--spot from JS (SpotlightCard does). */
+.spot-card {
+  position: relative;
+  isolation: isolate;
+}
+.spot-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: var(--spot, 0);
+  transition: opacity 0.45s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.spot-card::after {
+  padding: 1px;
+  background: radial-gradient(
+    240px circle at var(--mx, 50%) var(--my, 50%),
+    color-mix(in oklab, var(--acc) 85%, transparent),
+    color-mix(in oklab, var(--acc-2) 40%, transparent) 45%,
+    transparent 70%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+}
+
+/* A comet of light running around the border. */
+.beam-frame {
+  position: relative;
+  isolation: isolate;
+}
+.beam-frame::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  z-index: 1;
+  border-radius: inherit;
+  padding: 1.5px;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--beam-angle),
+    transparent 0% 62%,
+    color-mix(in oklab, var(--acc) 30%, transparent) 72%,
+    var(--acc) 84%,
+    var(--acc-2) 90%,
+    transparent 97%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+}
+@keyframes beam-spin {
+  to {
+    --beam-angle: 360deg;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .beam-frame::before {
+    animation: beam-spin var(--beam-duration, 5s) linear infinite;
+  }
+}
+
+/* Frosted glass over coloured light. */
+.glass-card {
+  background: color-mix(in oklab, var(--card) 70%, transparent);
+  border: 1px solid color-mix(in oklab, var(--foreground) 9%, transparent);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+}
+.dark .glass-card {
+  background: color-mix(in oklab, var(--card) 62%, transparent);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass-card {
+    background: var(--card);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* Notched ticket edges, for contests and saved problems. */
+.ticket {
+  --notch-r: 9px;
+  -webkit-mask:
+    radial-gradient(
+        circle var(--notch-r) at 0 var(--notch, 50%),
+        #0000 97%,
+        #000
+      )
+      left / 51% 100% no-repeat,
+    radial-gradient(
+        circle var(--notch-r) at 100% var(--notch, 50%),
+        #0000 97%,
+        #000
+      )
+      right / 51% 100% no-repeat;
+  mask:
+    radial-gradient(
+        circle var(--notch-r) at 0 var(--notch, 50%),
+        #0000 97%,
+        #000
+      )
+      left / 51% 100% no-repeat,
+    radial-gradient(
+        circle var(--notch-r) at 100% var(--notch, 50%),
+        #0000 97%,
+        #000
+      )
+      right / 51% 100% no-repeat;
+}
+
+/* A hairline grid that fades out from the top-right corner. */
+.grid-fade {
+  background-image:
+    linear-gradient(
+      to right,
+      color-mix(in oklab, var(--foreground) 6%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--foreground) 6%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 28px 28px;
+  -webkit-mask-image: radial-gradient(
+    ellipse 80% 90% at 100% 0%,
+    #000 10%,
+    transparent 70%
+  );
+  mask-image: radial-gradient(
+    ellipse 80% 90% at 100% 0%,
+    #000 10%,
+    transparent 70%
+  );
+}
+
+/* A dash of light travelling along a connector path (PipelineFlow). */
+@keyframes beam-travel {
+  from {
+    stroke-dashoffset: 120;
+  }
+  to {
+    stroke-dashoffset: -120;
+  }
+}
+@keyframes orb-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  33% {
+    transform: translate3d(6%, -8%, 0) scale(1.06);
+  }
+  66% {
+    transform: translate3d(-5%, 5%, 0) scale(0.96);
+  }
+}
+@keyframes blink-caret {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  50%,
+  95% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .beam-dash {
+    animation: beam-travel var(--beam-duration, 2.4s)
+      cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+    animation-delay: var(--beam-delay, 0s);
+  }
+  .orb-float {
+    animation: orb-float var(--orb-duration, 16s) ease-in-out infinite;
+    animation-delay: var(--orb-delay, 0s);
+  }
+  .blink-caret {
+    animation: blink-caret 1.1s steps(1) infinite;
+  }
+}
+
+/* Doubt Helper icons (components/icons/doubt-icons.tsx). */
+.di-icon :is(.di-scan, .di-stamp, .di-shake, .di-turn, .di-spark, .di-wave) {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.di-icon .di-wave {
+  transform-origin: left bottom;
+}
+.di-icon .di-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  :is(.di-host:hover, .di-host:focus-within, [data-selected='true'])
+    .di-icon
+    .di-scan {
+    animation: di-scan 1.2s cubic-bezier(0.45, 0.05, 0.55, 0.95);
+  }
+  :is(.di-host:hover, .di-host:focus-within, [data-selected='true'])
+    .di-icon
+    .di-draw {
+    animation: mi-draw 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  :is(.di-host:hover, .di-host:focus-within, [data-selected='true'])
+    .di-icon
+    .di-wave {
+    animation: di-wave 1s ease-in-out 0.3s 2;
+  }
+  :is(.di-host:hover, .di-host:focus-within, [data-selected='true'])
+    .di-icon
+    .di-stamp {
+    animation: di-stamp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+  :is(.di-host:hover, .di-host:focus-within, [data-selected='true'])
+    .di-icon
+    .di-flicker {
+    animation: di-flicker 0.8s steps(1) 2;
+  }
+  :is(.di-host:hover, .di-host:focus-within) .di-icon .di-caret,
+  [data-selected='true'] .di-icon .di-caret {
+    animation: blink-caret 1s steps(1) infinite;
+  }
+  :is(.di-host:hover, .di-host:focus-within, [data-selected='true'])
+    .di-icon
+    .di-shake {
+    animation: di-shake 0.55s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+  }
+  :is(.di-host:hover, .di-host:focus-within, [data-selected='true'])
+    .di-icon
+    .di-turn {
+    animation: di-turn 0.9s cubic-bezier(0.65, 0, 0.35, 1) both;
+  }
+  :is(.di-host:hover, .di-host:focus-within, [data-selected='true'])
+    .di-icon
+    .di-sand {
+    animation: beam-travel 1.4s linear infinite;
+  }
+  :is(.di-host:hover, .di-host:focus-within, [data-selected='true'])
+    .di-icon
+    .di-spark {
+    animation: di-spark 0.9s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+}
+@keyframes di-scan {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  35% {
+    transform: translate(-6px, -7px);
+  }
+  70% {
+    transform: translate(-3px, -3px);
+  }
+}
+@keyframes di-wave {
+  0%,
+  100% {
+    transform: skewY(0deg);
+  }
+  50% {
+    transform: skewY(-8deg);
+  }
+}
+@keyframes di-stamp {
+  0% {
+    transform: scale(1.35) rotate(-10deg);
+    opacity: 0.4;
+  }
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes di-flicker {
+  0%,
+  30%,
+  60% {
+    opacity: 1;
+  }
+  15%,
+  45% {
+    opacity: 0.15;
+  }
+}
+@keyframes di-shake {
+  10%,
+  90% {
+    transform: translateX(-1px) rotate(-2deg);
+  }
+  20%,
+  80% {
+    transform: translateX(2px) rotate(3deg);
+  }
+  30%,
+  50%,
+  70% {
+    transform: translateX(-3px) rotate(-4deg);
+  }
+  40%,
+  60% {
+    transform: translateX(3px) rotate(4deg);
+  }
+}
+@keyframes di-turn {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(180deg);
+  }
+}
+@keyframes di-spark {
+  0% {
+    transform: scale(0.5) rotate(-90deg);
+  }
+  100% {
+    transform: none;
+  }
+}
+.dark .di-icon {
+  --di-plate: color-mix(in oklab, var(--di) 30%, transparent);
+}
+
+/* Memory constellation: dots orbit their group node. */
+@keyframes memory-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .memory-orbit {
+    animation: memory-orbit 20s linear infinite;
+  }
+}
+
+/* ---- Dashboard ----------------------------------------------------------
+ * Stars in the hero, the border light on KPI tiles, and the streak flame.
+ */
+@keyframes dash-twinkle {
+  0%,
+  100% {
+    opacity: 0.15;
+    transform: scale(0.6);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+}
+@keyframes dash-flame {
+  0%,
+  100% {
+    transform: scale(1) rotate(-2deg);
+  }
+  35% {
+    transform: scale(1.08, 1.14) rotate(2deg);
+  }
+  70% {
+    transform: scale(0.96, 1.04) rotate(-1deg);
+  }
+}
+.dash-twinkle {
+  opacity: 0.4;
+}
+.pulse-tile.beam-frame::before {
+  opacity: 0;
+  transition: opacity 0.4s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.pulse-tile.beam-frame:hover::before,
+.pulse-tile.beam-frame:focus-within::before {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .dash-twinkle {
+    animation: dash-twinkle 3.6s ease-in-out infinite;
+  }
+  .dash-flame {
+    animation: dash-flame 1.6s ease-in-out infinite;
+    transform-origin: 50% 90%;
+  }
+}
+
+/* ---- Landing story -------------------------------------------------------
+ * The verdict column drifting up beside the manifesto, the platform
+ * marquee, and the soft rise of live demo rows.
+ */
+@keyframes landing-drift-up {
+  to {
+    transform: translateY(-50%);
+  }
+}
+@keyframes landing-marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+@keyframes landing-handoff {
+  0%,
+  100% {
+    transform: translateX(-3px);
+    opacity: 0.6;
+  }
+  50% {
+    transform: translateX(3px);
+    opacity: 1;
+  }
+}
+@keyframes landing-switch {
+  0%,
+  35% {
+    background-color: rgb(255 255 255 / 0.15);
+  }
+  50%,
+  85% {
+    background-color: #22c55e;
+  }
+  100% {
+    background-color: rgb(255 255 255 / 0.15);
+  }
+}
+@keyframes landing-switch-knob {
+  0%,
+  35% {
+    transform: translateX(0);
+  }
+  50%,
+  85% {
+    transform: translateX(0.75rem);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .landing-handoff {
+    animation: landing-handoff 1.8s ease-in-out infinite;
+  }
+  .landing-switch {
+    animation: landing-switch 4s ease-in-out infinite;
+  }
+  .landing-switch-knob {
+    animation: landing-switch-knob 4s ease-in-out infinite;
+  }
+  .landing-drift-up {
+    animation: landing-drift-up 34s linear infinite;
+  }
+  .landing-marquee {
+    animation: landing-marquee 28s linear infinite;
+  }
+}
+
+/* Flat design: nothing on the site casts a shadow, glow or text shadow.
+ * Only the shadow layers are cleared, so ring outlines and keyboard focus
+ * rings stay. */
+*,
+::before,
+::after {
+  --tw-shadow: 0 0 #0000 !important;
+  --tw-inset-shadow: 0 0 #0000 !important;
+  --tw-drop-shadow: initial !important;
+  text-shadow: none !important;
 }

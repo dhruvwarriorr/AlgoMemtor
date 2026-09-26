@@ -26,7 +26,10 @@ function AppLayout() {
       </a>
       <AppTopbar />
       <div className="flex min-w-0 flex-1 flex-col p-(--app-gutter)">
-        <div className="flex min-h-[calc(100dvh-var(--app-chrome))] min-w-0 flex-1 flex-col rounded-xl border border-border bg-card shadow-soft">
+        <div
+          className="flex min-h-[calc(100dvh-var(--app-chrome))] min-w-0 flex-1 flex-col rounded-xl border border-border bg-card shadow-soft"
+          data-app-panel=""
+        >
           {/* Keyed by path so each page rises in when you navigate. */}
           <div
             className="animate-page flex min-w-0 flex-1 flex-col"

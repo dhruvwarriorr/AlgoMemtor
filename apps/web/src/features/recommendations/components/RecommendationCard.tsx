@@ -5,11 +5,14 @@ import type {
   RecommendationUsefulness,
   ProviderKey,
 } from '@algomemtor/shared-contracts'
-import type { CSSProperties } from 'react'
+import type { ReactNode } from 'react'
+import { motion, useReducedMotion } from 'motion/react'
 
-import { Lightbulb } from '@/components/icons/algo-icons'
+import { Check, Lightbulb, X } from '@/components/icons/algo-icons'
 
 import { ProviderLogo } from '@/components/brand/ProviderLogo'
+import { ArcGauge } from '@/components/kit/charts'
+import { SpotlightCard } from '@/components/kit/surfaces'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -21,6 +24,8 @@ import { useRecommendationImpression } from '../hooks/useRecommendationImpressio
 type RecommendationCardProps = {
   item: RecommendationItem
   index?: number
+  // The day's first pick gets a wider, lit layout.
+  featured?: boolean
   isFeedbackPending: boolean
   isDismissPending: boolean
   onFeedback: (input: {
@@ -48,10 +53,10 @@ const statusTone: Record<LearnerProblemStatus, string> = {
   solved: 'bg-go-soft text-go-foreground',
 }
 
-const difficultyTone = {
-  easy: 'bg-go-soft text-go-foreground',
-  medium: 'bg-sun-soft text-sun-foreground',
-  hard: 'bg-danger-soft text-danger-foreground',
+const difficultyColor = {
+  easy: '#22c55e',
+  medium: '#f59e0b',
+  hard: '#ef4444',
 } as const
 
 const providerLabels: Record<ProviderKey, string> = {
@@ -61,203 +66,325 @@ const providerLabels: Record<ProviderKey, string> = {
   cses: 'CSES',
 }
 
+// Codeforces-style ratings run to about 3500; other providers' numbers are
+// shown as they are, with the arc only as a rough sense of height.
+const RATING_CEILING = 3500
+const difficultyHeight = { easy: 0.3, medium: 0.6, hard: 0.9 } as const
+
+function FeedbackPill({
+  pressed,
+  disabled,
+  onClick,
+  children,
+  label,
+}: {
+  pressed: boolean
+  disabled: boolean
+  onClick: () => void
+  children: ReactNode
+  label?: string
+}) {
+  return (
+    <button
+      aria-label={label}
+      aria-pressed={pressed}
+      className={cn(
+        'inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-xs font-medium transition-[background-color,color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50',
+        pressed
+          ? 'bg-ink text-ink-foreground shadow-soft'
+          : 'text-muted-foreground hover:bg-card hover:text-foreground',
+      )}
+      disabled={disabled}
+      onClick={onClick}
+      type="button"
+    >
+      {children}
+    </button>
+  )
+}
+
 export function RecommendationCard({
   item,
   index = 0,
+  featured = false,
   isDismissPending,
   isFeedbackPending,
   onDismiss,
   onFeedback,
 }: RecommendationCardProps) {
   const { problem } = item
+  const reduceMotion = useReducedMotion()
   const cardRef = useRecommendationImpression({
     externalId: problem.externalId,
     provider: problem.provider,
     recommendationItemId: item.id,
   })
+  const rating = problem.providerDifficulty
+  const tone = problem.normalizedDifficulty
+    ? difficultyColor[problem.normalizedDifficulty]
+    : 'var(--acc)'
+
+  const gauge = (
+    <ArcGauge
+      className={featured ? 'size-28 shrink-0' : 'size-[4.5rem] shrink-0'}
+      color={tone}
+      value={
+        typeof rating === 'number'
+          ? rating / RATING_CEILING
+          : problem.normalizedDifficulty
+            ? difficultyHeight[problem.normalizedDifficulty]
+            : 0
+      }
+    >
+      <span
+        className={cn(
+          'block font-mono leading-none font-bold text-foreground tabular-nums',
+          featured ? 'text-xl' : 'text-sm',
+        )}
+      >
+        {rating ?? '—'}
+      </span>
+      <span className="sr-only">Rating: </span>
+      {problem.normalizedDifficulty ? (
+        <span
+          className="mt-0.5 block text-[0.62rem] font-semibold tracking-wide uppercase"
+          style={{ color: tone }}
+        >
+          {difficultyLabels[problem.normalizedDifficulty]}
+        </span>
+      ) : null}
+    </ArcGauge>
+  )
+
+  const feedback = (
+    <div
+      className={cn(
+        'flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-xl bg-muted/60 p-1.5 text-xs',
+      )}
+    >
+      <span className="pl-2 font-medium text-muted-foreground">Useful?</span>
+      <span className="flex gap-0.5">
+        <FeedbackPill
+          disabled={isFeedbackPending}
+          label="Useful"
+          onClick={() => onFeedback({ usefulness: 'useful' })}
+          pressed={item.feedback?.usefulness === 'useful'}
+        >
+          <Check aria-hidden="true" className="size-3" />
+        </FeedbackPill>
+        <FeedbackPill
+          disabled={isFeedbackPending}
+          label="Not useful"
+          onClick={() => onFeedback({ usefulness: 'not_useful' })}
+          pressed={item.feedback?.usefulness === 'not_useful'}
+        >
+          <X aria-hidden="true" className="size-3" />
+        </FeedbackPill>
+      </span>
+      <span aria-hidden="true" className="h-4 w-px bg-border" />
+      <span className="font-medium text-muted-foreground">Felt</span>
+      <span className="flex flex-wrap gap-0.5">
+        {(
+          [
+            ['too_easy', 'Too easy', 'Easy'],
+            ['about_right', 'About right', 'Right'],
+            ['too_hard', 'Too hard', 'Hard'],
+          ] as const
+        ).map(([value, label, short]) => (
+          <FeedbackPill
+            disabled={isFeedbackPending}
+            key={value}
+            label={label}
+            onClick={() => onFeedback({ perceivedDifficulty: value })}
+            pressed={item.feedback?.perceivedDifficulty === value}
+          >
+            {short}
+          </FeedbackPill>
+        ))}
+      </span>
+    </div>
+  )
 
   return (
-    <article
-      className="card-enter card-lift flex min-w-0 flex-col gap-5 rounded-xl border border-border bg-card p-5 hover:border-[color-mix(in_oklab,var(--primary)_30%,var(--border))] sm:p-6"
-      ref={cardRef}
-      style={{ '--card-index': Math.min(index, 3) } as CSSProperties}
+    <motion.div
+      animate={{ opacity: 1, y: 0 }}
+      className={cn('min-w-0', featured && 'md:col-span-2 xl:col-span-3')}
+      initial={reduceMotion ? false : { opacity: 0, y: 18 }}
+      transition={{
+        duration: 0.55,
+        ease: [0.16, 1, 0.3, 1],
+        delay: Math.min(index, 6) * 0.06,
+      }}
     >
-      <header className="space-y-3">
-        <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
-          <span className="inline-flex items-center gap-1.5 rounded-md bg-secondary py-1 pr-2.5 pl-1.5 font-medium text-secondary-foreground">
-            <ProviderLogo className="size-4" provider={problem.provider} />
-            {providerLabels[problem.provider]}
-          </span>
-          <span className="break-all font-mono text-muted-foreground">
-            {problem.externalId}
-          </span>
-          {problem.learnerStatus ? (
-            <span
-              className={cn(
-                'ml-auto rounded-md px-2.5 py-1 font-medium',
-                statusTone[problem.learnerStatus],
-              )}
-            >
-              {statusLabels[problem.learnerStatus]}
-            </span>
-          ) : null}
-        </div>
-        <h2 className="break-words text-xl leading-snug font-semibold text-card-foreground">
-          {problem.title}
-        </h2>
-      </header>
-
-      <p className="flex gap-3 rounded-2xl bg-sun-soft p-4 text-sm leading-6 text-foreground ring-1 ring-sun/45">
-        <span
-          aria-hidden="true"
-          className="grid size-6 shrink-0 place-items-center rounded-md bg-sun text-[#101012]"
+      <div
+        className={cn(
+          'h-full rounded-2xl transition-[transform,box-shadow] duration-300 hover:-translate-y-0.5 hover:shadow-lift',
+          featured && 'beam-frame',
+        )}
+      >
+        <SpotlightCard
+          as="article"
+          className="group flex h-full min-w-0 flex-col overflow-hidden"
+          elementRef={cardRef}
         >
-          <Lightbulb className="size-3.5" strokeWidth={2.5} />
-        </span>
-        <span>
-          <span className="font-semibold">Why this fits: </span>
-          {item.reason}
-        </span>
-      </p>
-
-      <dl className="flex flex-wrap gap-2 text-xs">
-        {problem.providerDifficulty !== undefined ? (
-          <div className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1">
-            <dt className="text-muted-foreground">Rating:</dt>
-            <dd className="font-mono font-medium text-foreground">
-              {problem.providerDifficulty}
-            </dd>
-          </div>
-        ) : null}
-        {problem.normalizedDifficulty ? (
+          {/* A strip of the difficulty colour along the top edge. */}
+          <span
+            aria-hidden="true"
+            className="h-1 w-full"
+            style={{
+              background: `linear-gradient(90deg, ${tone}, color-mix(in oklab, ${tone} 10%, transparent))`,
+            }}
+          />
           <div
             className={cn(
-              'flex items-center gap-1 rounded-md px-2.5 py-1',
-              difficultyTone[problem.normalizedDifficulty],
+              'flex min-w-0 flex-1 gap-5 p-5',
+              featured
+                ? 'flex-col sm:p-6 md:flex-row md:items-center'
+                : 'flex-col',
             )}
           >
-            <dt className="sr-only">Difficulty:</dt>
-            <dd className="font-medium">
-              {difficultyLabels[problem.normalizedDifficulty]}
-            </dd>
-          </div>
-        ) : null}
-        {problem.solvedCount !== undefined ? (
-          <div className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1">
-            <dt className="text-muted-foreground">Solved by:</dt>
-            <dd className="font-mono font-medium text-foreground">
-              {problem.solvedCount.toLocaleString()}
-            </dd>
-          </div>
-        ) : null}
-      </dl>
+            {featured ? (
+              <div className="flex shrink-0 items-center gap-4 md:flex-col md:items-center md:border-r md:border-border md:pr-6">
+                {gauge}
+                <span className="rounded-full bg-acc-soft px-2.5 py-0.5 text-[0.7rem] font-semibold text-acc-ink">
+                  Top pick today
+                </span>
+              </div>
+            ) : null}
+            <div className="flex min-w-0 flex-1 flex-col gap-4">
+              <header className="flex min-w-0 items-start gap-3">
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'font-mono leading-none font-bold tracking-tighter text-foreground/15 tabular-nums transition-colors group-hover:text-acc',
+                    featured ? 'text-5xl' : 'text-3xl',
+                  )}
+                >
+                  {String(item.position).padStart(2, '0')}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-border py-0.5 pr-2.5 pl-1 font-medium text-foreground">
+                      <ProviderLogo
+                        className="size-4"
+                        provider={problem.provider}
+                      />
+                      {providerLabels[problem.provider]}
+                    </span>
+                    <span className="font-mono break-all text-muted-foreground">
+                      {problem.externalId}
+                    </span>
+                    {problem.learnerStatus ? (
+                      <span
+                        className={cn(
+                          'ml-auto rounded-full px-2.5 py-0.5 font-medium',
+                          statusTone[problem.learnerStatus],
+                        )}
+                      >
+                        {statusLabels[problem.learnerStatus]}
+                      </span>
+                    ) : null}
+                  </div>
+                  <h2
+                    className={cn(
+                      'mt-2 leading-snug font-semibold break-words text-card-foreground',
+                      featured ? 'text-2xl' : 'text-lg',
+                    )}
+                  >
+                    {problem.title}
+                  </h2>
+                </div>
+              </header>
 
-      <div className="space-y-3">
-        <div>
-          <p className="mb-2 text-xs text-muted-foreground">Topics</p>
-          <ul aria-label="Topics" className="flex flex-wrap gap-1.5">
-            {problem.topics.map((topic) => (
-              <li
-                className="rounded-md bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary dark:bg-primary/15"
-                key={topic}
+              <div className="flex min-w-0 items-center gap-4">
+                {featured ? null : gauge}
+                <div className="min-w-0 flex-1">
+                  <p className="flex gap-2 text-sm leading-6 text-foreground">
+                    <Lightbulb
+                      aria-hidden="true"
+                      className="mt-1 size-3.5 shrink-0 text-acc"
+                    />
+                    <span>
+                      <span className="sr-only">Why this fits: </span>
+                      {item.reason}
+                    </span>
+                  </p>
+                  <ul
+                    aria-label="Topics"
+                    className="mt-2.5 flex flex-wrap gap-1.5"
+                  >
+                    {problem.topics.map((topic) => (
+                      <li
+                        className="rounded-full bg-acc-soft px-2.5 py-0.5 text-[0.7rem] font-medium text-acc-ink"
+                        key={topic}
+                      >
+                        {topic}
+                      </li>
+                    ))}
+                    {problem.solvedCount !== undefined ? (
+                      <li className="rounded-full border border-border px-2.5 py-0.5 font-mono text-[0.7rem] text-muted-foreground">
+                        <span className="sr-only">Solved by: </span>
+                        {problem.solvedCount.toLocaleString()} solves
+                      </li>
+                    ) : null}
+                  </ul>
+                </div>
+              </div>
+
+              {featured ? null : feedback}
+
+              <footer
+                className={cn(
+                  'mt-auto flex min-w-0 flex-wrap items-center gap-2 pt-1',
+                  featured && 'gap-3',
+                )}
               >
-                {topic}
-              </li>
-            ))}
-          </ul>
-        </div>
+                <div className="order-1 flex min-w-0 flex-1 basis-0 flex-wrap items-center gap-2">
+                  <SolveOnProviderLink
+                    canonicalUrl={problem.canonicalUrl}
+                    provider={problem.provider}
+                  />
+                  <ProblemLearningControls
+                    compact
+                    initialBookmarked={
+                      (problem as typeof problem & { bookmarked?: boolean })
+                        .bookmarked ?? false
+                    }
+                    initialStatus={problem.learnerStatus ?? 'unsolved'}
+                    problem={{
+                      provider: problem.provider,
+                      externalId: problem.externalId,
+                    }}
+                    recommendationItemId={item.id}
+                    sourceContext="recommendation"
+                  />
+                </div>
+                <Button
+                  aria-label={`Dismiss ${problem.title}`}
+                  className={cn(
+                    'order-2 ml-auto',
+                    featured && 'lg:order-3 lg:ml-0',
+                  )}
+                  disabled={isDismissPending}
+                  onClick={onDismiss}
+                  size="icon-sm"
+                  title="Dismiss"
+                  type="button"
+                  variant="ghost"
+                >
+                  <X aria-hidden="true" />
+                </Button>
+                {featured ? (
+                  // Beside the actions on wide screens, its own row below.
+                  <div className="order-3 min-w-0 basis-full lg:order-2 lg:ml-auto lg:basis-auto">
+                    {feedback}
+                  </div>
+                ) : null}
+              </footer>
+            </div>
+          </div>
+        </SpotlightCard>
       </div>
-
-      <div className="space-y-3 rounded-2xl bg-muted/60 p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-medium text-muted-foreground">
-            Was this useful?
-          </span>
-          <Button
-            aria-pressed={item.feedback?.usefulness === 'useful'}
-            disabled={isFeedbackPending}
-            onClick={() => onFeedback({ usefulness: 'useful' })}
-            size="sm"
-            type="button"
-            variant={item.feedback?.usefulness === 'useful' ? 'ink' : 'outline'}
-          >
-            Useful
-          </Button>
-          <Button
-            aria-pressed={item.feedback?.usefulness === 'not_useful'}
-            disabled={isFeedbackPending}
-            onClick={() => onFeedback({ usefulness: 'not_useful' })}
-            size="sm"
-            type="button"
-            variant={
-              item.feedback?.usefulness === 'not_useful' ? 'ink' : 'outline'
-            }
-          >
-            Not useful
-          </Button>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-medium text-muted-foreground">
-            Difficulty felt:
-          </span>
-          {(
-            [
-              ['too_easy', 'Too easy'],
-              ['about_right', 'About right'],
-              ['too_hard', 'Too hard'],
-            ] as const
-          ).map(([value, label]) => (
-            <Button
-              aria-pressed={item.feedback?.perceivedDifficulty === value}
-              disabled={isFeedbackPending}
-              key={value}
-              onClick={() => onFeedback({ perceivedDifficulty: value })}
-              size="sm"
-              type="button"
-              variant={
-                item.feedback?.perceivedDifficulty === value ? 'ink' : 'outline'
-              }
-            >
-              {label}
-            </Button>
-          ))}
-        </div>
-      </div>
-
-      <footer className="mt-auto flex min-w-0 flex-col gap-4 border-t border-border pt-5">
-        <ProblemLearningControls
-          compact
-          initialBookmarked={
-            (problem as typeof problem & { bookmarked?: boolean }).bookmarked ??
-            false
-          }
-          initialStatus={problem.learnerStatus ?? 'unsolved'}
-          problem={{
-            provider: problem.provider,
-            externalId: problem.externalId,
-          }}
-          recommendationItemId={item.id}
-          sourceContext="recommendation"
-        />
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <SolveOnProviderLink
-            canonicalUrl={problem.canonicalUrl}
-            provider={problem.provider}
-          />
-          <Button
-            aria-label={`Dismiss ${problem.title}`}
-            className="ml-auto"
-            disabled={isDismissPending}
-            onClick={onDismiss}
-            size="sm"
-            type="button"
-            variant="ghost"
-          >
-            Dismiss
-          </Button>
-        </div>
-      </footer>
-    </article>
+    </motion.div>
   )
 }

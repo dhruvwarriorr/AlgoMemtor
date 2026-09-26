@@ -3,23 +3,9 @@ import { Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
-import {
   UPSOLVE_QUEUE_SIZE,
   type UpsolveContest,
-  type UpsolveHistoryPoint,
   type UpsolveItem,
-  type UpsolveSummary,
 } from '@algomemtor/shared-contracts'
 
 import { ProviderLogo } from '@/components/brand/ProviderLogo'
@@ -32,30 +18,27 @@ import {
   Target,
   X,
 } from '@/components/icons/algo-icons'
+import { PanelStyle } from '@/components/kit/Panel'
 import PageContainer from '@/components/layout/PageContainer'
 import {
   DoubtHelperIcon,
   SolutionExplorerIcon,
+  UpsolveIcon,
 } from '@/components/icons/mentor-icons'
-import PageHeader from '@/components/layout/PageHeader'
-import { RadialProgress } from '@/components/motion/RadialProgress'
+import { PageHero } from '@/components/kit/PageHero'
 import { EmptyState } from '@/components/states/EmptyState'
 import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { useNotification } from '@/app/useNotification'
 import { useAuth } from '@/features/auth/useAuth'
-import {
-  axisTick,
-  chartColors,
-  providerColors,
-  providerShort,
-  shortDay,
-  tooltipStyle,
-} from '@/features/mentor/chart-theme'
+import { chartColors, providerColors } from '@/features/mentor/chart-theme'
 import { ProviderProblemLink } from '@/features/mentor/components/shared'
 import {
-  ChartCard,
+  ContestTrail,
+  FollowThroughCard,
+} from '@/features/mentor/components/upsolve-visuals'
+import {
   ChartEmpty,
   ParticipationBadge,
   SignedDelta,
@@ -97,295 +80,166 @@ function ratingTone(rating: number | undefined) {
   return 'bg-danger-soft text-danger-foreground'
 }
 
-// Platform on the first line, contest day on the second, so labels do not
-// collide on narrow charts.
-function ContestTick({
-  x,
-  y,
-  payload,
-}: {
-  x?: number
-  y?: number
-  payload?: { value?: string }
-}) {
-  const [platform = '', day = ''] = (payload?.value ?? '').split('|')
+function QueueMeta({ item }: { item: UpsolveItem }) {
   return (
-    <text
-      fill="var(--muted-foreground)"
-      fontSize={10}
-      textAnchor="middle"
-      x={x}
-      y={y}
-    >
-      <tspan dy="0.9em" fontWeight={600} x={x}>
-        {platform}
-      </tspan>
-      <tspan dy="1.25em" x={x}>
-        {day}
-      </tspan>
-    </text>
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+      <span className="inline-flex min-w-0 items-center gap-1.5">
+        <ProviderLogo className="size-4" provider={item.provider} />
+        <span className="truncate">{item.contest.name}</span>
+      </span>
+      {item.position ? (
+        <span className="rounded-full bg-secondary px-2 py-0.5 font-mono font-semibold text-secondary-foreground">
+          {item.position}
+        </span>
+      ) : null}
+      {item.rating !== undefined ? (
+        <span
+          className={cn(
+            'rounded-full px-2 py-0.5 font-medium tabular-nums',
+            ratingTone(item.rating),
+          )}
+        >
+          {item.rating}
+        </span>
+      ) : null}
+      {item.contestOutcome === 'attempted' ? (
+        <span className="rounded-full bg-[#f59e0b]/12 px-2 py-0.5 font-medium text-[#b45309] dark:text-[#fcd34d]">
+          Attempted
+          {item.contestWrongAttempts > 0
+            ? `, ${item.contestWrongAttempts} wrong`
+            : ''}
+        </span>
+      ) : null}
+    </div>
   )
 }
 
-// Stacked bars: for each recent contest, solved during it, upsolved after
-// and still open.
-function RecentContestsChart({
-  history,
-  windowDays,
+// The first problem in the queue: the one to do now, given the most room.
+function NowCard({
+  item,
+  pending,
+  onSkip,
+  onSolved,
 }: {
-  history: readonly UpsolveHistoryPoint[]
-  windowDays: number
+  item: UpsolveItem
+  pending: boolean
+  onSkip: () => void
+  onSolved: () => void
 }) {
-  const data = [...history].reverse().map((point) => ({
-    label: `${providerShort[point.provider]}|${shortDay(point.startsAt)}`,
-    name: point.name,
-    solved: point.solvedInContest,
-    upsolved: point.upsolved,
-    open: Math.max(0, point.total - point.solvedInContest - point.upsolved),
-  }))
+  const reduceMotion = useReducedMotion()
   return (
-    <ChartCard
-      className="lg:col-span-6"
-      description={`Contests of the last ${windowDays} days: solved during it, upsolved after, and still open.`}
-      title="Recent contests"
-    >
-      {data.length === 0 ? (
-        <ChartEmpty>No contests in the last {windowDays} days.</ChartEmpty>
-      ) : (
-        <>
-          <div
-            aria-label="Recent contests, solved in contest, upsolved and open problems"
-            className="h-56 w-full"
-            role="img"
-          >
-            <ResponsiveContainer height="100%" width="100%">
-              <BarChart
-                data={data}
-                margin={{ top: 6, right: 6, left: -24, bottom: 0 }}
-              >
-                <CartesianGrid
-                  stroke="var(--border)"
-                  strokeDasharray="3 3"
-                  vertical={false}
-                />
-                <XAxis
-                  dataKey="label"
-                  height={34}
-                  interval={0}
-                  tick={<ContestTick />}
-                  tickLine={false}
-                />
-                <YAxis allowDecimals={false} tick={axisTick} tickLine={false} />
-                <Tooltip
-                  contentStyle={tooltipStyle}
-                  cursor={{ fill: 'var(--muted)', opacity: 0.4 }}
-                  labelFormatter={(label) =>
-                    data.find((point) => point.label === label)?.name ?? label
-                  }
-                />
-                <Bar
-                  dataKey="solved"
-                  fill={chartColors.solved}
-                  name="Solved in contest"
-                  radius={[0, 0, 4, 4]}
-                  stackId="c"
-                />
-                <Bar
-                  dataKey="upsolved"
-                  fill={chartColors.upsolved}
-                  name="Upsolved"
-                  stackId="c"
-                />
-                <Bar
-                  dataKey="open"
-                  fill={chartColors.open}
-                  name="Open"
-                  radius={[4, 4, 0, 0]}
-                  stackId="c"
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          <p className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="size-2.5 rounded-sm bg-go" /> Solved in contest
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="size-2.5 rounded-sm bg-primary" /> Upsolved
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className="size-2.5 rounded-sm"
-                style={{ backgroundColor: chartColors.open }}
-              />{' '}
-              Open
-            </span>
-          </p>
-        </>
-      )}
-    </ChartCard>
-  )
-}
-
-// How much of what was left open has been worked through.
-function FollowThrough({ summary }: { summary: UpsolveSummary }) {
-  const worked = summary.upsolved + summary.pending
-  const rate = worked === 0 ? 0 : summary.upsolved / worked
-  return (
-    <ChartCard
-      className="lg:col-span-3"
-      description={`Share of problems left open in the last ${summary.windowDays} days' contests that you went back and solved.`}
-      title="Follow-through"
-    >
-      <div className="flex flex-1 flex-col items-center justify-center gap-4">
-        <RadialProgress className="size-36" thickness={10} value={rate}>
-          <span className="text-center">
-            <span className="block font-heading text-3xl font-bold tabular-nums">
-              {Math.round(rate * 100)}%
-            </span>
-            <span className="text-xs text-muted-foreground">upsolved</span>
-          </span>
-        </RadialProgress>
-        <dl className="grid w-full grid-cols-2 gap-2 text-center">
-          <div className="rounded-lg bg-secondary/60 px-2 py-2">
-            <dt className="text-xs text-muted-foreground">Upsolved</dt>
-            <dd className="font-heading text-lg font-bold tabular-nums">
-              {summary.upsolved}
-            </dd>
-          </div>
-          <div className="rounded-lg bg-secondary/60 px-2 py-2">
-            <dt className="text-xs text-muted-foreground">Still open</dt>
-            <dd className="font-heading text-lg font-bold tabular-nums">
-              {summary.pending}
-            </dd>
-          </div>
-        </dl>
-      </div>
-    </ChartCard>
-  )
-}
-
-// How many open problems you went back and solved, platform by platform.
-function UpsolvedByPlatform({
-  summary,
-  linkedProviders,
-}: {
-  summary: UpsolveSummary
-  linkedProviders: readonly UpsolveItem['provider'][]
-}) {
-  // Every linked platform gets a row, so one with nothing left to upsolve
-  // still shows up in the comparison.
-  const counted = (summary.byProvider ?? []).filter(
-    (item) => item.upsolved + item.open > 0,
-  )
-  const rows = [
-    ...counted,
-    ...linkedProviders
-      // CSES has no contests, so it has nothing to upsolve.
-      .filter((provider) => provider !== 'cses')
-      .filter((provider) => !counted.some((item) => item.provider === provider))
-      .map((provider) => ({ provider, upsolved: 0, open: 0 })),
-  ]
-  const withUpsolves = rows.filter((item) => item.upsolved > 0)
-  return (
-    <ChartCard
-      className="lg:col-span-3"
-      description={`Problems from the last ${summary.windowDays} days' contests you upsolved, by platform.`}
-      title="Upsolved by platform"
-    >
-      {rows.length === 0 ? (
-        <ChartEmpty>Nothing to compare yet.</ChartEmpty>
-      ) : (
-        <div className="flex flex-1 flex-col gap-3">
-          <div className="relative mx-auto h-32 w-32">
-            <ResponsiveContainer height="100%" width="100%">
-              <PieChart>
-                <Pie
-                  data={
-                    withUpsolves.length > 0
-                      ? withUpsolves
-                      : [{ provider: 'none', upsolved: 1 }]
-                  }
-                  dataKey="upsolved"
-                  innerRadius={38}
-                  nameKey="provider"
-                  outerRadius={60}
-                  paddingAngle={withUpsolves.length > 1 ? 3 : 0}
-                  stroke="none"
-                >
-                  {withUpsolves.length > 0 ? (
-                    withUpsolves.map((item) => (
-                      <Cell
-                        fill={providerColors[item.provider]}
-                        key={item.provider}
-                      />
-                    ))
-                  ) : (
-                    <Cell fill="var(--muted)" />
-                  )}
-                </Pie>
-                {withUpsolves.length > 0 ? (
-                  <Tooltip
-                    contentStyle={tooltipStyle}
-                    formatter={(value, name) => [
-                      `${String(value)} upsolved`,
-                      providerLabels[name as UpsolveItem['provider']] ??
-                        String(name),
-                    ]}
-                  />
-                ) : null}
-              </PieChart>
-            </ResponsiveContainer>
-            <span className="pointer-events-none absolute inset-0 grid place-items-center text-center">
-              <span>
-                <span className="block font-heading text-2xl font-bold tabular-nums">
-                  {summary.upsolved}
-                </span>
-                <span className="block text-[0.65rem] text-muted-foreground">
-                  upsolved
-                </span>
+    <div className="beam-frame relative flex min-w-0 flex-col gap-5 overflow-hidden rounded-3xl border border-border bg-card p-5 shadow-soft sm:p-6 lg:flex-row lg:items-center">
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute -top-24 -right-16 size-64 rounded-full bg-[radial-gradient(closest-side,color-mix(in_oklab,var(--acc)_18%,transparent),transparent)] blur-2xl"
+      />
+      <div className="relative flex min-w-0 flex-1 gap-4 sm:gap-5">
+        <span className="relative grid size-16 shrink-0 place-items-center">
+          {reduceMotion ? null : (
+            <motion.span
+              animate={{ scale: [1, 1.45], opacity: [0.4, 0] }}
+              aria-hidden="true"
+              className="absolute inset-0 rounded-full bg-acc"
+              transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }}
+            />
+          )}
+          <span className="relative grid size-16 place-items-center rounded-full bg-linear-to-br from-acc to-[color-mix(in_oklab,var(--acc)_55%,var(--acc-2))] text-white dark:text-[#0b0c0e]">
+            <span className="text-center leading-none">
+              <span className="block text-[0.6rem] font-semibold tracking-wider uppercase opacity-80">
+                Now
               </span>
+              <span className="font-heading text-2xl font-bold">1</span>
             </span>
+          </span>
+        </span>
+        <div className="min-w-0 flex-1">
+          <ProviderProblemLink
+            className="text-xl"
+            href={item.canonicalUrl}
+            provider={item.provider}
+            title={item.title}
+          />
+          <div className="mt-2">
+            <QueueMeta item={item} />
           </div>
-          <ul className="mt-auto grid gap-2">
-            {rows.map((item) => {
-              const total = item.upsolved + item.open
-              return (
-                <li className="grid gap-1" key={item.provider}>
-                  <span className="flex items-center justify-between gap-2 text-xs">
-                    <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
-                      <ProviderLogo
-                        className="size-4"
-                        provider={item.provider}
-                      />
-                      {providerLabels[item.provider]}
-                    </span>
-                    <span className="tabular-nums text-muted-foreground">
-                      {total === 0
-                        ? 'Nothing left open'
-                        : `${item.upsolved}/${total}`}
-                    </span>
-                  </span>
-                  <span className="h-1.5 overflow-hidden rounded-full bg-muted">
-                    <span
-                      className="block h-full rounded-full"
-                      style={{
-                        width: `${total === 0 ? 0 : (item.upsolved / total) * 100}%`,
-                        backgroundColor: providerColors[item.provider],
-                      }}
-                    />
-                  </span>
+          <p className="mt-3 flex items-start gap-1.5 text-sm text-foreground/85">
+            <Sparkles
+              aria-hidden="true"
+              className="mt-0.5 size-3.5 shrink-0 text-acc"
+            />
+            {item.priorityReason}
+          </p>
+          {item.tags.length > 0 ? (
+            <ul className="mt-2 flex flex-wrap gap-1.5 pl-5">
+              {item.tags.slice(0, 4).map((tag) => (
+                <li
+                  className="rounded-full bg-acc-soft px-2 py-0.5 text-[0.7rem] font-medium text-acc-ink"
+                  key={tag}
+                >
+                  {humanTopic(tag)}
                 </li>
-              )
-            })}
-          </ul>
+              ))}
+            </ul>
+          ) : null}
         </div>
-      )}
-    </ChartCard>
+      </div>
+      <div className="relative flex flex-wrap items-center gap-2 lg:w-72 lg:flex-col lg:items-stretch">
+        <Link
+          className={buttonVariants()}
+          to={mentorToolPath('doubt_helper', item.canonicalUrl)}
+        >
+          <DoubtHelperIcon aria-hidden="true" /> Get hints
+        </Link>
+        <div className="flex flex-wrap gap-2 lg:grid lg:grid-cols-2">
+          <Link
+            className={buttonVariants({ size: 'sm', variant: 'outline' })}
+            to={mentorToolPath('solution_explorer', item.canonicalUrl)}
+          >
+            <SolutionExplorerIcon aria-hidden="true" /> Approaches
+          </Link>
+          {item.editorialUrl ? (
+            <a
+              className={buttonVariants({ size: 'sm', variant: 'outline' })}
+              href={item.editorialUrl}
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              Editorial <ArrowUpRight aria-hidden="true" />
+              <span className="sr-only">
+                (opens on {providerLabels[item.provider]})
+              </span>
+            </a>
+          ) : null}
+        </div>
+        <div className="flex gap-2 lg:grid lg:grid-cols-2">
+          <Button
+            className="text-go-foreground hover:bg-go-soft dark:text-go"
+            disabled={pending}
+            onClick={onSolved}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            <Check aria-hidden="true" /> Solved it
+          </Button>
+          <Button
+            aria-label={`Skip ${item.title}`}
+            disabled={pending}
+            onClick={onSkip}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            <X aria-hidden="true" /> Skip
+          </Button>
+        </div>
+      </div>
+    </div>
   )
 }
 
-function QueueRow({
+// A problem waiting its turn: compact, with its actions as icons.
+function QueueTile({
   item,
   rank,
   pending,
@@ -399,109 +253,104 @@ function QueueRow({
   onSolved: () => void
 }) {
   return (
-    <div className="group flex min-w-0 flex-col gap-4 rounded-xl border border-border bg-card p-4 transition-shadow hover:shadow-soft lg:flex-row lg:items-center">
-      <div className="flex min-w-0 flex-1 gap-4">
+    <div className="group flex h-full min-w-0 flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-soft transition-[transform,box-shadow] duration-300 hover:-translate-y-1 hover:shadow-lift">
+      <div className="flex items-center justify-between gap-2">
         <span
           aria-hidden="true"
-          className="mesh-card grid size-11 shrink-0 place-items-center rounded-xl font-heading text-lg font-bold text-white"
+          className="grid size-8 place-items-center rounded-full border border-border bg-background font-heading text-sm font-bold text-foreground transition-colors group-hover:border-acc group-hover:text-acc"
         >
           {rank}
         </span>
-        <div className="min-w-0 flex-1">
-          <ProviderProblemLink
-            className="text-base"
-            href={item.canonicalUrl}
-            provider={item.provider}
-            title={item.title}
-          />
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="inline-flex min-w-0 items-center gap-1.5">
-              <ProviderLogo className="size-4" provider={item.provider} />
-              <span className="truncate">{item.contest.name}</span>
+        <span className="flex items-center gap-1.5">
+          {item.position ? (
+            <span className="rounded-full bg-secondary px-2 py-0.5 font-mono text-xs font-semibold text-secondary-foreground">
+              {item.position}
             </span>
-            {item.position ? (
-              <span className="rounded-md bg-secondary px-1.5 py-0.5 font-mono font-semibold text-secondary-foreground">
-                {item.position}
-              </span>
-            ) : null}
-            {item.rating !== undefined ? (
-              <span
-                className={cn(
-                  'rounded-md px-1.5 py-0.5 font-medium tabular-nums',
-                  ratingTone(item.rating),
-                )}
-              >
-                {item.rating}
-              </span>
-            ) : null}
-            {item.contestOutcome === 'attempted' ? (
-              <span className="rounded-md bg-sun-soft px-1.5 py-0.5 font-medium text-sun-foreground">
-                Attempted
-                {item.contestWrongAttempts > 0
-                  ? `, ${item.contestWrongAttempts} wrong`
-                  : ''}
-              </span>
-            ) : null}
-          </div>
-          <p className="mt-2 flex items-start gap-1.5 text-sm text-foreground/85">
-            <Sparkles
-              aria-hidden="true"
-              className="mt-0.5 size-3.5 shrink-0 text-primary"
-            />
-            {item.priorityReason}
-          </p>
-          {item.tags.length > 0 ? (
-            <p className="mt-1 truncate pl-5 text-xs text-muted-foreground">
-              {item.tags.slice(0, 4).map(humanTopic).join(', ')}
-            </p>
           ) : null}
-        </div>
+          {item.rating !== undefined ? (
+            <span
+              className={cn(
+                'rounded-full px-2 py-0.5 text-xs font-medium tabular-nums',
+                ratingTone(item.rating),
+              )}
+            >
+              {item.rating}
+            </span>
+          ) : null}
+        </span>
       </div>
-      <div className="flex flex-wrap items-center gap-1.5 lg:max-w-[26rem] lg:justify-end">
+      <div className="min-w-0">
+        <ProviderProblemLink
+          className="text-sm"
+          href={item.canonicalUrl}
+          provider={item.provider}
+          title={item.title}
+        />
+        <p className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+          <ProviderLogo
+            className="size-3.5 shrink-0"
+            provider={item.provider}
+          />
+          <span className="truncate">{item.contest.name}</span>
+        </p>
+      </div>
+      <p className="line-clamp-2 text-xs leading-5 text-muted-foreground">
+        {item.priorityReason}
+      </p>
+      <div className="mt-auto flex items-center gap-1 border-t border-border pt-3">
         <Link
-          className={buttonVariants({ size: 'sm' })}
+          aria-label={`Get hints for ${item.title}`}
+          className={buttonVariants({ size: 'icon-sm', variant: 'ghost' })}
+          title="Get hints"
           to={mentorToolPath('doubt_helper', item.canonicalUrl)}
         >
-          <DoubtHelperIcon aria-hidden="true" /> Get hints
+          <DoubtHelperIcon aria-hidden="true" />
         </Link>
         <Link
-          className={buttonVariants({ size: 'sm', variant: 'outline' })}
+          aria-label={`See approaches for ${item.title}`}
+          className={buttonVariants({ size: 'icon-sm', variant: 'ghost' })}
+          title="Approaches"
           to={mentorToolPath('solution_explorer', item.canonicalUrl)}
         >
-          <SolutionExplorerIcon aria-hidden="true" /> Approaches
+          <SolutionExplorerIcon aria-hidden="true" />
         </Link>
         {item.editorialUrl ? (
           <a
-            className={buttonVariants({ size: 'sm', variant: 'ghost' })}
+            aria-label={`Editorial for ${item.title} (opens on ${providerLabels[item.provider]})`}
+            className={buttonVariants({ size: 'icon-sm', variant: 'ghost' })}
             href={item.editorialUrl}
             rel="noopener noreferrer"
             target="_blank"
+            title="Editorial"
           >
-            Editorial <ArrowUpRight aria-hidden="true" />
-            <span className="sr-only">
-              (opens on {providerLabels[item.provider]})
-            </span>
+            <ArrowUpRight aria-hidden="true" />
           </a>
         ) : null}
-        <Button
-          disabled={pending}
-          onClick={onSolved}
-          size="sm"
-          type="button"
-          variant="ghost"
-        >
-          <Check aria-hidden="true" /> Mark solved
-        </Button>
-        <Button
-          aria-label={`Skip ${item.title}`}
-          disabled={pending}
-          onClick={onSkip}
-          size="sm"
-          type="button"
-          variant="ghost"
-        >
-          <X aria-hidden="true" /> Skip
-        </Button>
+        <span className="ml-auto flex gap-1">
+          <Button
+            aria-label={`Mark ${item.title} solved`}
+            className="text-go-foreground hover:bg-go-soft dark:text-go"
+            disabled={pending}
+            onClick={onSolved}
+            size="icon-sm"
+            title="Mark solved"
+            type="button"
+            variant="ghost"
+          >
+            <Check aria-hidden="true" />
+          </Button>
+          <Button
+            aria-label={`Skip ${item.title}`}
+            disabled={pending}
+            onClick={onSkip}
+            size="icon-sm"
+            title="Skip"
+            type="button"
+            variant="ghost"
+          >
+            <X aria-hidden="true" />
+          </Button>
+        </span>
       </div>
     </div>
   )
@@ -533,10 +382,28 @@ function UpNext({
             Up next
           </h2>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            {UPSOLVE_QUEUE_SIZE} problems at a time. Solve or skip one and the
-            next best one, chosen for your level, joins at the bottom.
+            {UPSOLVE_QUEUE_SIZE} at a time. Clear one and the next best joins.
           </p>
         </div>
+        <p
+          aria-label={`${queue.length} of ${UPSOLVE_QUEUE_SIZE} queue slots filled`}
+          className="flex items-center gap-1.5"
+        >
+          {Array.from({ length: UPSOLVE_QUEUE_SIZE }, (_, slot) => (
+            <motion.span
+              animate={{
+                scale: slot < queue.length ? 1 : 0.7,
+                opacity: slot < queue.length ? 1 : 0.35,
+              }}
+              aria-hidden="true"
+              className={cn(
+                'h-2 rounded-full',
+                slot === 0 ? 'w-6 bg-acc' : 'w-2 bg-foreground/60',
+              )}
+              key={slot}
+            />
+          ))}
+        </p>
       </div>
       {queue.length === 0 ? (
         <ChartEmpty>
@@ -546,31 +413,40 @@ function UpNext({
       ) : (
         // minmax(0, 1fr): a long contest name or tag list truncates instead
         // of widening the column past a phone screen.
-        <ol className="grid grid-cols-[minmax(0,1fr)] gap-2.5">
-          {/* Solved or skipped problems leave; the replacement enters at the
-              bottom, so the change reads as the queue moving up. */}
-          <AnimatePresence initial={false}>
+        <ol className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {/* A cleared problem leaves, the next one is promoted into the
+              Now card and the replacement joins at the end. */}
+          <AnimatePresence initial={false} mode="popLayout">
             {queue.map((item, index) => (
               <motion.li
-                animate={{ opacity: 1, y: 0 }}
-                className="min-w-0"
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                className={cn('min-w-0', index === 0 && 'col-span-full')}
                 exit={
                   reduceMotion
                     ? { opacity: 0 }
-                    : { opacity: 0, x: 24, transition: { duration: 0.2 } }
+                    : { opacity: 0, scale: 0.92, transition: { duration: 0.2 } }
                 }
                 initial={reduceMotion ? false : { opacity: 0, y: 16 }}
                 key={item.id}
                 layout={!reduceMotion}
                 transition={{ type: 'spring', stiffness: 300, damping: 30 }}
               >
-                <QueueRow
-                  item={item}
-                  onSkip={() => onSkip(item)}
-                  onSolved={() => onSolved(item)}
-                  pending={busyId !== null}
-                  rank={index + 1}
-                />
+                {index === 0 ? (
+                  <NowCard
+                    item={item}
+                    onSkip={() => onSkip(item)}
+                    onSolved={() => onSolved(item)}
+                    pending={busyId !== null}
+                  />
+                ) : (
+                  <QueueTile
+                    item={item}
+                    onSkip={() => onSkip(item)}
+                    onSolved={() => onSolved(item)}
+                    pending={busyId !== null}
+                    rank={index + 1}
+                  />
+                )}
               </motion.li>
             ))}
           </AnimatePresence>
@@ -589,22 +465,37 @@ function ContestCard({
   open: boolean
   onToggle: () => void
 }) {
+  const reduceMotion = useReducedMotion()
   const solved = contest.items.filter(
     (item) => item.status === 'solved_in_contest' || item.status === 'upsolved',
   ).length
+  const share = contest.items.length === 0 ? 0 : solved / contest.items.length
+  const radius = 16
+  const circumference = 2 * Math.PI * radius
   return (
     <button
       aria-expanded={open}
       className={cn(
-        'animate-rise flex min-w-0 flex-col gap-3 rounded-xl border bg-card p-4 text-left transition-[border-color,box-shadow] hover:shadow-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        open ? 'border-primary' : 'border-border',
+        'animate-rise relative flex min-w-0 flex-col gap-3 overflow-hidden rounded-2xl border bg-card p-4 pt-5 text-left shadow-soft transition-[border-color,box-shadow,transform] duration-300 hover:-translate-y-1 hover:shadow-lift focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+        open
+          ? 'border-acc shadow-[0_0_0_4px_color-mix(in_oklab,var(--acc)_14%,transparent)]'
+          : 'border-border',
       )}
       onClick={onToggle}
       type="button"
     >
+      <span
+        aria-hidden="true"
+        className="absolute inset-x-0 top-0 h-1"
+        style={{
+          background: `linear-gradient(90deg, ${providerColors[contest.provider]}, transparent)`,
+        }}
+      />
       <span className="flex items-start justify-between gap-2">
-        <span className="flex min-w-0 items-center gap-2">
-          <ProviderLogo className="size-6" provider={contest.provider} />
+        <span className="flex min-w-0 items-center gap-2.5">
+          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-secondary">
+            <ProviderLogo className="size-5" provider={contest.provider} />
+          </span>
           <span className="min-w-0">
             <span className="block truncate font-medium text-foreground">
               {contest.name}
@@ -617,27 +508,67 @@ function ContestCard({
             </span>
           </span>
         </span>
-        <SignedDelta value={contest.ratingChange} />
+        <span className="relative grid size-10 shrink-0 place-items-center">
+          <svg
+            aria-hidden="true"
+            className="absolute inset-0 -rotate-90"
+            viewBox="0 0 40 40"
+          >
+            <circle
+              cx="20"
+              cy="20"
+              fill="none"
+              r={radius}
+              stroke="color-mix(in oklab, var(--muted-foreground) 18%, transparent)"
+              strokeWidth="4"
+            />
+            <motion.circle
+              animate={{
+                strokeDasharray: `${share * circumference} ${circumference}`,
+              }}
+              cx="20"
+              cy="20"
+              fill="none"
+              initial={
+                reduceMotion ? false : { strokeDasharray: `0 ${circumference}` }
+              }
+              r={radius}
+              stroke={chartColors.solved}
+              strokeLinecap="round"
+              strokeWidth="4"
+              transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
+            />
+          </svg>
+          <span className="font-mono text-[0.62rem] font-bold text-foreground">
+            {solved}/{contest.items.length}
+          </span>
+        </span>
       </span>
       <span className="flex flex-wrap items-center gap-1.5">
         <ParticipationBadge mode={contest.participation} />
-        <span className="text-xs text-muted-foreground">
-          {solved}/{contest.items.length} solved
-        </span>
+        <SignedDelta value={contest.ratingChange} />
       </span>
       {contest.items.length > 0 ? (
         <span aria-hidden="true" className="flex flex-wrap gap-1">
-          {contest.items.map((item) => (
-            <span
+          {contest.items.map((item, index) => (
+            <motion.span
+              animate={{ opacity: 1, scale: 1 }}
               className={cn(
                 'grid h-7 min-w-7 place-items-center rounded-md px-1 font-mono text-[0.7rem] font-semibold',
                 statusCell[item.status],
               )}
+              initial={reduceMotion ? false : { opacity: 0, scale: 0.5 }}
               key={item.id}
               title={`${item.position ?? ''} ${item.title}: ${statusLabel[item.status]}`}
+              transition={{
+                type: 'spring',
+                stiffness: 420,
+                damping: 20,
+                delay: 0.1 + index * 0.04,
+              }}
             >
               {item.position ?? '•'}
-            </span>
+            </motion.span>
           ))}
         </span>
       ) : (
@@ -645,7 +576,7 @@ function ContestCard({
           The problem list could not be loaded.
         </span>
       )}
-      <span className="text-xs font-medium text-primary">
+      <span className="text-xs font-medium text-acc">
         {open ? 'Hide problems' : 'Show all problems'}
       </span>
     </button>
@@ -666,7 +597,7 @@ function ContestProblems({
   onSolved: (item: UpsolveItem) => void
 }) {
   return (
-    <div className="animate-rise rounded-xl border border-border bg-card p-4 sm:p-5">
+    <div className="animate-rise rounded-2xl border border-border bg-card p-4 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-semibold text-foreground">
           <ProviderProblemLink
@@ -684,7 +615,7 @@ function ContestProblems({
       <ul className="mt-3 grid gap-2 md:grid-cols-2">
         {contest.items.map((item) => (
           <li
-            className="flex min-w-0 items-center gap-3 rounded-lg bg-secondary/40 px-3 py-2.5"
+            className="flex min-w-0 items-center gap-3 rounded-xl bg-secondary/40 px-3 py-2.5"
             key={item.id}
           >
             <span
@@ -770,8 +701,8 @@ function UpsolvePage() {
   const [openContest, setOpenContest] = useState<string | null>(null)
 
   const header = (
-    <PageHeader
-      action={
+    <PageHero
+      actions={
         <Button
           disabled={refresh.isPending || upsolveQuery.isFetching}
           onClick={() =>
@@ -796,14 +727,17 @@ function UpsolvePage() {
           {refresh.isPending ? 'Syncing platforms' : 'Refresh'}
         </Button>
       }
-      description="Your next five problems from recent contests, starting with the first unsolved ones of your latest contests."
+      eyebrow="Upsolve"
+      icon={UpsolveIcon}
+      info="Your next five problems from recent contests, starting with the first unsolved ones of your latest contests. A problem counts as upsolved only when it was solved after the contest ended."
+      subtitle="Close the loop on the contests you just took."
       title="Upsolve"
     />
   )
 
   if (upsolveQuery.isPending) {
     return (
-      <PageContainer>
+      <PageContainer accent="green" className="gap-6">
         {header}
         <PageSkeleton label="Building your upsolve queue" rows={5} />
       </PageContainer>
@@ -811,7 +745,7 @@ function UpsolvePage() {
   }
   if (upsolveQuery.isError) {
     return (
-      <PageContainer>
+      <PageContainer accent="green" className="gap-6">
         {header}
         <ErrorState
           message={mentorErrorMessage(
@@ -887,7 +821,7 @@ function UpsolvePage() {
 
   if (contests.length === 0) {
     return (
-      <PageContainer>
+      <PageContainer accent="green" className="gap-6">
         {header}
         <EmptyState
           action={
@@ -917,16 +851,12 @@ function UpsolvePage() {
   )
 
   return (
-    <PageContainer>
+    <PageContainer accent="green" className="gap-6">
       {header}
 
-      <div className="grid min-w-0 gap-4 lg:grid-cols-12">
-        <RecentContestsChart
-          history={history ?? []}
-          windowDays={summary.windowDays}
-        />
-        <FollowThrough summary={summary} />
-        <UpsolvedByPlatform
+      <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+        <ContestTrail history={history ?? []} windowDays={summary.windowDays} />
+        <FollowThroughCard
           linkedProviders={linkedProviders}
           summary={summary}
         />
@@ -989,4 +919,12 @@ function UpsolvePage() {
   )
 }
 
-export default UpsolvePage
+function UpsolvePageWithPanels() {
+  return (
+    <PanelStyle variant="soft">
+      <UpsolvePage />
+    </PanelStyle>
+  )
+}
+
+export default UpsolvePageWithPanels

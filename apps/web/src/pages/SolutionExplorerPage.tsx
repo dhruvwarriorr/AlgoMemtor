@@ -1,12 +1,10 @@
 import { useState, type FormEvent } from 'react'
+import { motion, useReducedMotion } from 'motion/react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   SOLUTION_CHAT_HISTORY_LIMIT,
   isSafeCoachPublicUrl,
-  type CommunitySolution,
-  type ProviderKey,
   type SolutionApproach,
-  type SolutionApproachKind,
   type SolutionExploration,
   type SolutionStatementSource,
 } from '@algomemtor/shared-contracts'
@@ -15,29 +13,22 @@ import { ProviderLogo } from '@/components/brand/ProviderLogo'
 import {
   ArrowRight,
   BookOpen,
-  Lightbulb,
+  CheckCircle2,
+  Code2,
+  Link2,
   RefreshCw,
-  Route,
-  Trophy,
 } from '@/components/icons/algo-icons'
-import {
-  GradientCard,
-  type GradientTone,
-} from '@/components/motion/GradientCard'
+import { PageHero } from '@/components/kit/PageHero'
 import { AiLoader, type AiLoaderStep } from '@/components/motion/AiLoader'
 import PageContainer from '@/components/layout/PageContainer'
 import {
   DoubtHelperIcon,
-  TestCaseVisualizerIcon,
+  SolutionExplorerIcon,
 } from '@/components/icons/mentor-icons'
-import PageHeader from '@/components/layout/PageHeader'
 import { ErrorState } from '@/components/states/ErrorState'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { useNotification } from '@/app/useNotification'
-import {
-  CodeBlockView,
-  CoachMessageContent,
-} from '@/features/coach/components/CoachMessageContent'
+import { CoachMessageContent } from '@/features/coach/components/CoachMessageContent'
 import {
   MentorChatDock,
   type DockMessage,
@@ -46,7 +37,6 @@ import {
   LanguagePicker,
   ProviderBadge,
   ProviderProblemLink,
-  SectionCard,
 } from '@/features/mentor/components/shared'
 import {
   errorCode,
@@ -63,36 +53,15 @@ import {
   useSolutionChat,
 } from '@/features/mentor/hooks'
 import {
-  VISUALIZER_PATH,
-  visualizerLanguageFor,
-  type VisualizerHandoff,
-} from '@/features/visualizer/handoff'
+  ApproachDetail,
+  ApproachJourney,
+  ExplorerPreview,
+  LinkCheck,
+  LessonNotes,
+  ObservationDeck,
+  SourceRows,
+} from '@/features/mentor/components/solution-visuals'
 import { cn } from '@/lib/utils'
-
-const kindLabels: Record<SolutionApproachKind, string> = {
-  brute_force: 'Brute force',
-  better: 'Better',
-  optimized: 'Optimal',
-  alternative: 'Alternative',
-  mathematical: 'Mathematical',
-}
-
-const kindStyles: Record<SolutionApproachKind, string> = {
-  brute_force: 'bg-secondary text-secondary-foreground',
-  better: 'bg-sun-soft text-sun-foreground',
-  optimized: 'bg-go-soft text-go-foreground',
-  alternative: 'bg-primary/10 text-primary',
-  mathematical: 'bg-sun-soft text-sun-foreground',
-}
-
-const communityKindLabels = {
-  editorial: 'Editorial',
-  community: 'Community solution',
-  discussion: 'Discussion',
-  submissions: 'Submissions',
-  article: 'Article',
-  video: 'Video',
-} as const
 
 const unlockCopy = {
   solved: 'Unlocked because you solved it.',
@@ -100,6 +69,20 @@ const unlockCopy = {
   helped: 'Unlocked after working on it in the Doubt Helper.',
   self_reported_attempt: 'Unlocked after your self-reported attempt.',
 } as const
+
+const unlockShort = {
+  solved: 'Solved',
+  attempted: 'Attempted',
+  helped: 'Doubt Helper',
+  self_reported_attempt: 'Your attempt',
+} as const
+
+const statementShort: Record<SolutionStatementSource, string> = {
+  provider: 'From the platform',
+  page: 'From the page',
+  pasted: 'Pasted by you',
+  search: 'Web search',
+}
 
 const statementNotes: Record<SolutionStatementSource, string> = {
   provider: 'Based on the statement from the platform.',
@@ -125,237 +108,81 @@ const chatSuggestions = [
   'Could a different technique also solve this?',
 ] as const
 
-function ApproachCard({
-  approach,
-  index,
-  total,
+// The approach path and the chosen approach below it.
+function ApproachExplorer({
+  approaches,
   language,
   problem,
 }: {
-  approach: SolutionApproach
-  index: number
-  total: number
+  approaches: readonly SolutionApproach[]
   language: string
   problem: { title: string; url?: string }
 }) {
-  const visualizerLanguage = visualizerLanguageFor(language)
-  const visualizer: VisualizerHandoff | null =
-    approach.code === undefined || visualizerLanguage === null
-      ? null
-      : {
-          source: 'solution_explorer',
-          language: visualizerLanguage,
-          code: approach.code,
-          problem,
-          approach: `${kindLabels[approach.kind]}: ${approach.name}`,
-        }
+  const optimal = approaches.findIndex((item) => item.kind === 'optimized')
+  const [state, setState] = useState<{ active: number; direction: 1 | -1 }>({
+    active: optimal === -1 ? 0 : optimal,
+    direction: 1,
+  })
+  const current = approaches[state.active]
   return (
-    <article className="min-w-0 rounded-xl border border-border bg-card p-4 sm:p-5">
-      <div className="flex flex-wrap items-center gap-2">
-        <span
-          aria-label={`Approach ${index + 1} of ${total}`}
-          className="mesh-card grid size-8 place-items-center rounded-lg font-heading text-sm font-bold text-white"
-        >
-          {index + 1}
-        </span>
-        <span
-          className={cn(
-            'rounded-md px-2 py-0.5 text-[0.7rem] font-semibold',
-            kindStyles[approach.kind],
-          )}
-        >
-          {kindLabels[approach.kind]}
-        </span>
-        <span className="rounded-md border border-border px-2 py-0.5 font-mono text-[0.7rem] text-foreground">
-          Time {approach.timeComplexity}
-        </span>
-        <span className="rounded-md border border-border px-2 py-0.5 font-mono text-[0.7rem] text-foreground">
-          Space {approach.spaceComplexity}
-        </span>
+    <section aria-labelledby="approaches-heading" className="min-w-0">
+      <SectionLabel
+        detail="Tap a station to switch"
+        id="approaches-heading"
+        title="From brute force to optimal"
+      />
+      <div className="mt-5">
+        <ApproachJourney
+          active={state.active}
+          approaches={approaches}
+          onSelect={(index) =>
+            setState((previous) => ({
+              active: index,
+              direction: index >= previous.active ? 1 : -1,
+            }))
+          }
+        />
       </div>
-      <h3 className="mt-3 text-lg font-semibold text-foreground">
-        {approach.name}
-      </h3>
-      <div className="mt-2 text-[0.95rem] [&>div]:mt-1">
-        <CoachMessageContent content={approach.idea} role="assistant" />
-      </div>
-      <div className="mt-4 rounded-lg border-l-2 border-primary bg-primary/5 px-4 py-3">
-        <p className="text-xs font-semibold tracking-wide text-primary uppercase">
-          Key insight
-        </p>
-        <div className="text-sm [&>div]:mt-1">
-          <CoachMessageContent content={approach.keyInsight} role="assistant" />
-        </div>
-      </div>
-      {approach.steps !== undefined && approach.steps.length > 0 ? (
-        <div className="mt-4">
-          <p className="text-sm font-semibold text-foreground">Algorithm</p>
-          <ol className="mt-2 grid list-decimal gap-1.5 pl-5 text-sm leading-6 marker:text-muted-foreground">
-            {approach.steps.map((step) => (
-              <li key={step}>{step}</li>
-            ))}
-          </ol>
+      {current ? (
+        <div className="mt-8">
+          <ApproachDetail
+            approach={current}
+            direction={state.direction}
+            index={state.active}
+            language={language}
+            problem={problem}
+          />
         </div>
       ) : null}
-      <details className="mt-4 rounded-lg border border-border px-4 py-3">
-        <summary className="cursor-pointer text-sm font-medium text-foreground">
-          Why it works{approach.limitations ? ' and its limits' : ''}
-        </summary>
-        <div className="mt-2 text-sm [&>div]:mt-1">
-          <CoachMessageContent content={approach.whyItWorks} role="assistant" />
-        </div>
-        {approach.limitations ? (
-          <div className="mt-3 text-sm text-muted-foreground [&>div]:mt-1">
-            <CoachMessageContent
-              content={`**Limitations.** ${approach.limitations}`}
-              role="assistant"
-            />
-          </div>
-        ) : null}
-      </details>
-      {approach.code ? (
-        <details
-          className="mt-3 rounded-lg border border-border px-4 py-3"
-          open={approach.kind === 'optimized'}
-        >
-          <summary className="cursor-pointer text-sm font-medium text-foreground">
-            Code ({language})
-          </summary>
-          <CodeBlockView code={approach.code} language={language} />
-          {visualizer !== null ? (
-            <Link
-              className={cn(
-                buttonVariants({ size: 'sm', variant: 'outline' }),
-                'mb-1',
-              )}
-              state={{ visualizer }}
-              to={VISUALIZER_PATH}
-            >
-              <TestCaseVisualizerIcon aria-hidden="true" /> Visualize with a
-              test case
-            </Link>
-          ) : null}
-          {approach.codeExplanation ? (
-            <div className="mt-3 text-sm text-muted-foreground [&>div]:mt-1">
-              <CoachMessageContent
-                content={approach.codeExplanation}
-                role="assistant"
-              />
-            </div>
-          ) : null}
-        </details>
-      ) : (
-        <p className="mt-3 text-sm text-muted-foreground">
-          No verified program was produced for this approach. Regenerate, or ask
-          the assistant to write it.
-        </p>
-      )}
-    </article>
+    </section>
   )
 }
 
-const providerForUrl = (url: string): ProviderKey | 'other' => {
-  const host = new URL(url).hostname.replace(/^www\./, '')
-  return host.endsWith('codeforces.com')
-    ? 'codeforces'
-    : host.endsWith('leetcode.com')
-      ? 'leetcode'
-      : host.endsWith('codechef.com')
-        ? 'codechef'
-        : host === 'cses.fi'
-          ? 'cses'
-          : 'other'
-}
-
-function SourceList({
-  sources,
-  empty,
+function SectionLabel({
+  title,
+  detail,
+  id,
 }: {
-  sources: readonly CommunitySolution[]
-  empty: string
-}) {
-  if (sources.length === 0) {
-    return <p className="text-sm text-muted-foreground">{empty}</p>
-  }
-  return (
-    <ul className="grid gap-3">
-      {sources.map((source) => (
-        <li
-          className="min-w-0 rounded-lg border border-border p-3.5"
-          key={source.url}
-        >
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span className="rounded-md bg-secondary px-2 py-0.5 font-medium text-secondary-foreground">
-              {communityKindLabels[source.kind]}
-            </span>
-            <span>{source.publisher}</span>
-            {source.official ? (
-              <span className="text-go-foreground">Official</span>
-            ) : null}
-            {source.language ? <span>· {source.language}</span> : null}
-          </div>
-          <ProviderProblemLink
-            className="mt-1.5 text-sm"
-            href={source.url}
-            provider={providerForUrl(source.url)}
-            title={source.title}
-          />
-          {source.highlight ? (
-            <p className="mt-1.5 text-sm leading-6 text-muted-foreground">
-              {source.highlight}
-            </p>
-          ) : null}
-        </li>
-      ))}
-    </ul>
-  )
-}
-
-const ladderTones: Record<SolutionApproachKind, GradientTone> = {
-  brute_force: 'sand',
-  better: 'sky',
-  alternative: 'sky',
-  mathematical: 'sky',
-  optimized: 'green',
-}
-
-// The three approaches side by side, so the complexity gain reads at a glance.
-function ComplexityLadder({
-  approaches,
-}: {
-  approaches: readonly SolutionApproach[]
+  title: string
+  detail?: string
+  id: string
 }) {
   return (
-    <ol
-      aria-label="Approaches from brute force to optimal"
-      className="grid min-w-0 gap-3 md:grid-cols-3"
-    >
-      {approaches.map((approach, index) => (
-        <li className="relative min-w-0" key={`${approach.kind}-${index}`}>
-          <GradientCard
-            className="h-full p-4"
-            icon={approach.kind === 'optimized' ? Trophy : Route}
-            tone={ladderTones[approach.kind]}
-          >
-            <p className="text-xs font-medium opacity-75">
-              {index + 1}. {kindLabels[approach.kind]}
-            </p>
-            <p className="mt-2 truncate font-mono text-xl font-bold tabular-nums">
-              {approach.timeComplexity}
-            </p>
-            <p className="mt-1 truncate text-xs opacity-75">
-              {approach.name}, space {approach.spaceComplexity}
-            </p>
-          </GradientCard>
-          {index < approaches.length - 1 ? (
-            <ArrowRight
-              aria-hidden="true"
-              className="absolute top-1/2 -right-3 z-10 hidden size-5 -translate-y-1/2 rounded-full bg-card p-0.5 text-muted-foreground shadow-soft md:block"
-            />
-          ) : null}
-        </li>
-      ))}
-    </ol>
+    <div className="flex flex-wrap items-end justify-between gap-2">
+      <h2
+        className="flex items-center gap-2.5 text-lg font-semibold text-foreground"
+        id={id}
+      >
+        <span
+          aria-hidden="true"
+          className="h-5 w-1.5 rounded-full bg-linear-to-b from-acc to-acc-2"
+        />
+        {title}
+      </h2>
+      {detail ? (
+        <p className="text-xs text-muted-foreground">{detail}</p>
+      ) : null}
+    </div>
   )
 }
 
@@ -372,31 +199,91 @@ function ExplorationView({
   const explanation = exploration.problemExplanation
   const official = exploration.community.filter((source) => source.official)
   const community = exploration.community.filter((source) => !source.official)
+  const problemRef =
+    problem.canonicalUrl === undefined
+      ? { title: problem.title }
+      : { title: problem.title, url: problem.canonicalUrl }
+  const reduceMotion = useReducedMotion()
   return (
-    <div className="flex min-w-0 flex-col gap-5">
-      <section className="rounded-xl border border-border bg-card p-4 sm:p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <ProviderBadge provider={problem.provider ?? 'other'} />
-              <span className="text-xs text-muted-foreground">
-                {unlockCopy[exploration.unlockedBy]} Generated{' '}
-                {formatDateTime(exploration.generatedAt)}.
-              </span>
-            </div>
-            <h2 className="mt-2 text-xl text-foreground sm:text-2xl">
-              {problem.canonicalUrl ? (
-                <ProviderProblemLink
-                  href={problem.canonicalUrl}
-                  provider={problem.provider ?? 'other'}
-                  title={problem.title}
-                />
-              ) : (
-                problem.title
-              )}
-            </h2>
+    <div className="flex min-w-0 flex-col gap-10">
+      <section className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
+        <div className="min-w-0">
+          <motion.h2
+            animate={{ opacity: 1, filter: 'blur(0px)', y: 0 }}
+            className="text-2xl text-foreground sm:text-3xl"
+            initial={
+              reduceMotion ? false : { opacity: 0, filter: 'blur(10px)', y: 8 }
+            }
+            transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+          >
+            {problem.canonicalUrl ? (
+              <ProviderProblemLink
+                href={problem.canonicalUrl}
+                provider={problem.provider ?? 'other'}
+                title={problem.title}
+              />
+            ) : (
+              problem.title
+            )}
+          </motion.h2>
+          <div className="mt-3 max-w-3xl text-[1.02rem] leading-7 text-foreground/90 [&>div]:mt-1">
+            <CoachMessageContent
+              content={exploration.summary}
+              role="assistant"
+            />
           </div>
+          {exploration.statementSource === 'search' ? (
+            <p className="mt-3 inline-block rounded-lg bg-sun-soft px-3 py-2 text-xs text-sun-foreground">
+              {statementNotes.search}
+            </p>
+          ) : null}
+        </div>
+        <aside
+          aria-label="About this exploration"
+          className="relative min-w-0 overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-soft"
+        >
+          <span
+            aria-hidden="true"
+            className="absolute inset-x-0 top-0 h-1 bg-linear-to-r from-acc to-acc-2"
+          />
+          <dl className="grid gap-3 text-sm">
+            <div className="flex items-center justify-between gap-2">
+              <dt className="text-xs text-muted-foreground">Platform</dt>
+              <dd>
+                <ProviderBadge provider={problem.provider ?? 'other'} />
+              </dd>
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <dt className="text-xs text-muted-foreground">Access</dt>
+              <dd
+                className="inline-flex items-center gap-1 text-foreground"
+                title={unlockCopy[exploration.unlockedBy]}
+              >
+                <CheckCircle2
+                  aria-hidden="true"
+                  className="size-4 shrink-0 text-go-foreground"
+                />
+                {unlockShort[exploration.unlockedBy]}
+              </dd>
+            </div>
+            {exploration.statementSource &&
+            exploration.statementSource !== 'search' ? (
+              <div className="flex items-center justify-between gap-2">
+                <dt className="text-xs text-muted-foreground">Statement</dt>
+                <dd className="text-foreground">
+                  {statementShort[exploration.statementSource]}
+                </dd>
+              </div>
+            ) : null}
+            <div className="flex items-center justify-between gap-2">
+              <dt className="text-xs text-muted-foreground">Generated</dt>
+              <dd className="text-xs text-foreground">
+                {formatDateTime(exploration.generatedAt)}
+              </dd>
+            </div>
+          </dl>
           <Button
+            className="mt-4 w-full"
             disabled={refreshing}
             onClick={onRefresh}
             size="sm"
@@ -411,168 +298,163 @@ function ExplorationView({
             />
             Regenerate
           </Button>
-        </div>
-        <div className="mt-3 text-[0.95rem] text-foreground/90 [&>div]:mt-1">
-          <CoachMessageContent content={exploration.summary} role="assistant" />
-        </div>
-        {exploration.statementSource ? (
-          <p
-            className={cn(
-              'mt-3 text-xs',
-              exploration.statementSource === 'search'
-                ? 'rounded-md bg-sun-soft px-3 py-2 text-sun-foreground'
-                : 'text-muted-foreground',
-            )}
-          >
-            {statementNotes[exploration.statementSource]}
-          </p>
-        ) : null}
+        </aside>
       </section>
 
       {explanation ? (
-        <SectionCard
-          description="What the problem really asks, before any solution."
-          id="problem-heading"
-          title="Understand the problem"
-        >
-          <div className="grid gap-4 text-[0.95rem]">
-            <div className="[&>div]:mt-0">
-              <CoachMessageContent
-                content={explanation.restatement}
-                role="assistant"
-              />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-foreground">
-                Input, output and constraints
-              </p>
-              <div className="text-sm [&>div]:mt-1">
+        <section aria-labelledby="problem-heading" className="min-w-0">
+          <SectionLabel id="problem-heading" title="Understand the problem" />
+          <div className="mt-4 grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+            <div className="min-w-0">
+              <div className="text-[1.05rem] leading-7 text-foreground [&>div]:mt-0">
                 <CoachMessageContent
-                  content={explanation.inputOutput}
+                  content={explanation.restatement}
                   role="assistant"
                 />
               </div>
+              {explanation.exampleWalkthrough ? (
+                <details className="mt-4 rounded-xl border border-border px-4 py-3 open:bg-secondary/30">
+                  <summary className="cursor-pointer text-sm font-medium text-foreground">
+                    Sample walkthrough
+                  </summary>
+                  <div className="mt-2 text-sm [&>div]:mt-1">
+                    <CoachMessageContent
+                      content={explanation.exampleWalkthrough}
+                      role="assistant"
+                    />
+                  </div>
+                </details>
+              ) : null}
             </div>
-            {explanation.keyObservations.length > 0 ? (
-              <div>
-                <p className="text-sm font-semibold text-foreground">
-                  Key observations
+            <div className="flex min-w-0 flex-col gap-4">
+              <div className="rounded-2xl bg-secondary/60 p-4">
+                <p className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+                  <Code2 aria-hidden="true" className="size-3.5" /> Input,
+                  output and constraints
                 </p>
-                <ul className="mt-2 grid gap-2">
-                  {explanation.keyObservations.map((item) => (
-                    <li className="flex gap-2.5 text-sm leading-6" key={item}>
-                      <Lightbulb
-                        aria-hidden="true"
-                        className="mt-1 size-4 shrink-0 text-primary"
-                      />
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-            {explanation.exampleWalkthrough ? (
-              <details className="rounded-lg border border-border px-4 py-3">
-                <summary className="cursor-pointer text-sm font-medium text-foreground">
-                  Sample walkthrough
-                </summary>
-                <div className="mt-2 text-sm [&>div]:mt-1">
+                <div className="mt-1 font-mono text-[0.8rem] leading-6 [&>div]:mt-0">
                   <CoachMessageContent
-                    content={explanation.exampleWalkthrough}
+                    content={explanation.inputOutput}
                     role="assistant"
                   />
                 </div>
-              </details>
-            ) : null}
-            {explanation.edgeCases.length > 0 ? (
-              <div>
-                <p className="text-sm font-semibold text-foreground">
-                  Edge cases to watch
-                </p>
-                <ul className="mt-2 grid list-disc gap-1 pl-5 text-sm leading-6 marker:text-muted-foreground">
-                  {explanation.edgeCases.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
               </div>
-            ) : null}
+              {explanation.edgeCases.length > 0 ? (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground">
+                    Edge cases to watch
+                  </p>
+                  <ul className="mt-2 flex flex-wrap gap-1.5">
+                    {explanation.edgeCases.map((item, index) => (
+                      <motion.li
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="rounded-full border border-[color-mix(in_oklab,#f59e0b_45%,var(--border))] bg-[#f59e0b]/10 px-3 py-1 text-xs leading-5 text-[#b45309] dark:text-[#fcd34d]"
+                        initial={
+                          reduceMotion ? false : { opacity: 0, scale: 0.6 }
+                        }
+                        key={item}
+                        transition={{
+                          type: 'spring',
+                          stiffness: 400,
+                          damping: 18,
+                          delay: 0.2 + index * 0.07,
+                        }}
+                      >
+                        {item}
+                      </motion.li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
           </div>
-        </SectionCard>
+          {explanation.keyObservations.length > 0 ? (
+            <div className="mt-6">
+              <p className="text-sm font-semibold text-foreground">
+                Key observations
+              </p>
+              <div className="mt-3">
+                <ObservationDeck items={explanation.keyObservations} />
+              </div>
+            </div>
+          ) : null}
+        </section>
       ) : null}
 
-      <ComplexityLadder approaches={exploration.approaches} />
+      <ApproachExplorer
+        approaches={exploration.approaches}
+        language={exploration.language}
+        problem={problemRef}
+      />
 
-      <section aria-label="Approaches" className="grid min-w-0 gap-4">
-        {exploration.approaches.map((approach, index) => (
-          <ApproachCard
-            approach={approach}
-            index={index}
-            key={`${approach.kind}-${index}`}
-            language={exploration.language}
-            problem={
-              problem.canonicalUrl === undefined
-                ? { title: problem.title }
-                : { title: problem.title, url: problem.canonicalUrl }
-            }
-            total={exploration.approaches.length}
-          />
-        ))}
+      <section
+        aria-labelledby="lessons-heading"
+        className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]"
+      >
+        <div className="min-w-0">
+          <SectionLabel id="comparison-heading" title="Trade-offs" />
+          <blockquote className="relative mt-4 pl-10 text-[1.02rem] leading-7 text-foreground/90 [&>div]:mt-0">
+            <span
+              aria-hidden="true"
+              className="absolute -top-3 left-0 font-heading text-6xl leading-none text-acc/40"
+            >
+              “
+            </span>
+            <CoachMessageContent
+              content={exploration.comparison}
+              role="assistant"
+            />
+          </blockquote>
+        </div>
+        {exploration.thinkingLessons.length > 0 ? (
+          <div className="min-w-0">
+            <SectionLabel
+              id="lessons-heading"
+              title="Think like an experienced solver"
+            />
+            <div className="mt-5">
+              <LessonNotes lessons={exploration.thinkingLessons} />
+            </div>
+          </div>
+        ) : null}
       </section>
 
-      <SectionCard
-        description="When to prefer which approach."
-        id="comparison-heading"
-        title="Trade-offs"
-      >
-        <div className="text-[0.95rem] [&>div]:mt-1">
-          <CoachMessageContent
-            content={exploration.comparison}
-            role="assistant"
-          />
-        </div>
-      </SectionCard>
-
-      {exploration.thinkingLessons.length > 0 ? (
-        <SectionCard
-          description="Habits that transfer to the next problem."
-          id="lessons-heading"
-          title="Think like an experienced solver"
+      <section className="grid min-w-0 gap-6 lg:grid-cols-2">
+        <div
+          aria-labelledby="editorial-heading"
+          className="min-w-0"
+          role="group"
         >
-          <ul className="grid gap-2">
-            {exploration.thinkingLessons.map((lesson) => (
-              <li className="flex gap-2.5 text-sm leading-6" key={lesson}>
-                <Lightbulb
-                  aria-hidden="true"
-                  className="mt-0.5 size-4 shrink-0 text-primary"
-                />
-                <span>{lesson}</span>
-              </li>
-            ))}
-          </ul>
-        </SectionCard>
-      ) : null}
-
-      <SectionCard
-        description="The official write-up from the problem setters."
-        id="editorial-heading"
-        title="Editorial"
-      >
-        <SourceList
-          empty="No official editorial was found for this problem."
-          sources={official}
-        />
-      </SectionCard>
-
-      <SectionCard
-        description={`The most relevant solutions in ${exploration.language} found on the web, with what each does well.`}
-        id="community-heading"
-        title="Community solutions"
-      >
-        <SourceList
-          empty={`No community solutions in ${exploration.language} were found.`}
-          sources={community}
-        />
-      </SectionCard>
+          <SectionLabel
+            detail="From the problem setters"
+            id="editorial-heading"
+            title="Editorial"
+          />
+          <div className="mt-4">
+            <SourceRows
+              empty="No official editorial was found for this problem."
+              sources={official}
+            />
+          </div>
+        </div>
+        <div
+          aria-labelledby="community-heading"
+          className="min-w-0"
+          role="group"
+        >
+          <SectionLabel
+            detail={`Top picks in ${exploration.language}`}
+            id="community-heading"
+            title="Community solutions"
+          />
+          <div className="mt-4">
+            <SourceRows
+              empty={`No community solutions in ${exploration.language} were found.`}
+              sources={community}
+            />
+          </div>
+        </div>
+      </section>
     </div>
   )
 }
@@ -755,134 +637,262 @@ function SolutionExplorerPage() {
   const access = accessQuery.data?.data
   const locked = access !== undefined && access.unlockedBy === undefined
 
+  const recentExplorations = (
+    <section aria-labelledby="recent-explorations" className="min-w-0">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2
+          className="text-base font-semibold text-foreground"
+          id="recent-explorations"
+        >
+          Recent explorations
+        </h2>
+        <p className="text-xs text-muted-foreground">Open instantly</p>
+      </div>
+      {explorationsQuery.isPending ? (
+        <p className="mt-3 text-sm text-muted-foreground" role="status">
+          Loading…
+        </p>
+      ) : (explorationsQuery.data?.data.length ?? 0) === 0 ? (
+        <div className="mt-3 flex items-center gap-4 rounded-2xl border border-dashed border-border p-4">
+          <span aria-hidden="true" className="flex shrink-0 -space-x-3">
+            {[0, 1, 2].map((card) => (
+              <span
+                className="h-12 w-9 rounded-lg border border-border bg-card shadow-soft"
+                key={card}
+                style={{ transform: `rotate(${(card - 1) * 8}deg)` }}
+              />
+            ))}
+          </span>
+          <p className="text-sm text-muted-foreground">
+            Nothing yet. Explorations you open are kept here and reopen
+            instantly.
+          </p>
+        </div>
+      ) : (
+        <ul className="-mx-1 mt-3 flex snap-x gap-3 overflow-x-auto px-1 pb-2">
+          {explorationsQuery.data?.data.map((item, index) => (
+            <motion.li
+              animate={{ opacity: 1, y: 0 }}
+              className="w-64 shrink-0 snap-start"
+              initial={{ opacity: 0, y: 10 }}
+              key={`${item.problem.canonicalUrl ?? item.problem.title}-${item.generatedAt}`}
+              transition={{ delay: Math.min(index, 8) * 0.05 }}
+            >
+              <button
+                className="flex h-full w-full min-w-0 flex-col gap-3 rounded-2xl border border-border bg-card p-4 text-left transition-[border-color,transform,box-shadow] hover:-translate-y-0.5 hover:border-acc hover:shadow-lift focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-60"
+                disabled={item.problem.canonicalUrl === undefined}
+                onClick={() => {
+                  if (item.problem.canonicalUrl === undefined) return
+                  setDraft(item.problem.canonicalUrl)
+                  setResult(null)
+                  setSearchParams({ problem: item.problem.canonicalUrl })
+                }}
+                type="button"
+              >
+                <span className="flex items-center justify-between gap-2">
+                  {item.problem.provider === undefined ? (
+                    <ProviderBadge provider="other" />
+                  ) : (
+                    <ProviderLogo
+                      className="size-5 shrink-0"
+                      provider={item.problem.provider}
+                    />
+                  )}
+                  <span aria-hidden="true" className="flex gap-1">
+                    {Array.from(
+                      { length: Math.min(item.approachCount, 5) },
+                      (_, dot) => (
+                        <span
+                          className="size-1.5 rounded-full bg-acc"
+                          key={dot}
+                          style={{ opacity: 0.4 + dot * 0.2 }}
+                        />
+                      ),
+                    )}
+                  </span>
+                </span>
+                <span className="line-clamp-2 text-sm font-semibold text-foreground">
+                  {item.problem.title}
+                </span>
+                <span className="mt-auto text-xs text-muted-foreground">
+                  {item.approachCount} approaches,{' '}
+                  {formatDateTime(item.generatedAt, false)}
+                </span>
+              </button>
+            </motion.li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+
   return (
-    <PageContainer>
-      <PageHeader
-        description="Paste a problem link after you solve or genuinely attempt it. You get a clear explanation of the problem, three approaches from brute force to optimal with complete code, the official editorial and the best community solutions in your language, and an assistant for follow-up questions."
+    <PageContainer accent="violet" className="gap-6">
+      <PageHero
+        eyebrow="Solution Explorer"
+        icon={SolutionExplorerIcon}
+        info="Paste a problem link after you solve or genuinely attempt it. You get a clear explanation of the problem, three approaches from brute force to optimal with complete code, the official editorial and the best community solutions in your language, and an assistant for follow-up questions."
+        subtitle="Every way to solve a problem you have already tried."
         title="Solution Explorer"
       />
 
-      <form
-        className="flex min-w-0 flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:p-5"
-        noValidate
-        onSubmit={submit}
-      >
-        {pasteMode ? (
-          <div className="grid gap-4">
-            <label className="flex flex-col gap-2 text-sm font-medium text-foreground">
-              Problem name
-              <input
-                className={inputClass}
-                maxLength={200}
-                onChange={(event) => setProblemTitle(event.target.value)}
-                placeholder="e.g. Grid Paths"
-                value={problemTitle}
-              />
-            </label>
-            <label className="flex flex-col gap-2 text-sm font-medium text-foreground">
-              Problem statement
-              <textarea
-                className={cn(
-                  inputClass,
-                  'min-h-40 resize-y font-mono text-xs',
-                )}
-                maxLength={20_000}
-                onChange={(event) => setStatement(event.target.value)}
-                placeholder="Paste the full statement, constraints and samples."
-                value={statement}
-              />
-            </label>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            <label
-              className="text-sm font-medium text-foreground"
-              htmlFor="solutions-problem"
-            >
-              Problem link
-            </label>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <input
-                aria-describedby={formError ? 'solutions-error' : undefined}
-                className={inputClass}
-                id="solutions-problem"
-                inputMode="url"
-                onChange={(event) => setDraft(event.target.value)}
-                placeholder="https://leetcode.com/problems/two-sum/"
-                type="url"
-                value={draft}
-              />
-              <Button className="shrink-0" size="lg" type="submit">
-                Open <ArrowRight aria-hidden="true" />
-              </Button>
-            </div>
-          </div>
+      <div
+        className={cn(
+          'grid min-w-0 gap-6',
+          targetKey === null &&
+            'lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-stretch',
         )}
-        {formError ? (
-          <p
-            className="text-sm text-danger-foreground"
-            id="solutions-error"
-            role="alert"
+      >
+        <section
+          aria-label="Open a problem"
+          className={cn(
+            'min-w-0',
+            targetKey === null &&
+              'flex flex-col gap-5 rounded-3xl border border-border bg-card p-5 shadow-soft',
+          )}
+        >
+          <form
+            className="flex min-w-0 flex-col gap-4"
+            noValidate
+            onSubmit={submit}
           >
-            {formError}
-          </p>
-        ) : null}
-        {!needsStatement ? (
-          <button
-            className="self-start text-xs font-medium text-primary underline-offset-4 hover:underline"
-            onClick={() => {
-              setPasteMode((value) => !value)
-              setFormError(null)
-            }}
-            type="button"
-          >
-            {pasteMode ? 'Use a link instead' : 'No link? Paste the statement'}
-          </button>
-        ) : null}
-        {needsStatement && !pasteMode ? (
-          <div className="grid gap-3 rounded-lg border border-border bg-background/50 p-4">
-            <p className="text-sm text-sun-foreground" role="status">
-              The problem could not be read from that link. Paste the statement
-              so the explanation does not have to guess.
-            </p>
-            <textarea
-              aria-label="Problem statement"
-              className={cn(inputClass, 'min-h-32 resize-y font-mono text-xs')}
-              maxLength={20_000}
-              onChange={(event) => setStatement(event.target.value)}
-              placeholder="Paste the full statement, constraints and samples."
-              value={statement}
-            />
-            <Button
-              className="self-start"
-              disabled={statement.trim() === '' || explore.isPending}
-              onClick={() => run(lastRun)}
-              size="sm"
-              type="button"
-            >
-              Explore with this statement
-            </Button>
+            {pasteMode ? (
+              <div className="grid max-w-3xl gap-4 rounded-2xl border border-border bg-card p-4 shadow-soft sm:p-5">
+                <label className="flex flex-col gap-2 text-sm font-medium text-foreground">
+                  Problem name
+                  <input
+                    className={inputClass}
+                    maxLength={200}
+                    onChange={(event) => setProblemTitle(event.target.value)}
+                    placeholder="e.g. Grid Paths"
+                    value={problemTitle}
+                  />
+                </label>
+                <label className="flex flex-col gap-2 text-sm font-medium text-foreground">
+                  Problem statement
+                  <textarea
+                    className={cn(
+                      inputClass,
+                      'min-h-40 resize-y font-mono text-xs',
+                    )}
+                    maxLength={20_000}
+                    onChange={(event) => setStatement(event.target.value)}
+                    placeholder="Paste the full statement, constraints and samples."
+                    value={statement}
+                  />
+                </label>
+              </div>
+            ) : (
+              <div className="flex min-w-0 items-center gap-2 rounded-full border border-border bg-card p-1.5 pl-4 shadow-soft transition-[border-color,box-shadow] focus-within:border-ring focus-within:shadow-[0_0_0_4px_color-mix(in_oklab,var(--ring)_15%,transparent)]">
+                <label className="sr-only" htmlFor="solutions-problem">
+                  Problem link
+                </label>
+                <Link2
+                  aria-hidden="true"
+                  className="size-4 shrink-0 text-muted-foreground"
+                />
+                <input
+                  aria-describedby={formError ? 'solutions-error' : undefined}
+                  className="h-10 min-w-0 flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground sm:text-sm"
+                  id="solutions-problem"
+                  inputMode="url"
+                  onChange={(event) => setDraft(event.target.value)}
+                  placeholder="https://leetcode.com/problems/two-sum/"
+                  type="url"
+                  value={draft}
+                />
+                <Button className="group shrink-0 rounded-full" type="submit">
+                  Open
+                  <ArrowRight
+                    aria-hidden="true"
+                    className="transition-transform duration-300 group-hover:translate-x-0.5"
+                  />
+                </Button>
+              </div>
+            )}
+            {formError ? (
+              <p
+                className="text-sm text-danger-foreground"
+                id="solutions-error"
+                role="alert"
+              >
+                {formError}
+              </p>
+            ) : null}
+            {needsStatement && !pasteMode ? (
+              <div className="grid max-w-3xl gap-3 rounded-2xl border border-border bg-card p-4">
+                <p className="text-sm text-sun-foreground" role="status">
+                  The problem could not be read from that link. Paste the
+                  statement so the explanation does not have to guess.
+                </p>
+                <textarea
+                  aria-label="Problem statement"
+                  className={cn(
+                    inputClass,
+                    'min-h-32 resize-y font-mono text-xs',
+                  )}
+                  maxLength={20_000}
+                  onChange={(event) => setStatement(event.target.value)}
+                  placeholder="Paste the full statement, constraints and samples."
+                  value={statement}
+                />
+                <Button
+                  className="self-start"
+                  disabled={statement.trim() === '' || explore.isPending}
+                  onClick={() => run(lastRun)}
+                  size="sm"
+                  type="button"
+                >
+                  Explore with this statement
+                </Button>
+              </div>
+            ) : null}
+            <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+              <LanguagePicker
+                idPrefix="solutions"
+                onChange={setLanguage}
+                value={language}
+              />
+              {!needsStatement ? (
+                <button
+                  className="pb-2 text-xs font-medium text-acc underline-offset-4 hover:underline"
+                  onClick={() => {
+                    setPasteMode((value) => !value)
+                    setFormError(null)
+                  }}
+                  type="button"
+                >
+                  {pasteMode
+                    ? 'Use a link instead'
+                    : 'No link? Paste the statement'}
+                </button>
+              ) : null}
+              {pasteMode ? (
+                <Button disabled={explore.isPending} type="submit">
+                  <BookOpen aria-hidden="true" /> Explore approaches
+                </Button>
+              ) : null}
+            </div>
+          </form>
+          {targetKey === null && !pasteMode ? (
+            <LinkCheck value={draft} />
+          ) : null}
+          {targetKey === null ? (
+            <div className="mt-auto border-t border-border pt-4">
+              {recentExplorations}
+            </div>
+          ) : null}
+        </section>
+        {targetKey === null ? (
+          <div className="hidden min-w-0 lg:block [&>div]:h-full">
+            <ExplorerPreview />
           </div>
         ) : null}
-        <LanguagePicker
-          idPrefix="solutions"
-          onChange={setLanguage}
-          value={language}
-        />
-        {pasteMode ? (
-          <Button
-            className="self-start"
-            disabled={explore.isPending}
-            type="submit"
-          >
-            <BookOpen aria-hidden="true" /> Explore approaches
-          </Button>
-        ) : null}
-      </form>
+      </div>
 
       {targetKey === null ? null : explore.isPending ? (
         <div
-          className="rounded-xl border border-border bg-card p-6"
+          className="max-w-3xl rounded-2xl border border-border bg-card p-6"
           role="status"
         >
           <AiLoader steps={workingSteps} title="Exploring solutions" />
@@ -909,7 +919,14 @@ function SolutionExplorerPage() {
           title="Problem unavailable"
         />
       ) : access !== undefined ? (
-        <section className="flex min-w-0 flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:p-6">
+        <section className="relative flex max-w-3xl min-w-0 flex-col gap-4 overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-soft sm:p-6">
+          <span
+            aria-hidden="true"
+            className={cn(
+              'absolute inset-y-0 left-0 w-1',
+              locked ? 'bg-sun' : 'bg-go',
+            )}
+          />
           <div className="flex flex-wrap items-center gap-2">
             <ProviderBadge provider={access.problem.provider ?? 'other'} />
             <span className="text-xs text-muted-foreground">
@@ -968,59 +985,7 @@ function SolutionExplorerPage() {
         </section>
       ) : null}
 
-      <SectionCard
-        description="Problems you explored before open instantly from here."
-        id="recent-explorations"
-        title="Recent explorations"
-      >
-        {explorationsQuery.isPending ? (
-          <p className="text-sm text-muted-foreground" role="status">
-            Loading…
-          </p>
-        ) : (explorationsQuery.data?.data.length ?? 0) === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Nothing yet. Open a problem you have solved or attempted above.
-          </p>
-        ) : (
-          <ul className="grid gap-2 sm:grid-cols-2">
-            {explorationsQuery.data?.data.map((item) => (
-              <li
-                key={`${item.problem.canonicalUrl ?? item.problem.title}-${item.generatedAt}`}
-              >
-                <button
-                  className="flex w-full min-w-0 items-center justify-between gap-3 rounded-lg border border-border px-3.5 py-2.5 text-left transition-colors hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
-                  disabled={item.problem.canonicalUrl === undefined}
-                  onClick={() => {
-                    if (item.problem.canonicalUrl === undefined) return
-                    setDraft(item.problem.canonicalUrl)
-                    setResult(null)
-                    setSearchParams({ problem: item.problem.canonicalUrl })
-                  }}
-                  type="button"
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium text-foreground">
-                      {item.problem.title}
-                    </span>
-                    <span className="block text-xs text-muted-foreground">
-                      {item.approachCount} approaches,{' '}
-                      {formatDateTime(item.generatedAt, false)}
-                    </span>
-                  </span>
-                  {item.problem.provider === undefined ? (
-                    <ProviderBadge provider="other" />
-                  ) : (
-                    <ProviderLogo
-                      className="size-5 shrink-0"
-                      provider={item.problem.provider}
-                    />
-                  )}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </SectionCard>
+      {targetKey === null ? null : recentExplorations}
 
       {current !== null ? (
         <MentorChatDock

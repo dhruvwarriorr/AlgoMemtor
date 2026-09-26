@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useSearchParams } from 'react-router-dom'
 import {
   ExternalContestSchema,
@@ -8,17 +9,21 @@ import {
 } from '@algomemtor/shared-contracts'
 
 import PageContainer from '@/components/layout/PageContainer'
-import PageHeader from '@/components/layout/PageHeader'
+import { ProviderLogo } from '@/components/brand/ProviderLogo'
+import { ContestsIcon } from '@/components/icons/app-icons'
+import { PageHero } from '@/components/kit/PageHero'
+import { SegmentedControl } from '@/components/kit/SegmentedControl'
+import { SpotlightCard } from '@/components/kit/surfaces'
 import { EmptyState } from '@/components/states/EmptyState'
 import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { Button } from '@/components/ui/button'
-import { ProviderFilter } from '@/features/platform/components/ProviderFilter'
 import {
   contestProviderOptions,
   providerLabels,
 } from '@/features/platform/components/provider-labels'
 import { useContests } from '@/features/platform/hooks'
+import { cn } from '@/lib/utils'
 
 type ContestStatus = NonNullable<ExternalContestsQuery['status']>
 
@@ -41,17 +46,295 @@ function formatDate(value: string | undefined) {
   }
 }
 
-function ContestCard({ contest }: { contest: ExternalContest }) {
+function formatTime(value: string | undefined) {
+  if (value === undefined) return '—'
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      hour: 'numeric',
+      minute: '2-digit',
+    }).format(new Date(value))
+  } catch {
+    return value
+  }
+}
+
+// The current time, ticking once per `interval` milliseconds.
+function useNow(interval = 1000) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), interval)
+    return () => window.clearInterval(timer)
+  }, [interval])
+  return now
+}
+
+function splitDuration(milliseconds: number) {
+  const total = Math.max(0, Math.floor(milliseconds / 1000))
+  return {
+    days: Math.floor(total / 86_400),
+    hours: Math.floor((total % 86_400) / 3600),
+    minutes: Math.floor((total % 3600) / 60),
+    seconds: total % 60,
+  }
+}
+
+function relativeStart(startsAt: string | undefined, now: number) {
+  if (startsAt === undefined) return undefined
+  const delta = new Date(startsAt).getTime() - now
+  if (delta <= 0) return undefined
+  const { days, hours, minutes } = splitDuration(delta)
+  if (days > 0) return `in ${days}d ${hours}h`
+  if (hours > 0) return `in ${hours}h ${minutes}m`
+  return `in ${minutes}m`
+}
+
+function CountdownDigit({ value, label }: { value: number; label: string }) {
+  const reduceMotion = useReducedMotion()
+  const text = String(value).padStart(2, '0')
   return (
-    <li className="min-w-0 rounded-lg border border-border bg-card p-4 sm:p-5">
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+    <div className="flex flex-col items-center">
+      <span className="relative grid h-14 w-14 place-items-center overflow-hidden rounded-xl border border-white/15 bg-white/10 font-mono text-2xl font-bold text-white tabular-nums backdrop-blur sm:h-16 sm:w-16 sm:text-3xl">
+        <AnimatePresence initial={false} mode="popLayout">
+          <motion.span
+            animate={{ y: 0, opacity: 1 }}
+            exit={reduceMotion ? { opacity: 0 } : { y: -18, opacity: 0 }}
+            initial={reduceMotion ? { opacity: 0 } : { y: 18, opacity: 0 }}
+            key={text}
+            transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+          >
+            {text}
+          </motion.span>
+        </AnimatePresence>
+      </span>
+      <span className="mt-1.5 text-[0.62rem] font-medium tracking-[0.12em] text-white/60 uppercase">
+        {label}
+      </span>
+    </div>
+  )
+}
+
+// The soonest upcoming contest, counting down.
+function NextContest({ contest }: { contest: ExternalContest }) {
+  const now = useNow()
+  const start = contest.startsAt ? new Date(contest.startsAt).getTime() : now
+  const parts = splitDuration(start - now)
+  return (
+    <div className="relative isolate overflow-hidden rounded-2xl mesh-card p-5 sm:p-6">
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(90%_80%_at_100%_0%,rgb(244_63_94/0.45),transparent_60%)]"
+      />
+      <div className="flex min-w-0 flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
-          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            {providerLabels[contest.provider]} · {statusLabels[contest.status]}
+          <p className="inline-flex items-center gap-2 text-xs font-medium tracking-wide text-white/70 uppercase">
+            <span className="relative flex size-2">
+              <span className="absolute inset-0 animate-ping rounded-full bg-[#fb7185] motion-reduce:hidden" />
+              <span className="relative size-2 rounded-full bg-[#fb7185]" />
+            </span>
+            Next up · {providerLabels[contest.provider]}
           </p>
-          <h3 className="mt-1 break-words text-lg font-semibold text-foreground">
+          <h2 className="mt-2 text-2xl leading-tight font-semibold text-white sm:text-3xl">
             <a
-              className="underline decoration-border underline-offset-4 hover:decoration-foreground focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="underline decoration-white/30 underline-offset-4 hover:decoration-white focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
+              href={contest.canonicalUrl}
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              {contest.name}
+            </a>
+          </h2>
+          <p className="mt-2 text-sm text-white/70">
+            {formatDate(contest.startsAt)}
+            {contest.durationSeconds !== undefined
+              ? ` · ${Math.round(contest.durationSeconds / 60)} minutes`
+              : ''}
+          </p>
+        </div>
+        <div
+          aria-label={`Starts in ${parts.days} days, ${parts.hours} hours, ${parts.minutes} minutes`}
+          className="flex gap-2 sm:gap-3"
+          role="timer"
+        >
+          <CountdownDigit label="Days" value={parts.days} />
+          <CountdownDigit label="Hours" value={parts.hours} />
+          <CountdownDigit label="Min" value={parts.minutes} />
+          <CountdownDigit label="Sec" value={parts.seconds} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const providerDot: Record<ExternalContest['provider'], string> = {
+  codeforces: '#2d6cdf',
+  codechef: '#8a7446',
+  leetcode: '#f2b84b',
+  cses: '#14a3a3',
+}
+
+// The coming week: each contest is a bar placed at its start time.
+function WeekTimeline({ contests }: { contests: readonly ExternalContest[] }) {
+  const reduceMotion = useReducedMotion()
+  const [origin] = useState(() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    return today.getTime()
+  })
+  const span = 7 * 86_400_000
+  const inWeek = contests.filter((contest) => {
+    if (contest.startsAt === undefined) return false
+    const start = new Date(contest.startsAt).getTime()
+    return start >= origin && start < origin + span
+  })
+  const days = Array.from({ length: 7 }, (_, index) => {
+    const day = new Date(origin + index * 86_400_000)
+    return new Intl.DateTimeFormat(undefined, { weekday: 'short' }).format(day)
+  })
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4">
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="text-sm font-semibold text-foreground">This week</p>
+        <p className="font-mono text-xs text-muted-foreground">
+          {inWeek.length} contest{inWeek.length === 1 ? '' : 's'}
+        </p>
+      </div>
+      <div className="relative mt-3">
+        <div aria-hidden="true" className="grid grid-cols-7">
+          {days.map((day, index) => (
+            <span
+              className="border-l border-dashed border-border pl-1.5 font-mono text-[0.65rem] text-muted-foreground first:border-l-0 first:pl-0"
+              key={`${day}-${index}`}
+            >
+              {day}
+            </span>
+          ))}
+        </div>
+        <ul
+          className="relative mt-2 flex flex-col gap-1.5"
+          aria-label="Contests this week"
+        >
+          {inWeek.length === 0 ? (
+            <li className="text-xs text-muted-foreground">
+              Nothing scheduled in the next seven days.
+            </li>
+          ) : (
+            inWeek.slice(0, 6).map((contest, index) => {
+              const start = new Date(contest.startsAt ?? origin).getTime()
+              const left = ((start - origin) / span) * 100
+              const width = Math.max(
+                2.5,
+                (((contest.durationSeconds ?? 7200) * 1000) / span) * 100,
+              )
+              return (
+                <li
+                  className="relative h-6"
+                  key={`${contest.provider}:${contest.externalId}`}
+                >
+                  <motion.span
+                    animate={{ opacity: 1, scaleX: 1 }}
+                    className="absolute top-0 flex h-6 origin-left items-center rounded-md px-1.5"
+                    initial={reduceMotion ? false : { opacity: 0, scaleX: 0 }}
+                    style={{
+                      left: `${left}%`,
+                      minWidth: `${width}%`,
+                      background: `color-mix(in oklab, ${providerDot[contest.provider]} 22%, transparent)`,
+                      boxShadow: `inset 3px 0 0 ${providerDot[contest.provider]}`,
+                    }}
+                    title={`${contest.name} · ${formatDate(contest.startsAt)}`}
+                    transition={{
+                      delay: 0.08 * index,
+                      duration: 0.6,
+                      ease: [0.16, 1, 0.3, 1],
+                    }}
+                  >
+                    <span className="truncate pl-1 text-[0.68rem] font-medium whitespace-nowrap text-foreground">
+                      {contest.name}
+                    </span>
+                  </motion.span>
+                </li>
+              )
+            })
+          )}
+        </ul>
+      </div>
+    </div>
+  )
+}
+
+function ContestCard({
+  contest,
+  index,
+  now,
+}: {
+  contest: ExternalContest
+  index: number
+  now: number
+}) {
+  const reduceMotion = useReducedMotion()
+  const start = contest.startsAt ? new Date(contest.startsAt) : undefined
+  const soon = relativeStart(contest.startsAt, now)
+  const running = contest.status === 'running'
+  return (
+    <motion.li
+      animate={{ opacity: 1, y: 0 }}
+      className="min-w-0"
+      initial={reduceMotion ? false : { opacity: 0, y: 14 }}
+      transition={{
+        duration: 0.5,
+        ease: [0.16, 1, 0.3, 1],
+        delay: Math.min(index, 8) * 0.04,
+      }}
+    >
+      <SpotlightCard className="flex h-full min-w-0 gap-4 p-4 sm:p-5">
+        <div
+          aria-hidden="true"
+          className="flex w-16 shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-background text-center"
+        >
+          <span
+            className="py-0.5 font-mono text-[0.62rem] font-bold tracking-widest text-white uppercase"
+            style={{ background: providerDot[contest.provider] }}
+          >
+            {start
+              ? new Intl.DateTimeFormat(undefined, { month: 'short' }).format(
+                  start,
+                )
+              : '—'}
+          </span>
+          <span className="grid flex-1 place-items-center py-1 font-heading text-2xl leading-none font-bold text-foreground">
+            {start ? start.getDate() : '?'}
+          </span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
+            <span className="inline-flex items-center gap-1.5 font-medium text-muted-foreground">
+              <ProviderLogo className="size-3.5" provider={contest.provider} />
+              {providerLabels[contest.provider]}
+            </span>
+            <span
+              className={cn(
+                'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[0.68rem] font-semibold',
+                running
+                  ? 'bg-danger-soft text-danger-foreground'
+                  : contest.status === 'upcoming'
+                    ? 'bg-acc-soft text-acc-ink'
+                    : 'bg-muted text-muted-foreground',
+              )}
+            >
+              {running ? (
+                <span className="size-1.5 animate-pulse rounded-full bg-destructive" />
+              ) : null}
+              {statusLabels[contest.status]}
+            </span>
+            {soon ? (
+              <span className="font-mono text-[0.7rem] text-acc">{soon}</span>
+            ) : null}
+            <span className="ml-auto rounded-md bg-muted px-2 py-0.5 font-mono text-[0.68rem] text-foreground">
+              {contest.externalId}
+            </span>
+          </div>
+          <h3 className="mt-1.5 text-base font-semibold break-words text-foreground">
+            <a
+              className="underline decoration-border underline-offset-4 hover:decoration-foreground focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               href={contest.canonicalUrl}
               rel="noopener noreferrer"
               target="_blank"
@@ -59,42 +342,49 @@ function ContestCard({ contest }: { contest: ExternalContest }) {
               {contest.name}
             </a>
           </h3>
+          <dl className="mt-3 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <div className="flex gap-1">
+              <dt className="sr-only">Starts</dt>
+              <dd>
+                <span className="font-medium text-foreground">
+                  {formatTime(contest.startsAt)}
+                </span>
+                <span className="sr-only"> {formatDate(contest.startsAt)}</span>
+              </dd>
+              <span aria-hidden="true">→</span>
+              <dt className="sr-only">Ends</dt>
+              <dd>
+                <span className="font-medium text-foreground">
+                  {formatTime(contest.endsAt)}
+                </span>
+                <span className="sr-only"> {formatDate(contest.endsAt)}</span>
+              </dd>
+            </div>
+            {contest.durationSeconds !== undefined ? (
+              <div className="flex items-center gap-1.5">
+                <dt className="sr-only">Duration</dt>
+                <dd className="flex items-center gap-1.5">
+                  <span
+                    aria-hidden="true"
+                    className="h-1 rounded-full bg-acc"
+                    style={{
+                      width: `${Math.min(64, contest.durationSeconds / 225)}px`,
+                    }}
+                  />
+                  {Math.round(contest.durationSeconds / 60)} minutes
+                </dd>
+              </div>
+            ) : null}
+            {contest.phase ? (
+              <div className="flex gap-1">
+                <dt>Phase</dt>
+                <dd className="font-medium text-foreground">{contest.phase}</dd>
+              </div>
+            ) : null}
+          </dl>
         </div>
-        <span className="rounded-md bg-muted px-2.5 py-1 text-xs font-medium text-foreground">
-          {contest.externalId}
-        </span>
-      </div>
-      <dl className="mt-4 grid min-w-0 gap-3 text-sm sm:grid-cols-2">
-        <div>
-          <dt className="text-muted-foreground">Starts</dt>
-          <dd className="mt-0.5 font-medium text-foreground">
-            {formatDate(contest.startsAt)}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">Ends</dt>
-          <dd className="mt-0.5 font-medium text-foreground">
-            {formatDate(contest.endsAt)}
-          </dd>
-        </div>
-        {contest.durationSeconds !== undefined ? (
-          <div>
-            <dt className="text-muted-foreground">Duration</dt>
-            <dd className="mt-0.5 font-medium text-foreground">
-              {Math.round(contest.durationSeconds / 60)} minutes
-            </dd>
-          </div>
-        ) : null}
-        {contest.phase ? (
-          <div>
-            <dt className="text-muted-foreground">Phase</dt>
-            <dd className="mt-0.5 font-medium text-foreground">
-              {contest.phase}
-            </dd>
-          </div>
-        ) : null}
-      </dl>
-    </li>
+      </SpotlightCard>
+    </motion.li>
   )
 }
 
@@ -128,6 +418,7 @@ function ContestsPage() {
   )
   const contests = contestsQuery.data
   const [visibleCount, setVisibleCount] = useState(12)
+  const now = useNow(30_000)
 
   function updateFilters(
     nextProvider: typeof provider,
@@ -179,9 +470,11 @@ function ContestsPage() {
     content = (
       <div className="space-y-4">
         <ul className="grid min-w-0 gap-3 lg:grid-cols-2" aria-label="Contests">
-          {contests.data.slice(0, visibleCount).map((contest) => (
+          {contests.data.slice(0, visibleCount).map((contest, index) => (
             <ContestCard
               contest={contest}
+              index={index}
+              now={now}
               key={`${contest.provider}:${contest.externalId}`}
             />
           ))}
@@ -201,59 +494,81 @@ function ContestsPage() {
     )
   }
 
+  const nextContest = contests?.data
+    .filter(
+      (contest) =>
+        contest.startsAt !== undefined &&
+        new Date(contest.startsAt).getTime() > now,
+    )
+    .sort(
+      (a, b) =>
+        new Date(a.startsAt ?? 0).getTime() -
+        new Date(b.startsAt ?? 0).getTime(),
+    )[0]
+
   return (
-    <PageContainer>
-      <PageHeader
-        description="Browse upcoming and historical contests from the connected public provider catalogs."
+    <PageContainer accent="rose" className="gap-6">
+      <PageHero
+        eyebrow="Contest calendar"
+        icon={ContestsIcon}
+        info="Upcoming and historical contests from the connected public provider catalogs. Links open the contest on its provider."
+        subtitle="What is coming up across your platforms."
         title="Contests"
       />
 
+      {nextContest ? (
+        <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+          <NextContest contest={nextContest} />
+          <WeekTimeline contests={contests?.data ?? []} />
+        </div>
+      ) : null}
+
       <section
         aria-label="Contest filters"
-        className="flex flex-wrap items-end gap-4 rounded-xl border border-border bg-card p-4 sm:p-5"
+        className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card p-3"
       >
-        <ProviderFilter
-          id="contest-provider"
-          onChange={(next) => updateFilters(next, status)}
-          options={contestProviderOptions}
-          value={provider}
+        <SegmentedControl
+          label="Provider"
+          onChange={(next) =>
+            updateFilters(next === 'all' ? undefined : next, status)
+          }
+          options={[
+            { value: 'all', label: 'All providers' },
+            ...contestProviderOptions.map((option) => ({
+              value: option,
+              label: providerLabels[option],
+              icon: <ProviderLogo className="size-3.5" provider={option} />,
+            })),
+          ]}
+          size="sm"
+          value={provider ?? 'all'}
         />
-        <label className="min-w-40 space-y-1.5 text-sm font-medium text-foreground">
-          Status
-          <select
-            className="h-10 w-full rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 text-base text-foreground outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
-            id="contest-status"
-            onChange={(event) => {
-              const next = event.currentTarget.value
-              updateFilters(
-                provider,
-                next === allStatuses ? undefined : (next as ContestStatus),
-              )
-            }}
-            value={status ?? allStatuses}
-          >
-            <option value={allStatuses}>All statuses</option>
-            {(['upcoming', 'running', 'finished', 'unknown'] as const).map(
-              (value) => (
-                <option key={value} value={value}>
-                  {statusLabels[value]}
-                </option>
-              ),
-            )}
-          </select>
-        </label>
+        <SegmentedControl
+          label="Status"
+          onChange={(next) =>
+            updateFilters(provider, next === allStatuses ? undefined : next)
+          }
+          options={[
+            ...(['upcoming', 'running', 'finished', 'unknown'] as const).map(
+              (value) => ({ value, label: statusLabels[value] }),
+            ),
+            { value: allStatuses, label: 'All statuses' },
+          ]}
+          size="sm"
+          value={status ?? allStatuses}
+        />
       </section>
 
-      <section aria-labelledby="contest-list-heading" className="space-y-4">
+      <section aria-labelledby="contest-list-heading" className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2
-            className="text-xl font-semibold tracking-tight text-foreground"
+            className="text-lg font-semibold tracking-tight text-foreground"
             id="contest-list-heading"
           >
             Contest catalog
           </h2>
           {contests ? (
-            <p className="text-sm text-muted-foreground">
+            <p className="rounded-full border border-border px-3 py-1 font-mono text-xs text-muted-foreground">
               {contests.data.length} contest
               {contests.data.length === 1 ? '' : 's'}
             </p>

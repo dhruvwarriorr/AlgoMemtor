@@ -71,7 +71,7 @@ export function BrowserConnectorCard({ idPrefix }: { idPrefix: string }) {
   return (
     <section
       aria-labelledby={`${idPrefix}-connector-heading`}
-      className="flex w-full max-w-4xl min-w-0 flex-col gap-4 rounded-xl border border-border bg-card p-4 sm:p-6"
+      className="flex w-full max-w-4xl min-w-0 flex-col gap-4 rounded-2xl border border-border bg-card p-4 shadow-soft sm:p-6"
       id="connector"
     >
       <div className="flex min-w-0 items-start gap-3">

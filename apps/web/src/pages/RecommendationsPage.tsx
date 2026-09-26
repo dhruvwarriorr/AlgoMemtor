@@ -1,11 +1,15 @@
 import { useState } from 'react'
 
+import { AnimatePresence, motion } from 'motion/react'
+
+import { RefreshCw, Target } from '@/components/icons/algo-icons'
+import { ProviderLogo } from '@/components/brand/ProviderLogo'
+import { PageHero } from '@/components/kit/PageHero'
 import { OrbLoader } from '@/components/motion/OrbLoader'
 import { EmptyState } from '@/components/states/EmptyState'
 import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
 import PageContainer from '@/components/layout/PageContainer'
-import PageHeader from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/button'
 import { useNotification } from '@/app/useNotification'
 import { ApiClientError } from '@/features/discovery/api/client'
@@ -19,6 +23,7 @@ import {
 } from '@/features/recommendations/hooks/useRecommendations'
 
 import { RecommendationCard } from '@/features/recommendations/components/RecommendationCard'
+import { PickEngineCard } from '@/features/recommendations/components/PickEngineCard'
 import { RecommendationSteeringBar } from '@/features/recommendations/components/RecommendationSteeringBar'
 
 function RecommendationsPage() {
@@ -164,9 +169,10 @@ function RecommendationsPage() {
   } else if (feed !== undefined) {
     content = (
       <div className="min-w-0 space-y-4">
-        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {feed.items.map((item, index) => (
             <RecommendationCard
+              featured={index === 0}
               index={index}
               isDismissPending={
                 dismissMutation.isPending &&
@@ -190,54 +196,74 @@ function RecommendationsPage() {
   const dismissed = dismissalsQuery.data?.data ?? []
 
   return (
-    <PageContainer>
-      <PageHeader
-        action={
+    <PageContainer accent="sky" className="gap-6">
+      <PageHero
+        actions={
           <Button disabled={isRefreshing} onClick={refresh} type="button">
+            <RefreshCw
+              aria-hidden="true"
+              className={isRefreshing ? 'animate-spin' : undefined}
+            />
             {isRefreshing ? 'Refreshing…' : 'Refresh recommendations'}
           </Button>
         }
-        description="Review personalized problem recommendations and why they fit your learning goals."
+        eyebrow="Today's picks"
+        icon={Target}
+        info="Recommendations are ranked from a bounded set of provider problems that pass deterministic filters for your level, topics and history. Each one explains why it fits; the canonical link opens on the provider."
+        subtitle="Ten problems picked for your goals, each with the reason it fits."
         title="Recommendations"
       />
 
-      <RecommendationSteeringBar />
+      <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
+        <RecommendationSteeringBar />
+        <PickEngineCard feed={feed} refreshing={isRefreshing} />
+      </div>
 
-      {lastDismissed !== null ? (
-        <div
-          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/50 p-3 text-sm"
-          role="status"
-        >
-          <span>{lastDismissed.title} was dismissed.</span>
-          <Button
-            disabled={restoreMutation.isPending}
-            onClick={() =>
-              restore(lastDismissed.provider, lastDismissed.externalId)
-            }
-            size="sm"
-            type="button"
-            variant="outline"
+      <AnimatePresence>
+        {lastDismissed !== null ? (
+          <motion.div
+            animate={{ opacity: 1, y: 0 }}
+            className="glass-card flex flex-wrap items-center justify-between gap-3 rounded-2xl p-3 pl-4 text-sm"
+            exit={{ opacity: 0, y: -8 }}
+            initial={{ opacity: 0, y: -8 }}
+            role="status"
           >
-            Undo
-          </Button>
-        </div>
-      ) : null}
+            <span>{lastDismissed.title} was dismissed.</span>
+            <Button
+              disabled={restoreMutation.isPending}
+              onClick={() =>
+                restore(lastDismissed.provider, lastDismissed.externalId)
+              }
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Undo
+            </Button>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       {content}
 
       <section
         aria-labelledby="dismissed-recommendations-heading"
-        className="space-y-3"
+        className="space-y-3 rounded-2xl border border-dashed border-border p-4 sm:p-5"
       >
-        <div>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2
-            className="text-xl font-semibold tracking-tight text-foreground"
+            className="text-base font-semibold tracking-tight text-foreground"
             id="dismissed-recommendations-heading"
           >
             Dismissed recommendations
+            {dismissed.length > 0 ? (
+              <span className="ml-2 rounded-full bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">
+                {dismissed.length}
+              </span>
+            ) : null}
           </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Dismissed problems stay out of your feed until you restore them.
+          <p className="text-xs text-muted-foreground">
+            Kept out of your feed until you restore them.
           </p>
         </div>
         {dismissalsQuery.isPending ? (
@@ -251,29 +277,29 @@ function RecommendationsPage() {
             title="Unable to load dismissals"
           />
         ) : dismissed.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             No dismissed recommendations.
           </p>
         ) : (
-          <ul className="space-y-2">
+          <ul className="flex flex-wrap gap-2">
             {dismissed.map((item) => (
               <li
-                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3"
+                className="flex min-w-0 items-center gap-2 rounded-full border border-border bg-card py-1 pr-1 pl-2"
                 key={`${item.provider}:${item.externalId}`}
               >
-                <div className="min-w-0">
-                  <p className="break-words font-medium text-foreground">
-                    {item.problem?.title ?? item.externalId}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    <span className="capitalize">{item.provider}</span> ·{' '}
-                    {item.externalId}
-                  </p>
-                </div>
+                <ProviderLogo className="size-4" provider={item.provider} />
+                <span className="min-w-0 truncate text-sm font-medium text-foreground">
+                  {item.problem?.title ?? item.externalId}
+                </span>
+                <span className="font-mono text-xs text-muted-foreground">
+                  <span className="sr-only capitalize">{item.provider} · </span>
+                  {item.externalId}
+                </span>
                 <Button
+                  className="rounded-full"
                   disabled={restoreMutation.isPending}
                   onClick={() => restore(item.provider, item.externalId)}
-                  size="sm"
+                  size="xs"
                   type="button"
                   variant="outline"
                 >

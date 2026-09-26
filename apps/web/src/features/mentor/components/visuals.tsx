@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import type { ContestParticipationMode } from '@algomemtor/shared-contracts'
 
 import type { IconComponent } from '@/components/icons/algo-icons'
+import { Panel } from '@/components/kit/Panel'
 import {
   GradientCard,
   type GradientTone,
@@ -113,31 +114,20 @@ export function ChartCard({
   children: ReactNode
 }) {
   return (
-    <section
-      className={cn(
-        'animate-rise flex min-w-0 flex-col rounded-xl border border-border bg-card p-4 sm:p-5',
-        className,
-      )}
+    <Panel
+      action={action}
+      className={className}
+      description={description}
+      title={title}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-lg font-semibold text-foreground">{title}</h2>
-          {description ? (
-            <p className="mt-0.5 text-sm leading-5 text-muted-foreground">
-              {description}
-            </p>
-          ) : null}
-        </div>
-        {action}
-      </div>
-      <div className="mt-4 flex min-h-0 flex-1 flex-col">{children}</div>
-    </section>
+      {children}
+    </Panel>
   )
 }
 
 export function ChartEmpty({ children }: { children: ReactNode }) {
   return (
-    <p className="grid flex-1 place-items-center rounded-lg border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+    <p className="grid flex-1 place-items-center rounded-xl border border-dashed border-border bg-[repeating-linear-gradient(135deg,transparent_0_10px,color-mix(in_oklab,var(--foreground)_3%,transparent)_10px_11px)] p-6 text-center text-sm text-muted-foreground">
       {children}
     </p>
   )
@@ -152,7 +142,7 @@ export function ParticipationBadge({
   return (
     <span
       className={cn(
-        'inline-flex shrink-0 items-center rounded-md px-2 py-0.5 text-[0.7rem] font-medium',
+        'inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[0.7rem] font-medium',
         mode === 'rated'
           ? 'bg-go-soft text-go-foreground'
           : mode === 'unrated'
@@ -171,7 +161,7 @@ export function SignedDelta({ value }: { value: number | undefined }) {
   return (
     <span
       className={cn(
-        'inline-flex shrink-0 items-center rounded-md px-2 py-0.5 text-xs font-semibold tabular-nums',
+        'inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums',
         rounded >= 0
           ? 'bg-go-soft text-go-foreground'
           : 'bg-danger-soft text-danger-foreground',

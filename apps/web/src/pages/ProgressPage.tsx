@@ -1,24 +1,6 @@
-import { Fragment, useRef, useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
+import { motion, useReducedMotion } from 'motion/react'
 import { Activity } from '@/components/icons/algo-icons'
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
-  PolarAngleAxis,
-  PolarGrid,
-  PolarRadiusAxis,
-  Radar,
-  RadarChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
 import { Link } from 'react-router-dom'
 
 import { ProviderLogo } from '@/components/brand/ProviderLogo'
@@ -35,52 +17,31 @@ import {
   GradientCard,
   type GradientTone,
 } from '@/components/motion/GradientCard'
+import { Sparkline } from '@/components/kit/charts'
+import { CountUp } from '@/components/motion/CountUp'
 import { RadialRings } from '@/components/motion/RadialRings'
 import PageContainer from '@/components/layout/PageContainer'
-import { CellTooltip } from '@/components/ui/cell-tooltip'
 import PageHeader from '@/components/layout/PageHeader'
 import { buttonVariants } from '@/components/ui/button'
 import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { useLearnerMemories } from '@/features/memory/hooks/useLearnerMemories'
 import { providerLabels } from '@/features/platform/components/provider-labels'
+import {
+  HourClock,
+  PracticePulse,
+  RatingLadder,
+  TopicMosaic,
+  VerdictWaffle,
+  WeekEqualizer,
+} from '@/features/progress/components/progress-visuals'
 import { useProgressAnalytics } from '@/features/progress/hooks/useProgress'
-import { cellTipFrom, type CellTip } from '@/lib/cell-tip'
 import { cn } from '@/lib/utils'
 
 type Analytics = NonNullable<
   ReturnType<typeof useProgressAnalytics>['data']
 >['data']
 type Breakdown = NonNullable<Analytics['breakdown']>
-
-const tooltipStyle = {
-  backgroundColor: 'var(--popover)',
-  border: '1px solid var(--border)',
-  borderRadius: '0.5rem',
-  color: 'var(--popover-foreground)',
-  fontSize: 12,
-}
-const axisTick = { fill: 'var(--muted-foreground)', fontSize: 11 }
-
-// A distinct, theme-friendly palette for categorical charts.
-const palette = [
-  '#0ea5e9',
-  '#22c55e',
-  '#2d6cdf',
-  '#f2b84b',
-  '#8b5cf6',
-  '#e0484f',
-  '#14a3a3',
-  '#6c7a90',
-]
-
-function shortDate(date: string) {
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  }).format(new Date(`${date}T12:00:00.000Z`))
-}
 
 function titleCase(value: string) {
   return value
@@ -101,12 +62,17 @@ function Card({
   action?: ReactNode
   children: ReactNode
 }) {
+  const reduceMotion = useReducedMotion()
   return (
-    <section
+    <motion.section
       className={cn(
-        'animate-rise flex min-w-0 flex-col rounded-xl border border-border bg-card p-4 sm:p-5',
+        'flex min-w-0 flex-col rounded-2xl border border-border bg-card p-4 shadow-soft sm:p-5',
         className,
       )}
+      initial={reduceMotion ? false : { opacity: 0, y: 16 }}
+      transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+      viewport={{ once: true, margin: '-40px' }}
+      whileInView={{ opacity: 1, y: 0 }}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -118,7 +84,7 @@ function Card({
         {action}
       </div>
       <div className="mt-4 flex min-h-0 flex-1 flex-col">{children}</div>
-    </section>
+    </motion.section>
   )
 }
 
@@ -203,11 +169,7 @@ function Kpi({
 
 // Area chart: attempted vs newly solved per local day.
 function DailyPractice({ analytics }: { analytics: Analytics }) {
-  const data = analytics.trend.map((point) => ({
-    ...point,
-    label: shortDate(point.date),
-  }))
-  const hasActivity = data.some(
+  const hasActivity = analytics.trend.some(
     (point) => point.solved > 0 || point.attempted > 0,
   )
   return (
@@ -217,54 +179,7 @@ function DailyPractice({ analytics }: { analytics: Analytics }) {
       title="Daily practice"
     >
       {hasActivity ? (
-        <div className="h-64 w-full" role="img" aria-label="Daily practice">
-          <ResponsiveContainer height="100%" width="100%">
-            <AreaChart
-              data={data}
-              margin={{ top: 6, right: 6, left: -22, bottom: 0 }}
-            >
-              <defs>
-                <linearGradient id="solved-fill" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0%" stopColor="#0ea5e9" stopOpacity={0.45} />
-                  <stop offset="100%" stopColor="#0ea5e9" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="attempted-fill" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0%" stopColor="#22c55e" stopOpacity={0.22} />
-                  <stop offset="100%" stopColor="#22c55e" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid
-                stroke="var(--border)"
-                strokeDasharray="3 3"
-                vertical={false}
-              />
-              <XAxis
-                dataKey="label"
-                interval={4}
-                tick={axisTick}
-                tickLine={false}
-              />
-              <YAxis allowDecimals={false} tick={axisTick} tickLine={false} />
-              <Tooltip contentStyle={tooltipStyle} />
-              <Area
-                dataKey="attempted"
-                fill="url(#attempted-fill)"
-                name="Attempted"
-                stroke="#22c55e"
-                strokeWidth={1.5}
-                type="monotone"
-              />
-              <Area
-                dataKey="solved"
-                fill="url(#solved-fill)"
-                name="Newly solved"
-                stroke="#0ea5e9"
-                strokeWidth={2.2}
-                type="monotone"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
+        <PracticePulse trend={analytics.trend} />
       ) : (
         <Empty>No dated practice was observed in the last 30 days.</Empty>
       )}
@@ -284,6 +199,7 @@ function PlatformBreakdown({
     (left, right) => right.solved - left.solved,
   )
   const total = providers.reduce((sum, item) => sum + item.solved, 0)
+  const reduceMotion = useReducedMotion()
   return (
     <Card
       className="lg:col-span-4"
@@ -311,7 +227,7 @@ function PlatformBreakdown({
           <ul className="flex flex-col gap-1.5">
             {providers.map((item) => (
               <li
-                className="flex items-center gap-2.5 rounded-lg border border-border px-3 py-2 text-sm"
+                className="relative flex items-center gap-2.5 overflow-hidden rounded-lg border border-border px-3 py-2 text-sm"
                 key={item.provider}
               >
                 <span
@@ -331,6 +247,24 @@ function PlatformBreakdown({
                 </span>
                 <span className="w-7 text-right font-heading font-bold tabular-nums">
                   {item.solved}
+                </span>
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-x-3 bottom-0 h-0.5 overflow-hidden rounded-full"
+                >
+                  <motion.span
+                    className="block h-full rounded-full"
+                    initial={reduceMotion ? false : { width: '0%' }}
+                    style={{
+                      background:
+                        ringColors[providers.indexOf(item) % ringColors.length],
+                    }}
+                    transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
+                    viewport={{ once: true }}
+                    whileInView={{
+                      width: `${total === 0 ? 0 : (item.solved / total) * 100}%`,
+                    }}
+                  />
                 </span>
               </li>
             ))}
@@ -355,7 +289,6 @@ function TopicPie({ analytics }: { analytics: Analytics }) {
     })),
     ...(rest > 0 ? [{ name: 'Other', value: rest }] : []),
   ]
-  const total = data.reduce((sum, item) => sum + item.value, 0)
   return (
     <Card
       className="lg:col-span-6"
@@ -365,50 +298,7 @@ function TopicPie({ analytics }: { analytics: Analytics }) {
       {data.length === 0 ? (
         <Empty>No tagged solves in the last 30 days.</Empty>
       ) : (
-        <div className="grid flex-1 items-center gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          <div className="h-60" role="img" aria-label="Topics practiced">
-            <ResponsiveContainer height="100%" width="100%">
-              <PieChart>
-                <Pie
-                  data={data}
-                  dataKey="value"
-                  innerRadius={0}
-                  nameKey="name"
-                  outerRadius="95%"
-                  paddingAngle={1}
-                  stroke="var(--card)"
-                  strokeWidth={2}
-                >
-                  {data.map((item, index) => (
-                    <Cell
-                      fill={palette[index % palette.length]}
-                      key={item.name}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip contentStyle={tooltipStyle} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <ul className="flex flex-col gap-1.5 text-sm">
-            {data.map((item, index) => (
-              <li className="flex items-center gap-2.5" key={item.name}>
-                <span
-                  aria-hidden="true"
-                  className="size-3 shrink-0 rounded-sm"
-                  style={{ background: palette[index % palette.length] }}
-                />
-                <span className="min-w-0 flex-1 truncate">{item.name}</span>
-                <span className="text-muted-foreground tabular-nums">
-                  {Math.round((item.value / total) * 100)}%
-                </span>
-                <span className="w-6 text-right font-semibold tabular-nums">
-                  {item.value}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
+        <TopicMosaic items={data} />
       )}
     </Card>
   )
@@ -447,50 +337,7 @@ function VerdictMix({ breakdown }: { breakdown: Breakdown | undefined }) {
       {total === 0 ? (
         <Empty>No dated submissions in the last 30 days.</Empty>
       ) : (
-        <div className="flex flex-1 flex-col justify-center gap-5">
-          <div
-            aria-label={items
-              .map((item) => `${item.label}: ${item.count}`)
-              .join(', ')}
-            className="flex h-10 w-full overflow-hidden rounded-lg"
-            role="img"
-          >
-            {items.map((item) => (
-              <span
-                className="h-full transition-[filter] hover:brightness-110"
-                key={item.key}
-                style={{
-                  width: `${(item.count / total) * 100}%`,
-                  background: item.color,
-                }}
-                title={`${item.label}: ${item.count}`}
-              />
-            ))}
-          </div>
-          <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {items.map((item) => (
-              <li
-                className="rounded-lg border border-border px-3 py-2"
-                key={item.key}
-              >
-                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <span
-                    aria-hidden="true"
-                    className="size-2.5 rounded-sm"
-                    style={{ background: item.color }}
-                  />
-                  {item.label}
-                </p>
-                <p className="mt-1 font-heading text-xl font-bold tabular-nums">
-                  {item.count}
-                  <span className="ml-1 text-xs font-normal text-muted-foreground">
-                    {Math.round((item.count / total) * 100)}%
-                  </span>
-                </p>
-              </li>
-            ))}
-          </ul>
-        </div>
+        <VerdictWaffle items={items} total={total} />
       )}
     </Card>
   )
@@ -502,85 +349,16 @@ function DifficultyProfile({
 }: {
   breakdown: Breakdown | undefined
 }) {
-  const bands = (breakdown?.ratingBands ?? []).map((band) => ({
-    label: String(band.min),
-    range: `${band.min}–${band.max}`,
-    solved: band.solved,
-  }))
-  const difficulty = breakdown?.difficulty
-  const chips = [
-    {
-      label: 'Easy',
-      value: difficulty?.easy ?? 0,
-      className: 'bg-go-soft text-go-foreground',
-    },
-    {
-      label: 'Medium',
-      value: difficulty?.medium ?? 0,
-      className: 'bg-sun-soft text-sun-foreground',
-    },
-    {
-      label: 'Hard',
-      value: difficulty?.hard ?? 0,
-      className: 'bg-danger-soft text-destructive',
-    },
-  ]
   return (
     <Card
       className="lg:col-span-6"
       description="Rating bands and difficulty of problems you newly solved."
       title="Difficulty profile"
     >
-      <div className="mb-3 flex flex-wrap gap-2">
-        {chips.map((chip) => (
-          <span
-            className={cn(
-              'rounded-md px-2.5 py-1 text-sm font-medium',
-              chip.className,
-            )}
-            key={chip.label}
-          >
-            {chip.label} <b className="tabular-nums">{chip.value}</b>
-          </span>
-        ))}
-      </div>
-      {bands.length === 0 ? (
-        <Empty>No rated problems solved in the last 30 days.</Empty>
-      ) : (
-        <div className="h-52" role="img" aria-label="Solved problems by rating">
-          <ResponsiveContainer height="100%" width="100%">
-            <BarChart
-              data={bands}
-              margin={{ top: 4, right: 4, left: -24, bottom: 0 }}
-            >
-              <CartesianGrid
-                stroke="var(--border)"
-                strokeDasharray="3 3"
-                vertical={false}
-              />
-              <XAxis dataKey="label" tick={axisTick} tickLine={false} />
-              <YAxis allowDecimals={false} tick={axisTick} tickLine={false} />
-              <Tooltip
-                contentStyle={tooltipStyle}
-                cursor={{ fill: 'var(--muted)' }}
-                formatter={(value) => [value, 'Solved']}
-                labelFormatter={(_, payload) =>
-                  (payload[0]?.payload as { range?: string } | undefined)
-                    ?.range ?? ''
-                }
-              />
-              <Bar dataKey="solved" radius={[6, 6, 0, 0]}>
-                {bands.map((band, index) => (
-                  <Cell
-                    fill={`color-mix(in oklab, #22c55e ${45 + Math.round((index / Math.max(1, bands.length - 1)) * 55)}%, #0ea5e9)`}
-                    key={band.label}
-                  />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      )}
+      <RatingLadder
+        bands={breakdown?.ratingBands ?? []}
+        difficulty={breakdown?.difficulty}
+      />
     </Card>
   )
 }
@@ -596,34 +374,7 @@ function WeekdayRhythm({ breakdown }: { breakdown: Breakdown | undefined }) {
       title="Weekly rhythm"
     >
       {hasData ? (
-        <div className="h-56" role="img" aria-label="Weekly rhythm">
-          <ResponsiveContainer height="100%" width="100%">
-            <RadarChart data={data} outerRadius="72%">
-              <PolarGrid stroke="var(--border)" />
-              <PolarAngleAxis dataKey="day" tick={axisTick} />
-              <PolarRadiusAxis
-                axisLine={false}
-                domain={[0, 'dataMax']}
-                tick={false}
-              />
-              <Radar
-                dataKey="submissions"
-                fill="#22c55e"
-                fillOpacity={0.18}
-                name="Submissions"
-                stroke="#22c55e"
-              />
-              <Radar
-                dataKey="solved"
-                fill="#0ea5e9"
-                fillOpacity={0.35}
-                name="Solved"
-                stroke="#0ea5e9"
-              />
-              <Tooltip contentStyle={tooltipStyle} />
-            </RadarChart>
-          </ResponsiveContainer>
-        </div>
+        <WeekEqualizer weekdays={data} />
       ) : (
         <Empty>No weekday pattern yet.</Empty>
       )}
@@ -641,20 +392,6 @@ function TimeOfDay({
 }) {
   const hours = breakdown?.hours ?? []
   const max = Math.max(0, ...hours)
-  const peak = max > 0 ? hours.indexOf(max) : -1
-  const label = (hour: number) =>
-    `${hour % 12 === 0 ? 12 : hour % 12}${hour < 12 ? 'am' : 'pm'}`
-  const wrapperRef = useRef<HTMLDivElement | null>(null)
-  const [tip, setTip] = useState<CellTip | null>(null)
-  const showTip = (cell: Element, hour: number, count: number) =>
-    setTip(
-      cellTipFrom(
-        cell,
-        wrapperRef.current,
-        `${count} ${count === 1 ? 'submission' : 'submissions'}`,
-        `${label(hour)} – ${label((hour + 1) % 24)}`,
-      ),
-    )
   return (
     <Card
       className="lg:col-span-3"
@@ -664,50 +401,7 @@ function TimeOfDay({
       {max === 0 ? (
         <Empty>No timed submissions yet.</Empty>
       ) : (
-        <div className="flex flex-1 flex-col justify-center gap-4">
-          <p className="text-sm">
-            Peak around <b className="font-heading text-lg">{label(peak)}</b>
-          </p>
-          <div
-            className="relative grid grid-cols-[auto_repeat(6,minmax(0,1fr))] items-center gap-1.5"
-            onMouseLeave={() => setTip(null)}
-            ref={wrapperRef}
-          >
-            <CellTooltip tip={tip} />
-            {[0, 6, 12, 18].map((start) => (
-              <Fragment key={start}>
-                <span className="pr-1 text-right text-[0.7rem] text-muted-foreground tabular-nums">
-                  {label(start)}
-                </span>
-                {hours.slice(start, start + 6).map((count, offset) => {
-                  const hour = start + offset
-                  return (
-                    <span
-                      aria-label={`${count} submissions between ${label(hour)} and ${label((hour + 1) % 24)}`}
-                      className="aspect-square rounded-md outline-none transition-[box-shadow,transform] duration-150 hover:scale-110 hover:ring-2 hover:ring-foreground/70 focus-visible:ring-2 focus-visible:ring-ring"
-                      key={hour}
-                      onBlur={() => setTip(null)}
-                      onFocus={(event) =>
-                        showTip(event.currentTarget, hour, count)
-                      }
-                      onMouseEnter={(event) =>
-                        showTip(event.currentTarget, hour, count)
-                      }
-                      role="img"
-                      style={{
-                        background:
-                          count === 0
-                            ? 'var(--muted)'
-                            : `color-mix(in oklab, #0ea5e9 ${25 + Math.round((count / max) * 75)}%, transparent)`,
-                      }}
-                      tabIndex={0}
-                    />
-                  )
-                })}
-              </Fragment>
-            ))}
-          </div>
-        </div>
+        <HourClock hours={hours} />
       )}
     </Card>
   )
@@ -722,58 +416,76 @@ function AnalyticsSection({ analytics }: { analytics: Analytics }) {
   const accepted = breakdown?.verdicts.accepted ?? 0
   return (
     <div className="flex flex-col gap-4">
-      <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-        <Kpi
-          accent
-          detail="Unique problems, last 30 days"
-          icon={<SolvedIcon aria-hidden="true" className="size-4" />}
-          label="Newly solved"
-          value={String(analytics.window.solved)}
-        />
-        <Kpi
-          detail={
-            analytics.currentStreak > 0
-              ? 'Solve today to keep it'
-              : 'Solve today to start one'
-          }
-          icon={<StreakIcon aria-hidden="true" className="size-4" />}
-          gradient={{ tone: 'sand', decoration: StreakIcon }}
-          label="Current streak"
-          value={`${analytics.currentStreak}d`}
-        />
-        <Kpi
-          detail="Best run of solve days"
-          icon={<ContestsIcon aria-hidden="true" className="size-4" />}
-          gradient={{ tone: 'sky', decoration: ContestsIcon }}
-          label="Longest streak"
-          value={`${analytics.longestStreak}d`}
-        />
-        <Kpi
-          detail={`of the last ${analytics.window.days} days`}
-          icon={<ActiveDaysIcon aria-hidden="true" className="size-4" />}
-          gradient={{ tone: 'green', decoration: ActiveDaysIcon }}
-          label="Active days"
-          value={String(activeDays)}
-        />
-        <Kpi
-          detail={`${analytics.window.attempted} problems attempted`}
-          icon={<SubmissionsIcon aria-hidden="true" className="size-4" />}
-          gradient={{ tone: 'sand', decoration: SubmissionsIcon }}
-          label="Submissions"
-          value={String(submissions)}
-        />
-        <Kpi
-          detail={`${accepted} accepted`}
-          icon={<AcceptanceIcon aria-hidden="true" className="size-4" />}
-          gradient={{ tone: 'sky', decoration: AcceptanceIcon }}
-          label="Acceptance"
-          value={
-            submissions === 0
-              ? '—'
-              : `${Math.round((accepted / submissions) * 100)}%`
-          }
-        />
-      </dl>
+      <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,19rem)_minmax(0,1fr)]">
+        <section
+          aria-label="Newly solved"
+          className="mesh-card animate-rise relative isolate flex min-h-40 flex-col overflow-hidden rounded-2xl p-5 text-white"
+        >
+          <p className="flex items-center gap-2 text-sm font-medium text-white/80">
+            <SolvedIcon
+              aria-hidden="true"
+              className="size-4 [--icon-node:#4ade80]"
+            />
+            Newly solved
+          </p>
+          <p className="mt-2 font-heading text-5xl leading-none font-bold tracking-[-0.03em] tabular-nums">
+            <CountUp value={analytics.window.solved} />
+          </p>
+          <p className="mt-1.5 text-xs text-white/70">
+            Unique problems, last {analytics.window.days} days
+          </p>
+          <Sparkline
+            className="mt-auto h-12 pt-3"
+            color="#86efac"
+            values={analytics.trend.map((day) => day.solved)}
+          />
+        </section>
+        <dl className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+          <Kpi
+            detail={
+              analytics.currentStreak > 0
+                ? 'Solve today to keep it'
+                : 'Solve today to start one'
+            }
+            icon={<StreakIcon aria-hidden="true" className="size-4" />}
+            gradient={{ tone: 'sand', decoration: StreakIcon }}
+            label="Current streak"
+            value={`${analytics.currentStreak}d`}
+          />
+          <Kpi
+            detail="Best run of solve days"
+            icon={<ContestsIcon aria-hidden="true" className="size-4" />}
+            gradient={{ tone: 'sky', decoration: ContestsIcon }}
+            label="Longest streak"
+            value={`${analytics.longestStreak}d`}
+          />
+          <Kpi
+            detail={`of the last ${analytics.window.days} days`}
+            icon={<ActiveDaysIcon aria-hidden="true" className="size-4" />}
+            gradient={{ tone: 'green', decoration: ActiveDaysIcon }}
+            label="Active days"
+            value={String(activeDays)}
+          />
+          <Kpi
+            detail={`${analytics.window.attempted} problems attempted`}
+            icon={<SubmissionsIcon aria-hidden="true" className="size-4" />}
+            gradient={{ tone: 'sand', decoration: SubmissionsIcon }}
+            label="Submissions"
+            value={String(submissions)}
+          />
+          <Kpi
+            detail={`${accepted} accepted`}
+            icon={<AcceptanceIcon aria-hidden="true" className="size-4" />}
+            gradient={{ tone: 'sky', decoration: AcceptanceIcon }}
+            label="Acceptance"
+            value={
+              submissions === 0
+                ? '—'
+                : `${Math.round((accepted / submissions) * 100)}%`
+            }
+          />
+        </dl>
+      </div>
 
       <div className="grid min-w-0 gap-4 lg:grid-cols-12">
         <DailyPractice analytics={analytics} />

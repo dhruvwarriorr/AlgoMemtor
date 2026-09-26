@@ -171,7 +171,7 @@ function ProblemLearningControlsContent({
             <span className="sr-only">Status for {problem.externalId}</span>
             <select
               aria-label={`Status for ${problem.externalId}`}
-              className="h-8 rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 text-sm font-medium text-foreground outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
+              className="h-8 rounded-md border border-input bg-background px-3 text-sm font-medium text-foreground transition-[border-color,box-shadow] outline-none hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
               disabled={statusMutation.isPending}
               onChange={(event) =>
                 void handleStatusChange(
@@ -199,9 +199,15 @@ function ProblemLearningControlsContent({
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Button
             aria-pressed={bookmarked}
+            className={
+              compact && bookmarked
+                ? 'text-[#d97706] dark:text-[#fbbf24]'
+                : undefined
+            }
             disabled={bookmarkPending}
             onClick={() => void toggleBookmark()}
-            size="sm"
+            size={compact ? 'icon-sm' : 'sm'}
+            title={compact ? (bookmarked ? 'Saved' : 'Bookmark') : undefined}
             type="button"
             variant={bookmarked ? 'secondary' : 'outline'}
           >
@@ -210,7 +216,9 @@ function ProblemLearningControlsContent({
             ) : (
               <Bookmark aria-hidden="true" />
             )}
-            <span>{bookmarked ? 'Saved' : 'Bookmark'}</span>
+            <span className={compact ? 'sr-only' : undefined}>
+              {bookmarked ? 'Saved' : 'Bookmark'}
+            </span>
           </Button>
         </div>
       </div>

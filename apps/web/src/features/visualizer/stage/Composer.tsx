@@ -23,6 +23,7 @@ import {
   type VisualizerLanguage,
 } from '../trace'
 import { ExampleThumb } from './ExampleThumb'
+import { TracePreview } from './TracePreview'
 
 const visualizerLanguages: readonly VisualizerLanguage[] = [
   'cpp',
@@ -376,6 +377,11 @@ export function CodeComposer({
             {defaultTraceLimits.maxSteps.toLocaleString()} steps are recorded;
             runs stop after {defaultTraceLimits.timeMs / 1000} s.
           </p>
+          {onBack === undefined ? (
+            <div className="hidden lg:block">
+              <TracePreview />
+            </div>
+          ) : null}
         </div>
       </div>
     </form>

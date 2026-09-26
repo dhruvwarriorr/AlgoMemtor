@@ -1,27 +1,24 @@
 import { useEffect, useRef, type CSSProperties, type RefObject } from 'react'
 import {
+  animate,
   motion,
+  useMotionValue,
   useReducedMotion,
   useScroll,
   useTransform,
   type MotionValue,
 } from 'motion/react'
 
-import { LogoOrbit } from './LogoOrbit'
+import { landingEase, progressBetween } from './landing-motion'
 
 const letters = 'ALGOMEMTOR'.split('')
 
-// Position of `v` between `from` and `to`, clamped to 0–1.
-function span(v: number, from: number, to: number) {
-  return Math.min(1, Math.max(0, (v - from) / (to - from)))
-}
-
-function ease(t: number) {
+function smooth(t: number) {
   return t * t * (3 - 2 * t)
 }
 
-// One letter of the brand word. On scroll it lifts away on its own curve, so
-// the word breaks up like a wave rolling through it.
+// One letter of the brand word. Once the word is full it lifts away on its
+// own curve, so the word breaks up like a wave rolling through it.
 function DriftLetter({
   letter,
   index,
@@ -32,33 +29,35 @@ function DriftLetter({
   progress: MotionValue<number>
 }) {
   const phase = Math.sin(index * 0.9)
-  const start = 0.3 + index * 0.02
+  const start = 0.44 + index * 0.02
   const lift = -38 - 22 * (phase + 1)
   // Function transforms: the accelerated native scroll path mis-ranges
   // value-list transforms inside the sticky scene.
   const y = useTransform(
     progress,
-    (v) => `${lift * ease(span(v, start, 0.66))}vh`,
+    (v) => `${lift * smooth(progressBetween(v, start, 0.95))}vh`,
   )
   const rotate = useTransform(
     progress,
-    (v) => phase * 14 * ease(span(v, start, 0.66)),
+    (v) => phase * 14 * smooth(progressBetween(v, start, 0.95)),
   )
-  const opacity = useTransform(progress, (v) => 1 - span(v, start + 0.08, 0.62))
+  const opacity = useTransform(
+    progress,
+    (v) => 1 - progressBetween(v, start + 0.08, 0.92),
+  )
 
   return (
     <motion.span className="inline-block" style={{ y, rotate, opacity }}>
-      <WaveLetter index={index} letter={letter} />
+      <WaveLetter letter={letter} />
     </motion.span>
   )
 }
 
-function WaveLetter({ letter, index }: { letter: string; index: number }) {
+function WaveLetter({ letter }: { letter: string }) {
   return (
     <span
-      className="animate-letter-bob wave-text inline-block [--wave-base:#f4f1ea]"
+      className="wave-text inline-block [--wave-base:#f4f1ea]"
       data-wave-letter=""
-      style={{ '--i': index } as CSSProperties}
     >
       {letter}
     </span>
@@ -90,8 +89,8 @@ function useAlignedWaves(wordRef: RefObject<HTMLDivElement | null>) {
 const wordClass =
   'flex font-heading text-[14vw] leading-none font-extrabold tracking-[-0.01em] uppercase select-none'
 
-// The whole landing in one pinned scene: the brand word fills with liquid,
-// its letters scatter, and the big orbiting logo rises into their place.
+// The brand word, filled like the closing line: liquid pours in on arrival
+// and rises until the word is solid blue, then its letters scatter upward.
 export function WaveHero() {
   const reduceMotion = useReducedMotion()
   const sceneRef = useRef<HTMLElement>(null)
@@ -102,42 +101,42 @@ export function WaveHero() {
   })
   useAlignedWaves(wordRef)
 
-  // Function transforms keep these on Motion's scroll tracking; the
-  // accelerated native path mis-ranges them inside the sticky scene.
+  // The pour on arrival: from nearly empty to the starting waterline.
+  const pour = useMotionValue(reduceMotion ? 30 : 8)
+  useEffect(() => {
+    if (reduceMotion) return
+    const controls = animate(pour, 30, {
+      duration: 1.8,
+      ease: landingEase,
+      delay: 0.3,
+    })
+    return () => controls.stop()
+  }, [pour, reduceMotion])
+
   const level = useTransform(
-    scrollYProgress,
-    (v) => `${30 + 64 * span(v, 0, 0.26)}%`,
+    [scrollYProgress, pour],
+    ([progress, start]) =>
+      `${Number(start) + 72 * progressBetween(Number(progress), 0, 0.4)}%`,
   )
   const cueOpacity = useTransform(scrollYProgress, (v) =>
     Math.max(0, 1 - v / 0.06),
   )
-  const orbitOpacity = useTransform(scrollYProgress, (v) => span(v, 0.5, 0.72))
-  const orbitScale = useTransform(
-    scrollYProgress,
-    (v) => 0.55 + 0.45 * (1 - (1 - span(v, 0.5, 0.8)) ** 3),
-  )
-  const orbitBlur = useTransform(
-    scrollYProgress,
-    (v) => `blur(${((1 - span(v, 0.5, 0.72)) * 16).toFixed(1)}px)`,
-  )
 
   if (reduceMotion) {
     return (
-      <section aria-label="AlgoMemtor" className="flex flex-col items-center">
-        <div className="flex h-dvh w-full items-center justify-center overflow-hidden">
-          <div
-            aria-hidden="true"
-            className={wordClass}
-            ref={wordRef}
-            style={{ '--wave-level': '72%' } as CSSProperties}
-          >
-            {letters.map((letter, index) => (
-              <WaveLetter index={index} key={index} letter={letter} />
-            ))}
-          </div>
-        </div>
-        <div className="flex min-h-dvh w-full items-center justify-center px-4 py-24">
-          <LogoOrbit />
+      <section
+        aria-label="AlgoMemtor"
+        className="flex h-dvh w-full items-center justify-center overflow-hidden"
+      >
+        <div
+          aria-hidden="true"
+          className={wordClass}
+          ref={wordRef}
+          style={{ '--wave-level': '100%' } as CSSProperties}
+        >
+          {letters.map((letter, index) => (
+            <WaveLetter key={index} letter={letter} />
+          ))}
         </div>
       </section>
     )
@@ -146,15 +145,18 @@ export function WaveHero() {
   return (
     <section
       aria-label="AlgoMemtor"
-      className="relative h-[280dvh]"
+      className="relative h-[200dvh]"
       ref={sceneRef}
     >
       <div className="sticky top-0 flex h-dvh w-full items-center justify-center overflow-hidden">
         <motion.div
+          animate={{ opacity: 1, y: 0 }}
           aria-hidden="true"
           className={wordClass}
+          initial={{ opacity: 0, y: 24 }}
           ref={wordRef}
           style={{ '--wave-level': level } as unknown as CSSProperties}
+          transition={{ duration: 1, ease: landingEase }}
         >
           {letters.map((letter, index) => (
             <DriftLetter
@@ -164,17 +166,6 @@ export function WaveHero() {
               progress={scrollYProgress}
             />
           ))}
-        </motion.div>
-
-        <motion.div
-          className="absolute inset-0 flex items-center justify-center px-4"
-          style={{
-            opacity: orbitOpacity,
-            scale: orbitScale,
-            filter: orbitBlur,
-          }}
-        >
-          <LogoOrbit />
         </motion.div>
 
         <motion.div
