@@ -34,6 +34,14 @@ import {
   useLearnerProfile,
   useSaveLearnerProfile,
 } from '@/features/profile/hooks/useLearnerProfile'
+import { MelloSprite } from '@/features/pet/MelloSprite'
+import {
+  setPetChoice,
+  setPetEnabled,
+  usePetChoice,
+  usePetEnabled,
+} from '@/features/pet/pet-preference'
+import { petIds, pets, type Pet } from '@/features/pet/pets'
 import { cn } from '@/lib/utils'
 
 type SectionId = 'profile' | 'accounts' | 'platforms' | 'appearance' | 'data'
@@ -194,7 +202,7 @@ function AppearanceSection() {
   return (
     <>
       <SectionTitle
-        description="Choose how AlgoMemtor looks on this device. The choice is saved in this browser."
+        description="Choose how AlgoMemtor looks on this device and which coach pet comes along. These choices are saved in this browser."
         title="Appearance"
       />
       <SettingRow
@@ -247,7 +255,117 @@ function AppearanceSection() {
           </div>
         </fieldset>
       </SettingRow>
+      <CoachPetSetting />
     </>
+  )
+}
+
+function PetChoiceCard({
+  pet,
+  selected,
+  onSelect,
+}: {
+  pet: Pet
+  selected: boolean
+  onSelect: () => void
+}) {
+  const [hovered, setHovered] = useState(false)
+  return (
+    <label
+      className={cn(
+        'group relative flex cursor-pointer flex-col items-center rounded-xl border-2 bg-card p-2 pb-3 transition-[border-color,transform] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:-translate-y-0.5 has-[:focus-visible]:ring-4 has-[:focus-visible]:ring-ring/20',
+        selected
+          ? 'border-primary'
+          : 'border-border hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--border))]',
+      )}
+      onPointerEnter={() => setHovered(true)}
+      onPointerLeave={() => setHovered(false)}
+    >
+      <input
+        checked={selected}
+        className="sr-only"
+        name="coach-pet"
+        onBlur={() => setHovered(false)}
+        onChange={onSelect}
+        onFocus={() => setHovered(true)}
+        type="radio"
+        value={pet.id}
+      />
+      <span className="grid h-[104px] w-full place-items-center rounded-lg bg-[#10162a]">
+        <MelloSprite clips={pet.clips} state={hovered ? 'greet' : 'idle'} />
+      </span>
+      <span className="mt-2 text-sm font-semibold text-foreground">
+        {pet.pickerLabel}
+      </span>
+      <span className="text-center text-xs text-muted-foreground">
+        {pet.tagline}
+      </span>
+      {selected ? (
+        <span
+          aria-hidden="true"
+          className="absolute top-3.5 left-3.5 grid size-6 place-items-center rounded-md bg-primary text-primary-foreground shadow-md"
+        >
+          <Check className="size-3.5" strokeWidth={3} />
+        </span>
+      ) : null}
+    </label>
+  )
+}
+
+function CoachPetSetting() {
+  const enabled = usePetEnabled()
+  const choice = usePetChoice()
+  const pet = pets[choice]
+
+  return (
+    <SettingRow
+      description="Your AI Coach in pet form. The pet follows you across pages, reacts as you work and reads the page you are on when you ask a question."
+      title="Coach pet"
+    >
+      <div className="flex flex-wrap items-center gap-5 rounded-xl border border-border bg-card p-4">
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-foreground">Show {pet.name}</p>
+          <p className="mt-1 max-w-md text-sm text-muted-foreground">
+            {enabled
+              ? `${pet.name} is on. Drag ${pet.name} anywhere; click to ask about the page you are on.`
+              : `${pet.name} is off and will not appear on any page.`}
+          </p>
+        </div>
+        <button
+          aria-checked={enabled}
+          aria-label="Show the coach pet"
+          className={cn(
+            'relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition-colors duration-200 outline-none focus-visible:ring-4 focus-visible:ring-ring/30',
+            enabled ? 'border-primary bg-primary' : 'border-border bg-muted',
+          )}
+          onClick={() => setPetEnabled(!enabled)}
+          role="switch"
+          type="button"
+        >
+          <span
+            className={cn(
+              'block size-5 rounded-full bg-white shadow transition-transform duration-200 motion-reduce:transition-none',
+              enabled ? 'translate-x-6' : 'translate-x-1',
+            )}
+          />
+        </button>
+      </div>
+      <fieldset className="mt-4">
+        <legend className="mb-3 text-sm font-medium text-foreground">
+          Choose your pet
+        </legend>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {petIds.map((id) => (
+            <PetChoiceCard
+              key={id}
+              onSelect={() => setPetChoice(id)}
+              pet={pets[id]}
+              selected={choice === id}
+            />
+          ))}
+        </div>
+      </fieldset>
+    </SettingRow>
   )
 }
 

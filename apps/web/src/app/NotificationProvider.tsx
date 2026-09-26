@@ -9,6 +9,7 @@ import {
 
 import { X } from '@/components/icons/algo-icons'
 import { AnimatedList } from '@/components/ui/animated-list'
+import { cueMelloSuccess } from '@/features/pet/mello-events'
 
 import { NotificationGlyph } from './NotificationGlyph'
 import {
@@ -70,6 +71,8 @@ export function NotificationProvider({ children }: PropsWithChildren) {
       id: crypto.randomUUID(),
       tone: notification.tone ?? 'info',
     }
+    // Mello, the coach pet, celebrates what the app reports as done.
+    if (nextNotification.tone === 'success') cueMelloSuccess()
 
     setNotifications((current) => appendNotification(current, nextNotification))
   }, [])

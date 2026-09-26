@@ -123,6 +123,7 @@ def turn_tier(
     has_transient_context: bool = False,
     has_media: bool = False,
     has_linked_problems: bool = False,
+    page_snapshot: bool = False,
 ) -> Tier:
     if has_linked_problems or is_complex_turn(
         question, has_transient_context=has_transient_context, has_media=has_media
@@ -131,7 +132,9 @@ def turn_tier(
     words = len(question.split())
     if words <= 14 and _QUICK.search(question.strip()):
         return "quick"
-    return "standard"
+    # A question about the page on screen (asked through Mello) is answered
+    # from that page: a short, fast answer serves it best.
+    return "quick" if page_snapshot else "standard"
 
 
 def plan_turn_budget(
@@ -142,12 +145,14 @@ def plan_turn_budget(
     context: dict[str, object],
     has_transient_context: bool = False,
     has_media: bool = False,
+    page_snapshot: bool = False,
 ) -> TurnBudget:
     tier = turn_tier(
         question,
         has_transient_context=has_transient_context,
         has_media=has_media,
         has_linked_problems=bool(context.get("linkedProblems")),
+        page_snapshot=page_snapshot,
     )
     output = _OUTPUT_TOKENS[provider][tier]
     input_budget = _INPUT_TOKENS[provider][tier]

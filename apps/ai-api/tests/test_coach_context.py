@@ -6,6 +6,7 @@ from app.coach_context import (
     plan_turn_budget,
     turn_tier,
 )
+from app.coach_intent import is_page_snapshot
 from app.settings import AiSettings
 
 
@@ -146,3 +147,17 @@ def test_small_contexts_pass_through_unchanged() -> None:
     }
     packed = pack_context(context, "What next?", budget_tokens=5_000)
     assert packed == context
+
+
+def test_page_questions_from_mello_answer_quickly() -> None:
+    page = "The learner has this AlgoMemtor page open while asking.\nTitle: X"
+    assert is_page_snapshot(page)
+    assert not is_page_snapshot("int main() { return 0; }")
+    assert not is_page_snapshot(None)
+    assert turn_tier("explain me the dashboard page", page_snapshot=True) == "quick"
+    # A page does not make a question deep, but a deep question stays deep.
+    assert (
+        turn_tier("Why does my code get wrong answer on test 3?", page_snapshot=True)
+        == "deep"
+    )
+    assert turn_tier("explain me the dashboard page") == "standard"

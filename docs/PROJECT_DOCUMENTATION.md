@@ -1569,7 +1569,7 @@ exposed to the browser.
 | `GET`  | `/api/problem-help/sessions`                    | List the learner's Doubt Helper sessions |
 | `POST` | `/api/problem-help/sessions`                    | Start a session and return the first hint or diagnosis |
 | `GET`  | `/api/problem-help/sessions/:sessionId`         | Read a session and its turns |
-| `POST` | `/api/problem-help/sessions/:sessionId/turns`   | `next_hint`, `submit_attempt`, `ask`, `request_solution`, `cancel_solution`, `confirm_solution`, `complete`, `abandon` with `expectedVersion` |
+| `POST` | `/api/problem-help/sessions/:sessionId/turns`          | `next_hint`, `submit_attempt`, `ask`, `request_solution`, `cancel_solution`, `confirm_solution`, `complete`, `abandon` with `expectedVersion` |
 | `GET`  | `/api/solutions`                                | Recent solution explorations |
 | `GET`  | `/api/solutions/access?problemUrl=&language=`   | Learner status and unlock reason for a problem |
 | `POST` | `/api/solutions/explore`                        | Generate or reuse an exploration (optional `transientStatement`) |
@@ -2521,16 +2521,16 @@ update the password only after Supabase establishes a recovery session. Set
 Three images are built from the repository root; `docker-compose.prod.yml`
 wires them to PostgreSQL with pgvector:
 
-| Service           | Image / target                           | Role |
+| Service           | Image / target                                  | Role                                                                                          |
 | ----------------- | ---------------------------------------- | ---- |
-| `postgres`        | `pgvector/pgvector:pg16`                 | One database; Prisma owns `core`, Alembic owns `ai` (memories, embeddings, audits, knowledge) |
-| `migrate-core`    | `apps/core-api/Dockerfile`, `migrate`    | One-shot `prisma migrate deploy` plus the idempotent topic seed |
-| `migrate-ai`      | `apps/ai-api/Dockerfile`                 | One-shot `alembic upgrade head`, after `migrate-core` |
-| `ai-api`          | `apps/ai-api/Dockerfile`                 | FastAPI (uvicorn): ranking, coach agent, memory, embeddings |
-| `core-api`        | `apps/core-api/Dockerfile`, `runtime`    | Express API (production dependencies only) |
-| `memory-worker`   | same image, `node dist/memory-worker.js` | Memory generation outbox and scheduled check-ins |
-| `provider-worker` | same image, `node dist/provider-sync-worker.js` | Hourly linked-account sync |
-| `web`             | `apps/web/Dockerfile`                    | Vite build plus browser-connector zips, served by unprivileged nginx on 8080 |
+| `postgres`        | `pgvector/pgvector:pg16`                        | One database; Prisma owns `core`, Alembic owns `ai` (memories, embeddings, audits, knowledge) |
+| `migrate-core`    | `apps/core-api/Dockerfile`, `migrate`           | One-shot `prisma migrate deploy` plus the idempotent topic seed                               |
+| `migrate-ai`      | `apps/ai-api/Dockerfile`                        | One-shot `alembic upgrade head`, after `migrate-core`                                         |
+| `ai-api`          | `apps/ai-api/Dockerfile`                        | FastAPI (uvicorn): ranking, coach agent, memory, embeddings                                   |
+| `core-api`        | `apps/core-api/Dockerfile`, `runtime`           | Express API (production dependencies only)                                                    |
+| `memory-worker`   | same image, `node dist/memory-worker.js`        | Memory generation outbox and scheduled check-ins                                              |
+| `provider-worker` | same image, `node dist/provider-sync-worker.js` | Hourly linked-account sync                                                                    |
+| `web`             | `apps/web/Dockerfile`                           | Vite build plus browser-connector zips, served by unprivileged nginx on 8080                  |
 
 ```bash
 cp deploy/compose.env.example .env           # public URL, DB password, shared token
@@ -2887,19 +2887,19 @@ integrations/provider-accounts/
 
 ### 23.4 FastAPI implementation map
 
-| Path                                                                 | Responsibility                                                                |
+| Path                                                                 | Responsibility                                                             |
 | -------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `apps/ai-api/app/coach_service.py`                                   | Knowledge/memory retrieval, conditional web search, routed AI flow, audits    |
-| `apps/ai-api/app/knowledge_base.py`                                  | Versioned original CP/DSA reference chunks and lexical fallback               |
-| `apps/ai-api/app/knowledge_repository.py`                            | Alembic knowledge index seeding and hybrid keyword/vector retrieval           |
-| `apps/ai-api/app/web_grounding.py`                                   | De-identified query and OpenRouter web-search citation extraction             |
-| `apps/ai-api/app/coach_models.py`                                    | Strict coach output, citation, proposal, and safety contracts                 |
-| `apps/ai-api/app/pedagogy.py`                                        | Frustration/momentum signals, teaching modes, SM-2, mastery, prerequisites    |
-| `apps/ai-api/app/rate_limit.py`                                      | Bounded process-local protection for internal AI routes                       |
-| `apps/ai-api/app/memory_consolidation.py`                            | Confidence decay and safe memory-consolidation grouping helpers               |
-| `apps/ai-api/alembic/versions/202609171300_coach_knowledge.py`       | AI knowledge source/chunk/vector tables                                       |
-| `apps/ai-api/alembic/versions/202609181000_coach_audit_retrieval.py` | Retrieval-lane audit flags                                                    |
-| `apps/ai-api/alembic/versions/202609181300_curriculum.py`            | Hint ladders, prerequisite graph, topic mastery, contest performance          |
+| `apps/ai-api/app/coach_service.py`                                   | Knowledge/memory retrieval, conditional web search, routed AI flow, audits |
+| `apps/ai-api/app/knowledge_base.py`                                  | Versioned original CP/DSA reference chunks and lexical fallback            |
+| `apps/ai-api/app/knowledge_repository.py`                            | Alembic knowledge index seeding and hybrid keyword/vector retrieval        |
+| `apps/ai-api/app/web_grounding.py`                                   | De-identified query and OpenRouter web-search citation extraction          |
+| `apps/ai-api/app/coach_models.py`                                    | Strict coach output, citation, proposal, and safety contracts              |
+| `apps/ai-api/app/pedagogy.py`                                        | Frustration/momentum signals, teaching modes, SM-2, mastery, prerequisites |
+| `apps/ai-api/app/rate_limit.py`                                      | Bounded process-local protection for internal AI routes                    |
+| `apps/ai-api/app/memory_consolidation.py`                            | Confidence decay and safe memory-consolidation grouping helpers            |
+| `apps/ai-api/alembic/versions/202609171300_coach_knowledge.py`       | AI knowledge source/chunk/vector tables                                    |
+| `apps/ai-api/alembic/versions/202609181000_coach_audit_retrieval.py` | Retrieval-lane audit flags                                                 |
+| `apps/ai-api/alembic/versions/202609181300_curriculum.py`            | Hint ladders, prerequisite graph, topic mastery, contest performance       |
 
 ### 23.5 Frontend implementation map
 
@@ -2935,6 +2935,41 @@ integrations/provider-accounts/
 | `apps/web/src/features/visualizer/worker/*`                    | Web Worker that runs both engines off the main thread                         |
 | `apps/web/src/features/visualizer/analysis.ts`                 | Step descriptions, changes, loop compression, pointers, output comparison     |
 | `apps/web/src/features/visualizer/handoff.ts`                  | Validated navigation-state handoffs and the tab-only draft                    |
+| `apps/web/src/features/pet/*`                                  | The AI Coach's on-page pets: catalog, player, poses, chat panel, page reader  |
+
+The coach pet (2026-09-26) is the AI Coach's visual body on every signed-in
+page, not a separate chatbot. It is on by default, sits bottom-right, can be
+dragged, and is turned off or switched per browser in Settings → Appearance
+(`algomemtor-pet-mello` and `algomemtor-pet-choice` in `localStorage`). Four
+pets share one behaviour: Mello, Kai, Luna and Kai (female) (`pets.ts`). Their
+sprites are 132x104 frame strips built from each pet's concept art (and, for
+Mello's hover, the reference video), laid out as `[enter][loop][exit]` in
+`assets/<pet>/<pose>.webp`. The player walks a small pose tree (poses under
+idle; awe under greet, working under thinking, teaching under idea, sleeping
+under sleepy) so every change eases through in-between frames, and each frame
+fades in over the last. The hover poses start and stop at once, without
+in-between frames. Poses and what triggers them: greet (the mouse moving
+anywhere on screen, ending 0.25 s after it rests); awe (cursor on the pet,
+`/visualizer`); watching (typing in any text field; the head tilts toward the
+field, further as the text grows, and settles back to idle 1.5 s after the
+last key); scroll (the page or a panel in it scrolling, built from each pet's
+Listening card, until 0.9 s after scrolling stops); reading, thinking, then working past
+6 s (a coach question); idea then teaching (the answer arrived); working (any
+other mutation pending over 0.8 s); success (a success notification); sleepy
+after one quiet minute, then sleeping. The pet follows every coach send
+through the `['coach', 'send']` mutation key. Asking it uses the existing
+coach conversation API in one saved thread; with "Reads this page" on, a
+condensed copy of the visible text of `#main-content` (at most 4,000
+characters; no form fields, hidden content or `[data-mello-ignore]`) goes as
+the turn's `transientContext`, which is never stored.
+
+The AI service recognises that page snapshot by its fixed opening line
+(`PAGE_SNAPSHOT_PREFIX` in `coach_intent.py`). A snapshot does not make a turn
+deep by itself: an ordinary question about the page runs on the quick budget,
+the snapshot counts against the turn's input budget, and a quick page
+question skips workspace prefetch. On the local model, page questions share
+the single Ollama worker with recommendation ranking, so a question asked
+while a ranking runs waits for it.
 
 ---
 

@@ -176,6 +176,16 @@ def _normalized(text: str) -> str:
     return " ".join(lowered.split())
 
 
+# Mello, the on-page coach pet, sends the page the learner has open with
+# this fixed opening line. It is context for the question, not pasted code or
+# a problem statement, so it does not make a turn deep on its own.
+PAGE_SNAPSHOT_PREFIX = "The learner has this AlgoMemtor page open"
+
+
+def is_page_snapshot(text: str | None) -> bool:
+    return bool(text) and text.lstrip().startswith(PAGE_SNAPSHOT_PREFIX)
+
+
 def classify_turn(
     question: str,
     *,

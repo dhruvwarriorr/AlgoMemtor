@@ -1,7 +1,15 @@
+import { lazy, Suspense } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 
 import { AppTopbar } from '@/components/navigation/AppTopbar'
 import { ScrollRestoration } from '@/routes/ScrollRestoration'
+
+// The coach pet loads after the page: it is not needed for the first paint.
+const MelloPet = lazy(() =>
+  import('@/features/pet/MelloPet').then((module) => ({
+    default: module.MelloPet,
+  })),
+)
 
 // Signed-in workspace: a top bar over one large, full-width content panel.
 function AppLayout() {
@@ -28,6 +36,9 @@ function AppLayout() {
           </div>
         </div>
       </div>
+      <Suspense fallback={null}>
+        <MelloPet />
+      </Suspense>
     </div>
   )
 }

@@ -17,6 +17,9 @@ import {
 
 const coachKey = (userId: string) => ['coach', userId] as const
 
+// Mello, the coach's on-page body, follows every send through this key.
+export const coachSendMutationKey = ['coach', 'send'] as const
+
 export function useCoachConversations() {
   const { user } = useAuth()
   return useQuery({
@@ -111,6 +114,7 @@ export function useSendCoachMessage() {
   const queryClient = useQueryClient()
   const { user } = useAuth()
   return useMutation({
+    mutationKey: coachSendMutationKey,
     mutationFn: ({
       conversationId,
       content,
