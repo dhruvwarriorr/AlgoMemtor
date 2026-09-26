@@ -1,13 +1,5 @@
 import { Fragment, useRef, useState, type ReactNode } from 'react'
-import {
-  Activity,
-  CalendarCheck,
-  CheckCheck,
-  Flame,
-  Send,
-  Target,
-  Trophy,
-} from '@/components/icons/algo-icons'
+import { Activity } from '@/components/icons/algo-icons'
 import {
   Area,
   AreaChart,
@@ -30,6 +22,14 @@ import {
 import { Link } from 'react-router-dom'
 
 import { ProviderLogo } from '@/components/brand/ProviderLogo'
+import {
+  AcceptanceIcon,
+  ActiveDaysIcon,
+  ContestsIcon,
+  SolvedIcon,
+  StreakIcon,
+  SubmissionsIcon,
+} from '@/components/icons/app-icons'
 import type { IconComponent } from '@/components/icons/algo-icons'
 import {
   GradientCard,
@@ -726,7 +726,7 @@ function AnalyticsSection({ analytics }: { analytics: Analytics }) {
         <Kpi
           accent
           detail="Unique problems, last 30 days"
-          icon={<CheckCheck aria-hidden="true" className="size-4" />}
+          icon={<SolvedIcon aria-hidden="true" className="size-4" />}
           label="Newly solved"
           value={String(analytics.window.solved)}
         />
@@ -736,36 +736,36 @@ function AnalyticsSection({ analytics }: { analytics: Analytics }) {
               ? 'Solve today to keep it'
               : 'Solve today to start one'
           }
-          icon={<Flame aria-hidden="true" className="size-4" />}
-          gradient={{ tone: 'sand', decoration: Flame }}
+          icon={<StreakIcon aria-hidden="true" className="size-4" />}
+          gradient={{ tone: 'sand', decoration: StreakIcon }}
           label="Current streak"
           value={`${analytics.currentStreak}d`}
         />
         <Kpi
           detail="Best run of solve days"
-          icon={<Trophy aria-hidden="true" className="size-4" />}
-          gradient={{ tone: 'sky', decoration: Trophy }}
+          icon={<ContestsIcon aria-hidden="true" className="size-4" />}
+          gradient={{ tone: 'sky', decoration: ContestsIcon }}
           label="Longest streak"
           value={`${analytics.longestStreak}d`}
         />
         <Kpi
           detail={`of the last ${analytics.window.days} days`}
-          icon={<CalendarCheck aria-hidden="true" className="size-4" />}
-          gradient={{ tone: 'green', decoration: CalendarCheck }}
+          icon={<ActiveDaysIcon aria-hidden="true" className="size-4" />}
+          gradient={{ tone: 'green', decoration: ActiveDaysIcon }}
           label="Active days"
           value={String(activeDays)}
         />
         <Kpi
           detail={`${analytics.window.attempted} problems attempted`}
-          icon={<Send aria-hidden="true" className="size-4" />}
-          gradient={{ tone: 'sand', decoration: Send }}
+          icon={<SubmissionsIcon aria-hidden="true" className="size-4" />}
+          gradient={{ tone: 'sand', decoration: SubmissionsIcon }}
           label="Submissions"
           value={String(submissions)}
         />
         <Kpi
           detail={`${accepted} accepted`}
-          icon={<Target aria-hidden="true" className="size-4" />}
-          gradient={{ tone: 'sky', decoration: Target }}
+          icon={<AcceptanceIcon aria-hidden="true" className="size-4" />}
+          gradient={{ tone: 'sky', decoration: AcceptanceIcon }}
           label="Acceptance"
           value={
             submissions === 0

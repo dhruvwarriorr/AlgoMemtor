@@ -14,11 +14,20 @@ const gradients: Record<GradientTone, string> = {
   ink: 'bg-linear-to-br from-[#23262b] to-[#0b0c0e] text-[#f4f1ea]',
 }
 
+// Line art and its lit node, the glow behind it, and the dot grid, per tone.
 const decorationTone: Record<GradientTone, string> = {
   sky: 'text-[#0284c7] [--icon-node:#22c55e] dark:text-[#38bdf8]',
   green: 'text-[#16a34a] [--icon-node:#0ea5e9] dark:text-[#4ade80]',
-  sand: 'text-[#8a7446] [--icon-node:#0ea5e9] dark:text-[#d6c49a]',
+  sand: 'text-[#8a7446] [--icon-node:#f97316] dark:text-[#e3cf9f]',
   ink: 'text-[#38bdf8] [--icon-node:#4ade80]',
+}
+
+const glowTone: Record<GradientTone, string> = {
+  sky: '[--card-glow:rgb(14_165_233/0.28)] dark:[--card-glow:rgb(56_189_248/0.22)]',
+  green:
+    '[--card-glow:rgb(34_197_94/0.26)] dark:[--card-glow:rgb(74_222_128/0.2)]',
+  sand: '[--card-glow:rgb(217_164_65/0.3)] dark:[--card-glow:rgb(227_207_159/0.16)]',
+  ink: '[--card-glow:rgb(56_189_248/0.22)]',
 }
 
 const card = { rest: { scale: 1, y: 0 }, hover: { scale: 1.03, y: -4 } }
@@ -27,8 +36,9 @@ const decoration = {
   hover: { scale: 1.1, rotate: 3 },
 }
 
-// A soft gradient panel that lifts on hover while its oversized corner icon
-// springs outward, after the "gradient card" reference.
+// A soft gradient panel with a glow and dot grid in its corner. Its line-art
+// icon traces itself in on arrival; on hover the card lifts, the icon springs
+// outward and replays its motion (see `.mi-host` in index.css).
 export function GradientCard({
   tone,
   icon: Icon,
@@ -48,8 +58,9 @@ export function GradientCard({
     <motion.div
       animate="rest"
       className={cn(
-        'relative isolate overflow-hidden rounded-xl shadow-soft transition-shadow duration-300 hover:shadow-lift',
+        'mi-host relative isolate overflow-hidden rounded-xl shadow-soft transition-shadow duration-300 hover:shadow-lift',
         gradients[tone],
+        glowTone[tone],
         className,
       )}
       initial="rest"
@@ -58,17 +69,29 @@ export function GradientCard({
       variants={reduceMotion ? undefined : card}
       whileHover={reduceMotion ? undefined : 'hover'}
     >
+      {/* A soft glow pooled in the corner, and a dot grid fading out of it. */}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 -z-20 bg-[radial-gradient(circle_at_88%_92%,var(--card-glow),transparent_62%)]"
+      />
+      <span
+        aria-hidden="true"
+        className={cn(
+          'pointer-events-none absolute inset-0 -z-20 bg-[radial-gradient(currentColor_1px,transparent_1.3px)] bg-size-[13px_13px] opacity-[0.16] [mask-image:radial-gradient(circle_at_100%_100%,black,transparent_58%)] dark:opacity-[0.14]',
+          decorationTone[tone],
+        )}
+      />
       {Icon ? (
         <motion.span
           aria-hidden="true"
           className={cn(
-            'pointer-events-none absolute -right-5 -bottom-6 -z-10 opacity-20 dark:opacity-25',
+            'pointer-events-none absolute -right-1 -bottom-5 -z-10 opacity-40 dark:opacity-45',
             decorationTone[tone],
           )}
           transition={{ type: 'spring', stiffness: 400, damping: 15 }}
           variants={reduceMotion ? undefined : decoration}
         >
-          <Icon className="size-28" />
+          <Icon className="mi-intro size-28" strokeWidth={1.2} />
         </motion.span>
       ) : null}
       {children}

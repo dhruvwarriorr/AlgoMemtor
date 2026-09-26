@@ -8,20 +8,22 @@ import type { ProviderKey } from '@algomemtor/shared-contracts'
 import {
   ArrowRight,
   ArrowUpRight,
-  BarChart3,
-  CheckCheck,
-  CalendarCheck,
-  Flame,
   Link2,
-  Shapes,
   Sparkles,
-  Trophy,
   X,
   type IconComponent,
 } from '@/components/icons/algo-icons'
 import { motion, useReducedMotion } from 'motion/react'
 import { Link, useNavigate } from 'react-router-dom'
 
+import {
+  ActiveDaysIcon,
+  ContestsIcon,
+  PlatformIcon,
+  SolvedIcon,
+  StreakIcon,
+  TopicIcon,
+} from '@/components/icons/app-icons'
 import { OrbLoader } from '@/components/motion/OrbLoader'
 import { ProviderLogo } from '@/components/brand/ProviderLogo'
 import { AnimatedItem } from '@/components/motion/AnimatedItem'
@@ -445,7 +447,7 @@ function DashboardPage() {
             }
             count={analytics.window.solved}
             detail="new in the last 30 days"
-            icon={<CheckCheck />}
+            icon={<SolvedIcon />}
             index={1}
             label="Solved"
             tone="mesh"
@@ -454,7 +456,7 @@ function DashboardPage() {
             aside={<WeekDots days={analytics.trend.slice(-7)} />}
             count={analytics.currentStreak}
             detail={`Longest: ${analytics.longestStreak} ${analytics.longestStreak === 1 ? 'day' : 'days'}`}
-            icon={<Flame />}
+            icon={<StreakIcon />}
             index={2}
             label="Solve streak"
             tone="ink"
@@ -469,7 +471,7 @@ function DashboardPage() {
                 <Link2 />
               )
             }
-            gradient={{ tone: 'sky', decoration: BarChart3 }}
+            gradient={{ tone: 'sky', decoration: PlatformIcon }}
             index={3}
             label="Top platform"
             value={topPlatform ? providerLabels[topPlatform[0]] : 'None yet'}
@@ -478,8 +480,8 @@ function DashboardPage() {
             detail={
               topTopic ? `${topTopic.solved} in 30 days` : 'No solves yet'
             }
-            gradient={{ tone: 'green', decoration: Shapes }}
-            icon={<Shapes />}
+            gradient={{ tone: 'green', decoration: TopicIcon }}
+            icon={<TopicIcon />}
             index={4}
             label="Top topic"
             value={topTopic ? topTopic.topic : 'None yet'}
@@ -494,16 +496,16 @@ function DashboardPage() {
             }
             count={activeDays}
             detail={`of the last ${analytics.window.days} days`}
-            gradient={{ tone: 'sand', decoration: CalendarCheck }}
-            icon={<CalendarCheck />}
+            gradient={{ tone: 'sand', decoration: ActiveDaysIcon }}
+            icon={<ActiveDaysIcon />}
             index={5}
             label="Active days"
           />
           <KpiTile
             count={recentContests.length}
             detail="Last 30 days"
-            gradient={{ tone: 'sky', decoration: Trophy }}
-            icon={<Trophy />}
+            gradient={{ tone: 'sky', decoration: ContestsIcon }}
+            icon={<ContestsIcon />}
             index={6}
             label="Contests"
           />

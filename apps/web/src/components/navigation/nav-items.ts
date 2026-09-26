@@ -1,16 +1,18 @@
 import {
   BarChart3,
-  Bookmark,
-  Brain,
   LayoutGrid,
   Lightbulb,
-  ListChecks,
-  Settings,
   Sparkles,
   TrendingUp,
-  Trophy,
   type IconComponent,
 } from '@/components/icons/algo-icons-line'
+import {
+  BookmarksIcon,
+  ContestsIcon,
+  MemoryIcon,
+  ProblemsIcon,
+  SettingsIcon,
+} from '@/components/icons/app-icons'
 import {
   ContestAnalysisIcon,
   DoubtHelperIcon,
@@ -95,19 +97,19 @@ export const accountMenuGroups: ReadonlyArray<{
       {
         label: 'Problems',
         to: '/problems',
-        icon: ListChecks,
+        icon: ProblemsIcon,
         chip: 'bg-[#0ea5e9] text-[#03121c]',
       },
       {
         label: 'Bookmarks',
         to: '/bookmarks',
-        icon: Bookmark,
+        icon: BookmarksIcon,
         chip: 'bg-[#efe6d2] text-[#5b4a2a]',
       },
       {
         label: 'Contests',
         to: '/contests',
-        icon: Trophy,
+        icon: ContestsIcon,
         chip: 'bg-[#22c55e] text-[#052e14]',
       },
     ],
@@ -118,13 +120,13 @@ export const accountMenuGroups: ReadonlyArray<{
       {
         label: 'Memory',
         to: '/memory',
-        icon: Brain,
+        icon: MemoryIcon,
         chip: 'bg-[#e0f2fe] text-[#075985]',
       },
       {
         label: 'Settings',
         to: '/settings',
-        icon: Settings,
+        icon: SettingsIcon,
         chip: 'bg-[#dcfce7] text-[#14532d]',
       },
     ],

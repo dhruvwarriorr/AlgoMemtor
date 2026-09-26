@@ -5,14 +5,8 @@ import {
   programmingLanguageFamily,
 } from '@algomemtor/shared-contracts'
 import {
-  CalendarDays,
-  CheckCheck,
-  Crown,
-  Flame,
-  Gauge,
   Sparkles,
   Swords,
-  Target,
   type IconComponent,
 } from '@/components/icons/algo-icons'
 import {
@@ -20,6 +14,14 @@ import {
   type GradientTone,
 } from '@/components/motion/GradientCard'
 import { ProviderLogo } from '@/components/brand/ProviderLogo'
+import {
+  ActiveDaysIcon,
+  BestDayIcon,
+  DifficultyIcon,
+  PeakIcon,
+  StreakIcon,
+  TopicIcon,
+} from '@/components/icons/app-icons'
 
 import PageContainer from '@/components/layout/PageContainer'
 import PageHeader from '@/components/layout/PageHeader'
@@ -435,15 +437,15 @@ function AnalyticsPage() {
       <dl className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <Headline
           detail="Days with at least one solve"
-          icon={<CalendarDays aria-hidden="true" className="size-4" />}
-          gradient={{ tone: 'green', decoration: CalendarDays }}
+          icon={<ActiveDaysIcon aria-hidden="true" className="size-4" />}
+          gradient={{ tone: 'green', decoration: ActiveDaysIcon }}
           label="Active days"
           value={stats.activeDays.toLocaleString()}
         />
         <Headline
           detail="Consecutive solve days, all time"
-          icon={<Flame aria-hidden="true" className="size-4" />}
-          gradient={{ tone: 'sand', decoration: Flame }}
+          icon={<StreakIcon aria-hidden="true" className="size-4" />}
+          gradient={{ tone: 'sand', decoration: StreakIcon }}
           label="Longest streak"
           value={`${stats.longest}d`}
         />
@@ -451,8 +453,8 @@ function AnalyticsPage() {
           detail={
             stats.busiest ? formatDate(`${stats.busiest[0]}T12:00:00Z`) : '—'
           }
-          icon={<CheckCheck aria-hidden="true" className="size-4" />}
-          gradient={{ tone: 'sky', decoration: CheckCheck }}
+          icon={<BestDayIcon aria-hidden="true" className="size-4" />}
+          gradient={{ tone: 'sky', decoration: BestDayIcon }}
           label="Best day"
           value={stats.busiest ? `${stats.busiest[1]} solves` : '—'}
         />
@@ -460,15 +462,15 @@ function AnalyticsPage() {
           detail={
             peakAccount ? providerLabels[peakAccount.provider] : 'No ratings'
           }
-          icon={<Crown aria-hidden="true" className="size-4" />}
-          gradient={{ tone: 'green', decoration: Crown }}
+          icon={<PeakIcon aria-hidden="true" className="size-4" />}
+          gradient={{ tone: 'green', decoration: PeakIcon }}
           label="Peak rating"
           value={peak > 0 ? String(Math.round(peak)) : '—'}
         />
         <Headline
           detail={`${analytics.solvedByDifficulty.hard.toLocaleString()} hard problems`}
-          icon={<Gauge aria-hidden="true" className="size-4" />}
-          gradient={{ tone: 'sand', decoration: Gauge }}
+          icon={<DifficultyIcon aria-hidden="true" className="size-4" />}
+          gradient={{ tone: 'sand', decoration: DifficultyIcon }}
           label="Hardest solve"
           value={
             insights?.hardestSolved[0]
@@ -478,8 +480,8 @@ function AnalyticsPage() {
         />
         <Headline
           detail={`${Object.keys(analytics.topicCounts).length} topics touched`}
-          icon={<Target aria-hidden="true" className="size-4" />}
-          gradient={{ tone: 'sky', decoration: Target }}
+          icon={<TopicIcon aria-hidden="true" className="size-4" />}
+          gradient={{ tone: 'sky', decoration: TopicIcon }}
           label="Top topic"
           value={(
             Object.entries(analytics.topicCounts).sort(
