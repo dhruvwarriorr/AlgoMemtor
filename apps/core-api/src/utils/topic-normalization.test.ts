@@ -15,6 +15,21 @@ describe('analytics topic normalization', () => {
     expect(normalizeTopic('Meet-in-the-Middle')).toBe('Divide and Conquer')
   })
 
+  it('groups CSES problem-set sections and leaves mixed sections out', () => {
+    expect(normalizeTopic('introductory-problems')).toBe('Implementation')
+    expect(normalizeTopic('sorting-and-searching')).toBe('Sorting')
+    expect(normalizeTopic('dynamic-programming')).toBe('Dynamic Programming')
+    expect(normalizeTopic('graph-algorithms')).toBe('Graphs')
+    expect(normalizeTopic('tree-algorithms')).toBe('Trees')
+    expect(normalizeTopic('range-queries')).toBe('Data Structures')
+    expect(normalizeTopic('string-algorithms')).toBe('Strings')
+    expect(normalizeTopic('bitwise-operations')).toBe('Bit Manipulation')
+    expect(normalizeTopic('sliding-window-problems')).toBe('Sliding Window')
+    expect(normalizeTopic('cses')).toBeUndefined()
+    expect(normalizeTopic('additional-problems-i')).toBeUndefined()
+    expect(normalizeTopic('advanced-techniques')).toBeUndefined()
+  })
+
   it('excludes contest codes, generic labels, and tagless entries', () => {
     expect(normalizeTopic('START254')).toBeUndefined()
     expect(normalizeTopic('Nishank ADM')).toBeUndefined()

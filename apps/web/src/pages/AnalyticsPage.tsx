@@ -528,7 +528,10 @@ function AnalyticsPage() {
 
       <div className="grid min-w-0 gap-4 lg:grid-cols-12">
         <MonthlySkyline monthly={insights?.monthly ?? []} />
-        <DifficultyRings difficulty={analytics.solvedByDifficulty} />
+        <DifficultyRings
+          allTimeTotal={analytics.solvedTotal}
+          difficulty={analytics.solvedByDifficulty}
+        />
         <RatingStaircase bands={insights?.ratingBands ?? []} />
         <VerdictOrbit
           total={insights?.totalSubmissions ?? 0}

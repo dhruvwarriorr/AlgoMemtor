@@ -4460,6 +4460,16 @@ export const createApp = (options: CreateAppOptions = {}) => {
           ?.solvedCount ?? 0,
     }
     const solvedByDifficulty = { easy: 0, medium: 0, hard: 0 }
+    // A public profile's all-time difficulty totals (LeetCode) replace the
+    // per-problem count, which only sees the provider's recent activity.
+    const profileDifficultyProviders = new Set<string>()
+    for (const snapshot of profileSnapshots) {
+      if (snapshot.difficultyCounts === undefined) continue
+      profileDifficultyProviders.add(snapshot.provider)
+      solvedByDifficulty.easy += snapshot.difficultyCounts.easy
+      solvedByDifficulty.medium += snapshot.difficultyCounts.medium
+      solvedByDifficulty.hard += snapshot.difficultyCounts.hard
+    }
     const solvedOverTime: Record<string, number> = {}
     const topicCounts: Record<string, number> = {}
     const languageCounts: Record<string, number> = {}
@@ -4536,7 +4546,10 @@ export const createApp = (options: CreateAppOptions = {}) => {
       const problem = metadataByKey.get(
         `${reference.provider}:${reference.externalId}`,
       )
-      if (problem?.normalizedDifficulty !== undefined) {
+      if (
+        problem?.normalizedDifficulty !== undefined &&
+        !profileDifficultyProviders.has(reference.provider)
+      ) {
         solvedByDifficulty[problem.normalizedDifficulty] += 1
       }
       if (profileTopicProviders.has(reference.provider)) continue
@@ -4690,6 +4703,13 @@ export const createApp = (options: CreateAppOptions = {}) => {
       ratingChanges,
       participations,
       metadata: metadataByKey,
+      observedTopics: new Map(
+        solvedProblems.flatMap((solved) =>
+          solved.topics === undefined || solved.topics.length === 0
+            ? []
+            : [[`${solved.provider}:${solved.externalId}`, solved.topics]],
+        ),
+      ),
       normalizeTopic,
     })
     response.json(

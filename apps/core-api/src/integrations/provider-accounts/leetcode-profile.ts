@@ -21,6 +21,7 @@ const CountSchema = z
   .object({
     difficulty: z.string().trim().min(1),
     count: z.number().int().nonnegative(),
+    submissions: z.number().int().nonnegative().optional(),
   })
   .passthrough()
 const LanguageSchema = z
@@ -81,6 +82,9 @@ const ProfileEnvelopeSchema = z
           .object({
             rating: z.number().finite().nullish(),
             globalRanking: z.number().int().positive().nullish(),
+            badge: z
+              .object({ name: z.string().trim().max(80).nullish() })
+              .nullish(),
           })
           .nullable()
           .optional(),
@@ -91,7 +95,7 @@ const ProfileEnvelopeSchema = z
   })
   .passthrough()
 
-const query = `query getUserProfile($username: String!) { matchedUser(username: $username) { username profile { realName userAvatar ranking } badges { displayName } submitStatsGlobal { acSubmissionNum { difficulty count } totalSubmissionNum { difficulty count } } languageProblemCount { languageName problemsSolved } tagProblemCounts { advanced { tagName problemsSolved } intermediate { tagName problemsSolved } fundamental { tagName problemsSolved } } submissionCalendar } userContestRanking(username: $username) { rating globalRanking } }`
+const query = `query getUserProfile($username: String!) { matchedUser(username: $username) { username profile { realName userAvatar ranking } badges { displayName } submitStatsGlobal { acSubmissionNum { difficulty count submissions } totalSubmissionNum { difficulty count submissions } } languageProblemCount { languageName problemsSolved } tagProblemCounts { advanced { tagName problemsSolved } intermediate { tagName problemsSolved } fundamental { tagName problemsSolved } } submissionCalendar } userContestRanking(username: $username) { rating globalRanking badge { name } } }`
 
 const parseCalendar = (value: string | undefined) => {
   if (value === undefined) return {}
@@ -208,15 +212,32 @@ export class LeetCodeProfileFetcher implements ProviderProfileFetcher {
         },
       )
     }
-    const solved = user.submitStatsGlobal?.acSubmissionNum.find(
+    const accepted = user.submitStatsGlobal?.acSubmissionNum ?? []
+    const solvedFor = (difficulty: string) =>
+      accepted.find(
+        (item) => item.difficulty.toLowerCase() === difficulty.toLowerCase(),
+      )?.count
+    const solved = solvedFor('All')
+    const easy = solvedFor('Easy')
+    const medium = solvedFor('Medium')
+    const hard = solvedFor('Hard')
+    const difficultyCounts =
+      easy === undefined || medium === undefined || hard === undefined
+        ? undefined
+        : { easy, medium, hard }
+    // The profile page's acceptance is accepted submissions over all
+    // submissions, not solved problems over attempted problems.
+    const acceptedSubmissions = accepted.find(
       (item) => item.difficulty === 'All',
-    )?.count
-    const total = user.submitStatsGlobal?.totalSubmissionNum.find(
+    )?.submissions
+    const totalSubmissions = user.submitStatsGlobal?.totalSubmissionNum.find(
       (item) => item.difficulty === 'All',
-    )?.count
+    )?.submissions
     const acceptanceRate =
-      solved !== undefined && total !== undefined && total > 0
-        ? (solved / total) * 100
+      acceptedSubmissions !== undefined &&
+      totalSubmissions !== undefined &&
+      totalSubmissions > 0
+        ? Math.min(100, (acceptedSubmissions / totalSubmissions) * 100)
         : undefined
     const profileUrl = new URL(
       `/u/${encodeURIComponent(user.username)}/`,
@@ -237,12 +258,14 @@ export class LeetCodeProfileFetcher implements ProviderProfileFetcher {
       return counts
     }, {})
     const contestRanking = envelope.data.data?.userContestRanking
+    const contestBadge = contestRanking?.badge?.name?.trim()
     return ProviderProfileSchema.parse({
       provider: this.provider,
       externalId: user.username,
       handle: user.username,
       ...(user.profile?.realName ? { displayName: user.profile.realName } : {}),
       profileUrl,
+      ...(contestBadge ? { rank: contestBadge } : {}),
       ...(safeHttpsUrl(user.profile?.userAvatar) === undefined
         ? {}
         : { avatarUrl: safeHttpsUrl(user.profile?.userAvatar) }),
@@ -250,13 +273,14 @@ export class LeetCodeProfileFetcher implements ProviderProfileFetcher {
       contestRanking.globalRanking !== null
         ? { globalRank: contestRanking.globalRanking }
         : user.profile?.ranking === undefined || user.profile.ranking === null
-        ? {}
-        : { globalRank: user.profile.ranking }),
+          ? {}
+          : { globalRank: user.profile.ranking }),
       ...(contestRanking?.rating === undefined || contestRanking.rating === null
         ? {}
         : { rating: contestRanking.rating }),
       ...(solved === undefined ? {} : { solvedCount: solved }),
       ...(acceptanceRate === undefined ? {} : { acceptanceRate }),
+      ...(difficultyCounts === undefined ? {} : { difficultyCounts }),
       languageCounts: Object.fromEntries(
         (user.languageProblemCount ?? []).map((item) => [
           item.languageName,
@@ -273,7 +297,7 @@ export class LeetCodeProfileFetcher implements ProviderProfileFetcher {
         canonicalUrl: profileUrl,
         sourceUrl: this.endpoint.toString(),
         extractionStrategy: 'public_graphql',
-        schemaVersion: 'leetcode-matched-user-v2',
+        schemaVersion: 'leetcode-matched-user-v3',
         completeness: 'partial',
         fetchedAt,
         stale: false,

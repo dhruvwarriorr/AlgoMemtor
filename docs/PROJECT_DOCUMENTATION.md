@@ -441,6 +441,11 @@ providers without aggregate topic counts, concrete observed problem metadata is
 used. The analytics API maps Codeforces and LeetCode tags into a fixed set of
 broader learning areas on every read. Unknown, untagged, and provider-specific
 contest labels (including CodeChef START codes) do not create chart topics.
+The same applies to difficulty: the LeetCode profile's all-time Easy/Medium/Hard
+solved counts (`ProviderProfile.difficultyCounts`) replace per-problem
+difficulty for that provider in `solvedByDifficulty`. The profile snapshot also
+carries the LeetCode contest badge as `rank` and an acceptance rate of accepted
+over total submissions, matching the public profile page.
 Multiple native tags for one observed problem that map to the same area count
 once. The Insights page shows the largest areas in a compact pie chart, groups
 the remaining recognized areas as `Other topics`, and offers the full recognized

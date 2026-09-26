@@ -61,6 +61,16 @@ export const ProviderProfileSchema = z
     rating: z.number().finite().optional(),
     solvedCount: z.number().int().nonnegative().optional(),
     acceptanceRate: z.number().finite().min(0).max(100).optional(),
+    // All-time solved problems per difficulty, when the provider's public
+    // profile reports them (LeetCode). Not derived from partial activity.
+    difficultyCounts: z
+      .object({
+        easy: z.number().int().nonnegative(),
+        medium: z.number().int().nonnegative(),
+        hard: z.number().int().nonnegative(),
+      })
+      .strict()
+      .optional(),
     languageCounts: z.record(
       nonEmptyStringSchema,
       z.number().int().nonnegative(),

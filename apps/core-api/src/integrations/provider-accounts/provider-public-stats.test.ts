@@ -327,8 +327,15 @@ describe('public provider solved-count fetchers', () => {
               profile: { ranking: 42 },
               badges: [{ displayName: 'Badge' }],
               submitStatsGlobal: {
-                acSubmissionNum: [{ difficulty: 'All', count: 77 }],
-                totalSubmissionNum: [{ difficulty: 'All', count: 100 }],
+                acSubmissionNum: [
+                  { difficulty: 'All', count: 77, submissions: 90 },
+                  { difficulty: 'Easy', count: 40, submissions: 45 },
+                  { difficulty: 'Medium', count: 30, submissions: 36 },
+                  { difficulty: 'Hard', count: 7, submissions: 9 },
+                ],
+                totalSubmissionNum: [
+                  { difficulty: 'All', count: 100, submissions: 150 },
+                ],
               },
               languageProblemCount: [
                 { languageName: 'C++', problemsSolved: 77 },
@@ -340,7 +347,11 @@ describe('public provider solved-count fetchers', () => {
               },
               submissionCalendar: '{}',
             },
-            userContestRanking: { rating: 1550, globalRanking: 9 },
+            userContestRanking: {
+              rating: 1550,
+              globalRanking: 9,
+              badge: { name: 'Knight' },
+            },
           },
         }),
       ),
@@ -349,7 +360,9 @@ describe('public provider solved-count fetchers', () => {
 
     await expect(fetcher.fetchProfile('learner')).resolves.toMatchObject({
       solvedCount: 77,
-      acceptanceRate: 77,
+      acceptanceRate: 60,
+      difficultyCounts: { easy: 40, medium: 30, hard: 7 },
+      rank: 'Knight',
       globalRank: 9,
       rating: 1550,
       topicCounts: { Graphs: 5, Arrays: 4 },

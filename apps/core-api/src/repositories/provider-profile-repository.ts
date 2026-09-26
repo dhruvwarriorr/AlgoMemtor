@@ -31,6 +31,7 @@ const profileFromRecord = (record: {
   rating: number | null
   solvedCount: number | null
   acceptanceRate: number | null
+  difficultyCounts: Prisma.JsonValue
   languageCounts: Prisma.JsonValue
   topicCounts: Prisma.JsonValue
   badges: Prisma.JsonValue
@@ -55,6 +56,9 @@ const profileFromRecord = (record: {
     ...(record.acceptanceRate === null
       ? {}
       : { acceptanceRate: record.acceptanceRate }),
+    ...(record.difficultyCounts === null
+      ? {}
+      : { difficultyCounts: record.difficultyCounts }),
     languageCounts: record.languageCounts,
     topicCounts: record.topicCounts,
     badges: record.badges,
@@ -106,6 +110,7 @@ export class PrismaProviderProfileRepository implements ProviderProfileRepositor
         rating: parsed.rating ?? null,
         solvedCount: parsed.solvedCount ?? null,
         acceptanceRate: parsed.acceptanceRate ?? null,
+        difficultyCounts: parsed.difficultyCounts ?? Prisma.DbNull,
         languageCounts: parsed.languageCounts,
         topicCounts: parsed.topicCounts,
         badges: parsed.badges,

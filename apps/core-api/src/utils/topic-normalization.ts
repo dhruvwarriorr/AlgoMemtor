@@ -1,3 +1,7 @@
+// Provider tags and CSES problem-set section names (the browser connector
+// stores each CSES task's section) mapped to broad learning areas. Mixed
+// sections such as "Additional Problems" and "Advanced Techniques" stay
+// unmapped rather than guessed.
 const topicGroups = {
   Arrays: [
     'array',
@@ -15,7 +19,7 @@ const topicGroups = {
     'rolling hash',
     'array and hashing',
   ],
-  'Sliding Window': ['sliding window'],
+  'Sliding Window': ['sliding window', 'sliding window problems'],
   Math: [
     'math',
     'mathematics',
@@ -26,6 +30,7 @@ const topicGroups = {
     'probability and statistics',
     'fft',
     'counting',
+    'counting problems',
     'line sweep',
   ],
   'Number Theory': ['number theory', 'chinese remainder theorem'],
@@ -37,6 +42,7 @@ const topicGroups = {
     'bucket sort',
     'radix sort',
     'counting sort',
+    'sorting and searching',
   ],
   'Binary Search': ['binary search', 'binarysearch', 'ternary search'],
   'Two Pointers': ['two pointers', 'two pointer'],
@@ -48,12 +54,21 @@ const topicGroups = {
     'string suffix structures',
     'trie',
     'tries',
+    'string algorithms',
   ],
-  Trees: ['tree', 'trees', 'binary tree', 'binary search tree'],
+  Trees: [
+    'tree',
+    'trees',
+    'binary tree',
+    'binary search tree',
+    'tree algorithms',
+  ],
   Graphs: [
     'graph',
     'graphs',
     'graph theory',
+    'graph algorithms',
+    'advanced graph problems',
     'graph matchings',
     '2 sat',
     'bfs',
@@ -86,10 +101,19 @@ const topicGroups = {
     'dp',
     'memoization',
   ],
-  'Bit Manipulation': ['bit manipulation', 'bitmask', 'bitmasks'],
-  Implementation: ['implementation', 'simulation'],
+  'Bit Manipulation': [
+    'bit manipulation',
+    'bitmask',
+    'bitmasks',
+    'bitwise operations',
+  ],
+  Implementation: ['implementation', 'simulation', 'introductory problems'],
   'Brute Force': ['brute force', 'enumeration'],
-  Constructive: ['constructive', 'constructive algorithms'],
+  Constructive: [
+    'constructive',
+    'constructive algorithms',
+    'construction problems',
+  ],
   'Data Structures': [
     'data structure',
     'data structures',
@@ -112,6 +136,7 @@ const topicGroups = {
     'fenwick tree',
     'fenwick trees',
     'binary indexed tree',
+    'range queries',
     'ordered set',
     'data stream',
     'expression parsing',

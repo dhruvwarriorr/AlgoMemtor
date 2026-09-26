@@ -113,13 +113,19 @@ export function buildAnalyticsInsights(input: {
   ratingChanges: readonly ProviderRatingChange[]
   participations: readonly ContestParticipation[]
   metadata: ReadonlyMap<string, ExternalProblemSummary>
+  // Topics recorded on the learner's own solve observations, keyed like
+  // `metadata`; they cover problems the catalog cache does not hold.
+  observedTopics?: ReadonlyMap<string, readonly string[]>
   normalizeTopic: (topic: string) => string | undefined
 }): AnalyticsInsights {
   const key = (provider: string, externalId: string) =>
     `${provider}:${externalId}`
   const topicsOf = (provider: string, externalId: string) =>
     new Set(
-      (input.metadata.get(key(provider, externalId))?.topics ?? [])
+      [
+        ...(input.metadata.get(key(provider, externalId))?.topics ?? []),
+        ...(input.observedTopics?.get(key(provider, externalId)) ?? []),
+      ]
         .map(input.normalizeTopic)
         .filter((topic): topic is string => topic !== undefined),
     )

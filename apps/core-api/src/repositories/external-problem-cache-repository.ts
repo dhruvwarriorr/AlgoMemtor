@@ -8,6 +8,7 @@ import {
 import { z } from 'zod'
 
 import { Prisma, type PrismaClient } from '../generated/prisma/client.js'
+import { createLeetCodeProblemUrl } from '../integrations/leetcode/leetcode-url.js'
 import type {
   PersistedProblemCatalog,
   ProblemReference,
@@ -91,15 +92,50 @@ export class PrismaExternalProblemCacheRepository implements ProblemMetadataCach
       ).values(),
     ]
     if (unique.length === 0) return []
+    // The LeetCode catalog is keyed by question number, but activity refers
+    // to problems by title slug. A slug resolves through the canonical URL,
+    // and the match is returned under the slug the caller asked for.
+    const leetCodeSlugByUrl = new Map<string, string>()
+    for (const reference of unique) {
+      if (reference.provider !== 'leetcode') continue
+      if (/^\d+$/.test(reference.externalId)) continue
+      try {
+        leetCodeSlugByUrl.set(
+          createLeetCodeProblemUrl(reference.externalId),
+          reference.externalId,
+        )
+      } catch {
+        // Not a valid slug; only the exact-ID match applies.
+      }
+    }
     const records = await this.prisma.externalProblemCache.findMany({
       where: {
-        OR: unique.map((reference) => ({
-          provider: reference.provider,
-          externalId: reference.externalId,
-        })),
+        OR: [
+          ...unique.map((reference) => ({
+            provider: reference.provider,
+            externalId: reference.externalId,
+          })),
+          ...(leetCodeSlugByUrl.size === 0
+            ? []
+            : [
+                {
+                  provider: 'leetcode',
+                  canonicalUrl: { in: [...leetCodeSlugByUrl.keys()] },
+                },
+              ]),
+        ],
       },
     })
-    return records.map(problemFromRecord)
+    return records.flatMap((record) => {
+      const problem = problemFromRecord(record)
+      const slug =
+        problem.provider === 'leetcode'
+          ? leetCodeSlugByUrl.get(problem.canonicalUrl)
+          : undefined
+      return slug === undefined || slug === problem.externalId
+        ? [problem]
+        : [{ ...problem, externalId: slug }]
+    })
   }
 
   async findByProvider(provider: ProviderKey) {

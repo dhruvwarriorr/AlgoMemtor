@@ -335,6 +335,7 @@ model ProviderProfileSnapshot {
   rating             Float?
   solvedCount        Int?            @map("solved_count")
   acceptanceRate     Float?          @map("acceptance_rate")
+  difficultyCounts   Json?           @map("difficulty_counts") @db.JsonB
   languageCounts     Json            @map("language_counts") @db.JsonB
   topicCounts        Json            @map("topic_counts") @db.JsonB
   badges             Json            @db.JsonB

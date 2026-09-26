@@ -146,4 +146,25 @@ describe('buildAnalyticsInsights', () => {
       { provider: 'cses', handle: '356257', solvedCount: 83, contests: 0 },
     ])
   })
+
+  it('uses topics recorded on solves the catalog cache does not hold', () => {
+    const insights = buildAnalyticsInsights({
+      timezone: 'UTC',
+      now: new Date('2026-09-23T12:00:00.000Z'),
+      profiles: [],
+      submissions: [],
+      solved: [{ provider: 'leetcode', externalId: 'coin-change-ii' }],
+      ratingChanges: [],
+      participations: [],
+      metadata: new Map(),
+      observedTopics: new Map([
+        ['leetcode:coin-change-ii', ['array', 'dynamic-programming']],
+      ]),
+      normalizeTopic: (topic) => topic,
+    })
+    expect(insights.topicStrength.map((item) => item.topic).sort()).toEqual([
+      'array',
+      'dynamic-programming',
+    ])
+  })
 })

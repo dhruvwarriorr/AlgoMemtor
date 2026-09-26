@@ -250,17 +250,21 @@ const difficultyMeta = [
 
 export function DifficultyRings({
   difficulty,
+  allTimeTotal,
 }: {
   difficulty: Record<'easy' | 'medium' | 'hard', number>
+  allTimeTotal?: number
 }) {
   const { ref, shown, reduceMotion } = useReveal<HTMLDivElement>()
   const total = difficulty.easy + difficulty.medium + difficulty.hard
   const hardEvery =
     difficulty.hard === 0 ? undefined : Math.max(1, total / difficulty.hard)
+  const untracked =
+    allTimeTotal === undefined ? 0 : Math.max(0, allTimeTotal - total)
   return (
     <InsightCard
       className="lg:col-span-4"
-      description="Difficulty of every solve with known difficulty."
+      description="Difficulty of every solve with known difficulty — some platforms don't expose difficulty for older solves, so this can be less than your all-time total."
       title="Difficulty split"
     >
       {total === 0 ? (
@@ -325,7 +329,7 @@ export function DifficultyRings({
                   className="font-heading text-2xl leading-none font-bold tabular-nums"
                   value={total}
                 />
-                <p className="text-[0.68rem] text-muted-foreground">solves</p>
+                <p className="text-[0.68rem] text-muted-foreground">tracked</p>
               </div>
             </div>
           </div>
@@ -352,7 +356,13 @@ export function DifficultyRings({
           </ul>
           {hardEvery === undefined ? null : (
             <p className="mt-3 text-center text-xs text-muted-foreground">
-              About 1 in {Math.round(hardEvery)} of your solves is Hard.
+              About 1 in {Math.round(hardEvery)} of your tracked solves is Hard.
+            </p>
+          )}
+          {untracked === 0 ? null : (
+            <p className="mt-1 text-center text-xs text-muted-foreground">
+              {untracked.toLocaleString()} more all-time solve
+              {untracked === 1 ? '' : 's'} have no difficulty on record.
             </p>
           )}
         </div>

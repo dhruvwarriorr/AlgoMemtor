@@ -12,7 +12,9 @@ import type { SupabaseJwtVerifier } from './auth/supabase-jwt.js'
 import type { ProblemProvider } from './integrations/providers/problem-provider.js'
 import { InMemoryLearnerProfileRepository } from './repositories/learner-profile-repository.js'
 import { InMemoryProblemActionRepository } from './repositories/problem-action-repository.js'
+import { InMemoryProviderAccountRepository } from './repositories/provider-account-repository.js'
 import { InMemoryProviderDataRepository } from './repositories/provider-data-repository.js'
+import { InMemoryProviderProfileRepository } from './repositories/provider-profile-repository.js'
 
 const userId = '00000000-0000-4000-8000-000000000031'
 
@@ -77,7 +79,11 @@ const solved = (provider: ProviderKey, externalId: string, at: string) => ({
   },
 })
 
-const start = async () => {
+const start = async (
+  options: {
+    leetcodeDifficulty?: { easy: number; medium: number; hard: number }
+  } = {},
+) => {
   const learnerProfileRepository = new InMemoryLearnerProfileRepository()
   await learnerProfileRepository.upsertByAuthUserId(userId, {
     experience: 'intermediate',
@@ -108,8 +114,44 @@ const start = async () => {
     evidenceSource: 'provider_verified',
     occurredAt: new Date('2026-09-18T06:00:00.000Z'),
   })
+  const providerAccountRepository = new InMemoryProviderAccountRepository()
+  const providerProfileRepository = new InMemoryProviderProfileRepository()
+  if (options.leetcodeDifficulty !== undefined) {
+    const account = await providerAccountRepository.upsertByAuthUserId(
+      userId,
+      'leetcode',
+      'learner',
+    )
+    const profileUrl = 'https://leetcode.com/u/learner/'
+    await providerProfileRepository.saveSnapshot(userId, account.id, {
+      provider: 'leetcode',
+      externalId: 'learner',
+      handle: 'learner',
+      profileUrl,
+      solvedCount: 120,
+      difficultyCounts: options.leetcodeDifficulty,
+      languageCounts: {},
+      topicCounts: {},
+      badges: [],
+      calendar: {},
+      completeness: 'partial',
+      provenance: {
+        provider: 'leetcode',
+        providerId: 'learner',
+        canonicalUrl: profileUrl,
+        sourceUrl: 'https://leetcode.com/graphql',
+        extractionStrategy: 'public_graphql',
+        schemaVersion: 'leetcode-matched-user-v3',
+        completeness: 'partial',
+        fetchedAt: '2026-09-20T00:00:00.000Z',
+        stale: false,
+      },
+    })
+  }
   const server = createApp({
     jwtVerifier: verifier,
+    providerAccountRepository,
+    providerProfileRepository,
     problemProvider: catalogProvider,
     learnerProfileRepository,
     providerDataRepository,
@@ -151,5 +193,23 @@ describe('analytics API', () => {
       '2026-09-11',
       '2026-09-18',
     ])
+  })
+
+  it('uses the LeetCode profile difficulty totals, not recent solves', async () => {
+    const baseUrl = await start({
+      leetcodeDifficulty: { easy: 60, medium: 45, hard: 15 },
+    })
+    const leetcode = await analytics(baseUrl, 'leetcode')
+    expect(leetcode.solvedByDifficulty).toEqual({
+      easy: 60,
+      medium: 45,
+      hard: 15,
+    })
+    const codeforces = await analytics(baseUrl, 'codeforces')
+    expect(codeforces.solvedByDifficulty).toEqual({
+      easy: 0,
+      medium: 0,
+      hard: 0,
+    })
   })
 })
