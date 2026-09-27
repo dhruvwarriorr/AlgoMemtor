@@ -13,12 +13,11 @@ Your personal AI mentor for competitive programming.
 ---
 
 <div align="center">
-<video src="docs/media/algomemtor-promo.mp4" poster="docs/media/algomemtor-promo-poster.webp" controls="controls" width="100%"></video>
+<video src="https://github.com/user-attachments/assets/00234fa6-ee54-459a-9eb1-3c5f1fb9db72" controls="controls" width="100%"></video>
 <br>
 <sub>A 2.5-minute tour: your dashboard, AI recommendations, the coach, Mello the pet companion, the Doubt Helper, the Test Case Visualizer and AI Debugger, and more.</sub>
 </div>
 
----
 
 ## What is AlgoMemtor?
 
