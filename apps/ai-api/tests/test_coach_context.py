@@ -59,34 +59,11 @@ def test_turn_tiers_follow_the_question() -> None:
     assert turn_tier("hi there, what", has_linked_problems=True) == "deep"
 
 
-def test_local_budgets_fit_the_16k_context() -> None:
-    config = settings(local_ai_context_tokens=16_384)
-    for question in ("What is my rating?", "Debug my DP solution, it gets TLE"):
-        budget = plan_turn_budget(
-            config, provider="local", question=question, context={}
-        )
-        assert budget.input_tokens + budget.output_tokens <= 15_584
-        assert budget.output_tokens >= 600
-    quick = plan_turn_budget(
-        config, provider="local", question="What is my rating?", context={}
-    )
-    deep = plan_turn_budget(
-        config,
-        provider="local",
-        question="Debug my DP solution, it gets TLE",
-        context={},
-    )
-    assert deep.output_tokens > quick.output_tokens
-
-
 def test_openrouter_budgets_scale_with_the_turn() -> None:
     config = settings(solution_max_output_tokens=12_000)
-    quick = plan_turn_budget(
-        config, provider="openrouter", question="What is my rating?", context={}
-    )
+    quick = plan_turn_budget(config, question="What is my rating?", context={})
     deep = plan_turn_budget(
         config,
-        provider="openrouter",
         question="Prove why this greedy works and write the code",
         context={},
     )

@@ -288,6 +288,12 @@ import { withObservedDifficulty } from './services/observed-difficulty.js'
 import { ProviderSyncWorker } from './services/provider-sync-worker.js'
 import { MemoryWorker } from './memory-worker.js'
 import { registerMentorRoutes } from './mentor-routes.js'
+import { limitAiUsage } from './middleware/ai-usage.js'
+import {
+  AiUsageLimiter,
+  InMemoryAiUsageStore,
+  readAiUsageLimitConfig,
+} from './services/ai-usage-limiter.js'
 import type { MentorRepository } from './repositories/mentor-repository.js'
 import {
   UnavailableAiMentorClient,
@@ -350,6 +356,8 @@ export type CreateAppOptions = {
   recommendationSteeringRepository?: RecommendationSteeringRepository
   internalServiceToken?: string
   webOrigin?: string
+  // Per-learner AI request limits; off unless AI_USAGE_LIMITS_ENABLED=true.
+  aiUsageLimiter?: AiUsageLimiter
 }
 
 const providerStatusCode = (error: ProviderError) => {
@@ -806,6 +814,13 @@ export const createApp = (options: CreateAppOptions = {}) => {
   const provider = options.problemProvider ?? providers[0] ?? defaultProvider()
   const jwtVerifier = options.jwtVerifier ?? denyUnconfiguredAuthentication
   const requireAuthenticated = requireAuth(jwtVerifier)
+  const aiUsageLimiter =
+    options.aiUsageLimiter ??
+    new AiUsageLimiter(readAiUsageLimitConfig(), new InMemoryAiUsageStore())
+  const limitAi = (
+    feature: Parameters<typeof limitAiUsage>[1],
+    applies?: Parameters<typeof limitAiUsage>[3],
+  ) => limitAiUsage(aiUsageLimiter, feature, authenticatedSubject, applies)
   const catalogService = new ProblemCatalogService(providers)
   const contestCatalogService = new ContestCatalogService(
     options.contestProviders ?? defaultContestProviders(),
@@ -1371,10 +1386,22 @@ export const createApp = (options: CreateAppOptions = {}) => {
       credentials: false,
     }),
   )
+  // WEB_ORIGIN may list several exact origins (production and a preview),
+  // separated by commas. The site calls this API directly in production.
+  const webOrigins = (
+    options.webOrigin ??
+    process.env.WEB_ORIGIN ??
+    'http://localhost:5173'
+  )
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/+$/, ''))
+    .filter((origin) => origin !== '')
   app.use(
     cors({
-      origin:
-        options.webOrigin ?? process.env.WEB_ORIGIN ?? 'http://localhost:5173',
+      origin: webOrigins.length === 1 ? webOrigins[0] : webOrigins,
+      exposedHeaders: ['retry-after'],
+      // Browsers cache the preflight, saving a round trip per API call.
+      maxAge: 7_200,
     }),
   )
 
@@ -1400,7 +1427,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
   }
   app.use(
     '/api/coach/conversations/:conversationId/messages',
-    express.json({ limit: '12mb' }),
+    express.json({ limit: '128kb' }),
   )
   app.use(express.json({ limit: '1mb' }))
   app.use((request, response, next) => {
@@ -3656,6 +3683,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
   app.post(
     '/api/coach/conversations/:conversationId/messages',
     requireAuthenticated,
+    limitAi('coach'),
     async (request, response) => {
       const conversationId = pathParam(request, 'conversationId')
       const input = SendCoachMessageRequestSchema.safeParse(request.body ?? {})
@@ -3804,6 +3832,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
   app.post(
     '/api/coach/roadmap/notes',
     requireAuthenticated,
+    limitAi('coach'),
     async (request, response) => {
       const input = CoachRoadmapNoteRequestSchema.safeParse(request.body ?? {})
       if (!input.success) {
@@ -4899,6 +4928,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
   app.post(
     '/api/recommendations/refresh',
     requireAuthenticated,
+    limitAi('recommendations'),
     async (request, response) => {
       const cancellation = abortSignalForResponse(request, response)
       try {
@@ -5338,6 +5368,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
   if (options.mentorRepository !== undefined) {
     registerMentorRoutes(app, {
       requireAuthenticated,
+      limitAi: (applies) => limitAi('mentor', applies),
       subject: authenticatedSubject,
       service: new MentorService({
         repository: options.mentorRepository,

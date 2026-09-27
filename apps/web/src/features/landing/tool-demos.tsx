@@ -326,93 +326,181 @@ const dialDays = Array.from({ length: 30 }, (_, index) =>
   ),
 )
 
+const dialStepColors = ['#38bdf8', '#2dd4bf', '#4ade80', '#fbbf24'] as const
+
 export function DialDemo() {
   const { ref, inView, reduceMotion } = useLoopStep<HTMLDivElement>(2, 60000, 1)
   const most = Math.max(1, ...dialDays)
+  const solved = dialDays.reduce((sum, value) => sum + value, 0)
+  const activeDays = dialDays.filter((value) => value > 0).length
+  const share = activeDays / dialDays.length
+  const ringLength = 2 * Math.PI * 46
+  const headAngle = ((-90 + share * 360) * Math.PI) / 180
+  const head = {
+    x: 100 + Math.cos(headAngle) * 46,
+    y: 100 + Math.sin(headAngle) * 46,
+  }
   const shown = inView || reduceMotion
   return (
     <div
       aria-hidden="true"
-      className="relative mx-auto aspect-square w-full max-w-[12rem]"
+      className="relative mx-auto w-full max-w-[15rem]"
       ref={ref}
     >
-      <svg className="size-full overflow-visible" viewBox="0 0 200 200">
-        <circle
-          cx="100"
-          cy="100"
-          fill="none"
-          r="46"
-          stroke="rgba(255,255,255,0.08)"
-          strokeWidth="5"
-        />
-        <motion.circle
-          animate={{ strokeDasharray: shown ? '240 289' : '0 289' }}
-          cx="100"
-          cy="100"
-          fill="none"
-          r="46"
-          stroke="#38bdf8"
-          strokeLinecap="round"
-          strokeWidth="5"
-          transform="rotate(-90 100 100)"
-          transition={{ duration: 1.4, ease }}
-        />
-        {dialDays.map((value, index) => {
-          const angle = ((-90 + (index + 0.5) * 12) * Math.PI) / 180
-          const length = value === 0 ? 2 : 8 + 30 * Math.sqrt(value / most)
-          const x1 = 100 + Math.cos(angle) * 58
-          const y1 = 100 + Math.sin(angle) * 58
-          return (
-            <motion.line
-              animate={{
-                x2: shown ? 100 + Math.cos(angle) * (58 + length) : x1,
-                y2: shown ? 100 + Math.sin(angle) * (58 + length) : y1,
-              }}
-              key={index}
-              stroke={
-                value === 0
-                  ? 'rgba(255,255,255,0.2)'
-                  : value > 3
-                    ? '#4ade80'
-                    : '#38bdf8'
-              }
-              strokeLinecap="round"
-              strokeWidth="5"
-              transition={{
-                type: 'spring',
-                stiffness: 110,
-                damping: 13,
-                delay: 0.2 + index * 0.025,
-              }}
-              initial={reduceMotion ? false : { x2: x1, y2: y1 }}
-              x1={x1}
-              x2={x1}
-              y1={y1}
-              y2={y1}
+      <div className="relative aspect-square w-full">
+        <svg className="size-full overflow-visible" viewBox="0 0 200 200">
+          <g
+            className={reduceMotion ? undefined : 'memory-orbit'}
+            style={{
+              transformOrigin: '100px 100px',
+              animationDuration: '36s',
+            }}
+          >
+            <circle
+              cx="100"
+              cy="100"
+              fill="none"
+              r="96"
+              stroke="rgba(255,255,255,0.12)"
+              strokeDasharray="2 8"
             />
-          )
-        })}
-        <text
-          fill="#f4f1ea"
-          fontSize="30"
-          fontWeight="800"
-          textAnchor="middle"
-          x="100"
-          y="108"
-        >
-          {dialDays.reduce((sum, value) => sum + value, 0)}
-        </text>
-        <text
-          fill="rgba(255,255,255,0.5)"
-          fontSize="8"
-          letterSpacing="2"
-          textAnchor="middle"
-          x="100"
-          y="122"
-        >
-          SOLVED · 30D
-        </text>
-      </svg>
+            <circle cx="196" cy="100" fill="#7dd3fc" r="2" />
+            <circle cx="4" cy="100" fill="#a78bfa" r="1.5" />
+          </g>
+          <circle
+            cx="100"
+            cy="100"
+            fill="rgba(255,255,255,0.025)"
+            r="39"
+            stroke="rgba(255,255,255,0.07)"
+          />
+          <circle
+            cx="100"
+            cy="100"
+            fill="none"
+            r="46"
+            stroke="rgba(255,255,255,0.09)"
+            strokeWidth="5"
+          />
+          <motion.circle
+            animate={{
+              strokeDasharray: shown
+                ? `${share * ringLength} ${ringLength}`
+                : `0 ${ringLength}`,
+            }}
+            cx="100"
+            cy="100"
+            fill="none"
+            r="46"
+            stroke="#F20AC9"
+            strokeLinecap="round"
+            strokeWidth="5"
+            transform="rotate(-90 100 100)"
+            transition={{ duration: 1.4, ease }}
+          />
+          {shown && share > 0 ? (
+            <motion.circle
+              animate={{ opacity: 1, scale: 1 }}
+              cx={head.x}
+              cy={head.y}
+              fill="#fff0fc"
+              initial={reduceMotion ? false : { opacity: 0, scale: 0 }}
+              r="3"
+              transition={{ delay: 1.4, type: 'spring', stiffness: 300 }}
+            />
+          ) : null}
+          {dialDays.map((value, index) => {
+            const angle = ((-90 + (index + 0.5) * 12) * Math.PI) / 180
+            const length = value === 0 ? 2 : 7 + 25 * Math.sqrt(value / most)
+            const x1 = 100 + Math.cos(angle) * 58
+            const y1 = 100 + Math.sin(angle) * 58
+            const color =
+              index === dialDays.length - 1
+                ? '#ef4444'
+                : value === 0
+                  ? 'rgba(255,255,255,0.2)'
+                  : dialStepColors[
+                      Math.min(
+                        dialStepColors.length - 1,
+                        Math.ceil((value / most) * dialStepColors.length) - 1,
+                      )
+                    ]
+            const x2 = 100 + Math.cos(angle) * (58 + length)
+            const y2 = 100 + Math.sin(angle) * (58 + length)
+            return (
+              <g key={index}>
+                <motion.line
+                  animate={{ x2: shown ? x2 : x1, y2: shown ? y2 : y1 }}
+                  stroke={color}
+                  strokeLinecap="butt"
+                  strokeWidth="4.5"
+                  transition={{
+                    type: 'spring',
+                    stiffness: 110,
+                    damping: 13,
+                    delay: 0.2 + index * 0.025,
+                  }}
+                  initial={reduceMotion ? false : { x2: x1, y2: y1 }}
+                  x1={x1}
+                  x2={x1}
+                  y1={y1}
+                  y2={y1}
+                />
+                {index === dialDays.length - 1 && shown && !reduceMotion ? (
+                  <motion.circle
+                    animate={{ r: [3, 8, 3], opacity: [0.9, 0, 0.9] }}
+                    cx={x2}
+                    cy={y2}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth="1.5"
+                    transition={{ duration: 2.4, repeat: Infinity, delay: 1.2 }}
+                  />
+                ) : null}
+              </g>
+            )
+          })}
+          <text
+            fill="#f4f1ea"
+            fontSize="30"
+            fontWeight="800"
+            textAnchor="middle"
+            x="100"
+            y="103"
+          >
+            {solved}
+          </text>
+          <text
+            fill="rgba(255,255,255,0.5)"
+            fontSize="7"
+            letterSpacing="1.8"
+            textAnchor="middle"
+            x="100"
+            y="116"
+          >
+            SOLVED · 30 DAYS
+          </text>
+        </svg>
+      </div>
+      <dl className="mt-1 grid grid-cols-3 gap-1.5 text-center">
+        {[
+          ['Active days', `${activeDays}/30`],
+          ['Best day', `${most}`],
+          ['Today', `${dialDays.at(-1) ?? 0}`],
+        ].map(([label, value]) => (
+          <div
+            className="rounded-md border border-white/10 bg-white/[0.05] px-1 py-1.5"
+            key={label}
+          >
+            <dt className="text-[0.48rem] tracking-[0.08em] text-white/45 uppercase">
+              {label}
+            </dt>
+            <dd className="mt-0.5 font-heading text-sm font-bold text-white tabular-nums">
+              {value}
+            </dd>
+          </div>
+        ))}
+      </dl>
     </div>
   )
 }

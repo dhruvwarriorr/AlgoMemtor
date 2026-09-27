@@ -2086,7 +2086,6 @@ export class CoachService {
     const safeContent = redactCoachContextText(input.content, 12_000)
     const transientValue = input.transientContext?.trim()
     const transient = transientValue || undefined
-    const transientMedia = input.transientMedia
     const omittedUserContext = safeContent !== input.content.trim()
     const userMessage = await this.options.repository.appendMessage(
       userId,
@@ -2095,9 +2094,7 @@ export class CoachService {
         role: 'user',
         content:
           safeContent || 'The learner sent transient code or problem context.',
-        ...(transient === undefined &&
-        transientMedia === undefined &&
-        !omittedUserContext
+        ...(transient === undefined && !omittedUserContext
           ? {}
           : { transientContextOmitted: true }),
         evidence: [],
@@ -2120,7 +2117,6 @@ export class CoachService {
     }
     if (
       transient === undefined &&
-      transientMedia === undefined &&
       !omittedUserContext &&
       isCoachSmallTalk(input.content)
     ) {
@@ -2143,7 +2139,6 @@ export class CoachService {
       conversationId,
       question: input.content,
       ...(transient === undefined ? {} : { transientContext: transient }),
-      ...(transientMedia === undefined ? {} : { transientMedia }),
       context: {
         ...coachContextForAi(context),
         ...(pastedUrls.length === 0 ? {} : { pastedUrls }),
@@ -2165,9 +2160,7 @@ export class CoachService {
             // proposals disabled whenever either input field contained content
             // that was omitted from saved history.
             allowMemoryProposals:
-              transient === undefined &&
-              transientMedia === undefined &&
-              !omittedUserContext,
+              transient === undefined && !omittedUserContext,
           })
     } catch (error) {
       this.options.logger.warn('coach_ai_unavailable', {

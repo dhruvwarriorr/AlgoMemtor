@@ -10,8 +10,9 @@ from uuid import NAMESPACE_URL, uuid5
 import sqlalchemy as sa
 from pgvector.sqlalchemy import VECTOR
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
+from .database import shared_engine
 from .knowledge_base import KNOWLEDGE_CHUNKS, KnowledgeChunk, _expanded_tokens
 from .settings import get_ai_settings
 
@@ -109,6 +110,11 @@ class KnowledgeRepository:
                 "\n".join(chunk.content for chunk in KNOWLEDGE_CHUNKS).encode()
             ).hexdigest()
             async with self.engine.begin() as connection:
+                if await self._already_seeded(connection, checksum, embedding_model):
+                    # Serverless instances start often: skip rewriting an
+                    # unchanged, fully embedded reference.
+                    self._seeded = True
+                    return
                 await connection.execute(
                     insert(knowledge_sources)
                     .values(
@@ -175,6 +181,34 @@ class KnowledgeRepository:
                         timeout_seconds,
                     )
             self._seeded = True
+
+    async def _already_seeded(
+        self,
+        connection: sa.Connection,
+        checksum: str,
+        embedding_model: str | None,
+    ) -> bool:
+        stored = await connection.scalar(
+            sa.select(knowledge_sources.c.checksum).where(
+                knowledge_sources.c.source_key == _SOURCE_KEY,
+                knowledge_sources.c.version == _SOURCE_VERSION,
+            )
+        )
+        if stored != checksum:
+            return False
+        if embedding_model is None:
+            return True
+        pending = await connection.scalar(
+            sa.select(sa.func.count())
+            .select_from(knowledge_chunks)
+            .where(
+                sa.or_(
+                    knowledge_chunks.c.embedding_v2.is_(None),
+                    knowledge_chunks.c.embedding_version != embedding_model,
+                )
+            )
+        )
+        return pending == 0
 
     async def _populate_embeddings(
         self,
@@ -333,4 +367,4 @@ def get_knowledge_repository() -> KnowledgeRepository | None:
     database_url = get_ai_settings().database_url
     if not database_url:
         return None
-    return KnowledgeRepository(create_async_engine(database_url, pool_pre_ping=True))
+    return KnowledgeRepository(shared_engine(database_url))

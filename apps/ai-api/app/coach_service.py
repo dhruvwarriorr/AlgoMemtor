@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import logging
 import re
@@ -9,12 +8,9 @@ from collections import deque
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import lru_cache
-from io import BytesIO
 from time import monotonic, perf_counter
 from typing import Any, Protocol
 from uuid import UUID
-from xml.etree import ElementTree
-from zipfile import BadZipFile, ZipFile
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (
@@ -25,8 +21,6 @@ from langchain_core.messages import (
 )
 from langchain_openai import ChatOpenAI
 from pydantic import ValidationError
-from pypdf import PdfReader
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from .ai_observability import AiUsage, record_usage
 from .coach_audit import (
@@ -65,6 +59,7 @@ from .core_client import (
     request_live_refresh,
     request_problem_content,
 )
+from .database import shared_engine
 from .knowledge_base import retrieve_knowledge
 from .knowledge_query import build_knowledge_query
 from .knowledge_repository import KnowledgeRepository
@@ -81,7 +76,7 @@ from .pedagogy import (
     mistake_prompt,
     teaching_prompt,
 )
-from .settings import AiSettings, get_ai_settings
+from .settings import AiSettings, ModelRole, get_ai_settings
 from .web_grounding import (
     ground_public_question,
     public_topic_hints,
@@ -481,40 +476,6 @@ def is_rate_limit_error(error: BaseException) -> bool:
     return False
 
 
-def extract_text_attachment(mime_type: str, data: str) -> str:
-    decoded = base64.b64decode(data, validate=True)
-    if mime_type in {"text/plain", "text/markdown"}:
-        return decoded.decode("utf-8", errors="replace")[:12_000]
-    if mime_type != (
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    ):
-        raise CoachGenerationError("Unsupported text attachment type.")
-    try:
-        with ZipFile(BytesIO(decoded)) as document:
-            entry = document.getinfo("word/document.xml")
-            if entry.file_size > 1_000_000:
-                raise CoachGenerationError("Document text is too large to process.")
-            xml = document.read(entry)
-    except (BadZipFile, KeyError) as error:
-        raise CoachGenerationError("Invalid document attachment.") from error
-    if b"<!DOCTYPE" in xml or b"<!ENTITY" in xml:
-        raise CoachGenerationError("Unsafe document attachment.")
-    try:
-        root = ElementTree.fromstring(xml)
-    except ElementTree.ParseError as error:
-        raise CoachGenerationError("Invalid document attachment.") from error
-    return " ".join(
-        node.text or ""
-        for node in root.iter()
-        if node.tag == "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t"
-    )[:12_000]
-
-
-TEXT_DOCUMENT_TYPES = {
-    "text/plain",
-    "text/markdown",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-}
 FINAL_TOOL = "submit_answer"
 
 
@@ -522,7 +483,6 @@ def _human_message(
     request: CoachRequest,
     prefetched: dict[str, Any] | None = None,
     *,
-    provider: str = "openrouter",
     budget: TurnBudget | None = None,
 ) -> HumanMessage:
     context = request.context
@@ -549,84 +509,7 @@ def _human_message(
         payload["prefetchedToolResults"] = prefetched
     if request.transientContext:
         payload["transientContext"] = request.transientContext
-    attachment = request.transientMedia
-    if attachment is not None and attachment.mimeType in TEXT_DOCUMENT_TYPES:
-        try:
-            payload["transientDocumentText"] = extract_text_attachment(
-                attachment.mimeType, attachment.data
-            )
-        except CoachGenerationError:
-            # An unreadable document should not sink the whole turn; the
-            # coach can tell the learner it could not read the attachment.
-            payload["transientDocumentNote"] = (
-                "The attached document could not be read."
-            )
-    if (
-        attachment is not None
-        and provider == "local"
-        and attachment.mimeType == "application/pdf"
-    ):
-        try:
-            reader = PdfReader(BytesIO(base64.b64decode(attachment.data)))
-            if reader.is_encrypted:
-                raise ValueError("Encrypted PDF")
-            payload["transientDocumentText"] = (
-                "\n".join(page.extract_text() or "" for page in reader.pages[:10])[
-                    :8_000
-                ]
-                or "No extractable text was found in the PDF."
-            )
-        except Exception:  # noqa: BLE001
-            payload["transientDocumentNote"] = (
-                "The PDF could not be read. Ask the learner to paste relevant text or attach an image."
-            )
-    text = json.dumps(payload, separators=(",", ":"), default=str)
-    if (
-        attachment is None
-        or attachment.mimeType in TEXT_DOCUMENT_TYPES
-        or (provider == "local" and attachment.mimeType == "application/pdf")
-    ):
-        return HumanMessage(content=text)
-    if attachment.mimeType.startswith("image/"):
-        return HumanMessage(
-            content=[
-                {"type": "text", "text": text},
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:{attachment.mimeType};base64,{attachment.data}"
-                    },
-                },
-            ]
-        )
-    return HumanMessage(
-        content=[
-            {"type": "text", "text": text},
-            {
-                "type": "media",
-                "mime_type": attachment.mimeType,
-                "data": attachment.data,
-            },
-        ]
-    )
-
-
-async def _prepare_local_media(request: CoachRequest) -> CoachRequest:
-    attachment = request.transientMedia
-    if attachment is None or attachment.mimeType in TEXT_DOCUMENT_TYPES:
-        return request
-    note = (
-        "The local development model is text-only and could not inspect the "
-        "attached media. Ask the learner to paste text or attach extracted text."
-    )
-    return request.model_copy(
-        update={
-            "transientMedia": None,
-            "transientContext": "\n".join(
-                part for part in (request.transientContext, note) if part
-            )[:12_000],
-        }
-    )
+    return HumanMessage(content=json.dumps(payload, separators=(",", ":"), default=str))
 
 
 def recent_openings(recent_turns: list[dict[str, Any]], limit: int = 5) -> list[str]:
@@ -886,9 +769,9 @@ _WEAK_AREA = re.compile(r"\bweak(?:est|ness|nesses)?\b", re.IGNORECASE)
 
 
 def _reasoning_variant(model: BaseChatModel) -> BaseChatModel:
-    """`model` with local reasoning on, for short questions of fact.
+    """`model` with reasoning on, for short questions of fact.
 
-    Without reasoning the local model misremembers plain world facts; with it
+    Without reasoning the fast model misremembers plain world facts; with it
     the answer costs a few hundred extra tokens. The reasoning shares the
     output limit, so the limit grows to leave room for the answer.
     """
@@ -908,7 +791,6 @@ def coach_chat_model(
     light: bool = False,
     deep: bool = False,
     max_tokens: int | None = None,
-    estimated_context_tokens: int = 0,
 ) -> BaseChatModel:
     """The coach's chat model.
 
@@ -937,7 +819,6 @@ def coach_chat_model(
             else settings.llm_timeout_seconds
         ),
         max_retries=0 if fast else 1,
-        estimated_context_tokens=estimated_context_tokens,
     )
 
 
@@ -949,7 +830,7 @@ class ProviderCoachModel:
         self.settings = settings
         self.services = services
         self.throttle = ModelRequestThrottle(settings.coach_model_requests_per_minute)
-        self._sized_models: dict[tuple[bool, bool, int, bool], BaseChatModel] = {}
+        self._sized_models: dict[tuple[bool, bool, int], BaseChatModel] = {}
         self.base_model = model
         # Concept and quick-fact turns: same model, light reasoning.
         self.light_model = (
@@ -957,13 +838,8 @@ class ProviderCoachModel:
             if settings.coach_thinking_level == "low"
             else coach_chat_model(settings, light=True)
         )
-        output_schema = (
-            {"title": "CoachModelOutput", **coach_output_json_schema()}
-            if settings.effective_coach_provider == "local"
-            else CoachModelOutput
-        )
         self.structured_model = model.with_structured_output(
-            output_schema,
+            CoachModelOutput,
             method="function_calling",
             include_raw=True,
         )
@@ -971,7 +847,7 @@ class ProviderCoachModel:
         self.fast_structured_model = coach_chat_model(
             settings, fast=True
         ).with_structured_output(
-            output_schema,
+            CoachModelOutput,
             method="function_calling",
             include_raw=True,
         )
@@ -982,13 +858,11 @@ class ProviderCoachModel:
             return None
         return plan_turn_budget(
             settings,
-            provider=settings.effective_coach_provider,
             question=request.question,
             context=request.context,
             has_transient_context=bool(request.transientContext)
             and not is_page_snapshot(request.transientContext),
             page_snapshot=is_page_snapshot(request.transientContext),
-            has_media=request.transientMedia is not None,
         )
 
     def _sized_model(
@@ -997,7 +871,6 @@ class ProviderCoachModel:
         *,
         deep: bool,
         fast: bool = False,
-        estimated_context_tokens: int = 0,
     ) -> BaseChatModel | None:
         """A chat model whose output ceiling matches this turn's budget."""
         settings = getattr(self, "settings", None)
@@ -1005,13 +878,12 @@ class ProviderCoachModel:
             return None
         # Only instances built by __init__ own their models; an instance with
         # injected models (tests, alternative providers) keeps using them.
-        cache: dict[tuple[bool, bool, int, bool], BaseChatModel] | None = getattr(
+        cache: dict[tuple[bool, bool, int], BaseChatModel] | None = getattr(
             self, "_sized_models", None
         )
         if cache is None:
             return None
-        huge = estimated_context_tokens >= settings.ai_huge_context_threshold_tokens
-        key = (deep, fast, budget.output_tokens, huge)
+        key = (deep, fast, budget.output_tokens)
         if key not in cache:
             cache[key] = coach_chat_model(
                 settings,
@@ -1019,19 +891,12 @@ class ProviderCoachModel:
                 light=not deep,
                 deep=deep,
                 max_tokens=budget.output_tokens,
-                estimated_context_tokens=estimated_context_tokens,
             )
         return cache[key]
 
     def _structured(self, model: BaseChatModel) -> Any:
-        settings = self.settings
-        output_schema = (
-            {"title": "CoachModelOutput", **coach_output_json_schema()}
-            if settings.effective_coach_provider == "local"
-            else CoachModelOutput
-        )
         return model.with_structured_output(
-            output_schema, method="function_calling", include_raw=True
+            CoachModelOutput, method="function_calling", include_raw=True
         )
 
     async def respond(self, request: CoachRequest) -> CoachModelResult:
@@ -1040,12 +905,10 @@ class ProviderCoachModel:
         if (
             base_model is not None
             and settings is not None
-            and settings.effective_coach_provider == "local"
-            and settings.local_ai_single_call
+            and settings.coach_single_call
         ):
-            # A local model answers in one call over prefetched workspace
-            # data: every extra agent step re-reads the whole context, which
-            # costs tens of seconds on laptop hardware.
+            # One call over prefetched workspace data: every extra agent step
+            # re-reads the whole context, so this is the cheapest Coach mode.
             return await self._respond_plain(request)
         if (
             base_model is not None
@@ -1088,7 +951,6 @@ class ProviderCoachModel:
             and is_page_snapshot(request.transientContext)
         )
         prefetched = {} if page_only else await self._prefetch_workspace(request)
-        request = await _prepare_local_media(request)
         logger.info(
             "coach_turn_plan",
             extra={
@@ -1102,11 +964,7 @@ class ProviderCoachModel:
             update={"context": _compact_context(request.context)}
         )
         model = (
-            self._sized_model(
-                budget,
-                deep=False,
-                estimated_context_tokens=estimate_tokens(request.context),
-            )
+            self._sized_model(budget, deep=budget is not None and budget.deep_reasoning)
             or self.base_model
         )
         world_fact = is_world_fact_question(request.question)
@@ -1121,7 +979,7 @@ class ProviderCoachModel:
                 + (WORLD_FACT_PROMPT if world_fact else "")
                 + PLAIN_OUTPUT_PROMPT
             ),
-            _human_message(request, prefetched, provider="local", budget=budget),
+            _human_message(request, prefetched, budget=budget),
         ]
         await self._acquire_slot()
         reply = await model.ainvoke(messages)
@@ -1205,7 +1063,12 @@ class ProviderCoachModel:
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             provider=self.settings.effective_coach_provider,
-            model_name=self.settings.effective_coach_model,
+            model_name=route_model(
+                self.settings,
+                "deep_coach"
+                if budget is not None and budget.deep_reasoning
+                else "simple_coach",
+            ).model,
         )
 
     async def _acquire_slot(self) -> None:
@@ -1216,23 +1079,12 @@ class ProviderCoachModel:
     async def _respond_structured(
         self, request: CoachRequest, *, fast: bool = False
     ) -> CoachModelResult:
-        prefetched: dict[str, Any] | None = None
-        if (
-            getattr(self, "settings", None) is not None
-            and self.settings.effective_coach_provider == "local"
-        ):
-            prefetched = await self._prefetch_workspace(request)
-            request = await _prepare_local_media(request)
-            request = request.model_copy(
-                update={"context": _compact_context(request.context)}
-            )
         await self._acquire_slot()
         budget = self._budget(request)
         sized = self._sized_model(
             budget,
             deep=budget is not None and budget.deep_reasoning and not fast,
             fast=fast,
-            estimated_context_tokens=estimate_tokens(request.context),
         )
         model = (
             self._structured(sized)
@@ -1244,16 +1096,7 @@ class ProviderCoachModel:
         result: dict[str, Any] = await model.ainvoke(
             [
                 ("system", SYSTEM_PROMPT + "\n" + _guidance_prompt(request)),
-                _human_message(
-                    request,
-                    prefetched,
-                    provider=(
-                        self.settings.effective_coach_provider
-                        if getattr(self, "settings", None) is not None
-                        else "openrouter"
-                    ),
-                    budget=budget,
-                ),
+                _human_message(request, budget=budget),
             ]
         )
         parsed = coerce_coach_output(result.get("parsed"))
@@ -1291,7 +1134,6 @@ class ProviderCoachModel:
                         if budget is not None and budget.deep_reasoning and not fast
                         else "simple_coach"
                     ),
-                    estimated_context_tokens=estimate_tokens(request.context),
                 ).model
                 if getattr(self, "settings", None) is not None
                 else None
@@ -1543,14 +1385,9 @@ class ProviderCoachModel:
                 request.question,
                 has_transient_context=bool(request.transientContext)
                 and not is_page_snapshot(request.transientContext),
-                has_media=request.transientMedia is not None,
             )
         )
-        chosen_model = self._sized_model(
-            budget,
-            deep=deep,
-            estimated_context_tokens=estimate_tokens(request.context),
-        ) or (
+        chosen_model = self._sized_model(budget, deep=deep) or (
             self.base_model
             if deep
             else getattr(self, "light_model", None) or self.base_model
@@ -1597,7 +1434,6 @@ class ProviderCoachModel:
                         model_name=route_model(
                             self.settings,
                             "deep_coach" if deep else "simple_coach",
-                            estimated_context_tokens=estimate_tokens(request.context),
                         ).model,
                     )
                 if final_step:
@@ -1668,9 +1504,7 @@ class CoachService:
             except MemoryEmbeddingError, RuntimeError, ValueError:
                 self.embedder = None
         self.knowledge_repository = (
-            KnowledgeRepository(
-                create_async_engine(settings.database_url, pool_pre_ping=True)
-            )
+            KnowledgeRepository(shared_engine(settings.database_url))
             if settings.database_url
             else None
         )
@@ -1849,7 +1683,7 @@ class CoachService:
         settings = self.settings
         if not settings.generation_api_key:
             return None, 0
-        timeout = 20.0 if settings.ai_provider == "local" else 12.0
+        timeout = 12.0
         self.smalltalk_model = chat_model(
             settings,
             workload="simple_coach",
@@ -1937,7 +1771,6 @@ class CoachService:
             classify_turn(
                 request.question,
                 has_transient_context=bool(request.transientContext),
-                has_media=request.transientMedia is not None,
             )
             == "smalltalk"
         ):
@@ -2063,8 +1896,7 @@ class CoachService:
         frustration = detect_frustration(request.question)
         is_problem_solution = is_specific_problem_solution_request(
             request.question,
-            request.transientContext
-            or ("attached media" if request.transientMedia is not None else None),
+            request.transientContext,
         )
         effective_request = request.model_copy(
             update={
@@ -2228,15 +2060,20 @@ class CoachService:
         model_name: str | None = None,
         price_known: bool = True,
     ) -> None:
+        resolved_model = model_name or self.settings.effective_coach_model
+        role: ModelRole = (
+            "strong"
+            if resolved_model == self.settings.model_for_role("strong")
+            else "fast"
+        )
         if input_tokens is None or output_tokens is None or not price_known:
             estimated_cost = None
         else:
             million = 1_000_000
+            input_price, output_price = self.settings.prices_for_role(role)
             estimated_cost = float(
-                input_tokens * float(self.settings.effective_coach_prices[0]) / million
-                + output_tokens
-                * float(self.settings.effective_coach_prices[1])
-                / million
+                input_tokens * float(input_price) / million
+                + output_tokens * float(output_price) / million
             )
         retrieval = request.context.get("retrieval")
         retrieval_values = retrieval if isinstance(retrieval, dict) else {}
@@ -2262,14 +2099,6 @@ class CoachService:
             and knowledge_count > 0,
             memory_retrieved=isinstance(memories, list) and len(memories) > 0,
             web_grounding_used=public_grounding is True,
-        )
-        resolved_model = model_name or self.settings.effective_coach_model
-        role = (
-            "huge_context"
-            if resolved_model == self.settings.model_for_role("huge_context")
-            else "strong"
-            if resolved_model == self.settings.model_for_role("strong")
-            else "fast"
         )
         record_usage(
             self.settings,

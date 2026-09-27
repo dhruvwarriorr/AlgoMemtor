@@ -21,8 +21,12 @@ Workload = Literal[
     "code_debugging",
     "algorithm_derivation",
     "correctness_reasoning",
+    "contest_analysis",
 ]
 
+# Work where reasoning or coding quality changes the answer goes to the
+# strong model; everything else (ranking, memory extraction, classification,
+# short summaries, simple Coach turns) is structured work for the fast one.
 STRONG_WORKLOADS: frozenset[Workload] = frozenset(
     {
         "doubt_helper",
@@ -31,30 +35,21 @@ STRONG_WORKLOADS: frozenset[Workload] = frozenset(
         "code_debugging",
         "algorithm_derivation",
         "correctness_reasoning",
+        "contest_analysis",
     }
 )
 
 
 @dataclass(frozen=True)
 class ModelRoute:
-    provider: Literal["local", "openrouter"]
+    provider: Literal["openrouter"]
     role: ModelRole
     model: str
     workload: Workload
 
 
-def route_model(
-    settings: AiSettings,
-    workload: Workload,
-    *,
-    estimated_context_tokens: int = 0,
-) -> ModelRoute:
+def route_model(settings: AiSettings, workload: Workload) -> ModelRoute:
     role: ModelRole = "strong" if workload in STRONG_WORKLOADS else "fast"
-    if (
-        settings.ai_provider == "openrouter"
-        and estimated_context_tokens >= settings.ai_huge_context_threshold_tokens
-    ):
-        role = "huge_context"
     return ModelRoute(
         provider=settings.ai_provider,
         role=role,
@@ -72,16 +67,11 @@ def chat_model(
     max_tokens: int,
     timeout: float,
     max_retries: int,
-    estimated_context_tokens: int = 0,
     force_role: ModelRole | None = None,
 ) -> BaseChatModel:
-    route = route_model(
-        settings, workload, estimated_context_tokens=estimated_context_tokens
-    )
-    role = force_role or route.role
-    model = settings.model_for_role(role)
+    role = force_role or route_model(settings, workload).role
     return get_provider(settings).chat(
-        model=model,
+        model=settings.model_for_role(role),
         role=role,
         temperature=temperature,
         thinking_level=thinking_level,
@@ -99,7 +89,6 @@ def generation_model(
     max_tokens: int,
     timeout: float,
     max_retries: int,
-    estimated_context_tokens: int = 0,
 ) -> BaseChatModel:
     return chat_model(
         settings,
@@ -109,5 +98,4 @@ def generation_model(
         max_tokens=max_tokens,
         timeout=timeout,
         max_retries=max_retries,
-        estimated_context_tokens=estimated_context_tokens,
     )

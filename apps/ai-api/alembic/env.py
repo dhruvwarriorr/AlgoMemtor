@@ -15,10 +15,16 @@ target_metadata = None
 
 
 def _database_url() -> str:
-    database_url = os.environ.get("DATABASE_URL", "").strip()
+    # Migrations use the direct (non-pooled) Neon URL when one is given;
+    # schema changes need a session-level connection.
+    database_url = (
+        os.environ.get("DATABASE_MIGRATION_URL", "").strip()
+        or os.environ.get("DATABASE_URL", "").strip()
+    )
     if not database_url:
         raise RuntimeError(
-            "DATABASE_URL must be set before running Alembic migrations."
+            "DATABASE_MIGRATION_URL or DATABASE_URL must be set before running "
+            "Alembic migrations."
         )
     if database_url.startswith("postgresql://"):
         return database_url.replace("postgresql://", "postgresql+psycopg://", 1)

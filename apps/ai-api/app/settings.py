@@ -2,15 +2,21 @@ from decimal import Decimal
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-AiProvider = Literal["local", "openrouter"]
-ModelRole = Literal["fast", "strong", "huge_context"]
+AiProvider = Literal["openrouter"]
+ModelRole = Literal["fast", "strong"]
 
 
 class AiSettings(BaseSettings):
-    """AI runtime configuration for the two supported deployment modes."""
+    """AI runtime configuration. Every environment calls OpenRouter.
+
+    Two chat models with clearly different jobs and one embedding model:
+    `fast` (GPT-OSS-20B) for cheap structured work, `strong` (DeepSeek V4
+    Flash) for reasoning, code and long context, and Qwen3 Embedding 8B for
+    memory and knowledge retrieval.
+    """
 
     model_config = SettingsConfigDict(
         env_file=".env", extra="ignore", populate_by_name=True
@@ -19,42 +25,22 @@ class AiSettings(BaseSettings):
     app_environment: Literal["development", "test", "production"] = Field(
         default="development", validation_alias="APP_ENV"
     )
-    ai_provider: AiProvider = "local"
-    ai_development_allow_cloud_fallback: bool = False
+    ai_provider: AiProvider = "openrouter"
     database_url: str | None = None
+    # Connections per process. Serverless instances each hold their own
+    # pool, so the defaults stay small for Neon's free compute.
+    database_pool_size: int = Field(default=2, ge=1, le=20)
+    database_max_overflow: int = Field(default=1, ge=0, le=20)
     internal_service_token: str = ""
     core_api_url: str = ""
 
-    # Local development. Ollama exposes an OpenAI-compatible chat endpoint;
-    # sentence-transformers loads embeddings from the normal user cache.
-    local_ai_base_url: str = "http://127.0.0.1:11434/v1"
-    local_ai_model: str = "qwen3:8b-q4_K_M"
-    local_ai_context_tokens: int = Field(default=16_384, ge=8_192, le=32_768)
-    # Qwen3 "thinks" before answering unless told not to, which makes local
-    # answers 5-10x slower on laptop hardware. "off" answers directly;
-    # "deep" lets only the deepest requests (thinking level high) think.
-    local_ai_thinking: Literal["off", "deep"] = "off"
-    # Ollama unloads an idle model after 5 minutes and reloading costs tens of
-    # seconds; the AI service keeps it loaded this long between requests.
-    local_ai_keep_alive_minutes: int = Field(default=60, ge=0, le=1_440)
-    # Answer Coach turns in one call over prefetched workspace data instead
-    # of a multi-step tool agent; each agent step re-reads the context.
-    local_ai_single_call: bool = True
-    local_embedding_model: str = "Qwen/Qwen3-Embedding-0.6B"
-    local_embedding_dimensions: int = Field(default=1_024, ge=1_024, le=1_024)
-    local_embedding_version: str = "qwen3-embedding-0.6b-1024-v1"
-
-    # Production. These are the only cloud models used by the application.
     openrouter_api_key: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_app_name: str = "AlgoMemtor"
     openrouter_app_url: str = ""
     ai_fast_model: str = "openai/gpt-oss-20b"
-    ai_strong_model: str = "openai/gpt-oss-120b"
-    ai_huge_context_model: str = "qwen/qwen3.8-flash"
-    ai_huge_context_threshold_tokens: int = Field(
-        default=100_000, ge=32_768, le=900_000
-    )
+    # Also the long-context model: it accepts over a million tokens.
+    ai_strong_model: str = "deepseek/deepseek-v4-flash-0731"
     ai_embedding_model: str = "qwen/qwen3-embedding-8b"
     ai_embedding_dimensions: int = Field(default=1_024, ge=1_024, le=1_024)
     ai_embedding_version: str = "qwen3-embedding-8b-1024-v1"
@@ -85,6 +71,9 @@ class AiSettings(BaseSettings):
     coach_model_requests_per_minute: int = Field(default=0, ge=0, le=10_000)
     coach_response_timeout_seconds: float = Field(default=140, gt=0, le=900)
     coach_agent_enabled: bool = True
+    # One call over prefetched workspace data instead of the tool agent:
+    # cheaper, at some cost in answer quality.
+    coach_single_call: bool = False
     coach_agent_max_steps: int = Field(default=4, ge=1, le=12)
     coach_agent_timeout_seconds: float = Field(default=75, gt=0, le=240)
     coach_live_refresh_timeout_seconds: float = Field(default=30, gt=0, le=60)
@@ -94,19 +83,17 @@ class AiSettings(BaseSettings):
     ai_fast_input_price_per_million_usd: Decimal = Field(default=Decimal("0.018"), ge=0)
     ai_fast_output_price_per_million_usd: Decimal = Field(default=Decimal("0.09"), ge=0)
     ai_strong_input_price_per_million_usd: Decimal = Field(
-        default=Decimal("0.15"), ge=0
+        default=Decimal("0.021"), ge=0
     )
     ai_strong_output_price_per_million_usd: Decimal = Field(
-        default=Decimal("0.60"), ge=0
+        default=Decimal("0.32"), ge=0
     )
-    ai_huge_input_price_per_million_usd: Decimal = Field(default=Decimal("0.15"), ge=0)
-    ai_huge_output_price_per_million_usd: Decimal = Field(default=Decimal("0.47"), ge=0)
     ai_embedding_price_per_million_usd: Decimal = Field(default=Decimal("0.01"), ge=0)
     ai_web_search_price_per_request_usd: Decimal = Field(default=Decimal("0.005"), ge=0)
-    ai_pricing_version: str = "openrouter-public-2026-09-25"
+    ai_pricing_version: str = "openrouter-public-2026-09-27"
 
-    ai_ranking_version: str = "ai-provider-router-v3"
-    coach_version: str = "coach-provider-router-v3"
+    ai_ranking_version: str = "ai-provider-router-v4"
+    coach_version: str = "coach-provider-router-v4"
     memory_generation_version: str = "memory-provider-router-v2"
     memory_prompt_version: str = "memory-prompt-v1"
     consent_policy_version: str = "personalized-coaching-rag-v2"
@@ -131,11 +118,8 @@ class AiSettings(BaseSettings):
     web_search_timeout_seconds: float = Field(default=40, ge=5, le=120)
 
     @field_validator(
-        "local_ai_model",
-        "local_embedding_model",
         "ai_fast_model",
         "ai_strong_model",
-        "ai_huge_context_model",
         "ai_embedding_model",
         mode="before",
     )
@@ -145,36 +129,9 @@ class AiSettings(BaseSettings):
             return value.strip()
         raise ValueError("AI model names cannot be blank.")
 
-    @model_validator(mode="after")
-    def deployment_mode_is_explicit(self) -> "AiSettings":
-        if (
-            self.app_environment == "development"
-            and self.ai_provider == "openrouter"
-            and not self.ai_development_allow_cloud_fallback
-        ):
-            raise ValueError(
-                "Development cannot use OpenRouter unless "
-                "AI_DEVELOPMENT_ALLOW_CLOUD_FALLBACK=true."
-            )
-        if self.app_environment == "production" and self.ai_provider != "openrouter":
-            raise ValueError("Production requires AI_PROVIDER=openrouter.")
-        if self.ai_provider == "local":
-            # A laptop model reads ~220 and writes ~15 tokens a second; cloud
-            # timeout defaults would cut local answers off before they finish.
-            # Explicitly configured values are kept.
-            local_defaults = {
-                "ai_request_timeout_seconds": 300.0,
-                "coach_response_timeout_seconds": 280.0,
-                "mentor_timeout_seconds": 480.0,
-            }
-            for name, value in local_defaults.items():
-                if name not in self.model_fields_set:
-                    setattr(self, name, value)
-        return self
-
     @property
     def generation_api_key(self) -> str:
-        return "ollama" if self.ai_provider == "local" else self.openrouter_api_key
+        return self.openrouter_api_key
 
     @property
     def llm_model(self) -> str:
@@ -230,54 +187,29 @@ class AiSettings(BaseSettings):
 
     @property
     def active_embedding_model(self) -> str:
-        return (
-            self.local_embedding_model
-            if self.ai_provider == "local"
-            else self.ai_embedding_model
-        )
+        return self.ai_embedding_model
 
     @property
     def active_embedding_dimensions(self) -> int:
-        return (
-            self.local_embedding_dimensions
-            if self.ai_provider == "local"
-            else self.ai_embedding_dimensions
-        )
+        return self.ai_embedding_dimensions
 
     @property
     def active_embedding_version(self) -> str:
-        return (
-            self.local_embedding_version
-            if self.ai_provider == "local"
-            else self.ai_embedding_version
-        )
+        return self.ai_embedding_version
 
     def model_for_role(self, role: ModelRole) -> str:
-        if self.ai_provider == "local":
-            return self.local_ai_model
-        return {
-            "fast": self.ai_fast_model,
-            "strong": self.ai_strong_model,
-            "huge_context": self.ai_huge_context_model,
-        }[role]
+        return self.ai_strong_model if role == "strong" else self.ai_fast_model
 
     def prices_for_role(self, role: ModelRole) -> tuple[Decimal, Decimal]:
-        if self.ai_provider == "local":
-            return Decimal(), Decimal()
-        return {
-            "fast": (
-                self.ai_fast_input_price_per_million_usd,
-                self.ai_fast_output_price_per_million_usd,
-            ),
-            "strong": (
+        if role == "strong":
+            return (
                 self.ai_strong_input_price_per_million_usd,
                 self.ai_strong_output_price_per_million_usd,
-            ),
-            "huge_context": (
-                self.ai_huge_input_price_per_million_usd,
-                self.ai_huge_output_price_per_million_usd,
-            ),
-        }[role]
+            )
+        return (
+            self.ai_fast_input_price_per_million_usd,
+            self.ai_fast_output_price_per_million_usd,
+        )
 
 
 @lru_cache

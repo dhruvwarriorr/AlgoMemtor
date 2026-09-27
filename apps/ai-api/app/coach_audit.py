@@ -9,8 +9,9 @@ from time import perf_counter
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
+from .database import shared_engine
 from .settings import get_ai_settings
 
 coach_invocation_audits = sa.Table(
@@ -130,7 +131,7 @@ def get_coach_audit_repository() -> CoachAuditRepository | NullCoachAuditReposit
     database_url = get_ai_settings().database_url
     if not database_url:
         return NullCoachAuditRepository()
-    return CoachAuditRepository(create_async_engine(database_url, pool_pre_ping=True))
+    return CoachAuditRepository(shared_engine(database_url))
 
 
 def elapsed_ms(started: float) -> int:

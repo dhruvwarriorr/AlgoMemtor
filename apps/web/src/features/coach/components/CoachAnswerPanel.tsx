@@ -78,7 +78,7 @@ export function CoachAnswerPanel({
     <aside
       aria-label="Answer details"
       className={cn(
-        'flex w-[24rem] shrink-0 flex-col gap-5 overflow-y-auto border-l border-border p-5 2xl:w-[27rem]',
+        'relative flex w-[24rem] shrink-0 flex-col gap-5 overflow-y-auto border-l border-border p-5 2xl:w-[27rem]',
         className,
       )}
     >

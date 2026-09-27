@@ -112,7 +112,6 @@ def test_real_questions_and_bare_answers_use_the_full_coach(question: str) -> No
 
 def test_attachments_are_never_small_talk() -> None:
     assert classify_turn("hi", has_transient_context=True) == "full"
-    assert classify_turn("hi", has_media=True) == "full"
 
 
 def test_deep_reasoning_is_reserved_for_complex_turns() -> None:

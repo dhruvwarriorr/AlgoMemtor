@@ -128,10 +128,13 @@ const prerequisites: Record<string, readonly string[]> = {
   'fenwick-trees': ['trees'],
 }
 
-const databaseUrl = process.env.DATABASE_URL
+const databaseUrl =
+  process.env.DATABASE_MIGRATION_URL?.trim() || process.env.DATABASE_URL
 
 if (databaseUrl === undefined) {
-  throw new Error('DATABASE_URL is required to seed normalized topics.')
+  throw new Error(
+    'DATABASE_MIGRATION_URL or DATABASE_URL is required to seed normalized topics.',
+  )
 }
 
 const prisma = new PrismaClient({

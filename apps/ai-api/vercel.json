@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "regions": ["iad1"],
+  "functions": {
+    "app/main.py": {
+      "maxDuration": 300,
+      "excludeFiles": "{tests/**,evaluation/**,scripts/**,alembic/**,alembic.ini,Dockerfile,.venv/**,**/__pycache__/**,.pytest_cache/**,.ruff_cache/**}"
+    }
+  }
+}

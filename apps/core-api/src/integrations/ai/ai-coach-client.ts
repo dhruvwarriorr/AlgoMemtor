@@ -59,7 +59,6 @@ export type AiCoachRequest = {
   conversationId: string
   question: string
   transientContext?: string
-  transientMedia?: SendCoachMessageRequest['transientMedia']
   context: Record<string, unknown>
   workspace?: object
 }

@@ -51,7 +51,7 @@ def record_usage(settings: AiSettings, usage: AiUsage) -> None:
     """Emit metadata-only usage telemetry and an advisory process-local warning."""
     global _month, _month_cost, _warned
     logger.info("ai_usage", extra={"ai_usage": asdict(usage)})
-    if not settings.ai_budget_tracking_enabled or settings.ai_provider == "local":
+    if not settings.ai_budget_tracking_enabled:
         return
     current_month = datetime.now(UTC).strftime("%Y-%m")
     if current_month != _month:

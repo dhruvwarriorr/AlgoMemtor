@@ -14,6 +14,7 @@ import type {
 } from '@algomemtor/shared-contracts'
 
 import { ProviderLogo } from '@/components/brand/ProviderLogo'
+import { PlatformTierBadge } from '@/components/kit/PlatformTierBadge'
 import { CellTooltip } from '@/components/ui/cell-tooltip'
 import { providerLabels } from '@/features/platform/components/provider-labels'
 import { useReveal } from '@/features/insights/use-reveal'
@@ -238,7 +239,13 @@ function PlatformCard({
               <p className="min-w-0 truncate text-sm font-semibold text-foreground">
                 {account.handle}
               </p>
-              {account.rank ? (
+              {provider === 'codechef' || provider === 'leetcode' ? (
+                <PlatformTierBadge
+                  provider={provider}
+                  rank={account.rank}
+                  rating={account.rating}
+                />
+              ) : account.rank ? (
                 <span
                   className="shrink-0 rounded-full px-2 py-0.5 text-[0.65rem] font-semibold capitalize"
                   style={{

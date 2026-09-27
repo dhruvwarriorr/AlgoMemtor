@@ -8,6 +8,7 @@ import type {
 
 import { ProviderLogo } from '@/components/brand/ProviderLogo'
 import { TrendingDown, TrendingUp } from '@/components/icons/algo-icons'
+import { PlatformTierBadge } from '@/components/kit/PlatformTierBadge'
 import { SpotlightCard } from '@/components/kit/surfaces'
 import { CountUp } from '@/components/motion/CountUp'
 import {
@@ -99,9 +100,13 @@ function TierRing({ progress, color }: { progress: number; color: string }) {
 // in from the left, with a crosshair that snaps to the nearest contest.
 export function RatingTrendCard({
   history,
+  accounts = [],
   className,
 }: {
   history: readonly ProviderRatingChange[]
+  // Linked accounts' reported standing (a LeetCode badge is not derivable
+  // from the rating).
+  accounts?: readonly { provider: ProviderKey; rank?: string | undefined }[]
   className?: string
 }) {
   const reduceMotion = useReducedMotion()
@@ -248,7 +253,17 @@ export function RatingTrendCard({
                 {rising ? '+' : ''}
                 {latest.delta}
               </span>
-              {standing?.tier ? (
+              {provider === 'codechef' || provider === 'leetcode' ? (
+                <PlatformTierBadge
+                  provider={provider}
+                  rank={
+                    accounts.find((account) => account.provider === provider)
+                      ?.rank
+                  }
+                  rating={latest.rating}
+                  size="md"
+                />
+              ) : standing?.tier ? (
                 <span
                   className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold"
                   style={{

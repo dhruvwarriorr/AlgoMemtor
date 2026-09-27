@@ -16,8 +16,9 @@ import sqlalchemy as sa
 from pgvector.sqlalchemy import VECTOR
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
+from .database import shared_engine
 from .memory_audit import memory_generation_audits
 from .memory_models import (
     MemoryProcessRequest,
@@ -1447,4 +1448,4 @@ def get_memory_repository() -> MemoryRepository | NullMemoryRepository:
     if not database_url:
         logger.warning("Memory persistence disabled: DATABASE_URL not configured")
         return NullMemoryRepository()
-    return MemoryRepository(create_async_engine(database_url, pool_pre_ping=True))
+    return MemoryRepository(shared_engine(database_url))

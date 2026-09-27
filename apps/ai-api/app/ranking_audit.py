@@ -7,8 +7,9 @@ from uuid import UUID, uuid4
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine
 
+from .database import shared_engine
 from .settings import get_ai_settings
 
 ranking_audits = sa.Table(
@@ -96,4 +97,4 @@ def get_ranking_audit_repository() -> (
     database_url = get_ai_settings().database_url
     if not database_url:
         return NullRankingAuditRepository()
-    return RankingAuditRepository(create_async_engine(database_url, pool_pre_ping=True))
+    return RankingAuditRepository(shared_engine(database_url))

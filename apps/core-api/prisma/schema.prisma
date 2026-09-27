@@ -919,3 +919,19 @@ model RevisionItem {
   @@map("revision_items")
   @@schema("core")
 }
+
+// Requests that reached a paid AI model, per learner (or "global") and time
+// window. Only counts are stored; old windows are pruned.
+model AiUsageCounter {
+  subject     String   @db.VarChar(64)
+  bucket      String   @db.VarChar(32)
+  windowKind  String   @map("window_kind") @db.VarChar(8)
+  windowStart DateTime @map("window_start") @db.Timestamptz(3)
+  count       Int      @default(0)
+  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)
+
+  @@id([subject, bucket, windowKind, windowStart])
+  @@index([windowStart])
+  @@map("ai_usage_counters")
+  @@schema("core")
+}

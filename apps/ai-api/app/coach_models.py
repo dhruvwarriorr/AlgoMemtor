@@ -57,45 +57,13 @@ CoachDatasetId = Literal[
     "topic-comparison",
 ]
 
+
 class CoachStrictModel(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         str_strip_whitespace=True,
         populate_by_name=True,
     )
-
-
-class CoachTransientMedia(CoachStrictModel):
-    mimeType: Literal[
-        "audio/webm",
-        "audio/mp4",
-        "audio/mpeg",
-        "audio/wav",
-        "video/mp4",
-        "video/webm",
-        "image/jpeg",
-        "image/png",
-        "image/webp",
-        "application/pdf",
-        "text/plain",
-        "text/markdown",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ]
-    data: str = Field(min_length=4, max_length=11_184_812)
-
-    @field_validator("data")
-    @classmethod
-    def validate_base64(cls, value: str) -> str:
-        import base64
-        import binascii
-
-        try:
-            decoded = base64.b64decode(value, validate=True)
-        except (binascii.Error, ValueError) as error:
-            raise ValueError("Media must be valid base64.") from error
-        if len(decoded) > 8 * 1024 * 1024:
-            raise ValueError("Media must be 8 MB or smaller.")
-        return value
 
 
 class CoachProblemReference(CoachStrictModel):
@@ -338,7 +306,6 @@ class CoachRequest(CoachStrictModel):
     conversationId: UUID
     question: str = Field(min_length=1, max_length=8_000)
     transientContext: str | None = Field(default=None, max_length=12_000)
-    transientMedia: CoachTransientMedia | None = None
     context: dict[str, object]
     # Complete owner-scoped learner data assembled by Express. It is never
     # placed in the prompt wholesale: the coach agent queries it through

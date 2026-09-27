@@ -155,9 +155,9 @@ future contributor should preserve is:
 - Coach AI fallback is intentionally learner-facing unavailable status. When
   FastAPI returns a fallback, the system does not save fabricated advice,
   rich content, action proposals, or a learner-memory job for that turn.
-- Coach turns accept one transient attachment up to 8 MiB (supported image,
-  document, audio, or video types). Raw attachment data is sent only for that
-  request and is represented by an omission marker in saved history.
+- Coach turns are text only (decision of 2026-09-27): the attachment control and
+  `transientMedia` were removed from the contract, Express and FastAPI. Pasted
+  code or problem text still travels as transient context for one request.
 - Linking a provider queues an initial sync immediately; manual refresh has
   its own cooldown. (Superseded on 2026-09-27: there is no hourly schedule
   and no worker process; see "Request-driven job pump" in section 11.)
@@ -384,6 +384,15 @@ The Profile page presents:
 - provider profile snapshots;
 - consent and disconnect controls; and
 - data deletion controls.
+
+Platform standing (2026-09-27) sits beside every CodeChef and LeetCode rating
+on the Dashboard rating card, the Insights account cards and the Profile
+accounts: CodeChef stars follow the published bands from the rating (1★ below
+1400 to 7★ at 2500+), and the LeetCode contest badge (Knight or Guardian) is
+the one LeetCode reports, since it is percentile based; a rated learner without
+one sees "No badge yet". The rules live in `platformTier`
+(`shared-contracts/src/platform-tier.ts`). The CodeChef profile now stores the
+star label as `rank` and the global rank as `globalRank`.
 
 ### 4.8 Unified activity
 
@@ -1885,18 +1894,9 @@ private learner history.
 Safe conversation text is retained until the learner deletes the thread. Code
 blocks and copied problem context supplied as transient context are sent only
 for the current request and saved as an omission marker; they are not logged,
-embedded, or included in AI audits. Learners may also attach one supported image,
-document, audio, or video file of up to 8 MiB to a coach turn through a single
-attachment control. JPEG, PNG, WebP, PDF, TXT, Markdown, DOCX, MP3, WAV, M4A,
-MP4, and WebM are accepted. TXT, Markdown, and DOCX text is extracted in memory;
-other supported formats are sent as transient media when the selected production
-model accepts them. Local Qwen development remains text-first; unsupported media
-produces a clear request for extracted text or a screenshot,
-audio/video through a transient Whisper transcription, and PDFs through bounded
-local text extraction. The attachment is used for that
-turn only and is never saved in conversation history, embeddings, or audits.
-Attachment analysis follows the same always-on AI disclosure and is not used
-for public-web search grounding. Audits retain model/version, latency,
+embedded, or included in AI audits. The Coach accepts text only; file
+attachments were removed on 2026-09-27 (they could not fit Vercel's 4.5 MB
+function body limit and added cost without a clear need). Audits retain model/version, latency,
 token/cost metadata, conversation/learner ownership, and a keyed context
 fingerprint, never raw prompts or context snapshots. Action proposals are
 revalidated and applied only after an authenticated, idempotent `CONFIRM`.
@@ -2125,69 +2125,51 @@ before the first model step and arrive as `prefetchedToolResults`, which keeps
 lighter models grounded and usually saves a tool round. Each agent turn uses
 one to `COACH_AGENT_MAX_STEPS + 1` model requests (default at most five).
 `COACH_MODEL_REQUESTS_PER_MINUTE` can be set to the project's RPM quota so turns
-wait briefly for a slot instead of receiving provider 429s. Development uses
-`qwen3:8b-q4_K_M`. Production uses `openai/gpt-oss-20b` for ordinary turns,
-`openai/gpt-oss-120b` for deep reasoning, and `qwen/qwen3.8-flash` only when
-packed context exceeds `AI_HUGE_CONTEXT_THRESHOLD_TOKENS`. Configurable price
-fields keep request audit estimates current; they are advisory rather than
-provider billing records.
+wait briefly for a slot instead of receiving provider 429s. Every environment
+uses OpenRouter (see "AI model routing" below): `openai/gpt-oss-20b` answers
+quick and standard turns and `deepseek/deepseek-v4-flash-0731` answers deep
+turns, which also covers long context. `COACH_SINGLE_CALL=true` answers in one
+call over prefetched data instead of the tool agent, trading quality for cost.
+Configurable price fields keep request audit estimates current; they are
+advisory rather than provider billing records.
 
 ### Coach token budgets and context packing
 
 Each coach turn gets a budget from `coach_context.py` before any model call:
 
-| Tier | Chosen when | Output ceiling | Local / production context budget | Agent steps |
-| ---- | ----------- | -------------- | --------------------------------- | ----------- |
-| quick | short factual questions ("what is my rating?") | 1,024 (local 600) | 1.8k / 5k tokens | 1 |
-| standard | everything else | `COACH_MAX_OUTPUT_TOKENS` (local 1,200) | 3.2k / 12k tokens | 2 |
-| deep | code, debugging, proofs, plans, links, attachments | `SOLUTION_MAX_OUTPUT_TOKENS` (local 2,000) | 5.5k / 90k tokens | `COACH_AGENT_MAX_STEPS` |
+| Tier | Chosen when | Model | Output ceiling | Context budget | Agent steps |
+| ---- | ----------- | ----- | -------------- | -------------- | ----------- |
+| quick | short factual questions ("what is my rating?") | fast | 1,024 | 5k tokens | 1 |
+| standard | everything else | fast | `COACH_MAX_OUTPUT_TOKENS` | 12k tokens | 2 |
+| deep | code, debugging, proofs, plans, links, pasted context | strong | `SOLUTION_MAX_OUTPUT_TOKENS` | 90k tokens | `COACH_AGENT_MAX_STEPS` |
 
-Only deep turns use the configured high reasoning level. Local context is kept
-inside the 16K Ollama window. The newest conversation turns get a fifth of the
+Only deep turns use the configured high reasoning level. The newest
+conversation turns get a fifth of the
 input budget; a turn too long to fit (a long answer before a follow-up) is
 shortened rather than dropped with everything older.
 
-#### Local model tuning (2026-09-25)
+#### AI model routing (2026-09-27)
 
-Measured on a 16 GB laptop, `qwen3:8b-q4_K_M` reads about 220 and writes about
-15 tokens a second, and its default "thinking" made answers roughly ten times
-slower. Local mode therefore:
+Local models were removed; development and production both call OpenRouter
+with three models, each with one job (`apps/ai-api/app/llm.py`):
 
-- answers with thinking off (`LOCAL_AI_THINKING=off`; `deep` lets only the
-  deepest requests think), except short general-knowledge questions ("Who won
-  the 2022 World Cup?"), which reason first because the model misremembers
-  plain facts without it (about 250 extra tokens) and are answered without
-  commentary on the learner's data;
-- answers Coach turns in one call over prefetched workspace data
-  (`LOCAL_AI_SINGLE_CALL=true`) instead of a multi-step tool agent;
-- keeps the chat model loaded (`LOCAL_AI_KEEP_ALIVE_MINUTES`, refreshed through
-  Ollama's native `/api/generate`, since its OpenAI endpoint ignores
-  `keep_alive`) and loads the embedding model once per process, in the
-  background at startup (the first load takes about 12 s; a warm query embeds
-  in 0.03 s);
-- raises unset timeouts to 300 s (requests), 280 s (Coach) and 480 s (mentor
-  tools);
-- asks mentor tools for schema-constrained JSON (`json_schema`) instead of
-  function calling. With tool calls the small model escapes long programs in
-  the arguments itself, and one bad escape made Ollama drop the whole reply
-  (Solution Explorer failed after minutes); constrained JSON always parses and
-  needs fewer input tokens. Failures log only their shape
-  (`mentor_structured_invalid`: finish reason, tool-call count, failing
-  fields).
+| Role | Model | Price (in / out per 1M tokens) | Used for |
+| ---- | ----- | ------------------------------ | -------- |
+| fast | `openai/gpt-oss-20b` | $0.018 / $0.09 | recommendation reranking, memory extraction, classification, short summaries, progress narrative, simple Coach turns, upsolve picks, web-search summaries, structured JSON |
+| strong | `deepseek/deepseek-v4-flash-0731` | $0.021 / $0.32 | deep Coach turns, Doubt Helper, Solution Explorer, code repair and AI Debugger, contest analysis and patterns, proofs; also the long-context model (1.3M-token window) |
+| embeddings | `qwen/qwen3-embedding-8b` (1024 d) | $0.01 | learner-memory and knowledge RAG vectors only; never answers |
 
-Measured locally after these changes: Coach data answers 25–40 s, small talk
-2 s, a world-fact answer 25 s; Doubt Helper turns about 40 s; a contest
-pattern report 93 s; a progress narrative 54 s; a recommendation ranking of 40
-candidates 25–37 s; a full Solution Explorer exploration about 150 s and a
-follow-up 19 s.
+The separate huge-context model and its threshold are gone: the strong model's
+window covers long prompts. Knowledge chunks keep their 1024-dimension
+`embedding_v2` column, so no re-embedding is needed. Prices are the OpenRouter
+list prices of 2026-09-27 and only feed advisory cost telemetry.
 
-Grounding checks run after a local answer: practice recommendations for a weak
+Grounding checks run after a single-call answer: practice recommendations for a weak
 area are prefetched for the weakest tag (ranked by failed submissions per
 solve, platform-name tags excluded); an answer that lists recommended problems
 missing from the learner's workspace is rewritten once against the trusted
-list; and pool problems listed without IDs still get their problem card. Production keeps ordinary packed context bounded
-and selects the huge-context role only above the configured 100K threshold.
-Tool results are capped per tier (6k, 14k and 30k characters).
+list; and pool problems listed without IDs still get their problem card.
+Ordinary packed context stays bounded by the tier budgets above. Tool results are capped per tier (6k, 14k and 30k characters).
 
 The context is packed to the turn's input budget: governing fields
 (instructions, excluded topics, preferences, linked problems, coaching
@@ -2232,10 +2214,9 @@ expected picks are valid model choices, the whole ranking falls back to
 `invalid_output`. Unsafe text therefore never reaches Express, and a single
 malformed item no longer discards an otherwise useful AI ranking. CSES
 candidates are accepted by the ranking contract. `AI_RANKING_TIMEOUT_MS`
-defaults to 60 seconds: the local `qwen3:8b-q4_K_M` ranks 40 candidates in
-about 25 s on a 16 GB laptop (2,500 input and 500 output tokens), and shorter
-limits (the earlier 8 s and 25 s) silently turned most rankings into
-deterministic fallbacks. Batches rotate once a day, so the wait is paid once.
+defaults to 60 seconds: ranking 40 candidates takes up to about 25 s (2,500
+input and 500 output tokens), and shorter limits (the earlier 8 s and 25 s)
+silently turned most rankings into deterministic fallbacks. Batches rotate once a day, so the wait is paid once.
 
 ### Fallback behavior
 
@@ -2378,7 +2359,8 @@ Create environment files from the examples and never commit live values.
 
 ```text
 VITE_CORE_API_URL=http://localhost:3001
-VITE_AI_API_URL=http://localhost:8000
+# Production: the Render Core API origin; the browser calls it directly.
+VITE_API_BASE_URL=
 VITE_SITE_URL=http://localhost:5173
 VITE_SUPABASE_URL=
 VITE_SUPABASE_PUBLISHABLE_KEY=
@@ -2390,12 +2372,24 @@ VITE_USE_MOCKS=false
 ```text
 NODE_ENV=development
 PORT=3001
+# One or more exact origins, comma separated.
 WEB_ORIGIN=http://localhost:5173
 DATABASE_URL=postgresql://algomemtor:algomemtor_local@127.0.0.1:5433/algomemtor
-DATABASE_POOL_MAX=10
-DATABASE_CONNECTION_TIMEOUT_MS=5000
+# Prisma migrate/seed only (Neon direct URL); empty uses DATABASE_URL.
+DATABASE_MIGRATION_URL=
+DATABASE_POOL_MAX=5
+DATABASE_CONNECTION_TIMEOUT_MS=15000
 SUPABASE_URL=
 SUPABASE_JWT_ISSUER=
+# Per-learner AI limits; off until AI_USAGE_LIMITS_ENABLED=true.
+AI_USAGE_LIMITS_ENABLED=false
+AI_COACH_REQUESTS_PER_MINUTE=4
+AI_COACH_REQUESTS_PER_DAY=40
+AI_MENTOR_REQUESTS_PER_MINUTE=3
+AI_MENTOR_REQUESTS_PER_DAY=25
+AI_RECOMMENDATION_REFRESHES_PER_MINUTE=2
+AI_RECOMMENDATION_REFRESHES_PER_DAY=10
+AI_GLOBAL_REQUESTS_PER_DAY=0
 CODEFORCES_API_BASE_URL=https://codeforces.com/api
 CODECHEF_API_BASE_URL=https://www.codechef.com
 LEETCODE_GRAPHQL_URL=https://leetcode.com/graphql
@@ -2451,16 +2445,11 @@ WEB_ORIGIN=http://localhost:5173
 DATABASE_URL=postgresql+psycopg://algomemtor:algomemtor_local@127.0.0.1:5433/algomemtor
 SUPABASE_URL=
 SUPABASE_JWT_ISSUER=
-AI_PROVIDER=local
-AI_DEVELOPMENT_ALLOW_CLOUD_FALLBACK=false
-LOCAL_AI_BASE_URL=http://127.0.0.1:11434/v1
-LOCAL_AI_MODEL=qwen3:8b-q4_K_M
-LOCAL_AI_CONTEXT_TOKENS=16384
-LOCAL_AI_THINKING=off
-LOCAL_AI_KEEP_ALIVE_MINUTES=60
-LOCAL_AI_SINGLE_CALL=true
-LOCAL_EMBEDDING_MODEL=Qwen/Qwen3-Embedding-0.6B
-LOCAL_EMBEDDING_DIMENSIONS=1024
+# OpenRouter in every environment; development uses a low-credit key.
+AI_PROVIDER=openrouter
+DATABASE_POOL_SIZE=2
+DATABASE_MAX_OVERFLOW=1
+COACH_SINGLE_CALL=false
 COACH_THINKING_LEVEL=high
 COACH_MAX_OUTPUT_TOKENS=4096
 COACH_AGENT_ENABLED=true
@@ -2471,8 +2460,7 @@ COACH_RESPONSE_TIMEOUT_SECONDS=140
 OPENROUTER_API_KEY=
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 AI_FAST_MODEL=openai/gpt-oss-20b
-AI_STRONG_MODEL=openai/gpt-oss-120b
-AI_HUGE_CONTEXT_MODEL=qwen/qwen3.8-flash
+AI_STRONG_MODEL=deepseek/deepseek-v4-flash-0731
 AI_EMBEDDING_MODEL=qwen/qwen3-embedding-8b
 AI_EMBEDDING_DIMENSIONS=1024
 AI_WEB_SEARCH_MODEL=openai/gpt-oss-20b
@@ -2731,6 +2719,34 @@ Verify manually or with browser tests:
 ---
 
 ## 20. Operations and troubleshooting
+
+### Free-tier deployment and AI usage limits
+
+Decision (2026-09-27): production runs on free tiers only: the web app and the
+FastAPI AI function on Vercel Hobby, the Express Core API on a Render Free web
+service, and PostgreSQL on Neon Free. The runbook, limits and checklist are in
+`docs/DEPLOYMENT_VERCEL_NEON_RENDER_PLAN.md`; configuration lives in
+`vercel.json` (web), `apps/ai-api/vercel.json` and `[tool.vercel]` (AI) and
+`render.yaml` (Core). Consequences:
+
+- The browser calls the Core API origin directly (`VITE_API_BASE_URL`), with
+  CORS limited to `WEB_ORIGIN`. A Vercel external rewrite would cut requests
+  off after 120 seconds, shorter than long AI answers plus a Render wake-up.
+- Runtime services use Neon's pooled URL; Prisma and Alembic migrations use
+  `DATABASE_MIGRATION_URL` (the direct URL) and run by hand, because Render
+  Free has no pre-deploy command. The AI service shares one small SQLAlchemy
+  pool per process (`DATABASE_POOL_SIZE`, `DATABASE_MAX_OVERFLOW`) with
+  server-side prepared statements off for PgBouncer.
+- Local models and file attachments are removed (see "AI model routing").
+- Per-learner AI limits (`core.ai_usage_counters`, `services/ai-usage-limiter.ts`)
+  count Coach messages and roadmap notes, AI mentor-tool requests (Doubt Helper
+  turns that call the model, Solution Explorer, AI Debugger, contest and
+  progress narratives) and recommendation refreshes, per minute and per UTC
+  day, plus an optional daily ceiling across all learners. Over a limit the API
+  returns `429 AI_USAGE_LIMITED` with `Retry-After`, before any model call.
+  Counters live in PostgreSQL so a sleeping Render instance does not reset
+  them. `AI_USAGE_LIMITS_ENABLED` is `false` by default so the product can be
+  tested end to end; turn it on before opening sign-ups.
 
 ### Analytics shows “Unable to load analytics”
 
@@ -3050,9 +3066,7 @@ The AI service recognises that page snapshot by its fixed opening line
 (`PAGE_SNAPSHOT_PREFIX` in `coach_intent.py`). A snapshot does not make a turn
 deep by itself: an ordinary question about the page runs on the quick budget,
 the snapshot counts against the turn's input budget, and a quick page
-question skips workspace prefetch. On the local model, page questions share
-the single Ollama worker with recommendation ranking, so a question asked
-while a ranking runs waits for it.
+question skips workspace prefetch.
 
 ---
 

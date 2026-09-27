@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import base64
-from io import BytesIO
 from typing import Any
 from uuid import UUID
-from zipfile import ZipFile
 
 import pytest
 from app.coach_models import (
@@ -14,14 +11,10 @@ from app.coach_models import (
     CoachPresentation,
     CoachRequest,
     CoachResponseProposal,
-    CoachTransientMedia,
 )
 from app.coach_service import (
-    CoachGenerationError,
     CoachNotConfiguredError,
     CoachService,
-    ProviderCoachModel,
-    extract_text_attachment,
     utc_timestamp,
 )
 from app.knowledge_base import retrieve_knowledge
@@ -130,14 +123,7 @@ def test_utc_timestamp_matches_shared_contract_format() -> None:
     assert "+00:00" not in timestamp
 
 
-def test_media_validation_and_specific_problem_routing() -> None:
-    assert CoachTransientMedia(mimeType="audio/wav", data="UklGRg==").data
-    assert CoachTransientMedia(mimeType="image/png", data="UklGRg==").data
-    assert CoachTransientMedia(mimeType="application/pdf", data="UklGRg==").data
-    with pytest.raises(ValidationError):
-        CoachTransientMedia(mimeType="application/x-msdownload", data="UklGRg==")
-    with pytest.raises(ValidationError):
-        CoachTransientMedia(mimeType="video/mp4", data="not-base64")
+def test_specific_problem_routing() -> None:
     assert is_specific_problem_solution_request("Give me a hint for this problem", None)
     assert is_specific_problem_solution_request("Give me a hint for Two Sum", None)
     assert is_specific_problem_solution_request("Solve this", "problem text")
@@ -147,75 +133,6 @@ def test_media_validation_and_specific_problem_routing() -> None:
     assert not is_specific_problem_solution_request(
         "How can I solve more problems?", None
     )
-
-
-def test_text_and_docx_attachments_are_extracted_in_memory() -> None:
-    text = base64.b64encode(b"Review the binary search invariant.").decode()
-    assert "binary search" in extract_text_attachment("text/plain", text)
-    document = BytesIO()
-    with ZipFile(document, "w") as archive:
-        archive.writestr(
-            "word/document.xml",
-            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Check the invariant</w:t></w:r></w:p></w:body></w:document>',
-        )
-    encoded = base64.b64encode(document.getvalue()).decode()
-    mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    assert extract_text_attachment(mime, encoded) == "Check the invariant"
-    with pytest.raises(CoachGenerationError, match="Invalid document attachment"):
-        extract_text_attachment(mime, text)
-
-
-@pytest.mark.parametrize("mime_type", ["audio/wav", "image/png", "application/pdf"])
-@pytest.mark.asyncio
-async def test_provider_model_receives_media_as_transient_multimodal_message(
-    mime_type: str,
-) -> None:
-    captured: list[Any] = []
-
-    class StructuredModel:
-        async def ainvoke(self, messages: list[Any]) -> dict[str, Any]:
-            captured.extend(messages)
-            return {
-                "parsed": CoachModelOutput(answer="The clip explains binary search.")
-            }
-
-    model = object.__new__(ProviderCoachModel)
-    model.structured_model = StructuredModel()
-    request = request_payload().model_copy(
-        update={
-            "transientMedia": CoachTransientMedia(mimeType=mime_type, data="UklGRg==")
-        }
-    )
-    result = await model.respond(request)
-    assert result.output.answer == "The clip explains binary search."
-    expected_type = "image_url" if mime_type.startswith("image/") else "media"
-    assert captured[1].content[1]["type"] == expected_type
-    if expected_type == "media":
-        assert captured[1].content[1]["mime_type"] == mime_type
-
-
-@pytest.mark.asyncio
-async def test_text_attachment_reaches_provider_without_raw_base64() -> None:
-    captured: list[Any] = []
-
-    class StructuredModel:
-        async def ainvoke(self, messages: list[Any]) -> dict[str, Any]:
-            captured.extend(messages)
-            return {"parsed": CoachModelOutput(answer="Here is a useful approach.")}
-
-    model = object.__new__(ProviderCoachModel)
-    model.structured_model = StructuredModel()
-    encoded = base64.b64encode(b"Review the binary search invariant.").decode()
-    request = request_payload().model_copy(
-        update={
-            "transientMedia": CoachTransientMedia(mimeType="text/plain", data=encoded)
-        }
-    )
-    await model.respond(request)
-    content = captured[1].content
-    assert isinstance(content, str)
-    assert "Review the binary search invariant." in content
-    assert encoded not in content
 
 
 def test_presentation_accepts_only_trusted_problem_identities() -> None:
@@ -538,11 +455,7 @@ async def test_untrusted_grounding_metadata_is_skipped_safely(
 async def test_unconfigured_service_fails_without_fabricating_advice() -> None:
     audits = AuditRepository()
     service = CoachService(
-        settings(
-            app_environment="production",
-            ai_provider="openrouter",
-            openrouter_api_key="",
-        ),
+        settings(openrouter_api_key=""),
         model=None,
         audit_repository=audits,
     )

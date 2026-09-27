@@ -38,12 +38,14 @@ def settings(**updates: Any) -> AiSettings:
     return AiSettings(_env_file=None, **values)
 
 
-def test_documented_local_settings_are_the_defaults() -> None:
+def test_documented_settings_are_the_defaults() -> None:
     configured = settings()
 
-    assert configured.llm_model == "qwen3:8b-q4_K_M"
+    assert configured.llm_model == "openai/gpt-oss-20b"
+    assert configured.model_for_role("strong") == "deepseek/deepseek-v4-flash-0731"
+    assert configured.active_embedding_model == "qwen/qwen3-embedding-8b"
     assert configured.active_embedding_dimensions == 1024
-    assert configured.ai_ranking_version == "ai-provider-router-v3"
+    assert configured.ai_ranking_version == "ai-provider-router-v4"
 
 
 def test_topic_evidence_is_bounded_and_unique() -> None:

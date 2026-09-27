@@ -24,22 +24,13 @@ from .coach_intent import is_complex_turn
 from .settings import AiSettings
 
 Tier = Literal["quick", "standard", "deep"]
-Provider = Literal["local", "openrouter"]
 
 # Characters per token for compact JSON and English prose; deliberately a
 # little pessimistic so a packed context does not overshoot the budget.
 _CHARS_PER_TOKEN = 3.6
 
-_OUTPUT_TOKENS: dict[Provider, dict[Tier, int]] = {
-    # A laptop model writes about 15 tokens a second and reads about 220:
-    # local budgets keep a deep answer near two minutes.
-    "local": {"quick": 600, "standard": 1_200, "deep": 2_000},
-    "openrouter": {"quick": 1_024, "standard": 4_096, "deep": 16_384},
-}
-_INPUT_TOKENS: dict[Provider, dict[Tier, int]] = {
-    "local": {"quick": 1_800, "standard": 3_200, "deep": 5_500},
-    "openrouter": {"quick": 5_000, "standard": 12_000, "deep": 90_000},
-}
+_OUTPUT_TOKENS: dict[Tier, int] = {"quick": 1_024, "standard": 4_096, "deep": 16_384}
+_INPUT_TOKENS: dict[Tier, int] = {"quick": 5_000, "standard": 12_000, "deep": 90_000}
 _AGENT_STEPS: dict[Tier, int] = {"quick": 1, "standard": 2, "deep": 12}
 _TOOL_RESULT_CHARS: dict[Tier, int] = {
     "quick": 6_000,
@@ -121,12 +112,11 @@ def turn_tier(
     question: str,
     *,
     has_transient_context: bool = False,
-    has_media: bool = False,
     has_linked_problems: bool = False,
     page_snapshot: bool = False,
 ) -> Tier:
     if has_linked_problems or is_complex_turn(
-        question, has_transient_context=has_transient_context, has_media=has_media
+        question, has_transient_context=has_transient_context
     ):
         return "deep"
     words = len(question.split())
@@ -140,33 +130,25 @@ def turn_tier(
 def plan_turn_budget(
     settings: AiSettings,
     *,
-    provider: Provider,
     question: str,
     context: dict[str, object],
     has_transient_context: bool = False,
-    has_media: bool = False,
     page_snapshot: bool = False,
 ) -> TurnBudget:
     tier = turn_tier(
         question,
         has_transient_context=has_transient_context,
-        has_media=has_media,
         has_linked_problems=bool(context.get("linkedProblems")),
         page_snapshot=page_snapshot,
     )
-    output = _OUTPUT_TOKENS[provider][tier]
-    input_budget = _INPUT_TOKENS[provider][tier]
+    output = _OUTPUT_TOKENS[tier]
+    input_budget = _INPUT_TOKENS[tier]
     output_limit = (
         settings.solution_max_output_tokens
         if tier == "deep"
         else settings.coach_max_output_tokens
     )
     output = min(output, output_limit)
-    if provider == "local":
-        input_budget = min(
-            input_budget,
-            max(1_200, settings.local_ai_context_tokens - output - 800),
-        )
     return TurnBudget(
         tier=tier,
         output_tokens=output,

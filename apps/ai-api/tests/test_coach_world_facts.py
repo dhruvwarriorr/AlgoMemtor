@@ -17,20 +17,17 @@ def test_short_world_facts_are_told_apart_from_cp_and_personal_questions() -> No
     assert not is_world_fact_question("Who wrote https://example.com/post?")
 
 
-def test_reasoning_variant_turns_local_reasoning_on_with_room_to_answer() -> None:
+def test_reasoning_variant_turns_reasoning_on_with_room_to_answer() -> None:
     model = ChatOpenAI(
-        model="qwen3:8b-q4_K_M",
-        base_url="http://127.0.0.1:11434/v1",
-        api_key="ollama",
+        model="openai/gpt-oss-20b",
+        base_url="https://openrouter.ai/api/v1",
+        api_key="test-key",
         max_tokens=600,
-        extra_body={"options": {"num_ctx": 16_384}, "reasoning_effort": "none"},
+        extra_body={"reasoning_effort": "none"},
     )
     variant = _reasoning_variant(model)
     assert isinstance(variant, ChatOpenAI)
-    assert variant.extra_body == {
-        "options": {"num_ctx": 16_384},
-        "reasoning_effort": "high",
-    }
+    assert variant.extra_body == {"reasoning_effort": "high"}
     assert variant.max_tokens == 2_000
     assert model.extra_body is not None
     assert model.extra_body["reasoning_effort"] == "none"

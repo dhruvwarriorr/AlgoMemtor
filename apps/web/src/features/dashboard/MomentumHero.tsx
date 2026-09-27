@@ -63,7 +63,7 @@ function AskCoachBar() {
 
   return (
     <form
-      className="group/ask relative flex h-14 w-full max-w-xl items-center gap-2 rounded-2xl border border-white/15 bg-white/[0.07] py-2 pr-2 pl-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl transition-[border-color,background-color,box-shadow] duration-300 focus-within:border-[#7dd3fc]/70 focus-within:bg-white/[0.1] focus-within:shadow-[0_0_0_4px_rgba(56,189,248,0.18)]"
+      className="group/ask relative flex h-14 w-full max-w-xl items-center gap-2 rounded-md border border-white/15 bg-white/[0.07] py-2 pr-2 pl-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl transition-[border-color,background-color,box-shadow] duration-300 focus-within:border-[#7dd3fc]/70 focus-within:bg-white/[0.1] focus-within:shadow-[0_0_0_4px_rgba(56,189,248,0.18)]"
       onSubmit={submit}
     >
       <Sparkles
@@ -88,7 +88,7 @@ function AskCoachBar() {
       />
       <button
         aria-label="Open coach"
-        className="grid size-10 shrink-0 place-items-center rounded-xl bg-linear-to-br from-[#38bdf8] to-[#22c55e] text-[#04121c] shadow-[0_8px_24px_-8px_rgba(56,189,248,0.8)] transition-transform duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:scale-105 active:scale-95"
+        className="grid size-10 shrink-0 place-items-center rounded-sm bg-linear-to-br from-[#38bdf8] to-[#22c55e] text-[#04121c] shadow-[0_8px_24px_-8px_rgba(56,189,248,0.8)] transition-transform duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:scale-105 active:scale-95"
         type="submit"
       >
         <ArrowUpRight aria-hidden="true" className="size-4" />
@@ -276,7 +276,7 @@ function MomentumDial({
               reduceMotion ? false : { strokeDasharray: `0 ${ringLength}` }
             }
             r={RING}
-            stroke="#4ade80"
+            stroke="#F20AC9"
             strokeLinecap="round"
             strokeWidth="6"
             transform={`rotate(-90 ${C} ${C})`}
@@ -497,7 +497,7 @@ export function MomentumHero({
   return (
     <section
       aria-labelledby="dashboard-greeting"
-      className="relative isolate overflow-hidden rounded-2xl bg-[#04070b] text-white shadow-[0_40px_90px_-50px_rgba(14,165,233,0.7)] ring-1 ring-white/10"
+      className="relative isolate overflow-hidden rounded-md bg-[#04070b] text-white shadow-[0_40px_90px_-50px_rgba(14,165,233,0.7)] ring-1 ring-white/10"
     >
       {/* Aurora light, a fading grid and stars. */}
       <span
@@ -522,7 +522,7 @@ export function MomentumHero({
         <div className="flex min-w-0 flex-col gap-5">
           <motion.p
             {...rise(0)}
-            className="inline-flex w-fit items-center gap-2 rounded-full border border-white/12 bg-white/[0.06] px-3 py-1 text-xs text-white/75 backdrop-blur"
+            className="inline-flex w-fit items-center gap-2 rounded-md border border-white/12 bg-white/[0.06] px-3 py-1 text-xs text-white/75 backdrop-blur"
           >
             {/* Today: the calendar glyph with a live node on its corner. */}
             <span aria-hidden="true" className="relative flex size-4">
@@ -572,7 +572,7 @@ export function MomentumHero({
                 transition={{ duration: 0.5, ease, delay: 0.35 + index * 0.06 }}
               >
                 <Link
-                  className="group/tool inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3.5 py-1.5 text-sm font-medium text-white/80 backdrop-blur transition-[background-color,border-color,color,transform] duration-300 hover:-translate-y-0.5 hover:border-white/25 hover:bg-white/[0.1] hover:text-white focus-visible:ring-2 focus-visible:ring-[#7dd3fc] focus-visible:outline-none"
+                  className="group/tool inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.05] px-3.5 py-1.5 text-sm font-medium text-white/80 backdrop-blur transition-[background-color,border-color,color,transform] duration-300 hover:-translate-y-0.5 hover:border-white/25 hover:bg-white/[0.1] hover:text-white focus-visible:ring-2 focus-visible:ring-[#7dd3fc] focus-visible:outline-none"
                   title={tool.description}
                   to={tool.path}
                 >

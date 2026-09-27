@@ -738,46 +738,6 @@ export const SendCoachMessageRequestSchema = z
   .object({
     content: z.string().trim().min(1).max(8_000),
     transientContext: z.string().trim().max(12_000).optional(),
-    transientMedia: z
-      .object({
-        mimeType: z.enum([
-          'audio/webm',
-          'audio/mp4',
-          'audio/mpeg',
-          'audio/wav',
-          'video/mp4',
-          'video/webm',
-          'image/jpeg',
-          'image/png',
-          'image/webp',
-          'application/pdf',
-          'text/plain',
-          'text/markdown',
-          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        ]),
-        data: z
-          .string()
-          .min(4)
-          .max(11_184_812)
-          .refine(
-            (data) =>
-              data.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(data),
-            { message: 'Media must be valid base64.' },
-          ),
-      })
-      .strict()
-      .refine(
-        (media) =>
-          (media.data.length / 4) * 3 -
-            (media.data.endsWith('==')
-              ? 2
-              : media.data.endsWith('=')
-                ? 1
-                : 0) <=
-          8 * 1024 * 1024,
-        { message: 'Media must be 8 MB or smaller.' },
-      )
-      .optional(),
   })
   .strict()
 export type SendCoachMessageRequest = z.infer<

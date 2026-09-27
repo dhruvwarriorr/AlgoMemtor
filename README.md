@@ -153,14 +153,15 @@ at most 40 unique metadata candidates to FastAPI. The browser never calls FastAP
 core service calls `POST /internal/recommendations/rank` with the shared
 `X-Internal-Service-Token` only when its AI client is configured. FastAPI uses
 Pydantic-validated structured output through one provider-neutral layer.
-Development uses Ollama `qwen3:8b-q4_K_M` with a 16K context and local
-`Qwen/Qwen3-Embedding-0.6B` embeddings. Production uses OpenRouter: GPT-OSS
-20B for fast work, GPT-OSS 120B for difficult reasoning, Qwen3.8 Flash only
-for packed contexts above 100K tokens, Qwen3-Embedding-8B for embeddings, and
-the hosted `openrouter:web_search` tool with the `parallel` engine. Development
-never falls back to cloud unless the operator explicitly enables it. Each turn
-uses a bounded task-specific context and output budget. Transient code, page
-text, and attachments are not saved in chat history or audits. The ranking
+Every environment, local development included, uses OpenRouter with three
+models: `openai/gpt-oss-20b` for fast structured work (ranking, memory
+extraction, classification, summaries, simple Coach turns),
+`deepseek/deepseek-v4-flash-0731` for reasoning and code (deep Coach turns,
+Doubt Helper, Solution Explorer, debugging, contest analysis, long context),
+and `qwen/qwen3-embedding-8b` for embeddings only, plus the hosted
+`openrouter:web_search` tool with the `parallel` engine. Each turn uses a
+bounded task-specific context and output budget. The Coach reads text only;
+transient code and page text are not saved in chat history or audits. The ranking
 response returns up to ten allowlisted provider IDs, scores, concise reasons,
 fallback state, measured latency, optional token usage, estimated cost, and an
 optional audit ID. Express validates the response again and resolves canonical
@@ -179,12 +180,11 @@ optional, trimmed, capped at 500 characters, and not used by the deterministic
 fallback; structured profile choices remain authoritative.
 
 If `INTERNAL_SERVICE_TOKEN` is empty in core, the HTTP client is replaced by a
-local unavailable client. If local Ollama is unavailable, or production lacks
-`OPENROUTER_API_KEY`, FastAPI returns a
+local unavailable client. If `OPENROUTER_API_KEY` is missing, FastAPI returns a
 `not_configured` fallback. Timeouts, provider errors, invalid model output,
 unavailable HTTP responses, invalid JSON, and invalid response schemas all keep
 the deterministic recommendation feed available. AI batches use
-`ai-provider-router-v3`; fallback batches use
+`ai-provider-router-v4`; fallback batches use
 `ai-rag-v2-fallback-deterministic-v2`.
 
 The internal endpoint requires the same non-empty token in the AI service. A
@@ -372,13 +372,12 @@ AI API:
 
 ```text
 APP_ENV=development
-AI_PROVIDER=local
-AI_DEVELOPMENT_ALLOW_CLOUD_FALLBACK=false
-LOCAL_AI_BASE_URL=http://127.0.0.1:11434/v1
-LOCAL_AI_MODEL=qwen3:8b-q4_K_M
-LOCAL_AI_CONTEXT_TOKENS=16384
-LOCAL_EMBEDDING_MODEL=Qwen/Qwen3-Embedding-0.6B
-LOCAL_EMBEDDING_DIMENSIONS=1024
+AI_PROVIDER=openrouter
+# A key with a small credit limit is enough for development.
+OPENROUTER_API_KEY=
+AI_FAST_MODEL=openai/gpt-oss-20b
+AI_STRONG_MODEL=deepseek/deepseek-v4-flash-0731
+AI_EMBEDDING_MODEL=qwen/qwen3-embedding-8b
 DATABASE_URL=postgresql+psycopg://algomemtor:algomemtor_local@127.0.0.1:5433/algomemtor
 INTERNAL_SERVICE_TOKEN=
 MEMORY_MIN_CONFIDENCE=0.75
@@ -393,9 +392,10 @@ COACH_WEB_GROUNDING_ENABLED=true
 
 The core URL must be HTTPS or an HTTP loopback URL and cannot contain
 credentials, query parameters, or fragments. `DATABASE_URL` enables the AI
-audit, memory, and vector tables. Production sets `APP_ENV=production`,
-`AI_PROVIDER=openrouter`, and `OPENROUTER_API_KEY`; the complete model and cost
-configuration is documented in `apps/ai-api/.env.example`. Reflection
+audit, memory, and vector tables. Development and production both need
+`OPENROUTER_API_KEY`; production also sets `APP_ENV=production`. The complete
+model and cost configuration is documented in `apps/ai-api/.env.example`, and
+the free-tier deployment in `docs/DEPLOYMENT_VERCEL_NEON_RENDER_PLAN.md`. Reflection
 notes are sent to AI only after the learner enables the separate AI note
 sharing choice. Structured progress signals remain separate from raw notes.
 
@@ -473,18 +473,13 @@ npm run db:down
 
 ### 6. Start development
 
-Install and verify the two local models once. The helper uses Ollama for the
-4-bit chat model and the standard Hugging Face user cache for embeddings; it
-does not put weights in the repository.
+There are no local models: add `OPENROUTER_API_KEY` to `apps/ai-api/.env`
+first. Keep manual AI testing short; every request is billed.
 
-```bash
-npm run ai:local:setup
-npm run ai:local:check
-```
-
-After applying the AI migration, rebuild the versioned 1024-dimensional vector
-columns. The command is restartable and skips rows already written with the
-active embedding version.
+After applying the AI migration, or when a database holds vectors from an
+older embedding model (such as the removed local Qwen3-Embedding-0.6B), rebuild
+the versioned 1024-dimensional vector columns. The command is restartable and
+skips rows already written with the active embedding version.
 
 ```bash
 npm run db:migrate:ai

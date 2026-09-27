@@ -39,6 +39,9 @@ import { MentorError, type MentorService } from './services/mentor-service.js'
 
 type MentorRouteDependencies = {
   requireAuthenticated: RequestHandler
+  // Counts a request against the learner's AI allowance; `applies` narrows
+  // counting to requests that will call a model.
+  limitAi?: (applies?: (request: Request) => boolean) => RequestHandler
   subject: (response: Response) => string
   service: MentorService
 }
@@ -105,8 +108,32 @@ const refreshBody = z
 
 export function registerMentorRoutes(
   app: Express,
-  { requireAuthenticated, subject, service }: MentorRouteDependencies,
+  {
+    requireAuthenticated,
+    limitAi = () => (_request, _response, next) => next(),
+    subject,
+    service,
+  }: MentorRouteDependencies,
 ) {
+  // Doubt Helper actions that ask the model; reveals, cancels and session
+  // changes do not.
+  const modelTurnActions = new Set([
+    'ask',
+    'submit_attempt',
+    'next_hint',
+    'confirm_solution',
+  ])
+  const isModelTurn = (request: Request) => {
+    const body: unknown = request.body
+    return (
+      typeof body === 'object' &&
+      body !== null &&
+      'action' in body &&
+      typeof body.action === 'string' &&
+      modelTurnActions.has(body.action)
+    )
+  }
+
   // --- Doubt Helper -------------------------------------------------------
 
   app.get(
@@ -124,6 +151,7 @@ export function registerMentorRoutes(
   app.post(
     '/api/problem-help/sessions',
     requireAuthenticated,
+    limitAi(),
     handle(async (request, response) => {
       const input = StartProblemHelpRequestSchema.safeParse(request.body)
       if (!input.success) {
@@ -162,6 +190,7 @@ export function registerMentorRoutes(
   app.post(
     '/api/problem-help/sessions/:sessionId/turns',
     requireAuthenticated,
+    limitAi(isModelTurn),
     handle(async (request, response) => {
       const input = ProblemHelpTurnRequestSchema.safeParse(request.body)
       if (!input.success) {
@@ -223,6 +252,7 @@ export function registerMentorRoutes(
   app.post(
     '/api/solutions/explore',
     requireAuthenticated,
+    limitAi(),
     handle(async (request, response) => {
       const input = ExploreSolutionsRequestSchema.safeParse(request.body)
       if (!input.success) {
@@ -244,6 +274,7 @@ export function registerMentorRoutes(
   app.post(
     '/api/solutions/chat',
     requireAuthenticated,
+    limitAi(),
     handle(async (request, response) => {
       const input = SolutionChatRequestSchema.safeParse(request.body)
       if (!input.success) {
@@ -267,6 +298,7 @@ export function registerMentorRoutes(
   app.post(
     '/api/visualizer/debug',
     requireAuthenticated,
+    limitAi(),
     handle(async (request, response) => {
       const input = VisualizerDebugRequestSchema.safeParse(request.body)
       if (!input.success) {
@@ -349,6 +381,7 @@ export function registerMentorRoutes(
   app.post(
     '/api/contest-analysis/patterns/report',
     requireAuthenticated,
+    limitAi(),
     handle(async (request, response) => {
       const input = refreshBody.safeParse(request.body ?? {})
       if (!input.success) {
@@ -391,6 +424,7 @@ export function registerMentorRoutes(
   app.post(
     '/api/contest-analysis/:provider/:contestId/narrative',
     requireAuthenticated,
+    limitAi(),
     handle(async (request, response) => {
       const provider = ProviderKeySchema.safeParse(param(request, 'provider'))
       const contestId = contestIdSchema.safeParse(param(request, 'contestId'))
@@ -429,6 +463,7 @@ export function registerMentorRoutes(
   app.post(
     '/api/progress-report/narrative',
     requireAuthenticated,
+    limitAi(),
     handle(async (request, response) => {
       const input = refreshBody.safeParse(request.body ?? {})
       if (!input.success) {

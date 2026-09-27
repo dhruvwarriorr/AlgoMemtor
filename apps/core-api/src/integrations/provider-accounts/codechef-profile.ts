@@ -1,4 +1,5 @@
 import {
+  codechefStars,
   ProviderProfileSchema,
   type ProviderProfile,
   type PublicProviderHandle,
@@ -117,6 +118,18 @@ export class CodeChefProfileFetcher implements ProviderProfileFetcher {
       html,
       /<div[^>]*class=["'][^"']*rating-ranks[^"']*["'][\s\S]*?<strong>\s*([0-9][0-9,]*)\s*<\/strong>[\s\S]*?Global Rank/i,
     )
+    // CodeChef shows stars beside the rating; they follow its star bands, so
+    // the rating decides when the markup does not carry them.
+    const shownStars =
+      /class=["'][^"']*rating-star[^"']*["'][^>]*>([\s\S]*?)<\/div>/i
+        .exec(html)?.[1]
+        ?.match(/★/g)?.length
+    const stars =
+      shownStars !== undefined && shownStars >= 1 && shownStars <= 7
+        ? shownStars
+        : rating === undefined
+          ? undefined
+          : codechefStars(rating)
     const displayName = providerHtmlToText(
       /<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(html)?.[1] ?? '',
     )
@@ -132,7 +145,8 @@ export class CodeChefProfileFetcher implements ProviderProfileFetcher {
       ...(displayName === '' ? {} : { displayName }),
       profileUrl,
       ...(rating === undefined ? {} : { rating }),
-      ...(globalRank === undefined ? {} : { rank: String(globalRank) }),
+      ...(stars === undefined ? {} : { rank: `${stars}★` }),
+      ...(globalRank === undefined ? {} : { globalRank }),
       solvedCount,
       languageCounts: {},
       topicCounts: {},

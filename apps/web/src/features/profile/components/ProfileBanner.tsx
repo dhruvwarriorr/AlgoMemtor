@@ -10,6 +10,7 @@ import {
   TrendingUp,
   type IconComponent,
 } from '@/components/icons/algo-icons'
+import { iconStagger, type IconMotion } from '@/components/icons/icon-motion'
 import { useUserIdentity } from '@/features/auth/user-identity'
 
 import { readableValue, type StrengthItem } from './profile-strength'
@@ -40,18 +41,12 @@ function StrengthRing({ score }: { score: number }) {
           fill="none"
           initial={reduceMotion ? false : { strokeDasharray: `0 ${length}` }}
           r="26"
-          stroke="url(#profile-strength)"
-          strokeLinecap="round"
+          stroke="#38bdf8"
+          strokeLinecap="butt"
           strokeWidth="6"
           transform="rotate(-90 32 32)"
           transition={{ duration: 1.3, ease, delay: 0.3 }}
         />
-        <defs>
-          <linearGradient id="profile-strength" x1="0" x2="1" y1="0" y2="1">
-            <stop offset="0%" stopColor="#38bdf8" />
-            <stop offset="100%" stopColor="#22c55e" />
-          </linearGradient>
-        </defs>
       </svg>
       <span className="font-heading text-base font-bold text-foreground tabular-nums">
         {Math.round(score * 100)}%
@@ -76,13 +71,22 @@ export function ProfileBanner({
   const coachName = useCoachName()
   const identity = useUserIdentity()
   const reduceMotion = useReducedMotion()
-  const chips: ReadonlyArray<{ icon: IconComponent; label: string }> = profile
+  const chips: ReadonlyArray<{
+    icon: IconComponent
+    label: string
+    motion: IconMotion
+  }> = profile
     ? [
-        { icon: TrendingUp, label: readableValue(profile.experience) },
-        { icon: Target, label: readableValue(profile.goal) },
+        {
+          icon: TrendingUp,
+          label: readableValue(profile.experience),
+          motion: 'rise',
+        },
+        { icon: Target, label: readableValue(profile.goal), motion: 'pop' },
         {
           icon: Flame,
           label: `${readableValue(profile.difficultyComfort)} difficulty`,
+          motion: 'flicker',
         },
       ]
     : []
@@ -91,7 +95,7 @@ export function ProfileBanner({
   return (
     <motion.section
       animate={{ opacity: 1, y: 0 }}
-      className="overflow-hidden rounded-2xl border border-border bg-card shadow-soft"
+      className="overflow-hidden rounded-md border border-border bg-card shadow-soft"
       initial={reduceMotion ? false : { opacity: 0, y: 16 }}
       transition={{ duration: 0.6, ease }}
     >
@@ -165,7 +169,7 @@ export function ProfileBanner({
               {chips.map((chip, index) => (
                 <motion.li
                   animate={{ opacity: 1, y: 0 }}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/55 px-3 py-1 text-xs font-medium text-foreground"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/55 px-3 py-1 text-xs font-medium text-foreground"
                   initial={reduceMotion ? false : { opacity: 0, y: 8 }}
                   key={chip.label}
                   transition={{
@@ -176,7 +180,9 @@ export function ProfileBanner({
                 >
                   <chip.icon
                     aria-hidden="true"
-                    className="size-3.5 text-primary"
+                    className="icon-motion size-3.5 text-primary"
+                    data-motion={chip.motion}
+                    style={iconStagger(index + 2)}
                   />
                   {chip.label}
                 </motion.li>

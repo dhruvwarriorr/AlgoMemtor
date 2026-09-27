@@ -171,91 +171,146 @@ const providerDot: Record<ExternalContest['provider'], string> = {
   cses: '#14a3a3',
 }
 
-// The coming week: each contest is a bar placed at its start time.
-function WeekTimeline({ contests }: { contests: readonly ExternalContest[] }) {
+// Local midnight at the start of the day containing `time`.
+function startOfLocalDay(time: number) {
+  const day = new Date(time)
+  day.setHours(0, 0, 0, 0)
+  return day
+}
+
+const localDayKey = (date: Date) =>
+  `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
+
+const CHIPS_PER_DAY = 3
+
+// The next seven days as a calendar: one dated column per local day, each
+// contest a chip in the day it starts, in start order.
+function WeekCalendar({
+  contests,
+  now,
+}: {
+  contests: readonly ExternalContest[]
+  now: number
+}) {
   const reduceMotion = useReducedMotion()
-  const [origin] = useState(() => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    return today.getTime()
-  })
-  const span = 7 * 86_400_000
-  const inWeek = contests.filter((contest) => {
-    if (contest.startsAt === undefined) return false
-    const start = new Date(contest.startsAt).getTime()
-    return start >= origin && start < origin + span
-  })
+  const origin = startOfLocalDay(now)
+  // Calendar arithmetic, not 24-hour steps, so DST changes keep dates right.
   const days = Array.from({ length: 7 }, (_, index) => {
-    const day = new Date(origin + index * 86_400_000)
-    return new Intl.DateTimeFormat(undefined, { weekday: 'short' }).format(day)
+    const day = new Date(origin)
+    day.setDate(origin.getDate() + index)
+    return day
+  })
+  const byDay = new Map<string, ExternalContest[]>(
+    days.map((day) => [localDayKey(day), []]),
+  )
+  for (const contest of contests) {
+    if (contest.startsAt === undefined) continue
+    byDay.get(localDayKey(new Date(contest.startsAt)))?.push(contest)
+  }
+  for (const list of byDay.values()) {
+    list.sort(
+      (a, b) =>
+        new Date(a.startsAt ?? 0).getTime() -
+        new Date(b.startsAt ?? 0).getTime(),
+    )
+  }
+  const total = [...byDay.values()].reduce((sum, list) => sum + list.length, 0)
+  const weekday = new Intl.DateTimeFormat(undefined, { weekday: 'short' })
+  const monthDay = new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
   })
   return (
-    <div className="rounded-2xl border border-border bg-card p-4">
+    <div className="flex min-w-0 flex-col rounded-2xl border border-border bg-card p-4">
       <div className="flex items-baseline justify-between gap-2">
-        <p className="text-sm font-semibold text-foreground">This week</p>
+        <p className="text-sm font-semibold text-foreground">Next 7 days</p>
         <p className="font-mono text-xs text-muted-foreground">
-          {inWeek.length} contest{inWeek.length === 1 ? '' : 's'}
+          {total} contest{total === 1 ? '' : 's'}
         </p>
       </div>
-      <div className="relative mt-3">
-        <div aria-hidden="true" className="grid grid-cols-7">
-          {days.map((day, index) => (
-            <span
-              className="border-l border-dashed border-border pl-1.5 font-mono text-[0.65rem] text-muted-foreground first:border-l-0 first:pl-0"
-              key={`${day}-${index}`}
+      <ol
+        aria-label="Contests in the next seven days"
+        className="mt-3 grid min-w-0 flex-1 grid-cols-7 gap-1"
+      >
+        {days.map((day, dayIndex) => {
+          const list = byDay.get(localDayKey(day)) ?? []
+          const today = dayIndex === 0
+          return (
+            <li
+              aria-label={`${monthDay.format(day)}: ${list.length} contest${list.length === 1 ? '' : 's'}`}
+              className={cn(
+                'flex min-w-0 flex-col gap-1 rounded-lg border p-1',
+                today
+                  ? 'border-[color-mix(in_oklab,var(--primary)_45%,var(--border))] bg-primary/5'
+                  : 'border-border/70',
+              )}
+              key={localDayKey(day)}
             >
-              {day}
-            </span>
-          ))}
-        </div>
-        <ul
-          className="relative mt-2 flex flex-col gap-1.5"
-          aria-label="Contests this week"
-        >
-          {inWeek.length === 0 ? (
-            <li className="text-xs text-muted-foreground">
-              Nothing scheduled in the next seven days.
-            </li>
-          ) : (
-            inWeek.slice(0, 6).map((contest, index) => {
-              const start = new Date(contest.startsAt ?? origin).getTime()
-              const left = ((start - origin) / span) * 100
-              const width = Math.max(
-                2.5,
-                (((contest.durationSeconds ?? 7200) * 1000) / span) * 100,
-              )
-              return (
-                <li
-                  className="relative h-6"
-                  key={`${contest.provider}:${contest.externalId}`}
+              <span className="flex flex-col items-center leading-none">
+                <span className="font-mono text-[0.6rem] text-muted-foreground uppercase">
+                  {today ? 'Today' : weekday.format(day)}
+                </span>
+                <span
+                  className={cn(
+                    'mt-0.5 font-heading text-sm font-bold tabular-nums',
+                    today ? 'text-primary' : 'text-foreground',
+                  )}
                 >
-                  <motion.span
-                    animate={{ opacity: 1, scaleX: 1 }}
-                    className="absolute top-0 flex h-6 origin-left items-center rounded-md px-1.5"
-                    initial={reduceMotion ? false : { opacity: 0, scaleX: 0 }}
-                    style={{
-                      left: `${left}%`,
-                      minWidth: `${width}%`,
-                      background: `color-mix(in oklab, ${providerDot[contest.provider]} 22%, transparent)`,
-                      boxShadow: `inset 3px 0 0 ${providerDot[contest.provider]}`,
-                    }}
-                    title={`${contest.name} · ${formatDate(contest.startsAt)}`}
+                  {day.getDate()}
+                </span>
+              </span>
+              <ul className="flex min-w-0 flex-col gap-1">
+                {list.slice(0, CHIPS_PER_DAY).map((contest, index) => (
+                  <motion.li
+                    animate={{ opacity: 1, y: 0 }}
+                    className="min-w-0"
+                    initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+                    key={`${contest.provider}:${contest.externalId}`}
                     transition={{
-                      delay: 0.08 * index,
-                      duration: 0.6,
+                      delay: 0.04 * dayIndex + 0.05 * index,
+                      duration: 0.4,
                       ease: [0.16, 1, 0.3, 1],
                     }}
                   >
-                    <span className="truncate pl-1 text-[0.68rem] font-medium whitespace-nowrap text-foreground">
-                      {contest.name}
-                    </span>
-                  </motion.span>
-                </li>
-              )
-            })
-          )}
-        </ul>
-      </div>
+                    <a
+                      className={cn(
+                        'block min-w-0 rounded-md px-1 py-0.5 transition-transform duration-200 hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                        // Already over today: still listed, but quieter.
+                        contest.status === 'finished' && 'opacity-55',
+                      )}
+                      href={contest.canonicalUrl}
+                      rel="noopener noreferrer"
+                      style={{
+                        background: `color-mix(in oklab, ${providerDot[contest.provider]} 20%, transparent)`,
+                        boxShadow: `inset 2px 0 0 ${providerDot[contest.provider]}`,
+                      }}
+                      target="_blank"
+                      title={`${contest.name} on ${providerLabels[contest.provider]} · ${formatDate(contest.startsAt)}`}
+                    >
+                      <span className="block font-mono text-[0.6rem] text-muted-foreground tabular-nums">
+                        {formatTime(contest.startsAt)}
+                      </span>
+                      <span className="block truncate text-[0.66rem] font-medium text-foreground">
+                        {contest.name}
+                      </span>
+                    </a>
+                  </motion.li>
+                ))}
+                {list.length > CHIPS_PER_DAY ? (
+                  <li className="px-1 text-[0.6rem] text-muted-foreground">
+                    +{list.length - CHIPS_PER_DAY} more
+                  </li>
+                ) : null}
+              </ul>
+            </li>
+          )
+        })}
+      </ol>
+      {total === 0 ? (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Nothing scheduled in the next seven days.
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -418,6 +473,20 @@ function ContestsPage() {
   const contests = contestsQuery.data
   const [visibleCount, setVisibleCount] = useState(12)
   const now = useNow(30_000)
+  // The countdown and calendar follow the provider filter but not the
+  // catalog's status filter: they always show what starts from today on.
+  const todayStart = startOfLocalDay(now).toISOString()
+  const scheduleQuery = useContests(
+    useMemo(
+      () => ({
+        ...(provider === undefined ? {} : { provider }),
+        startsAfter: todayStart,
+        limit: 200,
+      }),
+      [provider, todayStart],
+    ),
+  )
+  const schedule = scheduleQuery.data?.data ?? []
 
   function updateFilters(
     nextProvider: typeof provider,
@@ -493,7 +562,7 @@ function ContestsPage() {
     )
   }
 
-  const nextContest = contests?.data
+  const nextContest = schedule
     .filter(
       (contest) =>
         contest.startsAt !== undefined &&
@@ -516,7 +585,7 @@ function ContestsPage() {
       {nextContest ? (
         <div className="grid min-w-0 gap-3 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
           <NextContest contest={nextContest} />
-          <WeekTimeline contests={contests?.data ?? []} />
+          <WeekCalendar contests={schedule} now={now} />
         </div>
       ) : null}
 

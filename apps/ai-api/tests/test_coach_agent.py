@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import base64
 import json
 from datetime import UTC, datetime
-from io import BytesIO
 from typing import Any
 from uuid import UUID
 
@@ -22,7 +20,6 @@ from app.coach_tools import WorkspaceTools, prefetch_plan, verdict_group
 from app.settings import AiSettings
 from app.web_grounding import PublicCitation, PublicResearch, _title_from_url
 from langchain_core.messages import AIMessage, ToolMessage
-from pypdf import PdfWriter
 
 NOW = datetime(2026, 9, 20, 12, tzinfo=UTC)
 
@@ -156,8 +153,6 @@ def settings(**updates: Any) -> AiSettings:
     values: dict[str, Any] = {
         "_env_file": None,
         "internal_service_token": "internal-test-token",
-        # These tests exercise the multi-step agent path.
-        "local_ai_single_call": False,
     }
     values.update(updates)
     return AiSettings(**values)
@@ -553,66 +548,27 @@ async def test_throttle_waits_or_refuses_instead_of_overspending() -> None:
     await ModelRequestThrottle(per_minute=0).acquire()
 
 
-def test_local_provider_uses_the_single_ollama_model() -> None:
-    from app.coach_service import coach_chat_model
-    from langchain_openai import ChatOpenAI
-
-    configured = settings()
-    model = coach_chat_model(configured)
-    assert configured.effective_coach_provider == "local"
-    assert configured.effective_coach_model == "qwen3:8b-q4_K_M"
-    assert isinstance(model, ChatOpenAI)
-    assert model.model_name == "qwen3:8b-q4_K_M"
-
-
 def test_openrouter_provider_uses_the_configured_role_models() -> None:
     from app.llm import route_model
 
-    configured = settings(
-        app_environment="production",
-        ai_provider="openrouter",
-        openrouter_api_key="test-key",
-    )
+    configured = settings(openrouter_api_key="test-key")
     assert route_model(configured, "ranking").model == "openai/gpt-oss-20b"
-    assert route_model(configured, "solution_explorer").model == "openai/gpt-oss-120b"
-    assert (
-        route_model(
-            configured,
-            "deep_coach",
-            estimated_context_tokens=100_000,
-        ).model
-        == "qwen/qwen3.8-flash"
-    )
+    assert route_model(configured, "memory_generation").model == "openai/gpt-oss-20b"
+    assert route_model(configured, "simple_coach").model == "openai/gpt-oss-20b"
+    assert route_model(configured, "upsolve_picker").model == "openai/gpt-oss-20b"
+    for workload in (
+        "solution_explorer",
+        "deep_coach",
+        "doubt_helper",
+        "code_debugging",
+        "contest_analysis",
+    ):
+        assert (
+            route_model(configured, workload).model == "deepseek/deepseek-v4-flash-0731"
+        )
+    assert configured.active_embedding_model == "qwen/qwen3-embedding-8b"
 
 
-def test_image_attachment_uses_openai_image_url_format() -> None:
-    attached = CoachRequest.model_validate(
-        {
-            **request("Explain this diagram").model_dump(),
-            "transientMedia": {
-                "mimeType": "image/png",
-                "data": base64.b64encode(b"image").decode(),
-            },
-        }
-    )
-    message = _human_message(attached, provider="openrouter")
-    assert message.content[1]["type"] == "image_url"
-    assert message.content[1]["image_url"]["url"].startswith("data:image/png;base64,")
-
-
-def test_local_pdf_is_extracted_without_sending_binary() -> None:
-    buffer = BytesIO()
-    writer = PdfWriter()
-    writer.add_blank_page(width=100, height=100)
-    writer.write(buffer)
-    encoded = base64.b64encode(buffer.getvalue()).decode()
-    attached = CoachRequest.model_validate(
-        {
-            **request("Explain this PDF").model_dump(),
-            "transientMedia": {"mimeType": "application/pdf", "data": encoded},
-        }
-    )
-    message = _human_message(attached, provider="local")
+def test_coach_message_is_text_only() -> None:
+    message = _human_message(request("Explain this diagram"))
     assert isinstance(message.content, str)
-    assert "No extractable text" in message.content
-    assert encoded not in message.content

@@ -153,6 +153,7 @@ function DashboardPage() {
       <div className="grid min-w-0 gap-4 lg:grid-cols-12">
         <RatingTrendCard
           className="lg:col-span-8"
+          accounts={platformAnalyticsQuery.data?.insights?.accounts ?? []}
           history={platformAnalyticsQuery.data?.ratingHistory ?? []}
         />
         <TopicMixCard

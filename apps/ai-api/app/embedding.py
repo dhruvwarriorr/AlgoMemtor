@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import asyncio
 import math
-import threading
 from typing import Protocol
 
 from openai import AsyncOpenAI
@@ -29,73 +27,6 @@ def _validate_and_normalize(vector: list[float], dimensions: int) -> list[float]
     if norm == 0:
         raise EmbeddingError("Embedding had zero magnitude.")
     return [float(value) / norm for value in vector]
-
-
-# Loaded models are shared by every embedder in the process. Embedders are
-# created per request, and loading the weights again each time costs seconds.
-_loaded_models: dict[str, object] = {}
-_load_lock = threading.Lock()
-
-
-def _load_sentence_transformer(model_name: str) -> object:
-    with _load_lock:
-        model = _loaded_models.get(model_name)
-        if model is None:
-            from sentence_transformers import SentenceTransformer
-
-            model = SentenceTransformer(model_name, trust_remote_code=True)
-            _loaded_models[model_name] = model
-        return model
-
-
-def preload_local_embedding_model(settings: AiSettings) -> None:
-    """Start loading the local embedding model in the background at startup.
-
-    The first load takes seconds; without this the first question after a
-    restart pays it and memory retrieval misses its budget. A daemon thread
-    never holds up shutdown, and a failed preload simply retries on first use.
-    """
-    if settings.ai_provider != "local":
-        return
-
-    def load() -> None:
-        try:
-            _load_sentence_transformer(settings.local_embedding_model)
-        except Exception:  # noqa: BLE001 - retried on first use
-            return
-
-    threading.Thread(target=load, name="embedding-preload", daemon=True).start()
-
-
-class LocalSentenceTransformerEmbedder:
-    def __init__(self, settings: AiSettings) -> None:
-        self.model_name = settings.local_embedding_model
-        self.dimensions = settings.local_embedding_dimensions
-
-    async def _get_model(self) -> object:
-        model = _loaded_models.get(self.model_name)
-        if model is not None:
-            return model
-        return await asyncio.to_thread(_load_sentence_transformer, self.model_name)
-
-    async def embed(self, text: str, *, task_type: str) -> list[float]:
-        model = await self._get_model()
-        prompt_name = "query" if task_type in {"retrieval_query", "query"} else None
-
-        def encode() -> list[float]:
-            kwargs: dict[str, object] = {
-                "normalize_embeddings": True,
-                "convert_to_numpy": True,
-            }
-            if prompt_name:
-                prompts = getattr(model, "prompts", {}) or {}
-                if prompt_name in prompts:
-                    kwargs["prompt_name"] = prompt_name
-            result = model.encode(text, **kwargs)  # type: ignore[attr-defined]
-            return [float(value) for value in result.tolist()]
-
-        vector = await asyncio.to_thread(encode)
-        return _validate_and_normalize(vector, self.dimensions)
 
 
 class OpenRouterEmbedder:

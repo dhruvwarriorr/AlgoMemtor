@@ -206,15 +206,15 @@ class LangchainMentorModel:
 
     @staticmethod
     def _workload(system: str) -> str:
-        if system.startswith(
-            (
-                UPSOLVE_PICK_SYSTEM,
-                CONTEST_ANALYSIS_SYSTEM,
-                CONTEST_PATTERNS_SYSTEM,
-                PROGRESS_NARRATIVE_SYSTEM,
-            )
-        ):
+        # Selection and narrative over supplied data: the fast model.
+        if system.startswith(UPSOLVE_PICK_SYSTEM):
+            return "upsolve_picker"
+        if system.startswith(PROGRESS_NARRATIVE_SYSTEM):
             return "reports"
+        # Reading a contest's problems and the learner's attempts is
+        # reasoning over code and algorithms: the strong model.
+        if system.startswith((CONTEST_ANALYSIS_SYSTEM, CONTEST_PATTERNS_SYSTEM)):
+            return "contest_analysis"
         if system.startswith(SOLUTION_EXPLORER_SYSTEM):
             return "solution_explorer"
         if system.startswith(
@@ -252,17 +252,8 @@ class LangchainMentorModel:
         human: str,
         max_tokens: int,
     ) -> StructuredT:
-        # Locally, Ollama constrains the reply to the JSON schema. With
-        # function calling the small model has to escape long programs inside
-        # tool arguments itself, and a single bad escape drops the whole call
-        # (an empty reply after minutes of generation).
-        method = (
-            "json_schema"
-            if self.settings.ai_provider == "local"
-            else "function_calling"
-        )
         structured = self._model(max_tokens, system).with_structured_output(
-            schema, method=method, include_raw=True
+            schema, method="function_calling", include_raw=True
         )
         result = await structured.ainvoke([("system", system), ("human", human)])
         parsed = result.get("parsed") if isinstance(result, dict) else None
@@ -270,9 +261,9 @@ class LangchainMentorModel:
             return parsed
         raw = result.get("raw") if isinstance(result, dict) else None
         content = getattr(raw, "content", None)
-        if method == "json_schema" and isinstance(content, str) and content.strip():
-            # A reply a little over a length bound still parses as JSON; clip
-            # it to the schema instead of discarding it.
+        if isinstance(content, str) and content.strip().startswith("{"):
+            # Some replies arrive as plain JSON instead of a tool call; clip
+            # them to the schema instead of discarding them.
             try:
                 recovered = coerce_to_schema(schema, json.loads(content))
             except ValueError:

@@ -190,10 +190,9 @@ def classify_turn(
     question: str,
     *,
     has_transient_context: bool = False,
-    has_media: bool = False,
 ) -> TurnKind:
     """Return ``"smalltalk"`` only for short purely conversational messages."""
-    if has_transient_context or has_media:
+    if has_transient_context:
         return "full"
     stripped = question.strip()
     if not stripped or len(stripped) > 80:
@@ -224,15 +223,13 @@ _COMPLEX = re.compile(
 )
 
 
-def is_complex_turn(
-    question: str, *, has_transient_context: bool = False, has_media: bool = False
-) -> bool:
+def is_complex_turn(question: str, *, has_transient_context: bool = False) -> bool:
     """Turns that deserve the configured (deeper) reasoning budget.
 
     Everything else (concept lookups, quick facts about the learner's own
     data) answers well with light reasoning and several times faster.
     """
-    if has_transient_context or has_media:
+    if has_transient_context:
         return True
     # A shared link is usually a specific problem or article to work through.
     if re.search(r"https?://", question, re.IGNORECASE):

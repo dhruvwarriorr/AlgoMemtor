@@ -22,8 +22,6 @@ def settings(**updates: Any) -> AiSettings:
         "_env_file": None,
         "internal_service_token": "internal-test-token",
         "core_api_url": "http://core.test",
-        # These tests exercise the multi-step agent path.
-        "local_ai_single_call": False,
     }
     values.update(updates)
     return AiSettings(**values)

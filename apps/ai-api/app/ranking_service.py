@@ -11,9 +11,9 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from pydantic import ValidationError
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from .ai_observability import AiUsage, record_usage
+from .database import shared_engine
 from .knowledge_base import retrieve_knowledge
 from .knowledge_repository import KnowledgeRepository
 from .llm import generation_model
@@ -548,9 +548,7 @@ def get_ranking_service() -> RankingService:
 
     settings = get_ai_settings()
     knowledge_repository = (
-        KnowledgeRepository(
-            create_async_engine(settings.database_url, pool_pre_ping=True)
-        )
+        KnowledgeRepository(shared_engine(settings.database_url))
         if settings.database_url
         else None
     )

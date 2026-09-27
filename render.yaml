@@ -1,0 +1,76 @@
+# Render Blueprint for the Express Core API on the Free instance type.
+# Web (Vite) and AI (FastAPI) deploy to Vercel; PostgreSQL is Neon.
+# Free web services sleep after 15 minutes without traffic and wake in about
+# a minute. A workspace gets 750 free instance hours a month, which covers
+# this one service even if it never sleeps. Migrations are run by hand (see
+# docs/DEPLOYMENT_VERCEL_NEON_RENDER_PLAN.md): Free services have no
+# pre-deploy command.
+services:
+  - type: web
+    name: algomemtor-core-api
+    runtime: docker
+    plan: free
+    # Neon (aws-us-east-1) and Vercel functions (iad1) are in Virginia too.
+    region: virginia
+    dockerfilePath: ./apps/core-api/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    buildFilter:
+      paths:
+        - apps/core-api/**
+        - packages/shared-contracts/**
+        - package.json
+        - package-lock.json
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_POOL_MAX
+        value: "5"
+      - key: DATABASE_CONNECTION_TIMEOUT_MS
+        # Neon's free compute scales to zero; waking it takes a moment.
+        value: "15000"
+      - key: WEB_ORIGIN
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_JWT_ISSUER
+        sync: false
+      - key: AI_API_URL
+        sync: false
+      - key: CORE_API_URL
+        sync: false
+      - key: INTERNAL_SERVICE_TOKEN
+        sync: false
+      - key: AI_RANKING_TIMEOUT_MS
+        value: "60000"
+      - key: MEMORY_GENERATION_ENABLED
+        value: "true"
+      - key: MEMORY_RAG_ENABLED
+        value: "true"
+      - key: PROGRESS_ENABLED
+        value: "true"
+      - key: PROVIDER_ACTIVE_SYNC_STALE_MINUTES
+        value: "60"
+      # Per-learner AI limits. Leave "false" for final testing, then set
+      # "true" before opening sign-ups.
+      - key: AI_USAGE_LIMITS_ENABLED
+        value: "false"
+      - key: AI_COACH_REQUESTS_PER_MINUTE
+        value: "4"
+      - key: AI_COACH_REQUESTS_PER_DAY
+        value: "40"
+      - key: AI_MENTOR_REQUESTS_PER_MINUTE
+        value: "3"
+      - key: AI_MENTOR_REQUESTS_PER_DAY
+        value: "25"
+      - key: AI_RECOMMENDATION_REFRESHES_PER_MINUTE
+        value: "2"
+      - key: AI_RECOMMENDATION_REFRESHES_PER_DAY
+        value: "10"
+      # Shared ceiling for every learner together. At roughly $0.002 per
+      # request (see the deployment plan), 80 a day stays near $5 a month.
+      - key: AI_GLOBAL_REQUESTS_PER_DAY
+        value: "80"

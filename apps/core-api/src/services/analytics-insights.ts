@@ -7,8 +7,21 @@ import type {
   ProviderRatingChange,
   ProviderSubmission,
 } from '@algomemtor/shared-contracts'
+import { platformTier } from '@algomemtor/shared-contracts'
 
 import { verdictKey } from './progress-window.js'
+
+// The standing shown beside a rating: CodeChef stars, a LeetCode badge, or
+// the provider's own rank title.
+const rankLabel = (profile: ProviderProfile) => {
+  if (profile.provider === 'codechef' || profile.provider === 'leetcode') {
+    const tier = platformTier(profile)
+    return tier?.kind === 'badge' && tier.badge === 'none'
+      ? undefined
+      : tier?.label
+  }
+  return profile.rank
+}
 
 // All-time aggregates for the Insights page. Pure and bounded: the handler
 // supplies owner-scoped rows and catalog metadata, this only counts.
@@ -170,9 +183,11 @@ export function buildAnalyticsInsights(input: {
     return {
       provider: profile.provider,
       handle: profile.handle.slice(0, 120),
-      ...(profile.rank === undefined
+      // CodeChef stars and LeetCode badges come from the shared tier rules,
+      // which also correct profiles stored before stars were recorded.
+      ...(rankLabel(profile) === undefined
         ? {}
-        : { rank: profile.rank.slice(0, 80) }),
+        : { rank: rankLabel(profile)?.slice(0, 80) }),
       ...(profile.rating === undefined ? {} : { rating: profile.rating }),
       ...(peak > 0 ? { maxRating: peak } : {}),
       ...(profile.globalRank === undefined

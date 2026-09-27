@@ -456,4 +456,32 @@ describe('public provider solved-count fetchers', () => {
       solvedCount: 12,
     })
   })
+
+  it('reads CodeChef stars and keeps the global rank numeric', async () => {
+    const page = (ratingBlock: string) => `
+      <html><body><h1>Learner</h1>
+      <div class="rating-header"><div class="rating-number">1734</div>
+      ${ratingBlock}</div>
+      <div class="rating-ranks"><ul><li><a><strong>5,678</strong></a> Global Rank</li></ul></div>
+      <section class="rating-data-section problems-solved">
+      <h3>Total Problems Solved: 40</h3></section></body></html>`
+    const fetcher = (html: string) =>
+      new CodeChefProfileFetcher({
+        baseUrl: 'https://codechef.test/users/',
+        fetchImpl: vi.fn(async () => new Response(html)),
+        requestGate: noWaitGate(),
+      })
+
+    await expect(
+      fetcher(
+        page(
+          '<div class="rating-star"><span>★</span><span>★</span><span>★</span></div>',
+        ),
+      ).fetchProfile('learner'),
+    ).resolves.toMatchObject({ rating: 1734, rank: '3★', globalRank: 5678 })
+    // Without star markup the published bands decide.
+    await expect(
+      fetcher(page('')).fetchProfile('learner'),
+    ).resolves.toMatchObject({ rank: '3★', globalRank: 5678 })
+  })
 })

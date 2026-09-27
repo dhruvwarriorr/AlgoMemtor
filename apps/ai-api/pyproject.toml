@@ -6,16 +6,14 @@ dependencies = [
     "alembic>=1.18.5",
     "fastapi[standard]>=0.141.1",
     "httpx>=0.28.1",
-    "langchain-postgres>=0.0.17",
     "pgvector>=0.2.5,<0.4",
-    "psycopg>=3.3.4",
+    "psycopg[binary]>=3.3.4",
     "pydantic-settings>=2.14.2",
-    "pypdf>=6.0.0",
     "pyjwt[crypto]>=2.10.1",
     "sqlalchemy[asyncio]>=2.0.51",
     "uvicorn>=0.52.0",
     "langchain-openai>=1.6.6",
-    "sentence-transformers>=6.1.0",
+    "openai>=2.0.0",
 ]
 
 [dependency-groups]
@@ -27,3 +25,7 @@ dev = [
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+
+# Vercel runs the FastAPI app as one Python Function (see vercel.json).
+[tool.vercel]
+entrypoint = "app.main:app"

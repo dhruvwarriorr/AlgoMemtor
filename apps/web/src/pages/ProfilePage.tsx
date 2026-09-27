@@ -4,6 +4,8 @@ import { Link } from 'react-router-dom'
 import type { ProviderKey } from '@algomemtor/shared-contracts'
 
 import { ProviderLogo } from '@/components/brand/ProviderLogo'
+import { iconStagger, type IconMotion } from '@/components/icons/icon-motion'
+import { PlatformTierBadge } from '@/components/kit/PlatformTierBadge'
 import {
   ArrowUpRight,
   BookOpen,
@@ -32,6 +34,7 @@ import { learnerProfileErrorMessage } from '@/features/profile/api/learner-profi
 import { providerAccountErrorMessage } from '@/features/profile/api/provider-accounts'
 import { useLearnerProfile } from '@/features/profile/hooks/useLearnerProfile'
 import { useProviderAccounts } from '@/features/profile/hooks/useProviderAccounts'
+import { useUnifiedProfile } from '@/features/platform/hooks'
 import { cn } from '@/lib/utils'
 import { useCoachName } from '@/features/pet/pet-preference'
 
@@ -56,6 +59,18 @@ const logoProviders: readonly string[] = [
   'leetcode',
   'cses',
 ]
+
+// Each card icon's gesture when its card is hovered.
+const cardIconMotion = new Map<IconComponent, IconMotion>([
+  [TrendingUp, 'rise'],
+  [Target, 'pop'],
+  [Flame, 'flicker'],
+  [Compass, 'spin'],
+  [BookOpen, 'tilt'],
+  [Link2, 'tilt'],
+  [Sparkles, 'twinkle'],
+  [Pencil, 'wiggle'],
+])
 
 function ProfileCard({
   title,
@@ -100,7 +115,11 @@ function ProfileCard({
             background: `color-mix(in oklab, ${color} 14%, transparent)`,
           }}
         >
-          <Icon className="size-4" />
+          <Icon
+            className="icon-motion size-4"
+            data-motion={cardIconMotion.get(Icon) ?? 'pop'}
+            style={iconStagger(index)}
+          />
         </span>
         {title}
       </h2>
@@ -145,7 +164,11 @@ function DifficultyFlames({ comfort }: { comfort: string }) {
   if (comfort === 'let_algomemtor_decide') {
     return (
       <p className="flex items-center gap-2 font-heading text-2xl font-bold text-foreground">
-        <Sparkles aria-hidden="true" className="size-5 text-primary" />
+        <Sparkles
+          aria-hidden="true"
+          className="icon-motion size-5 text-primary"
+          data-motion="twinkle"
+        />
         AlgoMemtor decides
       </p>
     )
@@ -170,8 +193,9 @@ function DifficultyFlames({ comfort }: { comfort: string }) {
             }}
           >
             <Flame
+              data-motion="flicker"
               className={cn(
-                'size-6',
+                'icon-motion size-6',
                 index <= at
                   ? 'text-[#f97316] drop-shadow-[0_0_6px_rgba(249,115,22,0.6)]'
                   : 'text-muted-foreground/30',
@@ -229,6 +253,17 @@ function ProfilePage() {
   const { user } = useAuth()
   const profileQuery = useLearnerProfile()
   const accountsQuery = useProviderAccounts()
+  // Ratings and ranks from the stored public profiles, for the tier badges.
+  const unifiedProfileQuery = useUnifiedProfile()
+  const standingFor = (provider: ProviderKey) => {
+    const data = unifiedProfileQuery.data?.data
+    const profile = data?.profiles?.find((item) => item.provider === provider)
+    const summary = data?.providers.find((item) => item.provider === provider)
+    return {
+      rating: profile?.rating ?? summary?.rating,
+      rank: profile?.rank ?? summary?.rank,
+    }
+  }
 
   if (profileQuery.isPending) {
     return (
@@ -327,7 +362,11 @@ function ProfilePage() {
         >
           {profile.topicPreference.mode === 'let_algomemtor_suggest' ? (
             <p className="flex items-center gap-2 text-sm text-foreground">
-              <Sparkles aria-hidden="true" className="size-4 text-primary" />
+              <Sparkles
+                aria-hidden="true"
+                className="icon-motion size-4 text-primary"
+                data-motion="twinkle"
+              />
               Let AlgoMemtor suggest
             </p>
           ) : (
@@ -492,6 +531,19 @@ function ProfilePage() {
                   >
                     {account.handle}
                   </a>
+                  {standingFor(account.provider).rating !== undefined ? (
+                    <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {Math.round(standingFor(account.provider).rating ?? 0)}{' '}
+                        rating
+                      </span>
+                      <PlatformTierBadge
+                        provider={account.provider}
+                        rank={standingFor(account.provider).rank}
+                        rating={standingFor(account.provider).rating}
+                      />
+                    </div>
+                  ) : null}
                 </div>
                 <div className="shrink-0 text-right">
                   {account.publicStats.status === 'available' ? (

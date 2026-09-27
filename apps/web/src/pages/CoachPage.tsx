@@ -11,13 +11,11 @@ import {
   Lock,
   Crosshair,
   LoaderCircle,
-  Paperclip,
   Pencil,
   Plus,
   Search,
   Sparkles,
   Trash2,
-  X,
 } from '@/components/icons/algo-icons'
 
 import PageContainer from '@/components/layout/PageContainer'
@@ -54,70 +52,6 @@ import {
   useRecommendationDismissals,
 } from '@/features/recommendations/hooks/useRecommendations'
 import { useCoachName } from '@/features/pet/pet-preference'
-
-const coachAttachmentTypes = {
-  'audio/webm': 'audio/webm',
-  'audio/mp4': 'audio/mp4',
-  'audio/mpeg': 'audio/mpeg',
-  'audio/wav': 'audio/wav',
-  'video/mp4': 'video/mp4',
-  'video/webm': 'video/webm',
-  'image/jpeg': 'image/jpeg',
-  'image/png': 'image/png',
-  'image/webp': 'image/webp',
-  'application/pdf': 'application/pdf',
-  'text/plain': 'text/plain',
-  'text/markdown': 'text/markdown',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-} as const
-
-type CoachAttachmentType = keyof typeof coachAttachmentTypes
-
-const attachmentExtensions: Record<string, CoachAttachmentType> = {
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  png: 'image/png',
-  webp: 'image/webp',
-  pdf: 'application/pdf',
-  txt: 'text/plain',
-  md: 'text/markdown',
-  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  mp3: 'audio/mpeg',
-  wav: 'audio/wav',
-  m4a: 'audio/mp4',
-  mp4: 'video/mp4',
-  webm: 'video/webm',
-}
-
-function attachmentMimeType(file: File): CoachAttachmentType | null {
-  if (Object.hasOwn(coachAttachmentTypes, file.type)) {
-    return file.type as CoachAttachmentType
-  }
-  if (file.type === 'audio/x-wav') return 'audio/wav'
-  if (file.type === 'audio/mp3') return 'audio/mpeg'
-  if (file.type === 'text/x-markdown') return 'text/markdown'
-  if (file.type !== '' && file.type !== 'application/octet-stream') return null
-  const extension = file.name.split('.').pop()?.toLowerCase()
-  return extension ? (attachmentExtensions[extension] ?? null) : null
-}
-
-function readAttachmentBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = reader.result
-      if (typeof result !== 'string' || !result.includes(',')) {
-        reject(new Error('The attachment could not be read.'))
-        return
-      }
-      resolve(result.slice(result.indexOf(',') + 1))
-    }
-    reader.onerror = () =>
-      reject(new Error('The attachment could not be read.'))
-    reader.readAsDataURL(file)
-  })
-}
 
 function formatDate(value: string) {
   try {
@@ -182,8 +116,6 @@ function CoachPage() {
     () => (location.state as { ask?: string } | null)?.ask ?? '',
   )
   const [transientContext, setTransientContext] = useState('')
-  const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
-  const attachmentInputRef = useRef<HTMLInputElement | null>(null)
   // Conversation sidebar: full list, a slim icon rail, or hidden. The
   // choice is a per-browser convenience.
   const [sidebarMode, setSidebarModeState] = useState<
@@ -292,33 +224,15 @@ function CoachPage() {
   }
 
   async function submitMessage(message = content) {
-    const trimmed =
-      message.trim() ||
-      (attachmentFile === null
-        ? ''
-        : 'Please help me with the CP/DSA content in this attachment.')
+    const trimmed = message.trim()
     if (!trimmed || sendMessage.isPending) return
     // Clear the composer straight away so the question moves into the
     // thread; put it back if the send fails or is cancelled.
-    const draft = {
-      content,
-      transientContext,
-      attachmentFile,
-    }
+    const draft = { content, transientContext }
     setContent('')
     setTransientContext('')
-    setAttachmentFile(null)
     setSelectedAnswerId(null)
     try {
-      const attachmentType =
-        attachmentFile === null ? null : attachmentMimeType(attachmentFile)
-      const transientMedia =
-        attachmentFile === null || attachmentType === null
-          ? undefined
-          : {
-              mimeType: attachmentType,
-              data: await readAttachmentBase64(attachmentFile),
-            }
       const conversationId = await ensureConversation()
       const controller = new AbortController()
       sendAbortController.current = controller
@@ -326,13 +240,11 @@ function CoachPage() {
         conversationId,
         content: trimmed,
         transientContext: transientContext.trim() || undefined,
-        transientMedia,
         signal: controller.signal,
       })
     } catch (error) {
       setContent((current) => current || draft.content || message)
       setTransientContext((current) => current || draft.transientContext)
-      setAttachmentFile((current) => current ?? draft.attachmentFile)
       if (error instanceof DOMException && error.name === 'AbortError') return
       if (error instanceof Error && error.name === 'AbortError') return
       notify({
@@ -344,20 +256,6 @@ function CoachPage() {
     } finally {
       sendAbortController.current = null
     }
-  }
-
-  function selectAttachment(file: File | undefined) {
-    if (file === undefined) return
-    if (attachmentMimeType(file) === null || file.size > 8 * 1024 * 1024) {
-      notify({
-        title: 'Unsupported attachment',
-        description:
-          'Choose an image, PDF, TXT, Markdown, DOCX, MP3, WAV, MP4, or WebM file of 8 MB or less.',
-        tone: 'error',
-      })
-      return
-    }
-    setAttachmentFile(file)
   }
 
   if (conversationsQuery.isPending || roadmapQuery.isPending) {
@@ -493,17 +391,6 @@ function CoachPage() {
         />
       ) : null}
       <div className="mt-2 flex flex-wrap items-center gap-1.5 px-1 pb-0.5">
-        <input
-          accept=".mp3,.wav,.m4a,.mp4,.webm,.jpg,.jpeg,.png,.webp,.pdf,.txt,.md,.docx"
-          className="sr-only"
-          onChange={(event) => {
-            selectAttachment(event.target.files?.[0])
-            event.target.value = ''
-          }}
-          ref={attachmentInputRef}
-          tabIndex={-1}
-          type="file"
-        />
         <button
           aria-pressed={showContext}
           className={cn(
@@ -528,35 +415,9 @@ function CoachPage() {
           Problem help
         </Link>
         <button
-          aria-label="Add attachment"
-          className="grid size-9 place-items-center rounded-md text-foreground/65 transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-50"
-          disabled={sendMessage.isPending}
-          onClick={() => attachmentInputRef.current?.click()}
-          title="Add attachment (image, document, audio or video, up to 8 MB)"
-          type="button"
-        >
-          <Paperclip aria-hidden="true" className="size-4" strokeWidth={1.7} />
-        </button>
-        {attachmentFile ? (
-          <span className="inline-flex max-w-full items-center gap-1 rounded-md bg-secondary py-1 pr-1 pl-3 text-xs text-secondary-foreground">
-            <span className="max-w-44 truncate">{attachmentFile.name}</span>
-            <button
-              aria-label="Remove attachment"
-              className="grid size-5 place-items-center rounded-md hover:bg-black/5"
-              onClick={() => setAttachmentFile(null)}
-              type="button"
-            >
-              <X aria-hidden="true" className="size-3" />
-            </button>
-          </span>
-        ) : null}
-        <button
           aria-label={`Ask ${coachName}`}
           className="coach-orb ml-auto grid size-10 place-items-center text-white transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100"
-          disabled={
-            (!content.trim() && attachmentFile === null) ||
-            sendMessage.isPending
-          }
+          disabled={!content.trim() || sendMessage.isPending}
           type="submit"
         >
           {sendMessage.isPending ? (
@@ -586,7 +447,7 @@ function CoachPage() {
         </span>
         <span className="ml-auto inline-flex items-center gap-1.5">
           <Lock aria-hidden="true" className="size-3" />
-          Pasted code and attachments are never saved
+          Pasted code is never saved
         </span>
       </div>
     </div>
@@ -594,7 +455,7 @@ function CoachPage() {
 
   return (
     <main
-      className="flex min-w-0 flex-1 flex-col lg:h-(--app-panel-height) lg:flex-none lg:flex-row lg:overflow-hidden"
+      className="relative flex min-w-0 flex-1 flex-col lg:h-(--app-panel-height) lg:flex-none lg:flex-row lg:overflow-hidden"
       id="main-content"
     >
       {/* History column */}
@@ -681,7 +542,7 @@ function CoachPage() {
 
         <div
           className={cn(
-            'hidden min-h-0 flex-1 flex-col gap-4 overflow-y-auto border-t border-border pt-4',
+            'relative hidden min-h-0 flex-1 flex-col gap-4 overflow-y-auto border-t border-border pt-4',
             sidebarExpanded && 'lg:flex',
           )}
         >
@@ -833,7 +694,7 @@ function CoachPage() {
         </header>
 
         {showGreeting ? (
-          <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-4 py-6 sm:px-8">
+          <div className="relative flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-4 py-6 sm:px-8">
             <div className="my-auto flex w-full max-w-[52rem] flex-col items-center">
               <span
                 aria-hidden="true"
@@ -864,8 +725,11 @@ function CoachPage() {
         ) : (
           <div className="flex min-h-0 flex-1">
             <div className="flex min-w-0 flex-1 flex-col">
+              {/* `relative` keeps the visually hidden message headings
+                  (absolutely positioned) inside this scroll box; without it
+                  they stretch the whole page below the chat. */}
               <div
-                className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-6 sm:px-6"
+                className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-6 sm:px-6"
                 onScroll={(event) => {
                   const element = event.currentTarget
                   const nearBottom =

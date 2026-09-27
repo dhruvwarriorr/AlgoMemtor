@@ -44,52 +44,17 @@ describe('coach contracts', () => {
     expect(CoachProblemSuggestionStatusSchema.parse('opened')).toBe('suggested')
   })
 
-  it('accepts bounded attachments and rejects malformed files', () => {
-    const request = {
-      content: 'Explain this recording.',
-      transientMedia: {
-        mimeType: 'audio/wav',
-        data: 'UklGRg==',
-      },
-    }
-    for (const mimeType of [
-      'audio/wav',
-      'video/mp4',
-      'image/png',
-      'application/pdf',
-      'text/plain',
-      'text/markdown',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    ]) {
-      expect(
-        SendCoachMessageRequestSchema.safeParse({
-          ...request,
-          transientMedia: { ...request.transientMedia, mimeType },
-        }).success,
-      ).toBe(true)
-    }
+  it('accepts text messages and rejects file attachments', () => {
     expect(
       SendCoachMessageRequestSchema.safeParse({
-        ...request,
-        transientMedia: {
-          ...request.transientMedia,
-          mimeType: 'application/x-msdownload',
-        },
+        content: 'Explain binary search.',
+        transientContext: 'int main() {}',
       }).success,
-    ).toBe(false)
+    ).toBe(true)
     expect(
       SendCoachMessageRequestSchema.safeParse({
-        ...request,
-        transientMedia: { ...request.transientMedia, data: 'not-base64' },
-      }).success,
-    ).toBe(false)
-    expect(
-      SendCoachMessageRequestSchema.safeParse({
-        ...request,
-        transientMedia: {
-          ...request.transientMedia,
-          data: 'A'.repeat(11_184_816),
-        },
+        content: 'Explain this recording.',
+        transientMedia: { mimeType: 'audio/wav', data: 'UklGRg==' },
       }).success,
     ).toBe(false)
   })

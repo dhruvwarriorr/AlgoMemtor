@@ -28,6 +28,10 @@ import type {
 } from './integrations/ai/ai-roadmap-note-client.js'
 import type { ProblemProvider } from './integrations/providers/problem-provider.js'
 import { InMemoryProblemActionRepository } from './repositories/problem-action-repository.js'
+import {
+  AiUsageLimiter,
+  InMemoryAiUsageStore,
+} from './services/ai-usage-limiter.js'
 import { InMemoryProgressRepository } from './repositories/progress-repository.js'
 import { InMemoryProviderDataRepository } from './repositories/provider-data-repository.js'
 import { InMemoryLearnerProfileRepository } from './repositories/learner-profile-repository.js'
@@ -140,6 +144,7 @@ const startApp = (options: {
   bookmarkRepository?: InMemoryBookmarkRepository
   internalServiceToken?: string
   provider?: ProblemProvider
+  aiUsageLimiter?: AiUsageLimiter
 }) => {
   const defaultProvider: ProblemProvider = {
     key: 'codeforces',
@@ -188,6 +193,9 @@ const startApp = (options: {
     ...(options.internalServiceToken === undefined
       ? {}
       : { internalServiceToken: options.internalServiceToken }),
+    ...(options.aiUsageLimiter === undefined
+      ? {}
+      : { aiUsageLimiter: options.aiUsageLimiter }),
   }
   const server = createApp(appOptions).listen(0)
   servers.push(server)
@@ -1582,25 +1590,27 @@ describe('coach API', () => {
     expect(saved.at(-1)?.content).toContain('const secret = 1')
   })
 
-  it('passes media to AI for one turn without saving it in history', async () => {
-    const progressRepository = new InMemoryProgressRepository()
-    await progressRepository.saveConsent(
-      userA,
-      true,
-      'personalized-coaching-rag-v2',
-    )
-    let capturedRequest: AiCoachRequest | undefined
+  it('limits coach requests per learner when limits are enabled', async () => {
     const aiCoachClient: AiCoachClient = {
-      respond: vi.fn(async (request): Promise<AiCoachResult> => {
-        capturedRequest = request
-        return {
-          answer: 'The recording describes a binary search problem.',
-          evidence: [],
-          proposals: [],
-        }
-      }),
+      respond: vi.fn(async (): Promise<AiCoachResult> => ({
+        answer: 'Practise two binary search problems next.',
+        evidence: [],
+        proposals: [],
+      })),
     }
-    const baseUrl = startApp({ aiCoachClient, progressRepository })
+    const aiUsageLimiter = new AiUsageLimiter(
+      {
+        enabled: true,
+        limits: {
+          coach: { perMinute: 1, perDay: 10 },
+          mentor: { perMinute: 1, perDay: 10 },
+          recommendations: { perMinute: 1, perDay: 10 },
+        },
+        globalPerDay: 0,
+      },
+      new InMemoryAiUsageStore(),
+    )
+    const baseUrl = startApp({ aiCoachClient, aiUsageLimiter })
     const headers = {
       ...authorization('user-a'),
       'content-type': 'application/json',
@@ -1611,10 +1621,37 @@ describe('coach API', () => {
       body: '{}',
     })
     const conversationId = (await created.json()).data.id as string
-    const media = {
-      mimeType: 'audio/wav',
-      data: Buffer.alloc(1_100_000, 0x61).toString('base64'),
+    const send = () =>
+      fetch(`${baseUrl}/api/coach/conversations/${conversationId}/messages`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ content: 'What should I practise next?' }),
+      })
+    expect((await send()).status).toBe(200)
+    const limited = await send()
+    expect(limited.status).toBe(429)
+    expect(Number(limited.headers.get('retry-after'))).toBeGreaterThan(0)
+    expect((await limited.json()).error.code).toBe('AI_USAGE_LIMITED')
+    expect(aiCoachClient.respond).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects file attachments: the coach reads text only', async () => {
+    const aiCoachClient: AiCoachClient = {
+      respond: vi.fn(async (): Promise<AiCoachResult> => {
+        throw new Error('The model must not be called.')
+      }),
     }
+    const baseUrl = startApp({ aiCoachClient })
+    const headers = {
+      ...authorization('user-a'),
+      'content-type': 'application/json',
+    }
+    const created = await fetch(`${baseUrl}/api/coach/conversations`, {
+      method: 'POST',
+      headers,
+      body: '{}',
+    })
+    const conversationId = (await created.json()).data.id as string
     const response = await fetch(
       `${baseUrl}/api/coach/conversations/${conversationId}/messages`,
       {
@@ -1622,19 +1659,12 @@ describe('coach API', () => {
         headers,
         body: JSON.stringify({
           content: 'Explain this audio.',
-          transientMedia: media,
+          transientMedia: { mimeType: 'audio/wav', data: 'UklGRg==' },
         }),
       },
     )
-    expect(response.status).toBe(200)
-    expect(capturedRequest?.transientMedia).toEqual(media)
-    const history = await fetch(
-      `${baseUrl}/api/coach/conversations/${conversationId}`,
-      { headers: authorization('user-a') },
-    )
-    const body = await history.text()
-    expect(body).not.toContain(media.data)
-    expect(body).toContain('transientContextOmitted')
+    expect(response.status).toBe(400)
+    expect(aiCoachClient.respond).not.toHaveBeenCalled()
   })
 
   it('omits code-like text even when it is not fenced', async () => {

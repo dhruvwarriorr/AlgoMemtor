@@ -163,7 +163,7 @@ export function ToolBento() {
         </ToolCard>
         <ToolCard
           className="lg:col-span-4"
-          color="#4ade80"
+          color="#F20AC9"
           icon={ProgressReportIcon}
           index={5}
           name="Progress"

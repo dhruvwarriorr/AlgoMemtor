@@ -782,6 +782,227 @@ body {
   }
 }
 
+/* ---- Icon gestures (Settings and Profile) --------------------------------
+ * `.icon-motion` icons draw in once when they appear, then act out a small
+ * gesture of their own (`data-motion`) whenever the icon, its button or link,
+ * or a hovered `.group`/`.icon-host` card around it is hovered or focused.
+ * `data-live` keeps the icon's memory node breathing (the current section).
+ * Nothing moves under reduced motion.
+ */
+.icon-motion {
+  transform-box: fill-box;
+  transform-origin: center;
+  overflow: visible;
+}
+
+/* Each icon's gesture; the flame and needle-like shapes pivot at an edge. */
+.icon-motion[data-motion='bob'] {
+  --icon-gesture: icon-bob;
+}
+.icon-motion[data-motion='pop'] {
+  --icon-gesture: icon-pop;
+}
+.icon-motion[data-motion='wiggle'] {
+  --icon-gesture: icon-wiggle;
+}
+.icon-motion[data-motion='spin'] {
+  --icon-gesture: icon-spin;
+  --icon-gesture-time: 0.9s;
+}
+.icon-motion[data-motion='tilt'] {
+  --icon-gesture: icon-tilt;
+}
+.icon-motion[data-motion='swing'] {
+  --icon-gesture: icon-swing;
+  transform-origin: 50% 0%;
+}
+.icon-motion[data-motion='flicker'] {
+  --icon-gesture: icon-flicker;
+  --icon-gesture-time: 0.9s;
+  transform-origin: 50% 100%;
+}
+.icon-motion[data-motion='nudge'] {
+  --icon-gesture: icon-nudge;
+}
+.icon-motion[data-motion='twinkle'] {
+  --icon-gesture: icon-twinkle;
+  --icon-gesture-time: 0.9s;
+}
+.icon-motion[data-motion='rise'] {
+  --icon-gesture: icon-rise;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .icon-motion {
+    animation: icon-intro 0.7s cubic-bezier(0.34, 1.56, 0.64, 1)
+      calc(var(--i, 0) * 70ms) both;
+  }
+  .icon-motion[data-live] .algo-node {
+    animation: icon-node-breathe 2.4s ease-in-out infinite;
+  }
+  /* The finished intro stays first in the list, so adding and removing the
+   * gesture never replays it. */
+  :is(a, button, label, [role='button'], .group, .icon-host):is(
+      :hover,
+      :focus-visible
+    )
+    .icon-motion,
+  .icon-motion:hover {
+    animation:
+      icon-intro 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) calc(var(--i, 0) * 70ms)
+        both,
+      var(--icon-gesture, none) var(--icon-gesture-time, 0.75s)
+        cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+}
+
+@keyframes icon-intro {
+  0% {
+    opacity: 0;
+    transform: scale(0.4) rotate(-18deg);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes icon-node-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.4);
+  }
+}
+
+@keyframes icon-bob {
+  0%,
+  100% {
+    transform: none;
+  }
+  35% {
+    transform: translateY(-3px);
+  }
+  65% {
+    transform: translateY(1px);
+  }
+}
+
+@keyframes icon-pop {
+  0%,
+  100% {
+    transform: none;
+  }
+  40% {
+    transform: scale(1.22);
+  }
+  70% {
+    transform: scale(0.94);
+  }
+}
+
+@keyframes icon-wiggle {
+  0%,
+  100% {
+    transform: none;
+  }
+  20% {
+    transform: rotate(-14deg);
+  }
+  45% {
+    transform: rotate(11deg);
+  }
+  70% {
+    transform: rotate(-6deg);
+  }
+}
+
+@keyframes icon-spin {
+  0% {
+    transform: none;
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes icon-tilt {
+  0%,
+  100% {
+    transform: none;
+  }
+  40% {
+    transform: rotate(-24deg) scale(1.08);
+  }
+}
+
+@keyframes icon-swing {
+  0%,
+  100% {
+    transform: none;
+  }
+  25% {
+    transform: rotate(16deg);
+  }
+  55% {
+    transform: rotate(-10deg);
+  }
+  80% {
+    transform: rotate(4deg);
+  }
+}
+
+@keyframes icon-flicker {
+  0%,
+  100% {
+    transform: none;
+  }
+  25% {
+    transform: scale(1.08, 1.16) skewX(-4deg);
+  }
+  50% {
+    transform: scale(0.96, 1.04) skewX(3deg);
+  }
+  75% {
+    transform: scale(1.05, 1.1) skewX(-2deg);
+  }
+}
+
+@keyframes icon-nudge {
+  0%,
+  100% {
+    transform: none;
+  }
+  45% {
+    transform: translate(3px, -3px);
+  }
+}
+
+@keyframes icon-twinkle {
+  0%,
+  100% {
+    transform: none;
+  }
+  40% {
+    transform: rotate(20deg) scale(1.25);
+  }
+  70% {
+    transform: rotate(-8deg) scale(0.95);
+  }
+}
+
+@keyframes icon-rise {
+  0%,
+  100% {
+    transform: none;
+  }
+  45% {
+    transform: translate(2px, -3px) scale(1.1);
+  }
+}
+
 /* ---- Double bezel -------------------------------------------------------
  * A machined outer tray with a hairline, holding an inner core with its own
  * top highlight. Radii stay squarish and concentric.

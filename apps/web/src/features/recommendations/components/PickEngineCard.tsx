@@ -337,10 +337,10 @@ export function PickEngineCard({
                     key={topic}
                   >
                     <span className="truncate text-foreground">{topic}</span>
-                    <span className="h-1.5 overflow-hidden rounded-full bg-[color-mix(in_oklab,var(--muted-foreground)_18%,transparent)]">
+                    <span className="h-1.5 overflow-hidden bg-[color-mix(in_oklab,var(--muted-foreground)_18%,transparent)]">
                       <motion.span
                         animate={{ width: `${(count / topMax) * 100}%` }}
-                        className="block h-full rounded-full bg-linear-to-r from-[#0ea5e9] to-[#8b5cf6]"
+                        className="block h-full bg-[#0ea5e9]"
                         initial={reduceMotion ? false : { width: '0%' }}
                         transition={{
                           duration: 0.7,

@@ -12,6 +12,23 @@ export class AuthSessionExpiredError extends Error {
   }
 }
 
+// In production the browser calls the Core API origin directly: a hosting
+// proxy in between (Vercel's external rewrite) cuts requests off after two
+// minutes, and long AI answers or a sleeping API can take longer. Unset, the
+// relative /api path uses the Vite dev proxy or the site's own rewrite.
+export function apiUrl(input: RequestInfo | URL): RequestInfo | URL {
+  const configured: unknown = import.meta.env.VITE_API_BASE_URL
+  if (
+    typeof input !== 'string' ||
+    !input.startsWith('/api/') ||
+    typeof configured !== 'string' ||
+    configured.trim() === ''
+  ) {
+    return input
+  }
+  return `${configured.trim().replace(/\/+$/, '')}${input}`
+}
+
 function requestWithAccessToken(
   input: RequestInfo | URL,
   init: RequestInit,
@@ -20,7 +37,7 @@ function requestWithAccessToken(
   const headers = new Headers(init.headers)
   headers.set('authorization', `Bearer ${accessToken}`)
 
-  return fetch(input, { ...init, headers })
+  return fetch(apiUrl(input), { ...init, headers })
 }
 
 async function expireLocalSession(cause?: unknown): Promise<never> {

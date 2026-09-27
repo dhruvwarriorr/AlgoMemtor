@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -21,7 +20,6 @@ from .coach_service import (
     CoachRateLimitedError,
     get_coach_service,
 )
-from .embedding import preload_local_embedding_model
 from .internal_auth import require_internal_service
 from .memory_models import (
     MemoryActionRequest,
@@ -75,7 +73,6 @@ from .mentor_service import (
     MentorService,
     get_mentor_service,
 )
-from .providers import keep_local_model_warm
 from .ranking_models import RankingRequest, RankingResponse
 from .ranking_service import RankingService, get_ranking_service
 from .rate_limit import InMemoryRateLimiter, rate_limit_internal_request
@@ -118,12 +115,7 @@ async def initialize_ai_resources() -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     await initialize_ai_resources()
-    warm = asyncio.create_task(keep_local_model_warm(get_ai_settings()))
-    preload_local_embedding_model(get_ai_settings())
-    try:
-        yield
-    finally:
-        warm.cancel()
+    yield
 
 
 app = FastAPI(title="AlgoMemtor AI API", version="0.1.0", lifespan=lifespan)

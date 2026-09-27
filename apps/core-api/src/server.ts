@@ -61,6 +61,11 @@ import { PrismaProviderDataRepository } from './repositories/provider-data-repos
 import { PrismaCoachRepository } from './repositories/coach-repository.js'
 import { PrismaRecommendationRepository } from './repositories/recommendation-repository.js'
 import { PrismaRecommendationSteeringRepository } from './repositories/recommendation-steering-repository.js'
+import {
+  AiUsageLimiter,
+  PrismaAiUsageStore,
+  readAiUsageLimitConfig,
+} from './services/ai-usage-limiter.js'
 import { RequestGate } from './utils/request-gate.js'
 import { structuredLogger } from './utils/structured-logger.js'
 
@@ -190,9 +195,9 @@ const app = createApp({
     ? new HttpAiCoachClient({
         baseUrl: aiConfig.baseUrl,
         internalServiceToken: aiConfig.internalServiceToken,
-        // Covers a local model's longest turn (FastAPI allows 280s) as well
-        // as cloud grounding plus the agent budget.
-        timeoutMs: 300_000,
+        // Covers grounding plus the agent budget (FastAPI allows 140s) and a
+        // cold start of the serverless AI function.
+        timeoutMs: 180_000,
       })
     : new UnavailableAiCoachClient(),
   aiRoadmapNoteClient: aiConfig.configured
@@ -202,12 +207,16 @@ const app = createApp({
     ? new HttpAiMentorClient({
         baseUrl: aiConfig.baseUrl,
         internalServiceToken: aiConfig.internalServiceToken,
-        // A local model needs minutes for long answers; FastAPI enforces its
-        // own per-call limits (480s for mentor calls in local mode).
-        timeoutMs: 500_000,
+        // The AI function runs at most 300s on Vercel; FastAPI enforces its
+        // own shorter per-call limits.
+        timeoutMs: 295_000,
       })
     : new UnavailableAiMentorClient(),
   mentorRepository: new PrismaMentorRepository(prisma),
+  aiUsageLimiter: new AiUsageLimiter(
+    readAiUsageLimitConfig(),
+    new PrismaAiUsageStore(prisma),
+  ),
   jwtVerifier,
   problemProvider: codeforcesProvider,
   problemProviders,

@@ -16,6 +16,7 @@ import {
   UserRound,
   type IconComponent,
 } from '@/components/icons/algo-icons'
+import { iconStagger, type IconMotion } from '@/components/icons/icon-motion'
 
 import type { Theme } from '@/app/theme-context'
 import { useTheme } from '@/app/useTheme'
@@ -59,36 +60,43 @@ const sections: ReadonlyArray<{
   label: string
   icon: IconComponent
   color: string
+  // The icon's gesture (see `.icon-motion` in index.css).
+  motion: IconMotion
 }> = [
   {
     id: 'profile',
     label: 'Profile and goals',
     icon: UserRound,
     color: '#38bdf8',
+    motion: 'bob',
   },
   {
     id: 'accounts',
     label: 'Accounts',
     icon: ShieldCheck,
     color: '#22c55e',
+    motion: 'pop',
   },
   {
     id: 'platforms',
     label: 'Linked platforms',
     icon: Link2,
     color: '#2d6cdf',
+    motion: 'tilt',
   },
   {
     id: 'appearance',
     label: 'Appearance',
     icon: Palette,
     color: '#a78bfa',
+    motion: 'spin',
   },
   {
     id: 'data',
     label: 'Data and reset',
     icon: Database,
     color: '#ef4444',
+    motion: 'rise',
   },
 ]
 
@@ -127,12 +135,12 @@ function SectionTitle({
   title: string
   description: string
   section?: SectionId
-  icon?: { icon: IconComponent; color: string }
+  icon?: { icon: IconComponent; color: string; motion?: IconMotion }
 }) {
   const found = sections.find((item) => item.id === section)
   const meta = icon ?? found
   return (
-    <div className="flex items-start gap-4 pb-5">
+    <div className="icon-host flex items-start gap-4 pb-5">
       {meta ? (
         <span
           aria-hidden="true"
@@ -142,7 +150,11 @@ function SectionTitle({
             background: `linear-gradient(135deg, color-mix(in oklab, ${meta.color} 22%, transparent), color-mix(in oklab, ${meta.color} 6%, transparent))`,
           }}
         >
-          <meta.icon className="size-6" strokeWidth={1.8} />
+          <meta.icon
+            className="icon-motion size-6"
+            data-motion={meta.motion ?? 'pop'}
+            strokeWidth={1.8}
+          />
         </span>
       ) : null}
       <div className="min-w-0">
@@ -185,10 +197,11 @@ const themeOptions: ReadonlyArray<{
   value: Theme
   label: string
   icon: IconComponent
+  motion: IconMotion
 }> = [
-  { value: 'system', label: 'System preference', icon: Monitor },
-  { value: 'light', label: 'Light', icon: Sun },
-  { value: 'dark', label: 'Dark', icon: Moon },
+  { value: 'system', label: 'System preference', icon: Monitor, motion: 'pop' },
+  { value: 'light', label: 'Light', icon: Sun, motion: 'spin' },
+  { value: 'dark', label: 'Dark', icon: Moon, motion: 'swing' },
 ]
 
 // A miniature of the app shell painted in the theme's colours.
@@ -297,7 +310,8 @@ function AppearanceSection() {
                   <span className="flex items-center gap-2 px-1.5 pt-3 pb-1 text-sm font-medium text-foreground">
                     <option.icon
                       aria-hidden="true"
-                      className="size-4 text-muted-foreground"
+                      className="icon-motion size-4 text-muted-foreground"
+                      data-motion={option.motion}
                       strokeWidth={1.7}
                     />
                     {option.label}
@@ -307,7 +321,11 @@ function AppearanceSection() {
                       aria-hidden="true"
                       className="absolute top-3.5 left-3.5 grid size-6 place-items-center rounded-md bg-primary text-primary-foreground shadow-md"
                     >
-                      <Check className="size-3.5" strokeWidth={3} />
+                      <Check
+                        className="icon-motion size-3.5"
+                        data-motion="pop"
+                        strokeWidth={3}
+                      />
                     </span>
                   ) : null}
                 </label>
@@ -324,30 +342,23 @@ function AppearanceSection() {
 function CoachPetSetting() {
   const enabled = usePetEnabled()
   const choice = usePetChoice()
-  const pet = pets[choice]
 
   return (
     <SettingRow
-      aside={
-        <div className="mt-5 rounded-xl border border-border bg-card p-4">
-          <div className="flex items-center justify-between gap-3">
-            <p className="font-semibold text-foreground">Show pet</p>
-            <PetSwitch enabled={enabled} />
-          </div>
-          <p className="mt-1.5 text-sm text-muted-foreground">
-            {enabled
-              ? `${pet.name} is on. Drag ${pet.name} anywhere; click to ask about the page you are on.`
-              : `${pet.name} is off and will not appear on any page.`}
-          </p>
-        </div>
-      }
       description="The pet you choose is your AI coach: its name is your coach's name everywhere in AlgoMemtor. It follows you across pages, reacts as you work, reads the page you are on when you ask a question, and hosts the Doubt Helper and Solution Explorer chats."
       title="Coach pet"
     >
       <fieldset>
-        <legend className="mb-3 text-sm font-medium text-foreground">
-          Choose your pet
-        </legend>
+        <legend className="sr-only">Choose your pet</legend>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm font-medium text-foreground">Choose your pet</p>
+          <div className="flex items-center gap-2.5">
+            <span className="text-sm font-medium text-foreground">
+              Show pet
+            </span>
+            <PetSwitch enabled={enabled} />
+          </div>
+        </div>
         <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
           {petIds.map((id) => (
             <PetChoiceCard
@@ -446,7 +457,7 @@ function SettingPage() {
             aria-label="Settings sections"
             className="-mx-1 mt-6 flex max-w-full gap-1.5 overflow-x-auto pb-1 lg:mx-0 lg:flex-col lg:overflow-visible"
           >
-            {sections.map((section) => {
+            {sections.map((section, index) => {
               const selected = active === section.id
               return (
                 <button
@@ -486,8 +497,11 @@ function SettingPage() {
                   >
                     <section.icon
                       aria-hidden="true"
-                      className="size-[1.05rem]"
+                      className="icon-motion size-[1.05rem]"
+                      data-live={selected ? '' : undefined}
+                      data-motion={section.motion}
                       strokeWidth={1.8}
+                      style={iconStagger(index)}
                     />
                   </span>
                   <span className="min-w-0 text-sm font-semibold whitespace-nowrap">
@@ -529,7 +543,11 @@ function SettingPage() {
                     to="/profile"
                   >
                     View profile
-                    <ArrowUpRight aria-hidden="true" />
+                    <ArrowUpRight
+                      aria-hidden="true"
+                      className="icon-motion"
+                      data-motion="nudge"
+                    />
                   </Link>
                 }
                 email={user?.email}
@@ -549,7 +567,7 @@ function SettingPage() {
               <div className="mt-10">
                 <SectionTitle
                   description="These answers shape every recommendation and coaching reply. Your sign-in email is managed separately by Supabase Auth."
-                  icon={{ icon: Target, color: '#22c55e' }}
+                  icon={{ icon: Target, color: '#22c55e', motion: 'pop' }}
                   title="Learning profile"
                 />
                 <SettingsCard>

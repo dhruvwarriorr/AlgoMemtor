@@ -350,9 +350,8 @@ source, tests, and `git status` before relying on it.
   no reminders. Unrated live and practised-after Codeforces contests are
   derived from submissions. The mentor pages share `chart-theme.ts` and
   `components/visuals.tsx` (KPI tiles, chart cards) with the Progress look.
-- 2026-09-25 (AI providers): development runs on local Ollama
-  `qwen3:8b-q4_K_M` (16K context) and local `Qwen/Qwen3-Embedding-0.6B`
-  (1024 dims); production uses OpenRouter only. There is no direct
+- 2026-09-25 (AI providers): superseded on 2026-09-27; local models are
+  removed and every environment uses OpenRouter only. There is no direct
   Gemini/Groq integration.
 - 2026-09-25 (later): the revision schedule is removed from the product.
   Upsolve counts a problem as upsolved only when it was solved after the
@@ -440,6 +439,21 @@ source, tests, and `git status` before relying on it.
   by `components/ui/select.tsx` and `disclosure.tsx`; do not reintroduce
   them. PageHero has no eyebrow chip. Onboarding is a three-step flow (coach,
   connect incl. the extension, profile).
+
+- 2026-09-27 (free-tier deployment): web and the FastAPI AI function deploy
+  to Vercel Hobby (`vercel.json`, `apps/ai-api/vercel.json`), Core to a Render
+  Free web service (`render.yaml`), PostgreSQL to Neon Free. The browser calls
+  Core directly through `VITE_API_BASE_URL` (Vercel rewrites cap proxied
+  requests at 120 s); migrations use `DATABASE_MIGRATION_URL` and run by hand.
+  AI routing: `openai/gpt-oss-20b` (fast, structured work),
+  `deepseek/deepseek-v4-flash-0731` (strong: reasoning, code, mentor tools,
+  contest analysis, long context) and `qwen/qwen3-embedding-8b` (embeddings
+  only); there is no huge-context model. The Coach is text only (attachments
+  removed). Per-learner AI limits (`services/ai-usage-limiter.ts`,
+  `core.ai_usage_counters`) answer `429 AI_USAGE_LIMITED` and stay off until
+  `AI_USAGE_LIMITS_ENABLED=true`. CodeChef stars and LeetCode contest badges
+  come from `platformTier` in shared contracts. Settings/Profile icons use the
+  `.icon-motion` gestures in `index.css`.
 
 Important: this snapshot describes the working tree, which currently contains
 uncommitted Week 10 work. It is context, not permission to commit or rewrite it.

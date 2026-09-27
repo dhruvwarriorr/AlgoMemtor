@@ -225,11 +225,7 @@ async def ground_public_question(
     *,
     instruction: str = _DEFAULT_INSTRUCTION,
 ) -> PublicResearch | None:
-    if (
-        settings.ai_provider != "openrouter"
-        or not settings.openrouter_api_key
-        or not settings.coach_web_grounding_enabled
-    ):
+    if not settings.openrouter_api_key or not settings.coach_web_grounding_enabled:
         return None
     payload = {
         "model": settings.ai_web_search_model,
