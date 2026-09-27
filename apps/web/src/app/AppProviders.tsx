@@ -4,7 +4,6 @@ import type { PropsWithChildren } from 'react'
 
 import { AuthProvider } from '@/features/auth/AuthProvider'
 
-import { DevelopmentMocks } from './DevelopmentMocks'
 import { NotificationProvider } from './NotificationProvider'
 import { ThemeProvider } from './ThemeProvider'
 
@@ -20,16 +19,14 @@ const queryClient = new QueryClient({
 
 export function AppProviders({ children }: PropsWithChildren) {
   return (
-    <DevelopmentMocks>
-      <BrowserRouter>
-        <QueryClientProvider client={queryClient}>
-          <ThemeProvider>
-            <AuthProvider>
-              <NotificationProvider>{children}</NotificationProvider>
-            </AuthProvider>
-          </ThemeProvider>
-        </QueryClientProvider>
-      </BrowserRouter>
-    </DevelopmentMocks>
+    <BrowserRouter>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <AuthProvider>
+            <NotificationProvider>{children}</NotificationProvider>
+          </AuthProvider>
+        </ThemeProvider>
+      </QueryClientProvider>
+    </BrowserRouter>
   )
 }

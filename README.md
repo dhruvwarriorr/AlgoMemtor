@@ -55,13 +55,11 @@ The MVP will support:
 - CSES public problem catalog discovery; and
 - evidence-backed learner preferences and progress; and
 - a protected `/coach` workspace with saved conversations, progressive CP/DSA
-  tutoring, an adaptive improvement roadmap, optional practice sets, and
-  in-app check-ins; and
+  tutoring, an adaptive improvement roadmap, and optional practice sets; and
 - a Test Case Visualizer (`/visualizer`) that runs the learner's own C++,
   Java or Python code on their own input inside the browser, animates its data
   structures step by step, and has an AI Debugger that points at the line and
-  step where it goes wrong (see section 4.14 of
-  `docs/PROJECT_DOCUMENTATION.md`); and
+  step where it goes wrong; and
 - graceful provider and AI failure states.
 
 The MVP will not include:
@@ -197,25 +195,6 @@ bounded so a slow database cannot block ranking. Generated reasons also reject
 URLs, contact-like strings, UUIDs, and repeated four-word slices of the
 preference note. Audit failures are non-fatal.
 
-The evaluation dataset and runner live in `apps/core-api/evaluation/`. Use
-`npx tsx apps/core-api/evaluation/run.ts --validate-only` to validate the 48
-scenarios without calling a live model. A live comparison is explicitly opt-in with
-`ALGOMEMTOR_EVALUATION_ENABLED=true` plus an AI URL and internal token; it
-reports relevance, difficulty, diversity, preference, p95 latency, and average
-estimated cost against the deterministic baseline. The local harness does not
-by itself establish live provider quality, latency, cost, or authenticated browser
-acceptance.
-
-The isolated Phase 10 memory harness is in
-`apps/ai-api/app/evaluation/memory_rag_eval.py`. Its tests run with
-`uv run --project apps/ai-api pytest apps/ai-api/tests/test_memory_rag_eval.py`
-and enforce vector-vs-SQL recall@5, three-run median ranking improvement,
-privacy/unknown-ID, p95 latency, and cost gates. A deployment adapter must
-provide the database-backed store and ranker, explicit evidence/memory
-fixtures, and at least three scenarios per memory category before these gates
-can be used as live model or PostgreSQL evidence. The top-level `run` helper
-enables that strict matrix validation by default.
-
 ## Personalized coach and adaptive roadmap
 
 Authenticated learners can open `/coach` for a persistent CP/DSA tutoring
@@ -301,8 +280,6 @@ expired according to provider-specific policy.
 │   └── ai-api/               # FastAPI recommendation and memory service
 ├── packages/
 │   └── shared-contracts/     # Shared TypeScript request/response schemas
-├── docs/
-│   └── PROJECT_DOCUMENTATION.md
 ├── docker-compose.yml
 └── package.json
 ```
@@ -393,11 +370,10 @@ COACH_WEB_GROUNDING_ENABLED=true
 The core URL must be HTTPS or an HTTP loopback URL and cannot contain
 credentials, query parameters, or fragments. `DATABASE_URL` enables the AI
 audit, memory, and vector tables. Development and production both need
-`OPENROUTER_API_KEY`; production also sets `APP_ENV=production`. The complete
-model and cost configuration is documented in `apps/ai-api/.env.example`, and
-the free-tier deployment in `docs/DEPLOYMENT_VERCEL_NEON_RENDER_PLAN.md`. Reflection
-notes are sent to AI only after the learner enables the separate AI note
-sharing choice. Structured progress signals remain separate from raw notes.
+`OPENROUTER_API_KEY`; production also sets `APP_ENV=production`. Model
+configuration is listed in `apps/ai-api/.env.example`. Reflection notes are
+sent to AI only after the learner enables the separate AI note sharing choice.
+Structured progress signals remain separate from raw notes.
 
 ### 4. Configure Supabase authentication
 
@@ -522,54 +498,22 @@ docker compose -f docker-compose.prod.yml up -d --build
 ```
 
 Only the web container publishes a port; terminate TLS in front of it and use
-that HTTPS origin as `PUBLIC_SITE_URL`. See “Production deployment (Docker)” in
-[`docs/PROJECT_DOCUMENTATION.md`](docs/PROJECT_DOCUMENTATION.md) for the service
-layout, secrets handling, and release checklist.
-
-## Mock-first development
-
-Frontend mocks should represent normalized external metadata, provider outages,
-rate limits, stale cache states, AI fallback ranking, and outbound-link behavior.
-Mocks must never contain copied problem statements or hidden tests.
+that HTTPS origin as `PUBLIC_SITE_URL`.
 
 ## Quality commands
 
 ```bash
 npm run typecheck
-npm run test
 npm run lint
 npm run format:check
 npm run build
-uv run --project apps/ai-api pytest apps/ai-api/tests
-uv run --project apps/ai-api ruff check apps/ai-api
-uv run --project apps/ai-api ruff format --check apps/ai-api
 ```
-
-Week 11 focused checks are:
-
-```bash
-uv run --project apps/ai-api pytest apps/ai-api/tests/test_internal_ranking.py
-npm --prefix apps/core-api exec vitest run \
-  src/config/ai-config.test.ts \
-  src/integrations/ai/ai-recommendation-client.test.ts \
-  src/recommendation-api.test.ts
-npx tsx apps/core-api/evaluation/run.ts --validate-only
-```
-
-The evaluation validation is local-only. A live AI-vs-baseline run is opt-in and
-requires a configured AI service; these checks do not replace
-authenticated browser acceptance.
-
-## Documentation
-
-- [Complete project documentation](docs/PROJECT_DOCUMENTATION.md)
 
 ## Security and compliance boundaries
 
 - Do not scrape problem content or use undocumented private endpoints. The
   narrow public solved-count and consented Codeforces activity exceptions are
-  documented in the complete project documentation and remain user-triggered,
-  size-limited, and subject to provider review.
+  user-triggered, size-limited, and subject to provider review.
 - Confirm API terms, attribution rules, rate limits, and caching rules per provider.
 - Construct or validate canonical URLs on the server; never trust an arbitrary URL
   supplied by the browser or an LLM.

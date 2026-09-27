@@ -6,12 +6,10 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run"
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
-    "typescript": "~6.0.2",
-    "vitest": "^4.1.10"
+    "typescript": "~6.0.2"
   },
   "license": "MIT"
 }

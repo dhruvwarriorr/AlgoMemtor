@@ -2,9 +2,8 @@
 # Web (Vite) and AI (FastAPI) deploy to Vercel; PostgreSQL is Neon.
 # Free web services sleep after 15 minutes without traffic and wake in about
 # a minute. A workspace gets 750 free instance hours a month, which covers
-# this one service even if it never sleeps. Migrations are run by hand (see
-# docs/DEPLOYMENT_VERCEL_NEON_RENDER_PLAN.md): Free services have no
-# pre-deploy command.
+# this one service even if it never sleeps. Migrations are run by hand because
+# Free services have no pre-deploy command.
 services:
   - type: web
     name: algomemtor-core-api
@@ -54,10 +53,9 @@ services:
         value: "true"
       - key: PROVIDER_ACTIVE_SYNC_STALE_MINUTES
         value: "60"
-      # Per-learner AI limits. Leave "false" for final testing, then set
-      # "true" before opening sign-ups.
+      # Per-learner AI limits are enabled for deployment.
       - key: AI_USAGE_LIMITS_ENABLED
-        value: "false"
+        value: "true"
       - key: AI_COACH_REQUESTS_PER_MINUTE
         value: "4"
       - key: AI_COACH_REQUESTS_PER_DAY

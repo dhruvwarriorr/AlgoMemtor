@@ -18,13 +18,8 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "pytest>=9.1.1",
-    "pytest-asyncio>=1.4.0",
     "ruff>=0.16.0",
 ]
-
-[tool.pytest.ini_options]
-pythonpath = ["."]
 
 # Vercel runs the FastAPI app as one Python Function (see vercel.json).
 [tool.vercel]
