@@ -14,6 +14,15 @@ import { useAuth } from '@/features/auth/useAuth'
 import { cn } from '@/lib/utils'
 
 import { MelloChatPanel } from './MelloChatPanel'
+import {
+  DEFAULT_PANEL_SIZE,
+  isExpanded,
+  LARGE_PANEL_SIZE,
+  MIN_PANEL_SIZE,
+  readPanelSize,
+  savePanelSize,
+  type PanelSize,
+} from './panel-size'
 import { onPetSay, petSay, type PetSaid } from './mello-events'
 import { PetAssistantPanel } from './PetAssistantPanel'
 import { usePetAssistant } from './pet-assistant'
@@ -161,6 +170,9 @@ function MelloPetBody({ pet }: { pet: Pet }) {
   const [hovered, setHovered] = useState(false)
   const [near, setNear] = useState(false)
   const [position, setPosition] = useState(readPosition)
+  // The learner's chosen chat box size, kept within the window below.
+  const [panelSize, setPanelSize] = useState<PanelSize>(readPanelSize)
+  const resize = useRef<{ x: number; y: number; from: PanelSize } | null>(null)
   const [dragging, setDragging] = useState(false)
   const drag = useRef<{
     x: number
@@ -274,12 +286,13 @@ function MelloPetBody({ pet }: { pet: Pet }) {
     })
   }, [notify, pet.name, setOpen])
 
-  // The panel opens beside the pet, above when there is room.
-  const panelWidth = Math.min(340, viewport.width - margin * 2)
+  // The panel opens beside the pet, above when there is room, at the
+  // learner's chosen size.
+  const panelWidth = Math.min(panelSize.width, viewport.width - margin * 2)
   const petTop = viewport.height - bottom - petHeight
   const roomAbove = petTop - margin * 2
   const panelHeight = Math.min(
-    460,
+    panelSize.height,
     Math.max(roomAbove, viewport.height - bottom - margin * 2),
   )
   const panelAbove = roomAbove >= Math.min(340, panelHeight)
@@ -289,6 +302,53 @@ function MelloPetBody({ pet }: { pet: Pet }) {
     margin,
     viewport.width - panelWidth - margin,
   )
+  const expanded = isExpanded(panelSize)
+  const toggleSize = () => {
+    const next = expanded ? DEFAULT_PANEL_SIZE : LARGE_PANEL_SIZE
+    setPanelSize(next)
+    savePanelSize(next)
+  }
+  // Dragging the corner away from the pet grows the box; toward it shrinks.
+  const startResize = (event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    try {
+      // Keeps the drag going when the pointer leaves the small grip.
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // Capture is best effort.
+    }
+    resize.current = {
+      x: event.clientX,
+      y: event.clientY,
+      from: { width: panelWidth, height: panelHeight },
+    }
+  }
+  const moveResize = (event: PointerEvent<HTMLDivElement>) => {
+    const start = resize.current
+    if (start === null) return
+    const dx = event.clientX - start.x
+    const dy = event.clientY - start.y
+    setPanelSize({
+      width: clamp(
+        start.from.width + (onLeftHalf ? dx : -dx),
+        MIN_PANEL_SIZE.width,
+        viewport.width - margin * 2,
+      ),
+      height: clamp(
+        start.from.height + (panelAbove ? -dy : dy),
+        MIN_PANEL_SIZE.height,
+        viewport.height - margin * 2,
+      ),
+    })
+  }
+  const endResize = () => {
+    if (resize.current === null) return
+    resize.current = null
+    setPanelSize((size) => {
+      savePanelSize(size)
+      return size
+    })
+  }
   const showTag =
     !open && !dragging && speech === null && (hovered || busyStates.has(state))
 
@@ -307,15 +367,55 @@ function MelloPetBody({ pet }: { pet: Pet }) {
           }}
         >
           {assistant === null ? (
-            <MelloChatPanel onClose={close} onHide={hide} pet={pet} />
+            <MelloChatPanel
+              expanded={expanded}
+              onClose={close}
+              onHide={hide}
+              onToggleSize={toggleSize}
+              pet={pet}
+            />
           ) : (
             <PetAssistantPanel
               assistant={assistant}
+              expanded={expanded}
               onClose={close}
               onHide={hide}
+              onToggleSize={toggleSize}
               pet={pet}
             />
           )}
+          {/* Resize grip on the corner that points into the page. */}
+          <div
+            aria-hidden="true"
+            className={cn(
+              'absolute z-10 size-4 touch-none',
+              panelAbove ? 'top-0' : 'bottom-0',
+              onLeftHalf ? 'right-0' : 'left-0',
+              panelAbove === onLeftHalf
+                ? 'cursor-nesw-resize'
+                : 'cursor-nwse-resize',
+            )}
+            onPointerCancel={endResize}
+            onPointerDown={startResize}
+            onPointerMove={moveResize}
+            onPointerUp={endResize}
+            title="Drag to resize"
+          >
+            <svg
+              className={cn(
+                'size-4 text-muted-foreground/70',
+                panelAbove ? '' : 'scale-y-[-1]',
+                onLeftHalf ? '' : 'scale-x-[-1]',
+              )}
+              fill="none"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeWidth={1.5}
+              viewBox="0 0 16 16"
+            >
+              <path d="M5 2h9v9M9 2h5v5" />
+            </svg>
+          </div>
         </div>
       ) : null}
       <div

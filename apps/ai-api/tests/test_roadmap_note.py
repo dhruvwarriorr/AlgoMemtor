@@ -236,6 +236,35 @@ def test_internal_endpoint_requires_configured_constant_time_token() -> None:
     }
 
 
+def test_internal_endpoint_keeps_a_null_topic_for_core() -> None:
+    service = RoadmapNoteService(
+        settings(),
+        StaticModel(
+            RoadmapNoteClassification(
+                topic=None, status="no_change", rationale="Two topics named."
+            )
+        ),
+    )
+    app.dependency_overrides[get_ai_settings] = lambda: settings()
+    app.dependency_overrides[get_roadmap_note_service] = lambda: service
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/internal/coach/roadmap-note",
+                headers={"X-Internal-Service-Token": "internal-test-token"},
+                json=request_payload(),
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    # Core's contract requires the key, even when no topic was identified.
+    assert response.json() == {
+        "topic": None,
+        "status": "no_change",
+        "rationale": "Two topics named.",
+    }
+
+
 def test_internal_endpoint_is_unavailable_when_classification_is_not_configured() -> (
     None
 ):

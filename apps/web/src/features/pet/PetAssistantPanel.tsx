@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { ArrowUpRight, X } from '@/components/icons/algo-icons'
 import { MentorChatBody } from '@/features/mentor/components/MentorChatBody'
 
+import { PanelSizeButton } from './PanelSizeButton'
 import { MelloSprite } from './MelloSprite'
 import type { PetAssistant } from './pet-assistant'
 import type { Pet } from './pets'
@@ -16,11 +17,15 @@ export const PetAssistantPanel = memo(function PetAssistantPanel({
   assistant,
   onClose,
   onHide,
+  expanded,
+  onToggleSize,
 }: {
   pet: Pet
   assistant: PetAssistant
   onClose: () => void
   onHide: () => void
+  expanded: boolean
+  onToggleSize: () => void
 }) {
   const { title, subtitle } = assistant
   return (
@@ -61,6 +66,7 @@ export const PetAssistantPanel = memo(function PetAssistantPanel({
         >
           <ArrowUpRight aria-hidden="true" className="size-4" />
         </Link>
+        <PanelSizeButton expanded={expanded} onToggle={onToggleSize} />
         <button
           aria-label={`Close ${pet.name}`}
           className="grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

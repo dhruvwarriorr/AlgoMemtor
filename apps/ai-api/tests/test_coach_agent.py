@@ -572,3 +572,54 @@ def test_openrouter_provider_uses_the_configured_role_models() -> None:
 def test_coach_message_is_text_only() -> None:
     message = _human_message(request("Explain this diagram"))
     assert isinstance(message.content, str)
+
+
+def test_reasoning_gets_its_own_budget_on_top_of_the_answer() -> None:
+    from app.llm import chat_model
+
+    def build(configured: AiSettings, level: str, tokens: int) -> Any:
+        return chat_model(
+            configured,
+            workload="doubt_helper",
+            temperature=0.3,
+            thinking_level=level,  # type: ignore[arg-type]
+            max_tokens=tokens,
+            timeout=60,
+            max_retries=0,
+        )
+
+    # Off by default: some hosts ignore the cap and think until the limit.
+    off = build(settings(openrouter_api_key="test-key"), "medium", 4_000)
+    assert off.max_tokens == 4_000
+    assert off.extra_body is not None
+    assert off.extra_body["reasoning"] == {"enabled": False}
+    assert off.extra_body["provider"] == {
+        "require_parameters": True,
+        "sort": "throughput",
+        "max_price": {"prompt": 0.15, "completion": 0.4},
+    }
+    on = build(
+        settings(openrouter_api_key="test-key", ai_reasoning_enabled=True),
+        "medium",
+        4_000,
+    )
+    assert on.max_tokens == 4_000 + 2_048
+    assert on.extra_body is not None
+    assert on.extra_body["reasoning"] == {"max_tokens": 2_048, "exclude": True}
+
+
+def test_fast_model_keeps_minimum_reasoning_it_cannot_disable() -> None:
+    from app.llm import chat_model
+
+    fast = chat_model(
+        settings(openrouter_api_key="test-key"),
+        workload="ranking",
+        temperature=0,
+        thinking_level="none",
+        max_tokens=500,
+        timeout=60,
+        max_retries=0,
+    )
+    assert fast.max_tokens == 500 + 1_024
+    assert fast.extra_body is not None
+    assert fast.extra_body["reasoning"] == {"effort": "low", "exclude": True}

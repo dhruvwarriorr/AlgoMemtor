@@ -158,8 +158,8 @@ async def rank_recommendations(
 
 @app.post(
     "/internal/coach/roadmap-note",
+    # `topic` stays present as null: Core's contract requires the key.
     response_model=RoadmapNoteResponse,
-    response_model_exclude_none=True,
     dependencies=[Depends(require_internal_service)],
 )
 async def classify_roadmap_note(

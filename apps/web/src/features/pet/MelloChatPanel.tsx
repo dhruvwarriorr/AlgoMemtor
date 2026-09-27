@@ -22,6 +22,7 @@ import { ApiClientError } from '@/features/discovery/api/client'
 import { mentorTools, mentorToolPath } from '@/features/mentor/feature-routes'
 import { cn } from '@/lib/utils'
 
+import { PanelSizeButton } from './PanelSizeButton'
 import { MelloSprite } from './MelloSprite'
 import type { Pet } from './pets'
 import {
@@ -86,10 +87,14 @@ export const MelloChatPanel = memo(function MelloChatPanel({
   pet,
   onClose,
   onHide,
+  expanded,
+  onToggleSize,
 }: {
   pet: Pet
   onClose: () => void
   onHide: () => void
+  expanded: boolean
+  onToggleSize: () => void
 }) {
   const { user } = useAuth()
   const { notify } = useNotification()
@@ -204,6 +209,7 @@ export const MelloChatPanel = memo(function MelloChatPanel({
         >
           <ArrowUpRight aria-hidden="true" className="size-4" />
         </Link>
+        <PanelSizeButton expanded={expanded} onToggle={onToggleSize} />
         <button
           aria-label={`Close ${pet.name}`}
           className="grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

@@ -87,6 +87,13 @@ local models any more.
 | STRONG | `deepseek/deepseek-v4-flash-0731` | 0.021 / 0.32 | deep Coach turns, Doubt Helper, Solution Explorer, code repair, AI Debugger, contest analysis, proofs, long context (1.3M-token window) |
 | EMBEDDINGS | `qwen/qwen3-embedding-8b` (1024 d) | 0.01 | learner memory and knowledge RAG only |
 
+Requests go to the fastest OpenRouter host whose list price stays under
+$0.15 in / $0.40 out per million tokens (`AI_PROVIDER_SORT`,
+`AI_MAX_*_PRICE_PER_MILLION_USD`), so actual prices can sit slightly above the
+cheapest list prices above; the cheapest hosts were about 5x slower. Hidden
+reasoning is off (`AI_REASONING_ENABLED=false`); see "AI model routing" in
+`PROJECT_DOCUMENTATION.md` for why.
+
 Rough cost per request: a fast Coach turn with the tool agent is about
 $0.001; a strong mentor request (for example a Solution Explorer run with
 ~20K input and ~16K output tokens) is about $0.005. At roughly $0.002 on

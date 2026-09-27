@@ -2159,6 +2159,25 @@ with three models, each with one job (`apps/ai-api/app/llm.py`):
 | strong | `deepseek/deepseek-v4-flash-0731` | $0.021 / $0.32 | deep Coach turns, Doubt Helper, Solution Explorer, code repair and AI Debugger, contest analysis and patterns, proofs; also the long-context model (1.3M-token window) |
 | embeddings | `qwen/qwen3-embedding-8b` (1024 d) | $0.01 | learner-memory and knowledge RAG vectors only; never answers |
 
+Request settings (`apps/ai-api/app/providers.py`), measured on 2026-09-27:
+
+- Hidden reasoning is off (`AI_REASONING_ENABLED=false`). With only an effort
+  level, or even a `reasoning.max_tokens` cap, some DeepSeek hosts spent the
+  whole output budget thinking (18K reasoning tokens, empty answer), which made
+  Doubt Helper and Solution Explorer hang or fail. GPT-OSS cannot disable
+  reasoning, so it runs at `effort: low` with 1,024 tokens of headroom added to
+  `max_tokens`. When enabled, each thinking level gets its own capped budget
+  added on top of the answer budget.
+- Hosts are chosen by throughput under price ceilings
+  (`AI_PROVIDER_SORT=throughput`, `AI_MAX_INPUT_PRICE_PER_MILLION_USD=0.15`,
+  `AI_MAX_OUTPUT_PRICE_PER_MILLION_USD=0.40`): the cheapest DeepSeek hosts
+  wrote about 45 tokens/s, the fastest in budget about 235. Strong-model
+  requests also set `require_parameters` so a host cannot drop structured
+  output; no GPT-OSS host declares every parameter, so the fast model skips it.
+- Mentor tools request JSON-schema output and parse it themselves, clipping
+  small overshoots to the schema instead of failing (a forced tool call made
+  some hosts end with neither a call nor content). Mentor calls retry once.
+
 The separate huge-context model and its threshold are gone: the strong model's
 window covers long prompts. Knowledge chunks keep their 1024-dimension
 `embedding_v2` column, so no re-embedding is needed. Prices are the OpenRouter

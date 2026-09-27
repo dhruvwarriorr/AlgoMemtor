@@ -235,7 +235,7 @@ class LangchainMentorModel:
                 thinking_level=self.thinking_level,  # type: ignore[arg-type]
                 max_tokens=tokens,
                 timeout=self.settings.mentor_timeout_seconds,
-                max_retries=2,
+                max_retries=1,
             )
         return self._models[key]
 
@@ -252,34 +252,40 @@ class LangchainMentorModel:
         human: str,
         max_tokens: int,
     ) -> StructuredT:
-        structured = self._model(max_tokens, system).with_structured_output(
-            schema, method="function_calling", include_raw=True
+        # JSON-schema output requested directly and parsed here: with a
+        # forced tool call some hosts end a long structured answer (Solution
+        # Explorer) with neither a tool call nor content, and LangChain's own
+        # JSON-schema parsing raises before an overshoot can be clipped.
+        model = self._model(max_tokens, system).bind(
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema.__name__,
+                    "schema": schema.model_json_schema(),
+                },
+            }
         )
-        result = await structured.ainvoke([("system", system), ("human", human)])
-        parsed = result.get("parsed") if isinstance(result, dict) else None
-        if isinstance(parsed, schema):
-            return parsed
-        raw = result.get("raw") if isinstance(result, dict) else None
-        content = getattr(raw, "content", None)
-        if isinstance(content, str) and content.strip().startswith("{"):
-            # Some replies arrive as plain JSON instead of a tool call; clip
-            # them to the schema instead of discarding them.
+        raw = await model.ainvoke([("system", system), ("human", human)])
+        content = _message_text(raw).strip()
+        if content.startswith("```"):
+            content = content.strip("`").removeprefix("json").strip()
+        error: Exception | None = None
+        if content.startswith("{"):
             try:
-                recovered = coerce_to_schema(schema, json.loads(content))
-            except ValueError:
-                recovered = None
-            if recovered is not None:
-                return recovered
-        # Models often overshoot a length limit by a little; clip the raw
-        # arguments to the schema's bounds instead of discarding the answer.
-        for call in getattr(raw, "tool_calls", None) or []:
-            args = call.get("args") if isinstance(call, dict) else None
-            if not isinstance(args, dict):
-                continue
-            recovered = coerce_to_schema(schema, args)
-            if recovered is not None:
-                return recovered
-        error = result.get("parsing_error") if isinstance(result, dict) else None
+                data = json.loads(content)
+            except ValueError as parse_error:
+                data = None
+                error = parse_error
+            if isinstance(data, dict):
+                try:
+                    return schema.model_validate(data)
+                except ValidationError as validation_error:
+                    error = validation_error
+                # Models often overshoot a length limit by a little; clip to
+                # the schema's bounds instead of discarding the answer.
+                recovered = coerce_to_schema(schema, data)
+                if recovered is not None:
+                    return recovered
         locations = (
             sorted(
                 {

@@ -1033,9 +1033,7 @@ function SessionView({ sessionId }: { sessionId: string }) {
   // A question prepared in the Test Case Visualizer about one step.
   const [visualizerQuestion] = useState(() => readDoubtQuestion(location.state))
   const [dockOpen, setDockOpen] = useState(visualizerQuestion !== null)
-  const [dockMode, setDockMode] = useState<'ask' | 'attempt'>('ask')
   const [code, setCode] = useState(visualizerQuestion?.code ?? '')
-  const [errorText, setErrorText] = useState('')
   const [statement, setStatement] = useState(() => {
     try {
       return (
@@ -1119,7 +1117,6 @@ function SessionView({ sessionId }: { sessionId: string }) {
         onSuccess: () => {
           endPetActivity('doubt-turn')
           setCode('')
-          setErrorText('')
           if (request.action === 'next_hint') petSay(petLines.hintReady)
           if (request.action === 'complete') {
             cueMelloSuccess()
@@ -1147,28 +1144,13 @@ function SessionView({ sessionId }: { sessionId: string }) {
     })
   }
 
-  function openDock(mode: 'ask' | 'attempt') {
-    setDockMode(mode)
-    setDockOpen(true)
-  }
-
-  function sendFromDock(content: string, mode: string) {
-    return act(
-      mode === 'attempt'
-        ? {
-            action: 'submit_attempt',
-            expectedVersion: session.version,
-            content,
-            ...(code.trim() === '' ? {} : { transientCode: code }),
-            ...(errorText.trim() === '' ? {} : { transientError: errorText }),
-          }
-        : {
-            action: 'ask',
-            expectedVersion: session.version,
-            content,
-            ...(code.trim() === '' ? {} : { transientCode: code }),
-          },
-    )
+  function sendFromDock(content: string) {
+    return act({
+      action: 'ask',
+      expectedVersion: session.version,
+      content,
+      ...(code.trim() === '' ? {} : { transientCode: code }),
+    })
   }
 
   // The dock shows the back-and-forth; hints stay in the main transcript.
@@ -1404,15 +1386,7 @@ function SessionView({ sessionId }: { sessionId: string }) {
             ) : null}
             <Button
               disabled={turn.isPending}
-              onClick={() => openDock('attempt')}
-              type="button"
-              variant="outline"
-            >
-              <Code2 aria-hidden="true" /> I tried this
-            </Button>
-            <Button
-              disabled={turn.isPending}
-              onClick={() => openDock('ask')}
+              onClick={() => setDockOpen(true)}
               type="button"
               variant="outline"
             >
@@ -1507,18 +1481,11 @@ function SessionView({ sessionId }: { sessionId: string }) {
       {active ? (
         <MentorChatDock
           emptyState={
-            dockMode === 'attempt' ? (
-              <p>
-                Tell {coachName} what you tried and what happened. Attach your
-                code or the verdict for precise feedback.
-              </p>
-            ) : (
-              <p>
-                Ask about the last hint or anything in this problem. {coachName}{' '}
-                already knows the problem and every hint so far, and keeps to
-                your current hint level.
-              </p>
-            )
+            <p>
+              Ask about the last hint or anything in this problem. {coachName}{' '}
+              already knows the problem and every hint so far, and keeps to your
+              current hint level.
+            </p>
           }
           extra={
             <Disclosure
@@ -1532,8 +1499,7 @@ function SessionView({ sessionId }: { sessionId: string }) {
               }
               summary={
                 <span className="text-xs text-muted-foreground">
-                  Attach code{dockMode === 'attempt' ? ' or a verdict' : ''}{' '}
-                  (used for this answer only, never saved)
+                  Attach code (used for this answer only, never saved)
                 </span>
               }
               summaryClassName="px-3 py-2"
@@ -1552,30 +1518,15 @@ function SessionView({ sessionId }: { sessionId: string }) {
                   spellCheck={false}
                   value={code}
                 />
-                {dockMode === 'attempt' ? (
-                  <textarea
-                    aria-label="Verdict or error for this answer"
-                    className={cn(
-                      inputClass,
-                      'min-h-14 resize-y font-mono text-xs',
-                    )}
-                    disabled={turn.isPending}
-                    maxLength={4_000}
-                    onChange={(event) => setErrorText(event.target.value)}
-                    placeholder="Verdict, error output, or failing test."
-                    spellCheck={false}
-                    value={errorText}
-                  />
-                ) : null}
               </div>
             </Disclosure>
           }
-          launcherLabel="Ask or share an attempt"
+          launcherLabel="Ask a question"
           {...(visualizerQuestion === null
             ? {}
             : { initialDrafts: { ask: visualizerQuestion.content } })}
           messages={dockMessages}
-          mode={dockMode}
+          mode="ask"
           modes={[
             {
               id: 'ask',
@@ -1584,17 +1535,7 @@ function SessionView({ sessionId }: { sessionId: string }) {
               placeholder: 'What is unclear about the last hint?',
               submitLabel: 'Ask',
             },
-            {
-              id: 'attempt',
-              label: 'I tried this',
-              icon: <Code2 aria-hidden="true" className="size-3.5" />,
-              placeholder: 'Describe what you tried and what happened.',
-              submitLabel: 'Get feedback',
-            },
           ]}
-          onModeChange={(mode) =>
-            setDockMode(mode === 'attempt' ? 'attempt' : 'ask')
-          }
           onOpenChange={setDockOpen}
           onSubmit={sendFromDock}
           open={dockOpen}

@@ -76,6 +76,7 @@ from .pedagogy import (
     mistake_prompt,
     teaching_prompt,
 )
+from .providers import REASONING_TOKENS, reasoning_config
 from .settings import AiSettings, ModelRole, get_ai_settings
 from .web_grounding import (
     ground_public_question,
@@ -778,9 +779,13 @@ def _reasoning_variant(model: BaseChatModel) -> BaseChatModel:
     if not isinstance(model, ChatOpenAI):
         return model
     extra = dict(model.extra_body or {})
-    extra["reasoning_effort"] = "high"
+    budget = REASONING_TOKENS["low"]
+    extra["reasoning"] = reasoning_config(budget)
     return model.model_copy(
-        update={"extra_body": extra, "max_tokens": max(model.max_tokens or 0, 2_000)}
+        update={
+            "extra_body": extra,
+            "max_tokens": max(model.max_tokens or 0, 1_000) + budget,
+        }
     )
 
 

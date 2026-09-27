@@ -27,10 +27,14 @@ def test_reasoning_variant_turns_reasoning_on_with_room_to_answer() -> None:
     )
     variant = _reasoning_variant(model)
     assert isinstance(variant, ChatOpenAI)
-    assert variant.extra_body == {"reasoning_effort": "high"}
-    assert variant.max_tokens == 2_000
+    assert variant.extra_body == {
+        "reasoning_effort": "none",
+        "reasoning": {"max_tokens": 1_024, "exclude": True},
+    }
+    # Reasoning gets its own budget on top of room for the answer.
+    assert variant.max_tokens == 1_000 + 1_024
     assert model.extra_body is not None
-    assert model.extra_body["reasoning_effort"] == "none"
+    assert "reasoning" not in model.extra_body
 
 
 def test_invented_recommendations_are_found_only_in_problem_lists() -> None:

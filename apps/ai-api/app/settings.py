@@ -47,6 +47,17 @@ class AiSettings(BaseSettings):
     ai_web_search_provider: Literal["openrouter"] = "openrouter"
     ai_web_search_engine: Literal["parallel"] = "parallel"
     ai_web_search_model: str = "openai/gpt-oss-20b"
+    # OpenRouter host routing. The cheapest hosts can be several times
+    # slower; "throughput" picks the fastest host whose list price stays
+    # under these ceilings ($ per million tokens). "price" restores
+    # cheapest-first routing.
+    # Hidden reasoning ("thinking"). Some hosts ignore the reasoning cap and
+    # spend the whole output budget thinking, returning no answer, so it is
+    # off unless enabled; the thinking levels then set the capped budgets.
+    ai_reasoning_enabled: bool = False
+    ai_provider_sort: Literal["throughput", "latency", "price"] = "throughput"
+    ai_max_input_price_per_million_usd: Decimal = Field(default=Decimal("0.15"), gt=0)
+    ai_max_output_price_per_million_usd: Decimal = Field(default=Decimal("0.40"), gt=0)
 
     ai_request_timeout_seconds: float = Field(default=110, gt=0, le=900)
     ai_max_retries: int = Field(default=2, ge=0, le=4)
