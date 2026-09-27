@@ -377,10 +377,47 @@ export const syncCodeChef = async (
   let caughtUp = false
   let backfill = state.backfill
   const stored = state.newestId
+  const pending = new Set(state.pendingRatings)
+  const ratings = { ...state.ratings }
+  const newlyRated = new Map<string, string>()
+  let looked = 0
+  const fetchPendingRatings = async (limit: number) => {
+    for (const key of [...pending]) {
+      if (rateLimited || looked >= limit) break
+      const [contest, code] = key.split(':')
+      if (contest === undefined || code === undefined) {
+        pending.delete(key)
+        continue
+      }
+      try {
+        await pause()
+        looked += 1
+        ratings[key] = parseDifficultyRating(
+          await readJson(
+            deps.read,
+            `${CODECHEF_ORIGIN}/api/contests/${encodeURIComponent(contest)}/problems/${encodeURIComponent(code)}`,
+          ),
+        )
+        pending.delete(key)
+        newlyRated.set(code, contest)
+      } catch (error) {
+        if (
+          error instanceof ProviderRequestError &&
+          error.kind === 'rate_limited'
+        )
+          rateLimited = true
+        else pending.delete(key)
+      }
+    }
+  }
+  // A backfill can repeatedly hit CodeChef's limit before reaching the
+  // rating phase. Give previously discovered contest solves a few requests
+  // first, then spend the rest of the run on history and new ratings.
+  await fetchPendingRatings(Math.min(ratingBudget, 4))
   try {
     // 1. Newest pages until reaching the newest uploaded solution (on a
     // first run, page 0 alone; the backfill reads the rest).
-    for (let page = 0; pages < pageBudget; page += 1) {
+    for (let page = 0; !rateLimited && pages < pageBudget; page += 1) {
       await pause()
       const feed = await fetchCodeChefFeedPage(deps.read, handle, page)
       pages += 1
@@ -407,7 +444,12 @@ export const syncCodeChef = async (
     // 2. Older pages, continuing from where the last run stopped. New
     // submissions push rows to later pages, so a page may be read twice but
     // never skipped.
-    while (caughtUp && backfill.phase === 'running' && pages < pageBudget) {
+    while (
+      !rateLimited &&
+      caughtUp &&
+      backfill.phase === 'running' &&
+      pages < pageBudget
+    ) {
       await pause()
       const feed = await fetchCodeChefFeedPage(deps.read, handle, backfill.next)
       pages += 1
@@ -483,48 +525,24 @@ export const syncCodeChef = async (
   }
 
   // 4. Ratings of contest solves, a few per run; the rest wait.
-  const pending = new Set(state.pendingRatings)
   for (const problem of solved.values()) {
     if (problem.solveContext !== 'contest' || problem.contestCode === undefined)
       continue
     const key = `${problem.contestCode}:${problem.externalId}`
-    if (state.ratings[key] === undefined) pending.add(key)
+    if (ratings[key] === undefined) pending.add(key)
   }
-  const ratings = { ...state.ratings }
-  let looked = 0
-  for (const key of [...pending]) {
-    if (rateLimited || looked >= ratingBudget) break
-    const [contest, code] = key.split(':')
-    if (contest === undefined || code === undefined) {
-      pending.delete(key)
-      continue
-    }
-    try {
-      await pause()
-      looked += 1
-      ratings[key] = parseDifficultyRating(
-        await readJson(
-          deps.read,
-          `${CODECHEF_ORIGIN}/api/contests/${encodeURIComponent(contest)}/problems/${encodeURIComponent(code)}`,
-        ),
-      )
-      pending.delete(key)
-      // A rating found for a problem solved in an earlier run is sent again
-      // so the server can attach it.
-      if (!solved.has(code))
-        solved.set(code, {
-          externalId: code,
-          solveContext: 'contest',
-          contestCode: contest,
-        })
-    } catch (error) {
-      if (
-        error instanceof ProviderRequestError &&
-        error.kind === 'rate_limited'
-      )
-        rateLimited = true
-      else pending.delete(key)
-    }
+  await fetchPendingRatings(ratingBudget)
+  // Ratings looked up for older solves must be uploaded even when their feed
+  // rows were not part of this run.
+  for (const [code, contest] of newlyRated) {
+    const existing = solved.get(code)
+    if (existing?.solveContext !== 'contest')
+      solved.set(code, {
+        ...existing,
+        externalId: code,
+        solveContext: 'contest',
+        contestCode: contest,
+      })
   }
   const solvedProblems = [...solved.values()].map((problem) => {
     const rating =
@@ -589,7 +607,7 @@ export const syncCodeChef = async (
       deps,
       rateLimited ? 'rate_limited' : 'synced',
       rateLimited
-        ? `Uploaded ${submissions.length} submissions; CodeChef asked to slow down, continuing shortly.`
+        ? `Uploaded ${submissions.length} submissions; ${rated} rated contest solves this run, ${pending.size} ratings waiting. CodeChef asked to slow down, continuing shortly.`
         : historyComplete
           ? `Up to date: ${submissions.length} new submissions, ${solvedProblems.length} solves (${rated} rated contest solves).`
           : `Uploaded ${submissions.length} submissions; loading older history in the next run.`,

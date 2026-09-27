@@ -3,6 +3,7 @@ import { motion } from 'motion/react'
 import type { AnalyticsInsights } from '@algomemtor/shared-contracts'
 
 import { ProviderLogo } from '@/components/brand/ProviderLogo'
+import { InfoTip } from '@/components/kit/InfoTip'
 import { CountUp } from '@/components/motion/CountUp'
 import { CellTooltip } from '@/components/ui/cell-tooltip'
 import { providerColors } from '@/features/mentor/chart-theme'
@@ -1260,6 +1261,51 @@ export function WeeklyRhythm({
   const weekendShare = percent((dayTotals[5] ?? 0) + (dayTotals[6] ?? 0), total)
   return (
     <InsightCard
+      action={
+        <InfoTip align="end" label="Explain the Weekly rhythm chart">
+          <span className="block font-semibold">How to read this chart</span>
+          <span className="mt-1 block">
+            Each row is a weekday and each column is an hour. A circle counts
+            submissions in that day and hour across your dated activity, not
+            just one week. Times use {timezone ?? 'your local timezone'}.
+          </span>
+          <span className="mt-3 block font-semibold">Legend</span>
+          <span className="mt-1 flex items-center gap-2">
+            <span
+              aria-hidden="true"
+              className="size-2 shrink-0 rounded-full bg-muted-foreground/30"
+            />
+            Gray dot: no submissions
+          </span>
+          <span className="mt-1 flex items-center gap-2">
+            <span
+              aria-hidden="true"
+              className="size-3 shrink-0 rounded-full bg-[#5987f5]"
+            />
+            Blue circle: some submissions
+          </span>
+          <span className="mt-1 flex items-center gap-2">
+            <span
+              aria-hidden="true"
+              className="size-5 shrink-0 rounded-full bg-[#8b5cf6]"
+            />
+            Larger, more purple circle: more submissions
+          </span>
+          <span className="mt-2 flex items-center gap-2">
+            <span
+              aria-hidden="true"
+              className="h-4 w-3 shrink-0 rounded-sm bg-[#8b5cf6]"
+            />
+            Bars: totals for each hour across all days; purple marks the peak
+            hour
+          </span>
+          <span className="mt-2 block text-muted-foreground">
+            Late night means 22:00–03:59; weekends means Saturday and Sunday.
+            Both percentages are shares of all dated submissions. Hover a circle
+            or bar for its exact count.
+          </span>
+        </InfoTip>
+      }
       className="lg:col-span-8"
       description={`Submissions by weekday and hour${timezone ? ` (${timezone})` : ''}.`}
       title="Weekly rhythm"

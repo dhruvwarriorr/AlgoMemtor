@@ -189,4 +189,45 @@ describe('syncCodeChef', () => {
     expect(result.outcome.continueSoon).toBe(true)
     expect(result.state.newestId).toBe(5)
   })
+
+  it('uploads queued contest ratings before a rate-limited history backfill', async () => {
+    const uploads: ConnectorUpload[] = []
+    const requests: string[] = []
+    const result = await syncCodeChef(
+      {
+        read: async (url) => {
+          const path = new URL(url).pathname
+          requests.push(path)
+          return path === '/api/contests/START150C/problems/ABCD'
+            ? new Response(JSON.stringify({ difficulty_rating: 1450 }), {
+                status: 200,
+              })
+            : new Response('slow down', { status: 429 })
+        },
+        upload: async (upload) => {
+          uploads.push(upload)
+        },
+        sleep: async () => {},
+        now: () => new Date('2026-09-27T00:00:00.000Z'),
+      },
+      {
+        ...emptyCodeChefState(),
+        handle: 'chef',
+        newestId: 9001,
+        backfill: { phase: 'running', next: 1 },
+        pendingRatings: ['START150C:ABCD'],
+      },
+      'chef',
+    )
+
+    expect(requests[0]).toBe('/api/contests/START150C/problems/ABCD')
+    expect(result.outcome.status).toBe('rate_limited')
+    expect(result.state.pendingRatings).toEqual([])
+    expect(uploads[0]?.solvedProblems).toContainEqual({
+      externalId: 'ABCD',
+      solveContext: 'contest',
+      contestCode: 'START150C',
+      difficultyRating: 1450,
+    })
+  })
 })
