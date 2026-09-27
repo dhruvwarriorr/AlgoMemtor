@@ -379,21 +379,27 @@ Structured progress signals remain separate from raw notes.
 
 Create a Supabase project with email/password authentication enabled, then set:
 
-- `VITE_SITE_URL`, `VITE_SUPABASE_URL`, and
-  `VITE_SUPABASE_PUBLISHABLE_KEY` in `apps/web/.env`;
+- `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in
+  `apps/web/.env`;
 - `SUPABASE_URL` and `SUPABASE_JWT_ISSUER` in both API environment files; and
 - `SUPABASE_JWT_ISSUER` to `<SUPABASE_URL>/auth/v1`.
 
 In **Supabase Dashboard → Authentication → URL Configuration**:
 
 1. set **Site URL** to the production frontend origin when it exists;
-2. add `http://localhost:5173/dashboard` as a local redirect URL; and
-3. add `https://<production-frontend-host>/dashboard` as the exact production
-   redirect URL.
+2. add `http://localhost:5173/dashboard`,
+   `http://localhost:5173/reset-password`, and
+   `http://localhost:5173/settings` for local development; and
+3. add the same three paths on the exact production frontend origin, for
+   example `https://algomemtor.xyz/dashboard`,
+   `https://algomemtor.xyz/reset-password`, and
+   `https://algomemtor.xyz/settings`.
 
 During local-only development, the Site URL can be `http://localhost:5173`.
-`VITE_SITE_URL` must use the matching frontend origin in each environment. The
-signup confirmation flow explicitly redirects to its `/dashboard` path.
+The frontend uses its current origin for auth callbacks. Supabase falls back
+to its Site URL when a requested callback URL is not allowed, so set the Site
+URL to the production origin once the site is deployed. The signup
+confirmation flow explicitly redirects to `/dashboard`.
 
 To enable **Continue with Google** (login and signup):
 
@@ -499,6 +505,15 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 Only the web container publishes a port; terminate TLS in front of it and use
 that HTTPS origin as `PUBLIC_SITE_URL`.
+
+For Vercel web deployments, the build also packages the browser connector.
+Set `VITE_API_BASE_URL` to the public Core API origin (or set
+`ALGOMEMTOR_API_URL`), and enable Vercel's system environment variables so the
+build can use `VERCEL_PROJECT_PRODUCTION_URL` for the connector's website URL.
+Alternatively, set `ALGOMEMTOR_WEB_URL` to the production website origin.
+The deployment build fails if either connector URL is missing or points to
+localhost. After redeploying, reinstall the connector to replace a previously
+downloaded localhost build.
 
 ## Quality commands
 

@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
   "installCommand": "npm ci --no-audit --no-fund",
-  "buildCommand": "npm run build:contracts && (npm run build:extension || echo 'Connector zips skipped') && npm run build:web",
+  "buildCommand": "npm run build:contracts && ALGOMEMTOR_DEPLOYMENT_BUILD=1 npm run build:extension && npm run build:web",
   "outputDirectory": "apps/web/dist",
   "rewrites": [
     {

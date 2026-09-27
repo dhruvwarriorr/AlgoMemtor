@@ -1,8 +1,10 @@
 // Builds the connector for Chrome (and Chromium browsers) and for Firefox
 // (and Firefox-based browsers such as Zen), then packages each as a zip.
 //
-//   ALGOMEMTOR_WEB_URL  site the extension pairs with (default localhost:5173)
-//   ALGOMEMTOR_API_URL  core API it uploads to        (default localhost:3003)
+//   ALGOMEMTOR_WEB_URL  site the extension pairs with (local default: localhost:5173)
+//   ALGOMEMTOR_API_URL  core API it uploads to        (local default: localhost:3003)
+// Vercel builds use its production domain and VITE_API_BASE_URL when explicit
+// connector URLs are absent. Deployment builds reject localhost URLs.
 //
 // Output: dist/<target>/ (load unpacked), release/*.zip, and copies of the
 // zips in apps/web/public/extension/ so the website can offer downloads.
@@ -22,8 +24,23 @@ import { deflateSync } from 'node:zlib'
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 const version = pkg.version
+const deploymentBuild = process.env.ALGOMEMTOR_DEPLOYMENT_BUILD === '1'
+const vercelDomain =
+  process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL
+const deployedWebUrl = vercelDomain ? `https://${vercelDomain}` : undefined
+const configuredWebUrl = process.env.ALGOMEMTOR_WEB_URL || deployedWebUrl
+const configuredApiUrl =
+  process.env.ALGOMEMTOR_API_URL ||
+  process.env.VITE_API_BASE_URL ||
+  process.env.VITE_CORE_API_URL
+
+if (deploymentBuild && (!configuredWebUrl || !configuredApiUrl)) {
+  throw new Error(
+    'Deployment connector build needs a public site URL (ALGOMEMTOR_WEB_URL or Vercel domain) and API URL (ALGOMEMTOR_API_URL, VITE_API_BASE_URL, or VITE_CORE_API_URL).',
+  )
+}
 const webUrl = new URL(
-  process.env.ALGOMEMTOR_WEB_URL ?? 'http://localhost:5173',
+  configuredWebUrl ?? 'http://localhost:5173',
 )
 // Manual-sync cooldown in minutes (0 disables it, for local testing only).
 const cooldownMinutes = Number(
@@ -33,10 +50,13 @@ if (!Number.isFinite(cooldownMinutes) || cooldownMinutes < 0) {
   throw new Error('ALGOMEMTOR_MANUAL_SYNC_COOLDOWN_MINUTES must be 0 or more.')
 }
 const apiUrl = new URL(
-  process.env.ALGOMEMTOR_API_URL ?? 'http://localhost:3003',
+  configuredApiUrl ?? 'http://localhost:3003',
 )
 for (const url of [webUrl, apiUrl]) {
   const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1'
+  if (deploymentBuild && local) {
+    throw new Error(`Deployment connector URL cannot use localhost: ${url}`)
+  }
   if (url.protocol !== 'https:' && !(local && url.protocol === 'http:')) {
     throw new Error(`Use an https:// address (http only for localhost): ${url}`)
   }

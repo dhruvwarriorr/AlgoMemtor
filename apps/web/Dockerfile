@@ -30,8 +30,7 @@ ARG VITE_CHROME_EXTENSION_URL=
 ARG VITE_FIREFOX_EXTENSION_URL=
 # The browser calls the API through the same origin (nginx proxies /api), and
 # the connector extension talks to that same public origin.
-ENV VITE_SITE_URL=${PUBLIC_SITE_URL} \
-    VITE_CORE_API_URL=${PUBLIC_SITE_URL} \
+ENV VITE_CORE_API_URL=${PUBLIC_SITE_URL} \
     VITE_USE_MOCKS=false \
     VITE_SUPABASE_URL=${VITE_SUPABASE_URL} \
     VITE_SUPABASE_PUBLISHABLE_KEY=${VITE_SUPABASE_PUBLISHABLE_KEY} \
