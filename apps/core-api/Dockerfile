@@ -1,8 +1,9 @@
 # syntax=docker/dockerfile:1.7
 # Build from the repository root:
 #   docker build -f apps/core-api/Dockerfile -t algomemtor-core .
-# One image runs the API (default), both workers, and (target `migrate`) the
-# Prisma migrations and idempotent seed.
+# One image runs the API (default) and (target `migrate`) the Prisma
+# migrations and idempotent seed. Queued sync and memory jobs run inside the
+# API process when activity wakes them; there are no worker services.
 
 ARG NODE_IMAGE=node:24-bookworm-slim
 
@@ -48,6 +49,4 @@ ENV PORT=3001
 EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-# Workers: override with `node dist/memory-worker.js` or
-# `node dist/provider-sync-worker.js`.
 CMD ["node", "dist/server.js"]

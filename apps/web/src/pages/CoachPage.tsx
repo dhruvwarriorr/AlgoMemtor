@@ -53,6 +53,7 @@ import {
   useDismissProblem,
   useRecommendationDismissals,
 } from '@/features/recommendations/hooks/useRecommendations'
+import { useCoachName } from '@/features/pet/pet-preference'
 
 const coachAttachmentTypes = {
   'audio/webm': 'audio/webm',
@@ -161,6 +162,7 @@ function PanelIcon({ side, open }: { side: 'left' | 'right'; open: boolean }) {
 }
 
 function CoachPage() {
+  const coachName = useCoachName()
   const conversationsQuery = useCoachConversations()
   const roadmapQuery = useCoachRoadmap()
   const createConversation = useCreateCoachConversation()
@@ -334,7 +336,7 @@ function CoachPage() {
       if (error instanceof DOMException && error.name === 'AbortError') return
       if (error instanceof Error && error.name === 'AbortError') return
       notify({
-        title: 'The coach could not respond',
+        title: `${coachName} could not respond`,
         description:
           error instanceof Error ? error.message : 'Try again shortly.',
         tone: 'error',
@@ -363,9 +365,9 @@ function CoachPage() {
       <PageContainer>
         <PageHeader
           description="A persistent CP/DSA tutor grounded in your profile, progress, and provider evidence."
-          title="Coach"
+          title={coachName}
         />
-        <PageSkeleton label="Loading your coach context" rows={6} />
+        <PageSkeleton label={`Loading ${coachName}`} rows={6} />
       </PageContainer>
     )
   }
@@ -375,15 +377,15 @@ function CoachPage() {
       <PageContainer>
         <PageHeader
           description="A persistent CP/DSA tutor grounded in your profile, progress, and provider evidence."
-          title="Coach"
+          title={coachName}
         />
         <ErrorState
-          message="Your coach context could not be loaded."
+          message={`${coachName} could not load your context.`}
           onRetry={() => {
             void conversationsQuery.refetch()
             void roadmapQuery.refetch()
           }}
-          title="Coach unavailable"
+          title={`${coachName} is unavailable`}
         />
       </PageContainer>
     )
@@ -394,9 +396,16 @@ function CoachPage() {
     ? (conversationQuery.data?.messages ?? [])
     : []
   // The question being sent, shown in the thread before the reply arrives.
+  // The server saves the question before answering, so a refetch while the
+  // reply is pending can already hold it; then the saved copy is shown alone.
+  const lastMessage = messages.at(-1)
   const pendingQuestion =
     sendMessage.isPending &&
-    sendMessage.variables?.conversationId === activeConversationId
+    sendMessage.variables?.conversationId === activeConversationId &&
+    !(
+      lastMessage?.role === 'user' &&
+      lastMessage.content.trim() === sendMessage.variables.content.trim()
+    )
       ? sendMessage.variables.content
       : null
   const assistantAnswers = messages.filter(
@@ -457,7 +466,7 @@ function CoachPage() {
       }}
     >
       <label className="sr-only" htmlFor="coach-message">
-        Ask your coach
+        Ask {coachName}
       </label>
       <textarea
         className="block max-h-48 min-h-20 w-full resize-none bg-transparent px-3 pt-2.5 text-[0.95rem] leading-6 text-foreground outline-none placeholder:text-muted-foreground"
@@ -542,7 +551,7 @@ function CoachPage() {
           </span>
         ) : null}
         <button
-          aria-label="Ask coach"
+          aria-label={`Ask ${coachName}`}
           className="coach-orb ml-auto grid size-10 place-items-center text-white transition-transform duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:scale-105 active:scale-95 disabled:opacity-40 disabled:hover:scale-100"
           disabled={
             (!content.trim() && attachmentFile === null) ||
@@ -608,7 +617,7 @@ function CoachPage() {
         >
           <span aria-hidden="true" className="coach-orb size-9 shrink-0" />
           <div className={cn('min-w-0', !sidebarExpanded && 'lg:hidden')}>
-            <h1 className="text-lg leading-tight">Your AI coach</h1>
+            <h1 className="text-lg leading-tight">{coachName}</h1>
             <p className="truncate text-xs text-muted-foreground">
               Knows your profile and CP journey
             </p>
@@ -783,7 +792,7 @@ function CoachPage() {
             </button>
             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-card py-1 pr-3 pl-1.5 text-xs font-medium text-foreground">
               <span aria-hidden="true" className="coach-orb size-4" />
-              Coach
+              {coachName}
             </span>
             <h2
               className="truncate font-sans text-sm font-medium text-foreground"
@@ -909,7 +918,7 @@ function CoachPage() {
                           <div className="min-w-0 flex-1">
                             <div className="flex items-baseline gap-2 text-xs">
                               <h3 className="font-sans text-sm font-semibold text-foreground">
-                                Coach
+                                {coachName}
                               </h3>
                               <time
                                 className="text-muted-foreground"

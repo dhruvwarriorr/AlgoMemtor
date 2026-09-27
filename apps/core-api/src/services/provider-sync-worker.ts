@@ -28,8 +28,6 @@ import {
   type StructuredLogger,
 } from '../utils/structured-logger.js'
 
-const DEFAULT_SYNC_INTERVAL_MS = 1 * 60 * 60 * 1000
-const DEFAULT_JITTER_MS = 5 * 60 * 1000
 // A first sync pages through a learner's whole public history at about one
 // request per second, so a lease must outlast several minutes of work.
 const DEFAULT_LEASE_MS = 10 * 60 * 1000
@@ -59,9 +57,6 @@ export type ProviderSyncWorkerOptions = {
   activityFetchers?: readonly ProviderActivityDataFetcher[]
   logger?: Pick<StructuredLogger, 'warn' | 'info'>
   now?: () => Date
-  random?: () => number
-  syncIntervalMs?: number
-  jitterMs?: number
   leaseMs?: number
   maxAttempts?: number
   tagBatchSize?: number
@@ -72,9 +67,6 @@ export type ProviderSyncWorkerOptions = {
 export class ProviderSyncWorker {
   private readonly logger
   private readonly now
-  private readonly random
-  private readonly syncIntervalMs
-  private readonly jitterMs
   private readonly leaseMs
   private readonly maxAttempts
   private readonly tagBatchSize
@@ -84,15 +76,10 @@ export class ProviderSyncWorker {
   constructor(private readonly options: ProviderSyncWorkerOptions) {
     this.logger = options.logger ?? structuredLogger
     this.now = options.now ?? (() => new Date())
-    this.random = options.random ?? Math.random
-    this.syncIntervalMs = options.syncIntervalMs ?? DEFAULT_SYNC_INTERVAL_MS
-    this.jitterMs = options.jitterMs ?? DEFAULT_JITTER_MS
     this.leaseMs = options.leaseMs ?? DEFAULT_LEASE_MS
     this.maxAttempts = options.maxAttempts ?? 3
     this.tagBatchSize = options.tagBatchSize ?? DEFAULT_TAG_BATCH_SIZE
     if (
-      this.syncIntervalMs <= 0 ||
-      this.jitterMs < 0 ||
       this.leaseMs <= 0 ||
       this.maxAttempts < 1 ||
       !Number.isInteger(this.tagBatchSize) ||
@@ -121,12 +108,20 @@ export class ProviderSyncWorker {
     await this.activeRun
   }
 
-  private async processOne() {
+  // Processes one due job owned by this learner. The request-driven job
+  // pump calls it while the learner is active; database leases keep two
+  // callers from running the same job.
+  async processNextFor(authUserId: string) {
+    return this.processOne(authUserId)
+  }
+
+  private async processOne(authUserId?: string) {
     const leaseOwner = randomUUID()
     const job = await this.options.repository.claimNext(
       leaseOwner,
       this.now(),
       this.leaseMs,
+      authUserId,
     )
     if (job === null) return false
     const startedAt = this.now()
@@ -171,7 +166,6 @@ export class ProviderSyncWorker {
           job.userId,
           LinkableProviderSchema.parse(job.provider),
         )
-      const nextRunAt = await this.scheduleNextRun(job)
       await this.options.repository.saveState(
         job.userId,
         job.provider,
@@ -185,9 +179,6 @@ export class ProviderSyncWorker {
           ...(cursor === undefined ? {} : { cursor }),
           lastStartedAt: startedAt.toISOString(),
           lastSucceededAt: completedAt.toISOString(),
-          ...(nextRunAt === undefined
-            ? {}
-            : { nextRunAt: nextRunAt.toISOString() }),
           completeness:
             account?.statsComplete === true && !result.partial
               ? 'complete'
@@ -246,9 +237,6 @@ export class ProviderSyncWorker {
         )
       } else {
         await this.options.repository.markFailed(job.id, leaseOwner, errorCode)
-        const nextRunAt = terminalWithoutReschedule
-          ? undefined
-          : await this.scheduleNextRun(job)
         await this.options.repository.saveState(
           job.userId,
           job.provider,
@@ -258,9 +246,6 @@ export class ProviderSyncWorker {
             attempts: job.attempts,
             ...(cursor === undefined ? {} : { cursor }),
             lastStartedAt: startedAt.toISOString(),
-            ...(nextRunAt === undefined
-              ? {}
-              : { nextRunAt: nextRunAt.toISOString() }),
             lastErrorCode: errorCode,
             completeness: 'unknown',
             stale: true,
@@ -277,51 +262,6 @@ export class ProviderSyncWorker {
       })
     }
     return true
-  }
-
-  private async scheduleNextRun(job: ProviderSyncJobRecord) {
-    const account =
-      await this.options.providerAccountRepository.findByAuthUserIdAndProvider(
-        job.userId,
-        LinkableProviderSchema.parse(job.provider),
-      )
-    if (account === null || !account.syncEnabled) return undefined
-    const latestScheduled = await this.options.repository.findLatest(
-      job.userId,
-      job.provider,
-      account.id,
-      'linked_user_sync',
-    )
-    if (
-      latestScheduled?.status === 'queued' &&
-      new Date(latestScheduled.runAfter) > this.now()
-    ) {
-      return new Date(latestScheduled.runAfter)
-    }
-    const nextRunAt = new Date(
-      this.now().getTime() +
-        this.syncIntervalMs +
-        Math.floor(this.random() * Math.max(1, this.jitterMs)),
-    )
-    try {
-      await this.options.repository.enqueue({
-        userId: job.userId,
-        providerAccountId: account.id,
-        provider: job.provider,
-        capability: job.capability,
-        jobType: 'linked_user_sync',
-        idempotencyKey: `provider-sync:scheduled:${job.userId}:${job.provider}:${nextRunAt.toISOString()}`,
-        runAfter: nextRunAt,
-      })
-    } catch (error) {
-      this.logger.warn('provider_sync_schedule_failed', {
-        provider: job.provider,
-        capability: job.capability,
-        errorCode: this.safeErrorCode(error),
-      })
-      return undefined
-    }
-    return nextRunAt
   }
 
   private async processJob(
@@ -436,7 +376,8 @@ export class ProviderSyncWorker {
         if (activity.cursor !== undefined) cursor = activity.cursor
         // Keep going in short steps while history remains, but stop the
         // chain when a continuation made no progress (for example, a
-        // provider that keeps refusing); the hourly sync then takes over.
+        // provider that keeps refusing); a later active-session sync then
+        // takes over.
         const progressed = !continuation || cursor !== previousCursor
         if (activity.continueAfterMs !== undefined && progressed) {
           await this.enqueueContinuation(
@@ -563,5 +504,3 @@ export class ProviderSyncWorker {
     return 'PROVIDER_SYNC_FAILED'
   }
 }
-
-export const providerSyncIntervalMs = DEFAULT_SYNC_INTERVAL_MS

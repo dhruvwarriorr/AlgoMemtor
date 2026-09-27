@@ -1,5 +1,7 @@
 import type { LinkableProvider } from '@algomemtor/shared-contracts'
 
+import { Select } from '@/components/ui/select'
+
 import { providerLabels, providerOptions } from './provider-labels'
 
 type ProviderFilterProps = {
@@ -18,22 +20,21 @@ export function ProviderFilter({
   return (
     <label className="min-w-40 space-y-1.5 text-sm font-medium text-foreground">
       Provider
-      <select
-        className="h-10 w-full rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 text-base text-foreground outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
+      <Select
+        className="font-normal"
         id={id}
-        onChange={(event) => {
-          const next = event.currentTarget.value
-          onChange(next ? (next as LinkableProvider) : undefined)
-        }}
+        onValueChange={(next) =>
+          onChange(options.find((provider) => provider === next))
+        }
+        options={[
+          { value: '', label: 'All providers' },
+          ...options.map((provider) => ({
+            value: provider,
+            label: providerLabels[provider],
+          })),
+        ]}
         value={value ?? ''}
-      >
-        <option value="">All providers</option>
-        {options.map((provider) => (
-          <option key={provider} value={provider}>
-            {providerLabels[provider]}
-          </option>
-        ))}
-      </select>
+      />
     </label>
   )
 }

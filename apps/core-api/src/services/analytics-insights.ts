@@ -42,6 +42,7 @@ function formatterFor(timezone: string): Intl.DateTimeFormat {
         weekday: 'short',
         year: 'numeric',
         month: '2-digit',
+        day: '2-digit',
         hour: '2-digit',
         hourCycle: 'h23',
       })
@@ -64,6 +65,7 @@ function localParts(date: Date, timezone: string) {
     weekday: WEEKDAY_INDEX[parts.weekday ?? ''] ?? 0,
     hour: Number.parseInt(parts.hour ?? '0', 10) % 24,
     month: `${parts.year}-${parts.month}`,
+    day: `${parts.year}-${parts.month}-${parts.day}`,
   }
 }
 
@@ -202,6 +204,10 @@ export function buildAnalyticsInsights(input: {
   const punchCard = Array.from({ length: 7 }, () =>
     Array.from({ length: 24 }, () => 0),
   )
+  // Submissions per local date in each punch-card cell.
+  const punchDays = Array.from({ length: 7 }, () =>
+    Array.from({ length: 24 }, () => new Map<string, number>()),
+  )
   const months = new Map<
     string,
     { solved: number; submissions: number; accepted: number }
@@ -238,6 +244,8 @@ export function buildAnalyticsInsights(input: {
     const parts = localParts(date, input.timezone)
     const row = punchCard[parts.weekday]
     if (row !== undefined) row[parts.hour] = (row[parts.hour] ?? 0) + 1
+    const days = punchDays[parts.weekday]?.[parts.hour]
+    days?.set(parts.day, (days.get(parts.day) ?? 0) + 1)
     const bucket = months.get(parts.month)
     if (bucket !== undefined) {
       bucket.submissions += 1
@@ -330,6 +338,27 @@ export function buildAnalyticsInsights(input: {
       .slice(-24)
       .map(([min, counts]) => ({ min, max: min + 199, ...counts })),
     punchCard,
+    punchCardDates: punchDays.map((row) =>
+      row.map((days) => {
+        let latest: string | undefined
+        let busiest: string | undefined
+        let busiestCount = 0
+        for (const [day, count] of days) {
+          if (latest === undefined || day > latest) latest = day
+          // Ties go to the more recent date.
+          if (
+            count > busiestCount ||
+            (count === busiestCount && busiest !== undefined && day > busiest)
+          ) {
+            busiest = day
+            busiestCount = count
+          }
+        }
+        return latest === undefined || busiest === undefined
+          ? null
+          : { latest, busiest, busiestCount }
+      }),
+    ),
     monthly: monthKeys.map((month) => ({
       month,
       ...(months.get(month) ?? { solved: 0, submissions: 0, accepted: 0 }),

@@ -19,6 +19,9 @@ import {
   requestProviderSync,
 } from './api'
 import { providerSyncRefetchInterval } from './provider-sync-status'
+import { requestJobPump } from '@/features/jobs/job-pump'
+import { endPetActivity, startPetActivity } from '@/features/pet/mello-events'
+import { petLines } from '@/features/pet/pet-lines'
 
 const learnerKey = (authUserId: string) => ['platform', authUserId] as const
 
@@ -86,7 +89,18 @@ export function useProviderSync(provider: LinkableProvider) {
   const { user } = useAuth()
   return useMutation({
     mutationFn: () => requestProviderSync(provider),
-    onSuccess: () => {
+    onMutate: () =>
+      startPetActivity(`sync-${provider}`, 'reading', petLines.syncStarted),
+    onError: () => endPetActivity(`sync-${provider}`, petLines.syncFailed),
+    onSuccess: (response) => {
+      endPetActivity(
+        `sync-${provider}`,
+        response.data.accepted
+          ? { message: 'Queued! Reading your data now.', state: 'reading' }
+          : petLines.syncCooldown,
+      )
+      // The server runs the queued sync while this page wakes it.
+      requestJobPump()
       if (user === null) return
       void queryClient.invalidateQueries({
         queryKey: [...learnerKey(user.id), 'sync', provider],
@@ -125,6 +139,12 @@ export function useProviderSyncStatus(
 
   const syncStatus = query.data?.data.state.status
   const lastSucceededAt = query.data?.data.state.lastSucceededAt
+  // The pet reads along while the server syncs this platform.
+  useEffect(() => {
+    if (syncStatus !== 'queued' && syncStatus !== 'running') return
+    startPetActivity(`sync-status-${provider}`, 'reading')
+    return () => endPetActivity(`sync-status-${provider}`)
+  }, [provider, syncStatus])
   useEffect(() => {
     if (
       user === null ||

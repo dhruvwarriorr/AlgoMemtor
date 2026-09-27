@@ -553,6 +553,9 @@ function AnalyticsPage() {
           <WeeklyRhythm
             punchCard={insights.punchCard}
             timezone={insights.timezone}
+            {...(insights.punchCardDates === undefined
+              ? {}
+              : { punchCardDates: insights.punchCardDates })}
           />
         )}
         <LanguageCapsules languages={analytics.languageCounts} />
@@ -614,11 +617,13 @@ function ContestRecord({ entries }: { entries: ContestHistoryEntry[] }) {
   const winRate = deltas.length
     ? Math.round((gains.length / deltas.length) * 100)
     : 0
+  // The chart takes the card's spare height, so the stats sit right under
+  // it instead of leaving a gap when a taller card shares the row.
   return (
     <div className="flex flex-1 flex-col gap-4">
-      <div>
+      <div className="flex min-h-40 flex-1 flex-col">
         {rated.length > 0 ? (
-          <ContestPulse deltas={rated} />
+          <ContestPulse className="min-h-36 flex-1" deltas={rated} />
         ) : (
           <div className="flex h-3 overflow-hidden rounded-md bg-muted" />
         )}
@@ -627,7 +632,7 @@ function ContestRecord({ entries }: { entries: ContestHistoryEntry[] }) {
           <span>{losses.length} drops</span>
         </p>
       </div>
-      <dl className="mt-auto grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {[
           ['Win rate', deltas.length ? `${winRate}%` : '—'],
           ['Best gain', best === undefined ? '—' : `+${Math.round(best)}`],

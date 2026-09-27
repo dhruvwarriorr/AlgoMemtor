@@ -175,6 +175,9 @@ class ProblemExplanationOutput(StrictModel):
         default_factory=list, max_length=5
     )
     exampleWalkthrough: str | None = Field(default=None, max_length=2_000)
+    # The single small test case the walkthrough traces, in the input format.
+    walkthroughInput: str | None = Field(default=None, max_length=1_000)
+    walkthroughOutput: str | None = Field(default=None, max_length=1_000)
     edgeCases: list[Annotated[str, Field(min_length=1, max_length=300)]] = Field(
         default_factory=list, max_length=5
     )

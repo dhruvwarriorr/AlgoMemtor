@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { X } from '@/components/icons/algo-icons'
 
 import { Button } from '@/components/ui/button'
+import { Select } from '@/components/ui/select'
 
 type ReflectionDialogProps = {
   open: boolean
@@ -99,18 +100,20 @@ export function ReflectionDialog({
         >
           <label className="block space-y-1.5 text-sm font-medium text-foreground">
             Perceived difficulty
-            <select
-              className="h-10 w-full rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 text-base text-foreground outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
+            <Select
+              className="font-normal"
               disabled={isSaving}
-              onChange={(event) =>
-                setDifficulty(event.target.value as typeof difficulty)
-              }
+              onValueChange={(value) => {
+                if (value === 'easy' || value === 'medium' || value === 'hard')
+                  setDifficulty(value)
+              }}
+              options={[
+                { value: 'easy', label: 'Easy' },
+                { value: 'medium', label: 'Medium' },
+                { value: 'hard', label: 'Hard' },
+              ]}
               value={difficulty}
-            >
-              <option value="easy">Easy</option>
-              <option value="medium">Medium</option>
-              <option value="hard">Hard</option>
-            </select>
+            />
           </label>
 
           <label className="block space-y-1.5 text-sm font-medium text-foreground">

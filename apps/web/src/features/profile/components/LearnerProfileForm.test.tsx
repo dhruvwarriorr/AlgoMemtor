@@ -60,14 +60,13 @@ describe('LearnerProfileForm', () => {
     expect(markup).toContain('Current competitive-programming experience')
     expect(markup).toContain('Main learning goal')
     expect(markup).toContain('Preferred ways to learn')
-    expect(markup).toContain(
-      'What should we keep in mind for your next recommendations?',
-    )
-    expect(markup).toContain('structured profile choices remain authoritative')
-    expect(markup).toContain(
-      'explicit topic exclusions here are respected by the coach',
-    )
+    // Onboarding and Settings share one merged notes field.
+    expect(markup).toContain('Practice preferences and considerations')
+    expect(markup).not.toContain('Other practice considerations')
     expect(markup).toContain('Do not include personal or sensitive information')
+    // The self-reported rating range was removed.
+    expect(markup).not.toContain('Preferred rating range')
+    expect(markup).not.toContain('Minimum rating')
     expect(markup).toContain('Linking a public provider profile is optional')
     expect(markup).toContain('Save learner profile')
     expect(markup).not.toContain('Rating platform')
@@ -114,7 +113,7 @@ describe('LearnerProfileForm', () => {
     )
 
     expect(markup).toContain('Prefer short graph problems.')
-    expect(markup).toContain('maxLength="500"')
+    expect(markup).toContain('maxLength="1500"')
   })
 
   it('shows one note field in settings and includes both saved notes', () => {

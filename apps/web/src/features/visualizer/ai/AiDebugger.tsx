@@ -26,6 +26,9 @@ import type { OutputComparison } from '../analysis'
 import type { ExecutionTrace, VisualizerLanguage } from '../trace'
 import { useVisualizerDebug } from './api'
 import { traceDigest } from './digest'
+import { endPetActivity, startPetActivity } from '@/features/pet/mello-events'
+import { petLines } from '@/features/pet/pet-lines'
+import { useCoachName } from '@/features/pet/pet-preference'
 
 export type DebugRun = {
   trace: ExecutionTrace
@@ -327,6 +330,7 @@ export function AiDebugger({
   onFindings?: (findings: VisualizerFinding[]) => void
 }) {
   const mutation = useVisualizerDebug()
+  const coachName = useCoachName()
   const [diagnosis, setDiagnosis] = useState<VisualizerDebugResult | null>(null)
   const [turns, setTurns] = useState<ChatTurn[]>([])
   const [question, setQuestion] = useState('')
@@ -355,6 +359,12 @@ export function AiDebugger({
     if (pending !== null) return
     setError(null)
     setPending(mode)
+    startPetActivity(
+      'visualizer-debug',
+      'thinking',
+      mode === 'diagnose' ? petLines.visualizerDebug : undefined,
+    )
+    let answered = false
     const focus = mode === 'ask' ? current : failed || wrong ? null : current
     try {
       const response = await mutation.mutateAsync({
@@ -373,6 +383,7 @@ export function AiDebugger({
       if (response.data.findings.length > 0 || mode === 'diagnose') {
         onFindings?.(response.data.findings)
       }
+      answered = true
       if (mode === 'diagnose') {
         setDiagnosis(response.data)
       } else {
@@ -402,6 +413,12 @@ export function AiDebugger({
       )
     } finally {
       setPending(null)
+      endPetActivity(
+        'visualizer-debug',
+        answered && mode === 'diagnose'
+          ? { message: 'Found something. Have a look.', state: 'idea' }
+          : undefined,
+      )
     }
   }
 
@@ -423,7 +440,11 @@ export function AiDebugger({
         </span>
         <div className="min-w-0">
           <h2 className="text-base font-semibold text-foreground">
-            AI Debugger
+            {coachName}
+            <span className="font-normal text-muted-foreground">
+              {' '}
+              · AI Debugger
+            </span>
           </h2>
           <p className="text-xs leading-5 text-muted-foreground">
             Reads this run step by step and points at where it goes wrong.
@@ -438,7 +459,7 @@ export function AiDebugger({
             { label: 'Following the values that matter', indicator: 'dots' },
             { label: 'Writing hints', indicator: 'grid' },
           ]}
-          title="Looking for the bug"
+          title={`${coachName} is looking for the bug`}
         />
       ) : diagnosis === null ? (
         <div

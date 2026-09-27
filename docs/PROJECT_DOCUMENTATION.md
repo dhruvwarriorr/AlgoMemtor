@@ -130,8 +130,8 @@ The following capabilities are implemented in the current working tree:
 | Coach RAG v2 rich responses                                 | Implemented locally              | Versioned knowledge index, conditional public grounding, deterministic charts/metrics/timelines/problems, persisted rich snapshots |
 | Adaptive improvement roadmap                                | Implemented locally              | `topic-assessment-v1`, manual status precedence, prerequisite graph, capped optional problem sets                                  |
 | In-app coach check-ins                                      | Implemented locally              | Weekly local review and event thresholds with frequency caps and deduplication                                                     |
-| Background provider sync                                    | Implemented                      | PostgreSQL jobs, leases, cooldowns, hourly linked-user schedule                                                                    |
-| Authenticated full historical LeetCode/CodeChef/CSES import | Not implemented                  | Requires an approved API, local connector, or user import                                                                          |
+| Queued provider sync                                        | Implemented                      | PostgreSQL jobs and leases, run by the request-driven job pump; no worker services, no hourly recurrence                           |
+| Authenticated full historical LeetCode/CodeChef/CSES import | Implemented (browser connector)  | The learner's own signed-in browser uploads LeetCode, CSES and CodeChef history; CodeChef contest solves carry problem ratings      |
 
 Most local type-check, build, lint/format, and mocked integration checks pass
 with the documented commands. The current verification exception is recorded
@@ -158,9 +158,9 @@ future contributor should preserve is:
 - Coach turns accept one transient attachment up to 8 MiB (supported image,
   document, audio, or video types). Raw attachment data is sent only for that
   request and is represented by an omission marker in saved history.
-- Linking a provider queues an initial sync immediately. Scheduled linked-user
-  sync runs hourly with jitter, while manual refresh has its own cooldown. The
-  provider worker must be running for queued profile/activity data to appear.
+- Linking a provider queues an initial sync immediately; manual refresh has
+  its own cooldown. (Superseded on 2026-09-27: there is no hourly schedule
+  and no worker process; see "Request-driven job pump" in section 11.)
 
 The current static verification snapshot is: JavaScript/TypeScript type-check,
 web lint, web formatting, and the full production build pass; the web suite
@@ -1150,7 +1150,7 @@ routes that make the server read a provider profile reject CSES.
 - Unsupported: ratings, contests, and per-submission language or runtime
   (these need one request per submission).
 
-### 9.5 Browser connector (LeetCode and CSES)
+### 9.5 Browser connector (LeetCode, CSES and CodeChef)
 
 LeetCode shows only the 20 newest submissions publicly, and CSES shows
 progress only to its signed-in owner. The browser connector
@@ -1210,8 +1210,37 @@ the extension only reads the signed-in handle (Codeforces: the header profile
 link beside the logout link; CodeChef: `Drupal.settings.username`) and calls
 `POST /api/connector/claim`. That links the handle if it is not linked (and
 queues the initial sync), marks it verified, and otherwise requests a manual
-server sync subject to the usual 15-minute cooldown. These accounts are not
-marked as synced by the connector.
+server sync subject to the usual 15-minute cooldown. A Codeforces account is
+not marked as synced by the connector.
+
+Decision (2026-09-27): CodeChef history is also read by the connector. The
+server's public read of the recent-activity feed reports itself complete but
+misses solves (older pages it cannot reach, contest solves the feed omits), so
+after the claim the connector reads, in the learner's own browser:
+
+- every `/recent/user` page, newest first until it reaches the newest uploaded
+  solution, then older pages a few per run (20 page reads per run, 1.5 s
+  apart) until the oldest page, resuming from its saved page next run;
+- the profile page's "Contests" solved list, matched to problem codes through
+  the contest's `/api/contests/<code>` problem list;
+- `/api/contests/<contest>/problems/<code>` for the `difficulty_rating` of each
+  contest solve (15 per run; the rest wait in the extension's state).
+
+It uploads through `POST /api/connector/ingest` with provider `codechef`. A
+submission keeps its CodeChef solution ID as its event ID, the same one the
+server's public feed stores, so the two sources update one row. Each solved
+problem carries `solveContext`: `contest` when it was solved inside a contest
+(a `/<CONTEST>/problems/<CODE>` link or a profile contest entry) together with
+the problem's `difficultyRating`, or `practice` when it was solved from the
+Practice section (a plain `/problems/<CODE>` link). Stored in
+`core.provider_solved_observations.solve_context` and `difficulty_rating`, a
+contest solve is never downgraded to practice by a later upload. Insights
+(`services/observed-difficulty.ts`) then counts a contest solve at its own
+rating on the rating ladder and in the easy/medium/hard totals (CodeChef
+bands: up to 1000 easy, up to 1500 medium, above that hard), and counts a
+practice solve as unrated even when the catalog rates the problem. Solves
+without a context keep the catalog's rating. The solved total still comes
+from the public profile.
 
 Requests first go directly from the extension with the browser's cookies; if
 that reads as signed out, they run from a dedicated background tab the
@@ -1396,20 +1425,69 @@ mistaken for a list of 151 individually identified problems.
 
 ## 11. Synchronization and caching
 
-### Provider sync worker
+### Request-driven job pump (no worker services)
 
-The dedicated provider worker consumes PostgreSQL-backed jobs using row leases.
-It performs incremental, idempotent profile/activity/statistics upserts and can
-resume after a restart.
+Decision (2026-09-27): AlgoMemtor deploys without always-on background
+workers so it can run on free web-service tiers (for example Vercel for the
+web app, Render web services for the APIs, and Neon for PostgreSQL). Queued
+work stays durable in PostgreSQL (`core.provider_sync_jobs` and
+`core.outbox_jobs`, with their leases, idempotency keys, retries and cursors);
+only the trigger changed. See `docs/REQUEST_DRIVEN_QUEUE_ARCHITECTURE.md` for
+the proposal this implements.
 
-Default policy:
+- `services/job-pump.ts` drains one learner's due jobs inside the Express
+  process: memory/outbox jobs and provider syncs, oldest first, at most one
+  drain per learner per process, bounded to 25 jobs or 4 minutes of new
+  claims. A job already running finishes; its lease covers a restart.
+- Claims are owner-scoped (`claimNext(..., authUserId)` and
+  `claimNextJob(now, { authUserId })`), so a learner's activity never runs or
+  reveals another learner's work. Database leases (`FOR UPDATE SKIP LOCKED`
+  for the outbox, conditional updates for provider jobs) still keep two API
+  instances from running one job.
+- Wake-ups: the signed-in web app calls `POST /api/jobs/pump` when a page
+  opens (`{ "visit": true }`), after any successful action, and while the
+  response says work is pending (every 4 s, otherwise a 2-minute heartbeat),
+  only while the tab is visible; tabs share one pump through a
+  `localStorage` timestamp and the server allows one wake per learner per
+  second. Server routes that just queued work wake it directly: linking an
+  account, a manual sync, `POST /api/connector/claim`, `POST
+  /api/connector/ingest`, deleting a coach conversation, and deleting all
+  data. The connector token still reaches connector routes only.
+- The response is `{ pending, nextPollAfterMs }` for the signed-in learner
+  only: `pending` is true while one of their jobs is running or due.
+- Freshness: the hourly `linked_user_sync` recurrence is removed. On a visit,
+  each consented, server-synced account whose last successful sync is older
+  than `PROVIDER_ACTIVE_SYNC_STALE_MINUTES` (default 60) gets one
+  `active_session_sync`, unless one is already queued or running. While
+  nobody is active, ordinary work waits in the queue for the next visit, and
+  data is shown with its last sync time.
+- Privacy exception: `learner_data_deletion`, `problem_data_deletion` and
+  `coach_conversation_audit_deletion` jobs are drained for every learner on
+  any wake (up to 5 per wake), not only the owner's, and a delete request
+  wakes the pump at once. A deletion therefore never depends on that learner
+  returning; it does depend on some traffic reaching the API (an idle
+  free-tier API sleeps). `GET /api/me/data/status` stays `pending` until the
+  core and AI data are gone.
+- Existing future `linked_user_sync` rows from before this change are
+  ordinary jobs: they run once when due and schedule nothing after them.
+- Global catalogs and contests are not queued jobs: they use the provider
+  cache TTLs and refresh lazily on request, as before.
+
+Consequences: no queued work progresses while no learner is active; a cold
+free-tier API adds start-up delay to the first request of a visit; a long
+first sync may need the learner to stay a few minutes, and an unfinished
+history backfill resumes from its stored cursor on the next visit. If the
+product later needs guaranteed background freshness, run
+`JobPump`-compatible processing on a paid scheduler instead of restoring the
+one-second polling loops.
+
+Default policy for queued syncs:
 
 - linking a public provider account enqueues an `initial_sync` job due now;
-  this does not consume the manual-refresh cooldown, and the worker polls for
-  due jobs every second;
-- linked-user synchronization every hour with up to five minutes of jitter;
+  this does not consume the manual-refresh cooldown;
+- a visit re-syncs accounts older than the freshness window (see above);
 - manual refresh queued asynchronously with a 15-minute cooldown based only
-  on earlier manual requests, not scheduled jobs;
+  on earlier manual requests;
 - global catalogs refreshed every six hours;
 - upcoming contests refreshed every 15 minutes;
 - detailed problem content refreshed lazily with a 30-day TTL;
@@ -1418,8 +1496,9 @@ Default policy:
 - a history backfill cut short by a rate limit or per-run budget continues in a
   `backfill_continuation` job after the fetcher's `continueAfterMs`. That job
   skips the stats and profile requests and passes `backfillOnly` so the
-  fetcher spends its requests on history. A continuation that made no
-  progress queues no further continuation; the hourly sync takes over;
+  fetcher spends its requests on history. It runs while the learner is still
+  active (the page's heartbeat) or on the next visit; a continuation that made
+  no progress queues no further continuation;
 - after each successful job the learner activity digest is recomputed
   (section 15);
 - up to 40 stored solves without tags are looked up per sync (tag enrichment);
@@ -1456,9 +1535,10 @@ kept, and tags from an earlier lookup survive a later fetch that has none.
 2. Express validates that the provider is linkable and the account is linked.
    An explicit manual request can restore a missing public-stats consent
    timestamp without recording fabricated provider statistics or a refresh
-   attempt. The background worker never grants consent on its own.
-3. Express returns `202 Accepted` with a job/status reference.
-4. The worker runs the job asynchronously.
+   attempt. Queued processing never grants consent on its own.
+3. Express returns `202 Accepted` with a job/status reference and wakes the
+   job pump for this learner.
+4. The pump runs the job in the API process, asynchronously.
 5. The frontend polls sync status and refreshes profile/activity queries after
    success or visible failure.
 
@@ -2490,8 +2570,9 @@ in one database while a worker processes another.
 npm run dev
 ```
 
-The root command starts the web app, Express API, FastAPI, memory worker, and
-provider-sync worker.
+The root command starts the web app, Express API and FastAPI. There are no
+worker processes: queued work runs inside the Express API while a signed-in
+page is open (section 11).
 
 ### Run services separately
 
@@ -2499,8 +2580,6 @@ provider-sync worker.
 npm run dev:web
 npm run dev:core
 npm run dev:ai
-npm run dev:worker
-npm run dev:provider-worker
 ```
 
 | Service         | Local address                                                                                       |
@@ -2508,8 +2587,6 @@ npm run dev:provider-worker
 | React/Vite      | `http://localhost:5173`                                                                             |
 | Express         | `http://localhost:3001`                                                                             |
 | FastAPI         | `http://localhost:8000`                                                                             |
-| Memory worker   | PostgreSQL outbox consumer; calls the protected core coach-refresh endpoint for scheduled check-ins |
-| Provider worker | PostgreSQL provider-job consumer; no HTTP endpoint                                                  |
 
 ### Supabase setup
 
@@ -2533,8 +2610,6 @@ wires them to PostgreSQL with pgvector:
 | `migrate-ai`      | `apps/ai-api/Dockerfile`                        | One-shot `alembic upgrade head`, after `migrate-core`                                         |
 | `ai-api`          | `apps/ai-api/Dockerfile`                        | FastAPI (uvicorn): ranking, coach agent, memory, embeddings                                   |
 | `core-api`        | `apps/core-api/Dockerfile`, `runtime`           | Express API (production dependencies only)                                                    |
-| `memory-worker`   | same image, `node dist/memory-worker.js`        | Memory generation outbox and scheduled check-ins                                              |
-| `provider-worker` | same image, `node dist/provider-sync-worker.js` | Hourly linked-account sync                                                                    |
 | `web`             | `apps/web/Dockerfile`                           | Vite build plus browser-connector zips, served by unprivileged nginx on 8080                  |
 
 ```bash
@@ -2559,8 +2634,9 @@ docker compose -f docker-compose.prod.yml up -d --build
   and never enter an image. Filled-in `.env` and `deploy/*.env` files are
   git-ignored.
 - Containers run as non-root users and expose `/health` (`/healthz` for web)
-  health checks; the workers depend on healthy APIs, and migrations must
-  complete before either API starts.
+  health checks, and migrations must complete before either API starts.
+  There are no worker containers; queued work runs in `core-api` when a
+  signed-in page or a connector upload wakes it.
 - Fund the OpenRouter account in production. Provider limits are a common cause of
   “Coach is unavailable” turns; set `COACH_MODEL_REQUESTS_PER_MINUTE` to the
   project's RPM quota.
@@ -2839,7 +2915,9 @@ It should not contain provider-specific parsing or raw external HTTP calls.
 | `src/services/provider-profile-service.ts`              | Profile snapshot refresh and latest-profile selection                         |
 | `src/services/provider-activity-service.ts`             | Consent-gated Codeforces verified activity                                    |
 | `src/services/provider-sync-service.ts`                 | Manual sync job creation, cooldown, status, history deletion                  |
-| `src/services/provider-sync-worker.ts`                  | Lease-based profile/activity/statistics worker and scheduling                 |
+| `src/services/provider-sync-worker.ts`                  | Lease-based profile/activity/statistics job processor (no scheduling)         |
+| `src/services/job-pump.ts`                              | Request-driven, owner-scoped drain of queued sync and memory jobs             |
+| `src/services/observed-difficulty.ts`                   | Per-solve CodeChef rating/unrated rule for Insights                           |
 | `src/services/recommendation-ranking.ts`                | Deterministic candidate scoring, diversity, reasons, and history              |
 | `src/services/recommendation-service.ts`                | AI request, response validation, persistence, fallback, feedback              |
 | `src/services/progress-service.ts`                      | Manual actions, status reduction, history, analytics, reflections, timers     |
@@ -3043,12 +3121,11 @@ user enables activity consent
 manual sync or scheduler
   -> POST /api/provider-accounts/:provider/sync
   -> ProviderSyncService creates idempotent ProviderSyncJob
-  -> worker leases queued row
+  -> job pump (woken by the request or the open page) leases the row
   -> adapter fetches bounded activity
   -> submissions and solved observations upsert by provider keys
   -> Codeforces evidence may append provider-verified status action
   -> sync state and account status update
-  -> worker schedules next hourly run
   -> frontend polls sync-status and refreshes activity/analytics
 ```
 

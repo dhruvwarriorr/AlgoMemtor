@@ -31,6 +31,8 @@ import {
 } from './integrations/ai/ai-mentor-client.js'
 import { PrismaMentorRepository } from './repositories/mentor-repository.js'
 import { CodeChefPublicStatsFetcher } from './integrations/provider-accounts/codechef-public-stats.js'
+import { CodeChefActivityFetcher } from './integrations/provider-accounts/codechef-activity.js'
+import { LeetCodeActivityFetcher } from './integrations/provider-accounts/leetcode-activity.js'
 import { CodeforcesPublicStatsFetcher } from './integrations/provider-accounts/codeforces-public-stats.js'
 import { LeetCodePublicStatsFetcher } from './integrations/provider-accounts/leetcode-public-stats.js'
 import { CodeChefProfileFetcher } from './integrations/provider-accounts/codechef-profile.js'
@@ -63,6 +65,10 @@ import { RequestGate } from './utils/request-gate.js'
 import { structuredLogger } from './utils/structured-logger.js'
 
 const port = Number(process.env.PORT ?? 3001)
+// A visit re-syncs linked accounts last synced longer ago than this.
+const activeSyncStaleMinutes = Number(
+  process.env.PROVIDER_ACTIVE_SYNC_STALE_MINUTES ?? 60,
+)
 const jwtVerifier = createSupabaseJwtVerifier(readSupabaseJwtConfig())
 const prisma = createPrismaClient(readDatabaseConfig())
 const providerConfig = readUnifiedProviderConfig()
@@ -289,6 +295,39 @@ const app = createApp({
   ],
   providerActivityMinRefreshIntervalMs:
     codeforcesConfig.activityMinRefreshIntervalMs,
+  // Queued syncs and memory jobs run in this process when activity wakes
+  // them; there are no separate worker services.
+  jobPumpEnabled: true,
+  ...(Number.isFinite(activeSyncStaleMinutes)
+    ? { activeSessionSyncStaleMs: Math.max(5, activeSyncStaleMinutes) * 60_000 }
+    : {}),
+  providerSyncActivityFetchers: [
+    ...(providerConfig.enabled.codeforces && codeforcesConfig.activityEnabled
+      ? [codeforcesPublicStatsFetcher]
+      : []),
+    ...(providerConfig.enabled.codechef &&
+    providerConfig.codechef.activityEnabled
+      ? [
+          new CodeChefActivityFetcher({
+            baseUrl: `${providerConfig.codechef.baseUrl.replace(/\/+$/, '')}/users/`,
+            timeoutMs: providerConfig.codechef.timeoutMs,
+            maxAttempts: providerConfig.codechef.maxAttempts,
+            requestGate: codechefRequestGate,
+          }),
+        ]
+      : []),
+    ...(providerConfig.enabled.leetcode &&
+    providerConfig.leetcode.activityEnabled
+      ? [
+          new LeetCodeActivityFetcher({
+            endpoint: providerConfig.leetcode.baseUrl,
+            timeoutMs: providerConfig.leetcode.timeoutMs,
+            maxAttempts: providerConfig.leetcode.maxAttempts,
+            requestGate: leetcodeRequestGate,
+          }),
+        ]
+      : []),
+  ],
 })
 
 const server = app.listen(port, () => {

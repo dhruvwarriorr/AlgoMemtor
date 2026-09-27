@@ -6,12 +6,18 @@ import {
   type CSSProperties,
   type PointerEvent,
 } from 'react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { useLocation } from 'react-router-dom'
 
 import { useNotification } from '@/app/useNotification'
 import { useAuth } from '@/features/auth/useAuth'
 import { cn } from '@/lib/utils'
 
 import { MelloChatPanel } from './MelloChatPanel'
+import { onPetSay, petSay, type PetSaid } from './mello-events'
+import { PetAssistantPanel } from './PetAssistantPanel'
+import { usePetAssistant } from './pet-assistant'
+import { routeLine } from './pet-lines'
 import { preloadPet } from './mello-preload'
 import { MelloSprite } from './MelloSprite'
 import { spriteFrame } from './mello-states'
@@ -78,10 +84,80 @@ const busyStates = new Set(['reading', 'thinking', 'working'])
 // Mello, a wave for the others); it stops as soon as the mouse rests.
 const cursorRestMs = 250
 
+// Each page greets once per tab session.
+const spokenKey = 'algomemtor-pet-spoken'
+
+function spokenRoutes(): Set<string> {
+  try {
+    const raw = window.sessionStorage.getItem(spokenKey)
+    const parsed: unknown = raw ? JSON.parse(raw) : []
+    return new Set(
+      Array.isArray(parsed)
+        ? parsed.filter((item): item is string => typeof item === 'string')
+        : [],
+    )
+  } catch {
+    return new Set()
+  }
+}
+
+function rememberSpoken(route: string) {
+  try {
+    const spoken = spokenRoutes()
+    spoken.add(route)
+    window.sessionStorage.setItem(spokenKey, JSON.stringify([...spoken]))
+  } catch {
+    // Without storage the pet may greet a page again next visit.
+  }
+}
+
+// The latest thing the pet said, while it is still showing.
+function usePetSpeech(open: boolean) {
+  const { pathname } = useLocation()
+  const [line, setLine] = useState<PetSaid | null>(null)
+
+  useEffect(() => onPetSay(setLine), [])
+
+  useEffect(() => {
+    if (line === null) return
+    const timer = window.setTimeout(
+      () => setLine((current) => (current?.id === line.id ? null : current)),
+      line.ms ?? 4_200,
+    )
+    return () => window.clearTimeout(timer)
+  }, [line])
+
+  // A short hello the first time each page is opened in this tab.
+  useEffect(() => {
+    const said = routeLine(pathname)
+    const route = pathname.split('/').slice(0, 3).join('/')
+    if (said === null || spokenRoutes().has(route)) return
+    const timer = window.setTimeout(() => {
+      rememberSpoken(route)
+      petSay(said)
+    }, 900)
+    return () => window.clearTimeout(timer)
+  }, [pathname])
+
+  return open ? null : line
+}
+
 function MelloPetBody({ pet }: { pet: Pet }) {
   const { notify } = useNotification()
   const viewport = useViewport()
-  const [open, setOpen] = useState(false)
+  const reduceMotion = useReducedMotion()
+  // A page assistant (Doubt Helper, Solution Explorer) the pet hosts; its
+  // page decides when it is open.
+  const assistant = usePetAssistant()
+  const [ownOpen, setOwnOpen] = useState(false)
+  const open = assistant === null ? ownOpen : assistant.open
+  const setOpen = useCallback(
+    (next: boolean) => {
+      if (assistant === null) setOwnOpen(next)
+      else assistant.onOpenChange(next)
+    },
+    [assistant],
+  )
   const [hovered, setHovered] = useState(false)
   const [near, setNear] = useState(false)
   const [position, setPosition] = useState(readPosition)
@@ -122,6 +198,7 @@ function MelloPetBody({ pet }: { pet: Pet }) {
     near: near && !open,
     pet: rect,
   })
+  const speech = usePetSpeech(open || dragging)
   useEffect(() => {
     rect.current = {
       left,
@@ -187,7 +264,7 @@ function MelloPetBody({ pet }: { pet: Pet }) {
     savePosition({ right, bottom })
   }
 
-  const close = useCallback(() => setOpen(false), [])
+  const close = useCallback(() => setOpen(false), [setOpen])
   const hide = useCallback(() => {
     setOpen(false)
     setPetEnabled(false)
@@ -195,7 +272,7 @@ function MelloPetBody({ pet }: { pet: Pet }) {
       title: `${pet.name} is hidden`,
       description: `Turn ${pet.name} back on in Settings, under Appearance.`,
     })
-  }, [notify, pet.name])
+  }, [notify, pet.name, setOpen])
 
   // The panel opens beside the pet, above when there is room.
   const panelWidth = Math.min(340, viewport.width - margin * 2)
@@ -212,7 +289,8 @@ function MelloPetBody({ pet }: { pet: Pet }) {
     margin,
     viewport.width - panelWidth - margin,
   )
-  const showTag = !open && !dragging && (hovered || busyStates.has(state))
+  const showTag =
+    !open && !dragging && speech === null && (hovered || busyStates.has(state))
 
   return (
     <>
@@ -228,7 +306,16 @@ function MelloPetBody({ pet }: { pet: Pet }) {
               : { top: margin }),
           }}
         >
-          <MelloChatPanel onClose={close} onHide={hide} pet={pet} />
+          {assistant === null ? (
+            <MelloChatPanel onClose={close} onHide={hide} pet={pet} />
+          ) : (
+            <PetAssistantPanel
+              assistant={assistant}
+              onClose={close}
+              onHide={hide}
+              pet={pet}
+            />
+          )}
         </div>
       ) : null}
       <div
@@ -245,6 +332,28 @@ function MelloPetBody({ pet }: { pet: Pet }) {
         }
       >
         <span className="mello-shadow" />
+        <AnimatePresence>
+          {speech !== null ? (
+            <motion.span
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              className={cn(
+                'absolute bottom-full mb-2 w-max max-w-[15rem] rounded-2xl border border-border bg-card px-3 py-2 text-[0.8rem] leading-5 text-foreground',
+                onLeftHalf
+                  ? 'left-2 origin-bottom-left rounded-bl-md'
+                  : 'right-2 origin-bottom-right rounded-br-md',
+              )}
+              exit={{ opacity: 0, y: 4, scale: 0.9 }}
+              initial={reduceMotion ? false : { opacity: 0, y: 8, scale: 0.85 }}
+              key={speech.id}
+              role="status"
+              transition={{ type: 'spring', stiffness: 460, damping: 26 }}
+            >
+              <span className="font-semibold">{pet.name}</span>
+              <span className="text-muted-foreground"> · </span>
+              {speech.message}
+            </motion.span>
+          ) : null}
+        </AnimatePresence>
         {showTag ? (
           <span
             className={cn(
@@ -263,8 +372,10 @@ function MelloPetBody({ pet }: { pet: Pet }) {
           aria-expanded={open}
           aria-label={
             open
-              ? `Close ${pet.name}, your AI coach`
-              : `Ask ${pet.name}, your AI coach`
+              ? `Close ${pet.name}`
+              : assistant === null
+                ? `Ask ${pet.name}`
+                : `Ask ${pet.name} about ${assistant.subtitle ?? 'this page'}`
           }
           className={cn(
             'pointer-events-auto block size-full touch-none rounded-2xl outline-none select-none focus-visible:ring-2 focus-visible:ring-ring',
@@ -306,8 +417,9 @@ function MelloPetBody({ pet }: { pet: Pet }) {
   )
 }
 
-// Mello is the AI Coach's on-page body, shown on every signed-in page
-// unless turned off in Settings.
+// The coach's on-page body (named after the chosen pet), shown on every
+// signed-in page unless turned off in Settings. It hosts a page's own
+// assistant when the page has one.
 export function MelloPet() {
   const enabled = usePetEnabled()
   const choice = usePetChoice()

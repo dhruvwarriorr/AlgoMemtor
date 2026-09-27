@@ -4,6 +4,7 @@ import { Bookmark, BookmarkCheck } from '@/components/icons/algo-icons'
 
 import { useNotification } from '@/app/useNotification'
 import { Button } from '@/components/ui/button'
+import { Select } from '@/components/ui/select'
 import {
   useAddBookmark,
   useRemoveBookmark,
@@ -167,28 +168,24 @@ function ProblemLearningControlsContent({
           </p>
         ) : null}
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span className="sr-only">Status for {problem.externalId}</span>
-            <select
+          <div className="w-36 text-sm">
+            <Select
               aria-label={`Status for ${problem.externalId}`}
-              className="h-8 rounded-md border border-input bg-background px-3 text-sm font-medium text-foreground transition-[border-color,box-shadow] outline-none hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
+              className="font-medium"
               disabled={statusMutation.isPending}
-              onChange={(event) =>
-                void handleStatusChange(
-                  event.target.value as LearnerProblemStatus,
-                )
-              }
+              onValueChange={(value) => {
+                const next = (
+                  Object.keys(statusLabels) as LearnerProblemStatus[]
+                ).find((item) => item === value)
+                if (next !== undefined) void handleStatusChange(next)
+              }}
+              options={(
+                Object.keys(statusLabels) as LearnerProblemStatus[]
+              ).map((value) => ({ value, label: statusLabels[value] }))}
+              size="sm"
               value={status}
-            >
-              {(Object.keys(statusLabels) as LearnerProblemStatus[]).map(
-                (value) => (
-                  <option key={value} value={value}>
-                    {statusLabels[value]}
-                  </option>
-                ),
-              )}
-            </select>
-          </label>
+            />
+          </div>
           {statusMutation.isPending ? (
             <span className="text-xs text-muted-foreground" role="status">
               Saving status…

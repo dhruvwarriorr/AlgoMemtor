@@ -10,6 +10,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { Disclosure } from '@/components/ui/disclosure'
 import type {
   CoachRichBlock,
   ExternalProblemSummary,
@@ -176,10 +177,14 @@ function ChartBlock({
           )}
         </ResponsiveContainer>
       </div>
-      <details className="mt-3 rounded-md border border-border/70">
-        <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground">
-          View data table
-        </summary>
+      <Disclosure
+        className="mt-3"
+        contentClassName="px-0 pb-0"
+        summary={
+          <span className="text-xs text-muted-foreground">View data table</span>
+        }
+        summaryClassName="px-3 py-2"
+      >
         <div className="overflow-x-auto border-t border-border/70">
           <table className="min-w-full text-left text-xs">
             <caption className="sr-only">
@@ -223,7 +228,7 @@ function ChartBlock({
             </tbody>
           </table>
         </div>
-      </details>
+      </Disclosure>
     </section>
   )
 }
@@ -302,15 +307,20 @@ export function RichBlock({
           {renderEntries(recentEntries, 'recent')}
         </ol>
         {olderEntries.length > 0 ? (
-          <details className="mt-4 border-t border-border pt-3">
-            <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
-              Show {olderEntries.length} older update
-              {olderEntries.length === 1 ? '' : 's'}
-            </summary>
-            <ol className="mt-3 space-y-3 border-l border-border pl-4">
+          <Disclosure
+            className="mt-4 border-t border-border pt-3"
+            summary={
+              <span className="text-xs">
+                Show {olderEntries.length} older update
+                {olderEntries.length === 1 ? '' : 's'}
+              </span>
+            }
+            variant="plain"
+          >
+            <ol className="mt-1 space-y-3 border-l border-border pl-4">
               {renderEntries(olderEntries, 'older')}
             </ol>
-          </details>
+          </Disclosure>
         ) : null}
       </section>
     )

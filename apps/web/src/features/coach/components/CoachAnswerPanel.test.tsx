@@ -118,12 +118,14 @@ describe('CoachAnswerPanel', () => {
     )
 
     expect(panel).toContain('Answer details')
-    expect(panel).toContain('Tabular data for Topic readiness')
+    // The chart's data table sits behind a "View data table" toggle.
+    expect(panel).toContain('View data table')
     expect(panel).toContain('Trusted next problems')
     expect(panel).toContain('Codeforces')
     expect(panel).toContain('Web-grounded')
     expect(panel).toContain('Two Sum practice problem')
-    expect(panel).toContain('Code from your coach')
+    // The coach is named after the chosen pet (Mello by default).
+    expect(panel).toContain('Code from Mello')
     expect(panel).toContain('int main() { return 0; }')
     expect(panel).not.toContain('Ask next')
     expect(panel).not.toContain('Give me a progressive hint.')

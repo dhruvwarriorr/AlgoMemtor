@@ -4,7 +4,13 @@ import { useLocation } from 'react-router-dom'
 
 import { coachSendMutationKey } from '@/features/coach/hooks'
 
-import { onMelloSuccess } from './mello-events'
+import {
+  currentPetActivity,
+  onMelloSuccess,
+  onPetActivity,
+  onPetQuestion,
+  onPetSay,
+} from './mello-events'
 import {
   resolveMelloState,
   sleepingAfterMs,
@@ -91,7 +97,55 @@ export function useMelloBrain({
   const [typingUntil, setTypingUntil] = useState(0)
   const [scrollingUntil, setScrollingUntil] = useState(0)
   const [lean, setLean] = useState(0)
+  const [activity, setActivity] = useState(currentPetActivity)
+  const [cue, setCue] = useState<{ state: MelloState; until: number } | null>(
+    null,
+  )
   const lastActivity = useRef(0)
+
+  useEffect(
+    () =>
+      onPetActivity(() => {
+        setActivity(currentPetActivity())
+        lastActivity.current = Date.now()
+        setIdleMs(0)
+      }),
+    [],
+  )
+
+  useEffect(
+    () =>
+      onPetSay((line) => {
+        lastActivity.current = line.at
+        setIdleMs(0)
+        setNow(line.at)
+        if (line.state !== undefined) {
+          setCue({ state: line.state, until: line.at + (line.ms ?? 3_000) })
+        }
+      }),
+    [],
+  )
+
+  // A hosted page assistant answering reads like a coach question. Only a
+  // change counts, so a page opening with nothing pending is not an answer.
+  useEffect(() => {
+    let busy = false
+    return onPetQuestion((next) => {
+      if (next === busy) return
+      busy = next
+      const at = Date.now()
+      lastActivity.current = at
+      setIdleMs(0)
+      setNow(at)
+      if (next) {
+        setBusySince(at)
+        setAnsweredAt(Number.NEGATIVE_INFINITY)
+      } else {
+        setBusySince(null)
+        setAnsweredAt(at)
+      }
+    })
+  }, [])
 
   // Follow coach questions, from the panel or the Coach page, and any other
   // work the app is doing.
@@ -213,6 +267,8 @@ export function useMelloBrain({
     scrolling: scrollingUntil > now,
     inAwe: pathname === '/visualizer' || pathname.startsWith('/visualizer/'),
     idleMs,
+    cued: cue !== null && cue.until > now ? cue.state : null,
+    activity,
   })
   return { state, lean }
 }

@@ -20,6 +20,7 @@ import {
 } from '@/components/icons/algo-icons'
 import { TestCaseVisualizerIcon } from '@/components/icons/mentor-icons'
 import { buttonVariants } from '@/components/ui/button'
+import { Disclosure } from '@/components/ui/disclosure'
 import {
   CodeBlockView,
   CoachMessageContent,
@@ -281,12 +282,15 @@ export function ApproachDetail({
   direction,
   language,
   problem,
+  testCase,
 }: {
   approach: SolutionApproach
   index: number
   direction: 1 | -1
   language: string
   problem: { title: string; url?: string }
+  // The walkthrough's test case, run on this approach's code.
+  testCase?: { input?: string; expected?: string }
 }) {
   const reduceMotion = useReducedMotion()
   const color = kindColors[approach.kind]
@@ -298,6 +302,10 @@ export function ApproachDetail({
           source: 'solution_explorer',
           language: visualizerLanguage,
           code: approach.code,
+          ...(testCase?.input === undefined ? {} : { input: testCase.input }),
+          ...(testCase?.expected === undefined
+            ? {}
+            : { expected: testCase.expected }),
           problem,
           approach: `${kindLabels[approach.kind]}: ${approach.name}`,
         }
@@ -401,11 +409,11 @@ export function ApproachDetail({
               </ol>
             </div>
           ) : null}
-          <details className="group mt-5 rounded-xl border border-border px-4 py-3 open:bg-secondary/30">
-            <summary className="cursor-pointer text-sm font-medium text-foreground">
-              Why it works{approach.limitations ? ' and its limits' : ''}
-            </summary>
-            <div className="mt-2 text-sm [&>div]:mt-1">
+          <Disclosure
+            className="mt-5"
+            summary={`Why it works${approach.limitations ? ' and its limits' : ''}`}
+          >
+            <div className="text-sm [&>div]:mt-1">
               <CoachMessageContent
                 content={approach.whyItWorks}
                 role="assistant"
@@ -419,7 +427,7 @@ export function ApproachDetail({
                 />
               </div>
             ) : null}
-          </details>
+          </Disclosure>
         </div>
         <div className="min-w-0">
           {approach.code ? (

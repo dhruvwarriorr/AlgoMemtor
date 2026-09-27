@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 
-import { isPetId, type PetId } from './pets'
+import { isPetId, petNames, type PetId } from './pet-ids'
 
 // Whether Mello is shown is a per-device preference, like the theme.
 export const petStorageKey = 'algomemtor-pet-mello'
@@ -102,4 +102,10 @@ export function usePetChoice(): PetId {
     () => choiceMemory ?? readPetChoice(browserStorage()),
     () => 'mello',
   )
+}
+
+// The AI coach's name: the chosen pet's name, used across the app whether or
+// not the pet is shown.
+export function useCoachName() {
+  return petNames[usePetChoice()]
 }

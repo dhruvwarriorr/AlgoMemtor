@@ -426,4 +426,71 @@ describe('browser connector API', () => {
     })
     expect(sync.status).toBe(400)
   })
+
+  it('stores CodeChef uploads with each solve\'s context and rating', async () => {
+    const { baseUrl, dataRepository } = startApp()
+    const { secret } = await pair(baseUrl)
+    const response = await ingest(baseUrl, secret, {
+      provider: 'codechef',
+      account: { handle: 'chef_learner' },
+      submissions: [
+        {
+          eventId: '112233',
+          externalId: 'start1a',
+          verdict: 'accepted',
+          isAccepted: true,
+          language: 'C++17',
+          occurredAt: '2026-09-10T15:00:00.000Z',
+        },
+      ],
+      solvedProblems: [
+        {
+          externalId: 'START1A',
+          solveContext: 'contest',
+          contestCode: 'START150',
+          difficultyRating: 1450,
+        },
+        { externalId: 'FLOW001', solveContext: 'practice' },
+      ],
+      solvedListComplete: true,
+      historyComplete: true,
+    })
+    expect(response.status).toBe(200)
+    expect(
+      ConnectorIngestResponseSchema.parse(await response.json()).data,
+    ).toMatchObject({ provider: 'codechef', storedSolvedProblems: 2 })
+
+    const solved = await dataRepository.listSolvedProblems(subject, 'codechef')
+    expect(solved.find((item) => item.externalId === 'START1A')).toMatchObject(
+      {
+        solveContext: 'contest',
+        difficultyRating: 1450,
+        occurredAt: '2026-09-10T15:00:00.000Z',
+        canonicalUrl: 'https://www.codechef.com/problems/START1A',
+      },
+    )
+    const practice = solved.find((item) => item.externalId === 'FLOW001')
+    expect(practice?.solveContext).toBe('practice')
+    expect(practice?.difficultyRating).toBeUndefined()
+    // The solution ID is the event ID the server's public feed uses too.
+    const submissions = await dataRepository.listSubmissions(
+      subject,
+      'codechef',
+    )
+    expect(submissions.map((item) => item.eventId)).toEqual(['112233'])
+  })
+
+  it('rejects CodeChef problem codes that are not codes', async () => {
+    const { baseUrl } = startApp()
+    const { secret } = await pair(baseUrl)
+    const response = await ingest(baseUrl, secret, {
+      provider: 'codechef',
+      account: { handle: 'chef_learner' },
+      submissions: [],
+      solvedProblems: [{ externalId: '../admin' }],
+      solvedListComplete: true,
+      historyComplete: true,
+    })
+    expect(response.status).toBe(400)
+  })
 })

@@ -70,3 +70,26 @@ export function packBubbles(values: readonly number[]) {
     viewBox: `${minX - 0.08} ${minY - 0.08} ${maxX - minX + 0.16} ${maxY - minY + 0.16}`,
   }
 }
+
+// Newest first: every year from the first activity to this one.
+export function calendarYears(
+  currentYear: number,
+  firstActivityAt: string | undefined,
+  solvedOverTime: Record<string, number>,
+) {
+  const fromActivity =
+    firstActivityAt === undefined
+      ? Number.NaN
+      : new Date(firstActivityAt).getFullYear()
+  const fromDays = Object.keys(solvedOverTime)
+    .filter((day) => (solvedOverTime[day] ?? 0) > 0)
+    .map((day) => Number(day.slice(0, 4)))
+  const candidates = [fromActivity, ...fromDays].filter((year) =>
+    Number.isFinite(year),
+  )
+  const firstYear = Math.min(currentYear, ...candidates)
+  return Array.from(
+    { length: currentYear - firstYear + 1 },
+    (_, index) => currentYear - index,
+  )
+}

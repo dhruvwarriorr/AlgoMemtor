@@ -4,6 +4,10 @@ import { useQueryClient } from '@tanstack/react-query'
 import { requestProviderSync } from '@/features/platform/api'
 import { useProviderAccounts } from '@/features/profile/hooks/useProviderAccounts'
 
+import { requestJobPump } from '@/features/jobs/job-pump'
+import { endPetActivity, startPetActivity } from '@/features/pet/mello-events'
+import { petLines } from '@/features/pet/pet-lines'
+
 import { detectExtension, requestExtensionSync } from './extension-bridge'
 
 // Manual syncs are limited to one per 15 minutes, matching the extension and
@@ -54,12 +58,20 @@ export function useSyncPlatforms() {
 
   const sync = async () => {
     setState({ kind: 'syncing' })
+    // The pet reads along while the sync runs, on whichever page this is.
+    startPetActivity('sync', 'reading', petLines.syncStarted)
     if (extension === 'paired') {
       const result = await requestExtensionSync()
+      // The extension's uploads may queue server work; drain it now.
+      requestJobPump()
       if (result.ok) {
         await refreshData()
         const problems = result.results.filter(
           (item) => item.status !== 'synced',
+        )
+        endPetActivity(
+          'sync',
+          problems.length === 0 ? petLines.syncDone : petLines.syncFailed,
         )
         setState({
           kind: 'done',
@@ -72,11 +84,13 @@ export function useSyncPlatforms() {
                   .join(' ')}`,
         })
       } else if (result.reason === 'cooldown' && result.nextAllowedAt) {
+        endPetActivity('sync', petLines.syncCooldown)
         setState({
           kind: 'idle',
           nextAllowedAt: result.nextAllowedAt,
         })
       } else {
+        endPetActivity('sync', petLines.syncFailed)
         setState({
           kind: 'error',
           message:
@@ -96,10 +110,22 @@ export function useSyncPlatforms() {
     const results = await Promise.allSettled(
       linked.map((account) => requestProviderSync(account.provider)),
     )
+    // The server runs queued syncs while this page keeps waking it.
+    requestJobPump()
     await refreshData()
     const queued = results.filter(
       (item) => item.status === 'fulfilled' && item.value.data.accepted,
     ).length
+    endPetActivity(
+      'sync',
+      queued > 0
+        ? {
+            message: 'Sync started. I’ll keep reading as new data arrives.',
+            state: 'reading',
+            ms: 5_000,
+          }
+        : petLines.syncCooldown,
+    )
     setState({
       kind: 'done',
       nextAllowedAt: new Date(

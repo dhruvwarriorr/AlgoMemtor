@@ -87,10 +87,11 @@ export function BrowserConnectorCard({ idPrefix }: { idPrefix: string }) {
             Browser connector
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Syncs your full LeetCode history and your CSES progress, and
-            verifies and syncs Codeforces and CodeChef, from your own signed-in
-            browser. Passwords, cookies, and your code stay in the browser; only
-            problems, verdicts, times, and languages are sent.
+            Syncs your full LeetCode, CSES and CodeChef history (with the rating
+            of every CodeChef contest problem; practice solves stay unrated),
+            and verifies and syncs Codeforces, from your own signed-in browser.
+            Passwords, cookies, and your code stay in the browser; only
+            problems, verdicts, times, languages and ratings are sent.
           </p>
         </div>
       </div>

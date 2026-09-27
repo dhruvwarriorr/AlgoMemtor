@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 
 import { AppTopbar } from '@/components/navigation/AppTopbar'
+import { useJobPump } from '@/features/jobs/job-pump'
 import { ScrollRestoration } from '@/routes/ScrollRestoration'
 
 // The coach pet loads after the page: it is not needed for the first paint.
@@ -14,6 +15,8 @@ const MelloPet = lazy(() =>
 // Signed-in workspace: a top bar over one large, full-width content panel.
 function AppLayout() {
   const { pathname } = useLocation()
+  // Wakes queued server work while a signed-in page is open.
+  useJobPump()
 
   return (
     <div className="app-backdrop flex min-h-dvh w-full min-w-0 flex-col">

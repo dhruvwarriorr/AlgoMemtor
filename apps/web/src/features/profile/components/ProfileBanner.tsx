@@ -13,6 +13,7 @@ import {
 import { useUserIdentity } from '@/features/auth/user-identity'
 
 import { readableValue, type StrengthItem } from './profile-strength'
+import { useCoachName } from '@/features/pet/pet-preference'
 
 const ease = [0.16, 1, 0.3, 1] as const
 
@@ -72,6 +73,7 @@ export function ProfileBanner({
   action?: ReactNode
   strength?: { score: number; items: readonly StrengthItem[] }
 }) {
+  const coachName = useCoachName()
   const identity = useUserIdentity()
   const reduceMotion = useReducedMotion()
   const chips: ReadonlyArray<{ icon: IconComponent; label: string }> = profile
@@ -189,7 +191,7 @@ export function ProfileBanner({
                   </p>
                   {missing.length === 0 ? (
                     <p className="text-xs text-muted-foreground">
-                      Your coach has everything it asks for.
+                      {coachName} has everything it asks for.
                     </p>
                   ) : (
                     <p className="text-xs text-muted-foreground">

@@ -1,7 +1,12 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { MentorChatDock, type DockMode } from './MentorChatDock'
+
+const pet = vi.hoisted(() => ({ enabled: false }))
+vi.mock('@/features/pet/pet-preference', () => ({
+  usePetEnabled: () => pet.enabled,
+}))
 
 const modes: DockMode[] = [
   {
@@ -46,6 +51,15 @@ const render = (
   )
 
 describe('MentorChatDock', () => {
+  it('renders nothing on the page when the coach pet hosts it', () => {
+    pet.enabled = true
+    try {
+      expect(render(true)).toBe('')
+    } finally {
+      pet.enabled = false
+    }
+  })
+
   it('shows a bottom-right launcher with the thread size when closed', () => {
     const markup = render(false)
     expect(markup).toContain('Ask about this solution')
@@ -57,7 +71,9 @@ describe('MentorChatDock', () => {
     const markup = render(true)
     expect(markup).toContain('role="dialog"')
     expect(markup).toContain('Ask a question')
-    expect(markup).toMatch(/aria-selected="true"[^>]*>I tried this/)
+    expect(markup).toMatch(
+      /aria-selected="true"(?:(?!<\/button>)[\s\S])*I tried this/,
+    )
     expect(markup).toContain('Sorting fixes the order.')
     expect(markup).toContain('placeholder="What did you try?"')
     expect(markup).toContain('Get feedback')

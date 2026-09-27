@@ -176,6 +176,8 @@ const solvedFromRecord = (record: {
   firstObservedAt: Date
   lastObservedAt: Date
   providerEventId: string | null
+  solveContext?: string | null
+  difficultyRating?: number | null
   completeness: string
   extractionStrategy: string
   sourceUrl: string
@@ -197,6 +199,14 @@ const solvedFromRecord = (record: {
     ...(record.normalizedTopics.length === 0
       ? {}
       : { topics: record.normalizedTopics }),
+    ...(record.solveContext === 'contest' || record.solveContext === 'practice'
+      ? { solveContext: record.solveContext }
+      : {}),
+    ...(record.difficultyRating === null ||
+    record.difficultyRating === undefined ||
+    record.difficultyRating <= 0
+      ? {}
+      : { difficultyRating: record.difficultyRating }),
     completeness: record.completeness,
     provenance: provenance(
       {
@@ -315,8 +325,21 @@ const mergeSolvedProblem = (
     sourceSubmissionId: _incomingSubmission,
     providerTags: _incomingTags,
     topics: _incomingTopics,
+    solveContext: _incomingContext,
+    difficultyRating: _incomingRating,
     ...rest
   } = incoming
+  // A source that knows where the problem was solved replaces the stored
+  // context, except that a contest solve is never downgraded to practice;
+  // a source that does not know (the public feed) keeps it.
+  const context =
+    incoming.solveContext === undefined ||
+    (existing.solveContext === 'contest' && incoming.solveContext === 'practice')
+      ? existing
+      : existing.solveContext === 'contest' &&
+          incoming.difficultyRating === undefined
+        ? { ...incoming, difficultyRating: existing.difficultyRating }
+        : incoming
   const sourceSubmissionId = keepExistingSolve
     ? (existing.sourceSubmissionId ?? incoming.sourceSubmissionId)
     : (incoming.sourceSubmissionId ?? existing.sourceSubmissionId)
@@ -338,6 +361,13 @@ const mergeSolvedProblem = (
       ? {}
       : { providerTags }),
     ...(topics === undefined || topics.length === 0 ? {} : { topics }),
+    ...(context.solveContext === undefined
+      ? {}
+      : { solveContext: context.solveContext }),
+    ...(context.solveContext === 'contest' &&
+    context.difficultyRating !== undefined
+      ? { difficultyRating: context.difficultyRating }
+      : {}),
   }
 }
 
@@ -676,6 +706,8 @@ export class PrismaProviderDataRepository implements ProviderDataRepository {
           canonicalUrl: parsed.canonicalUrl,
           providerTags: parsed.providerTags ?? [],
           normalizedTopics: parsed.topics ?? [],
+          solveContext: parsed.solveContext ?? null,
+          difficultyRating: parsed.difficultyRating ?? null,
           occurredAt: parsed.occurredAt ? new Date(parsed.occurredAt) : null,
           lastObservedAt: new Date(parsed.lastObservedAt),
           completeness: parsed.completeness,

@@ -12,7 +12,7 @@ import { ProviderSyncWorker } from './provider-sync-worker.js'
 const userId = '00000000-0000-4000-8000-000000000001'
 
 describe('ProviderSyncWorker', () => {
-  it('does not duplicate an existing future scheduled sync after a manual run', async () => {
+  it('does not schedule a recurring sync after a run', async () => {
     const now = new Date()
     const accountRepository = new InMemoryProviderAccountRepository()
     const account = await accountRepository.upsertByAuthUserId(
@@ -20,16 +20,13 @@ describe('ProviderSyncWorker', () => {
       'codeforces',
       'tourist',
     )
-    const repository = new InMemoryProviderSyncRepository()
-    await repository.enqueue({
+    await accountRepository.grantPublicStatsConsent(
       userId,
-      providerAccountId: account.id,
-      provider: 'codeforces',
-      capability: 'linked_user_sync',
-      jobType: 'linked_user_sync',
-      idempotencyKey: 'scheduled-test',
-      runAfter: new Date(now.getTime() + 60 * 60 * 1000),
-    })
+      'codeforces',
+      'tourist',
+      now,
+    )
+    const repository = new InMemoryProviderSyncRepository()
     await repository.enqueue({
       userId,
       providerAccountId: account.id,
@@ -65,9 +62,47 @@ describe('ProviderSyncWorker', () => {
     expect(await worker.processOnce()).toBe(true)
     expect(enqueue).not.toHaveBeenCalled()
     expect(
-      (await repository.findLatest(userId, 'codeforces', account.id, 'manual_sync'))
-        ?.status,
+      (
+        await repository.findLatest(
+          userId,
+          'codeforces',
+          account.id,
+          'manual_sync',
+        )
+      )?.status,
     ).toBe('completed')
+    const state = await repository.getState(userId, 'codeforces', account.id)
+    expect(state.nextRunAt).toBeUndefined()
+    expect(await repository.hasPendingJob(userId, now)).toBe(false)
+  })
+
+  it("claims only the given learner's jobs when scoped", async () => {
+    const now = new Date()
+    const otherUser = '00000000-0000-4000-8000-000000000002'
+    const accountRepository = new InMemoryProviderAccountRepository()
+    const repository = new InMemoryProviderSyncRepository()
+    for (const owner of [userId, otherUser]) {
+      const account = await accountRepository.upsertByAuthUserId(
+        owner,
+        'codeforces',
+        owner === userId ? 'first' : 'second',
+      )
+      await repository.enqueue({
+        userId: owner,
+        providerAccountId: account.id,
+        provider: 'codeforces',
+        capability: 'linked_user_sync',
+        jobType: 'manual_sync',
+        idempotencyKey: `manual-${owner}`,
+        runAfter: new Date(now.getTime() - (owner === userId ? 1000 : 5000)),
+      })
+    }
+    const claimed = await repository.claimNext('lease', now, 60_000, userId)
+    expect(claimed?.userId).toBe(userId)
+    expect(
+      await repository.claimNext('lease-2', now, 60_000, userId),
+    ).toBeNull()
+    expect(await repository.hasPendingJob(otherUser, now)).toBe(true)
   })
 
   const solved = (

@@ -20,6 +20,7 @@ import {
   useSaveRecommendationSteering,
 } from '@/features/recommendations/hooks/useRecommendations'
 import { cn } from '@/lib/utils'
+import { useCoachName } from '@/features/pet/pet-preference'
 
 const MAX_LENGTH = 500
 
@@ -94,6 +95,7 @@ function instructionLabel(item: RecommendationSteering) {
 // their picks. Sending regenerates the feed; the bar then folds into the
 // list of active instructions, each removable.
 export function RecommendationSteeringBar() {
+  const coachName = useCoachName()
   const { notify } = useNotification()
   const steeringQuery = useRecommendationSteering()
   const save = useSaveRecommendationSteering()
@@ -128,7 +130,7 @@ export function RecommendationSteeringBar() {
               ? steering.applied.join(' · ')
               : 'Saved as guidance for how your problems are ranked.',
             steering.savedToMemory
-              ? 'Also saved to your coach memory.'
+              ? `Also saved to ${coachName}'s memory.`
               : 'Saved as recommendation guidance for this account.',
           ].join(' '),
           tone: 'success',

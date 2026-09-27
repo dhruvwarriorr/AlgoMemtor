@@ -149,56 +149,77 @@ export const Lightbulb = createIcon('Lightbulb', {
   accent: bulb.dot,
 })
 
-// Memory: a small knowledge graph around one lit node.
-const memory = node(12, 11.8, 2.6)
 export const Brain = createIcon('Brain', {
+  // The AI's mind: two folded halves with a memory node between them.
   shape: (
     <>
-      <circle cx="5.5" cy="6" r="3" />
-      <circle cx="18.5" cy="6" r="3" />
-      <circle cx="12" cy="19.5" r="3" />
+      <path d="M11 4.3a3.4 3.4 0 0 0-5.9 1.6A3.6 3.6 0 0 0 3 12.1a3.6 3.6 0 0 0 2.2 5.5A3.4 3.4 0 0 0 11 19.7Z" />
       <path
-        d="M7 6h10M8 8l2.5 2.3M16 8l-2.5 2.3M12 14.5v2.5"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="2.4"
+        d="M13 4.3a3.4 3.4 0 0 1 5.9 1.6A3.6 3.6 0 0 1 21 12.1a3.6 3.6 0 0 1-2.2 5.5A3.4 3.4 0 0 1 13 19.7Z"
+        opacity=".62"
       />
-      <circle cx="12" cy="11.8" r="4.2" />
     </>
   ),
-  cut: memory.cut,
-  accent: memory.dot,
+  cut: (
+    <path
+      {...groove(1.4)}
+      d="M7.4 9.3c1.2 0 2 .8 2 2M16.6 9.3c-1.2 0-2 .8-2 2M6.8 14.8H9M17.2 14.8H15"
+    />
+  ),
+  accent: (
+    <>
+      {dot(12, 12, 1.8)}
+      {dot(12, 6.3, 1)}
+      {dot(12, 17.7, 1)}
+    </>
+  ),
 })
 
 /* ---- Charts and trends -------------------------------------------------- */
 
-const rising = node(19, 6.5, 2)
 export const TrendingUp = createIcon('TrendingUp', {
-  shape: (
-    <path d="M3 19.2V15.6a1 1 0 0 1 .3-.7L8 10.2a1 1 0 0 1 1.4 0l3 2.7 6-6.6V19.2a1.8 1.8 0 0 1-1.8 1.8H4.8A1.8 1.8 0 0 1 3 19.2Z" />
+  // Rising: a climbing line with its glow underneath and a lit turn.
+  shape: <path d="M3 20.2V16l5-4.4 3.5 3.1L20.5 6v14.2Z" opacity=".32" />,
+  over: (
+    <path
+      d="M3 15.6 8 11.2l3.5 3.1 9-8.8M15.3 5.5h5.2v5.2"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2.4"
+    />
   ),
-  cut: rising.cut,
-  accent: rising.dot,
+  accent: dot(8, 11.2, 1.7),
 })
 
-const falling = node(19, 16.2, 2)
 export const TrendingDown = createIcon('TrendingDown', {
-  shape: (
-    <path d="M3 19.2V5.5l5 4.9a1 1 0 0 0 1.4 0l3-2.6 6.3 7.2v4.2a1.8 1.8 0 0 1-1.8 1.8H4.8A1.8 1.8 0 0 1 3 19.2Z" />
+  // Falling: the rising glyph mirrored top to bottom.
+  shape: <path d="M3 20.2V7.8l5 4.4 3.5-3.1 9 8.8v2.3Z" opacity=".32" />,
+  over: (
+    <path
+      d="M3 7.8 8 12.2l3.5-3.1 9 8.8M20.5 12.7v5.2h-5.2"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2.4"
+    />
   ),
-  cut: falling.cut,
-  accent: falling.dot,
+  accent: dot(8, 12.2, 1.7),
 })
 
 export const BarChart3 = createIcon('BarChart3', {
+  // Platforms: three bars that grow, the tallest topped with a node.
   shape: (
     <>
-      <rect height="9" rx="1.6" width="4.4" x="3.5" y="12" />
-      <rect height="14" rx="1.6" width="4.4" x="9.8" y="7" />
-      <rect height="8" rx="1.6" width="4.4" x="16.1" y="13" />
+      <rect height="7" opacity=".45" rx="1.6" width="4.4" x="3" y="14" />
+      <rect height="11" opacity=".72" rx="1.6" width="4.4" x="9.8" y="10" />
+      <rect height="13.5" rx="1.6" width="4.4" x="16.6" y="7.5" />
     </>
   ),
-  accent: dot(18.3, 8.4, 2.2),
+  cut: <rect fill="#000" height="1.4" rx=".7" width="16" x="3" y="21.2" />,
+  accent: dot(18.8, 3.6, 1.9),
 })
 
 export const LineChart = createIcon('LineChart', {
@@ -262,13 +283,19 @@ export const Crown = createIcon('Crown', {
   accent: crownNode.dot,
 })
 
-const flameNode = node(12, 16, 2)
 export const Flame = createIcon('Flame', {
+  // Heat: an outer flame with a brighter core and a lit ember.
   shape: (
-    <path d="M12.3 2.3c.9 3 6 5.6 6 11.2a6.3 6.3 0 0 1-12.6 0c0-2.9 1.6-4.5 2.6-6.2.8 1.1 1.2 2.2 1.2 3.4 1.4-2.2 2.6-4.7 2.8-8.4Z" />
+    <>
+      <path
+        d="M12.3 2.3c.9 3 6 5.6 6 11.2a6.3 6.3 0 0 1-12.6 0c0-2.9 1.6-4.5 2.6-6.2.8 1.1 1.2 2.2 1.2 3.4 1.4-2.2 2.6-4.7 2.8-8.4Z"
+        opacity=".5"
+      />
+      <path d="M12.3 9.6c.5 1.7 3.3 3.1 3.3 6.1a3.6 3.6 0 0 1-7.2 0c0-1.6.9-2.5 1.5-3.4.4.6.6 1.2.7 1.9.8-1.3 1.5-2.6 1.7-4.6Z" />
+    </>
   ),
-  cut: flameNode.cut,
-  accent: flameNode.dot,
+  cut: <circle cx="12" cy="16.4" fill="#000" r="1.9" />,
+  accent: dot(12, 16.4, 1.2),
 })
 
 // Problems: one solved row (a lit node) above two open ones.
@@ -300,16 +327,32 @@ export const BookmarkCheck = createIcon('BookmarkCheck', {
   cut: <path {...groove(2.3)} d="m8.9 9.6 2.2 2.2 4-4.3" />,
 })
 
-const targetNode = node(12, 12, 2.3)
 export const Target = createIcon('Target', {
-  shape: <circle cx="12" cy="12" r="9.5" />,
-  cut: (
+  // A goal: rings with a lit bullseye and an arrow that has landed.
+  shape: (
     <>
-      <circle {...groove(1.8)} cx="12" cy="12" r="6.3" />
-      {targetNode.cut}
+      <circle cx="11" cy="13" opacity=".45" r="8.5" />
+      <circle cx="11" cy="13" r="5" />
     </>
   ),
-  accent: targetNode.dot,
+  cut: (
+    <>
+      <circle {...groove(1.4)} cx="11" cy="13" r="6.7" />
+      <circle cx="11" cy="13" fill="#000" r="2.5" />
+      <path {...groove(4.2)} d="M11.5 12.5 19.5 4.5" />
+    </>
+  ),
+  over: (
+    <path
+      d="M11.5 12.5 19.2 4.8M16.4 3.6h4v4"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+    />
+  ),
+  accent: dot(11, 13, 1.5),
 })
 
 export const Crosshair = createIcon('Crosshair', {
@@ -447,12 +490,23 @@ export const CalendarCheck = createIcon('CalendarCheck', {
 /* ---- Account and system ------------------------------------------------- */
 
 export const UserRound = createIcon('UserRound', {
+  // A learner: head, shoulders, and a memory node lit beside them.
   shape: (
-    <path d="M3.9 20.2C4.6 16.2 7.9 13.7 12 13.7s7.4 2.5 8.1 6.5a1 1 0 0 1-1 1.3H4.9a1 1 0 0 1-1-1.3Z" />
+    <>
+      <path
+        d="M4 20.4c.6-3.9 3.9-6.4 8-6.4s7.4 2.5 8 6.4a.9.9 0 0 1-.9 1.1H4.9a.9.9 0 0 1-.9-1.1Z"
+        opacity=".5"
+      />
+      <circle cx="12" cy="8" r="4.3" />
+    </>
   ),
-  accent: (
-    <circle className="algo-node" cx="12" cy="7.3" fill={ACCENT} r="4.3" />
+  cut: (
+    <>
+      <circle {...groove(1.4)} cx="12" cy="8" r="5.6" />
+      <circle cx="17.4" cy="4.6" fill="#000" r="2.7" />
+    </>
   ),
+  accent: dot(17.4, 4.6, 1.7),
 })
 
 // Settings: a hex nut around a lit node.
@@ -465,20 +519,19 @@ export const Settings = createIcon('Settings', {
 })
 
 export const SlidersHorizontal = createIcon('SlidersHorizontal', {
+  // Filters: three tracks, each knob set somewhere else; one is lit.
   shape: (
     <>
-      <rect height="2.4" rx="1.2" width="18" x="3" y="5.8" />
-      <rect height="2.4" rx="1.2" width="18" x="3" y="15.8" />
-      <circle cx="15" cy="17" r="3.3" />
+      <rect height="2" opacity=".4" rx="1" width="18" x="3" y="5" />
+      <rect height="2" opacity=".4" rx="1" width="18" x="3" y="11" />
+      <rect height="2" opacity=".4" rx="1" width="18" x="3" y="17" />
+      <circle cx="7.5" cy="6" r="2.8" />
+      <circle cx="16" cy="12" r="3.1" />
+      <circle cx="10.5" cy="18" r="2.8" />
     </>
   ),
-  cut: (
-    <>
-      <circle cx="9" cy="7" fill="#000" r="4.4" />
-      <circle cx="15" cy="17" fill="#000" r="1.3" />
-    </>
-  ),
-  accent: dot(9, 7, 3.2),
+  cut: <circle cx="16" cy="12" fill="#000" r="2" />,
+  accent: dot(16, 12, 1.4),
 })
 
 const doorNode = node(8.7, 12, 1.5)
@@ -551,10 +604,18 @@ export const Lock = createIcon('Lock', {
 })
 
 export const ShieldCheck = createIcon('ShieldCheck', {
+  // Protected: a shield inside a shield, the check cut into the inner one.
   shape: (
-    <path d="M11.3 2.3a2 2 0 0 1 1.4 0l6.5 2.6a1.4 1.4 0 0 1 .9 1.3v5.3c0 4.9-3.2 8.6-7.7 10a1.4 1.4 0 0 1-.8 0c-4.5-1.4-7.7-5.1-7.7-10V6.2a1.4 1.4 0 0 1 .9-1.3Z" />
+    <>
+      <path
+        d="M11.3 2.3a2 2 0 0 1 1.4 0l6.5 2.6a1.4 1.4 0 0 1 .9 1.3v5.3c0 4.9-3.2 8.6-7.7 10a1.4 1.4 0 0 1-.8 0c-4.5-1.4-7.7-5.1-7.7-10V6.2a1.4 1.4 0 0 1 .9-1.3Z"
+        opacity=".42"
+      />
+      <path d="M12 5.4 17 7.4v4.2c0 3.5-2.1 6.2-5 7.3-2.9-1.1-5-3.8-5-7.3V7.4Z" />
+    </>
   ),
-  cut: <path {...groove(2.3)} d="m8.6 12 2.3 2.3 4.5-4.6" />,
+  cut: <path {...groove(2)} d="m9.4 12 1.8 1.8 3.5-3.6" />,
+  accent: dot(12, 2.9, 1),
 })
 
 export const BadgeCheck = createIcon('BadgeCheck', {
@@ -594,36 +655,71 @@ export const BellRing = createIcon('BellRing', {
 })
 
 export const Palette = createIcon('Palette', {
+  // Appearance: a palette with lit paint wells and a brush across it.
   shape: (
-    <path d="M12 2.5a9.5 9.5 0 0 0 0 19c1.4 0 2.2-1 2.2-2 0-1.5-1.1-1.8-1.1-3.1 0-1.2.9-2 2-2h2.4a4.1 4.1 0 0 0 4-4.1c0-4.2-4.3-7.8-9.5-7.8Z" />
+    <path
+      d="M11.5 2.5a9 9 0 0 0 0 18c1.3 0 2-.9 2-1.8 0-1.4-1-1.7-1-2.9 0-1.1.8-1.9 1.9-1.9h2.2a3.9 3.9 0 0 0 3.8-3.9c0-4-4-7.5-8.9-7.5Z"
+      opacity=".62"
+    />
   ),
   cut: (
     <>
-      <circle cx="7.6" cy="11" fill="#000" r="2.2" />
-      <circle cx="10.6" cy="6.9" fill="#000" r="2.2" />
-      <circle cx="15.6" cy="7.6" fill="#000" r="2.2" />
+      <circle cx="7.2" cy="10.6" fill="#000" r="2.1" />
+      <circle cx="10.2" cy="6.6" fill="#000" r="2.1" />
+      <circle cx="15" cy="7.3" fill="#000" r="2.1" />
+      <path {...groove(4)} d="M21 13.5 15.3 19.2" />
+    </>
+  ),
+  over: (
+    <>
+      <path
+        d="M20.7 13.8 16 18.5"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="2.2"
+      />
+      <path
+        d="M15.6 18.1c.7.7.8 2.3-.6 3.1-1 .6-2.6.4-3.3.3.9-.4 1-1.3 1.3-2 .3-.9 1.8-2.2 2.6-1.4Z"
+        fill="currentColor"
+      />
     </>
   ),
   accent: (
     <>
-      {dot(7.6, 11, 1.3)}
-      {dot(10.6, 6.9, 1.3)}
-      {dot(15.6, 7.6, 1.3)}
+      {dot(7.2, 10.6, 1.3)}
+      {dot(10.2, 6.6, 1.3)}
+      {dot(15, 7.3, 1.3)}
     </>
   ),
 })
 
 export const Database = createIcon('Database', {
+  // Stored data: three stacked disks, fading toward the base.
   shape: (
-    <path d="M4 5.6C4 3.9 7.6 2.5 12 2.5s8 1.4 8 3.1v12.8c0 1.7-3.6 3.1-8 3.1s-8-1.4-8-3.1Z" />
+    <>
+      <ellipse cx="12" cy="5.4" rx="8" ry="2.9" />
+      <path
+        d="M4 8.6c0 1.6 3.6 2.9 8 2.9s8-1.3 8-2.9v3.6c0 1.6-3.6 2.9-8 2.9s-8-1.3-8-2.9Z"
+        opacity=".72"
+      />
+      <path
+        d="M4 14.4c0 1.6 3.6 2.9 8 2.9s8-1.3 8-2.9V18c0 1.6-3.6 2.9-8 2.9S4 19.6 4 18Z"
+        opacity=".45"
+      />
+    </>
   ),
-  cut: (
-    <path
-      {...groove(1.5)}
-      d="M4 9.2c0 1.7 3.6 3 8 3s8-1.3 8-3M4 14c0 1.7 3.6 3 8 3s8-1.3 8-3"
+  cut: <ellipse cx="12" cy="5.4" fill="#000" rx="2.8" ry="1.3" />,
+  accent: (
+    <ellipse
+      className="algo-node"
+      cx="12"
+      cy="5.4"
+      fill={ACCENT}
+      rx="1.8"
+      ry=".8"
     />
   ),
-  accent: dot(12, 5.6, 1.5),
 })
 
 const plugShape = (
@@ -658,17 +754,21 @@ export const CloudOff = createIcon('CloudOff', {
 /* ---- Conversation ------------------------------------------------------- */
 
 export const MessageCircle = createIcon('MessageCircle', {
+  // A conversation: your bubble in front of the reply, three dots typing.
   shape: (
-    <path d="M3.5 6.2a2.7 2.7 0 0 1 2.7-2.7h11.6a2.7 2.7 0 0 1 2.7 2.7v8.6a2.7 2.7 0 0 1-2.7 2.7h-6.4l-4.6 3.5a.7.7 0 0 1-1.1-.6v-2.9h-.2a2 2 0 0 1-2-2Z" />
+    <>
+      <rect height="10" opacity=".42" rx="3" width="13" x="8.5" y="2.5" />
+      <path d="M2.5 10.3a2.8 2.8 0 0 1 2.8-2.8h9.5a2.8 2.8 0 0 1 2.8 2.8v5.5a2.8 2.8 0 0 1-2.8 2.8H9.7l-3.9 3a.6.6 0 0 1-1-.5v-2.5a2.3 2.3 0 0 1-2.3-2.3Z" />
+    </>
   ),
   cut: (
     <>
-      <circle cx="8.3" cy="10.5" fill="#000" r="1.4" />
-      <circle cx="12" cy="10.5" fill="#000" r="2.1" />
-      <circle cx="15.7" cy="10.5" fill="#000" r="1.4" />
+      <circle cx="6.8" cy="13" fill="#000" r="1.2" />
+      <circle cx="10" cy="13" fill="#000" r="1.6" />
+      <circle cx="13.2" cy="13" fill="#000" r="1.2" />
     </>
   ),
-  accent: dot(12, 10.5, 1.3),
+  accent: dot(10, 13, 1.1),
 })
 
 const threadNode = node(10, 12.6, 1.5)
@@ -829,29 +929,21 @@ export const ExternalLink = createIcon('ExternalLink', {
 })
 
 export const Link2 = createIcon('Link2', {
+  // Linked: two chain links, one lit where they join.
   shape: (
-    <>
-      <rect height="9.5" rx="4.75" width="10.5" x="1.5" y="7.25" />
-      <rect height="9.5" rx="4.75" width="10.5" x="12" y="7.25" />
-    </>
+    <g transform="rotate(-45 12 12)">
+      <rect height="8" rx="4" width="11.5" x="1.5" y="8" />
+      <rect height="8" opacity=".55" rx="4" width="11.5" x="11" y="8" />
+    </g>
   ),
   cut: (
-    <>
-      <rect fill="#000" height="4" rx="2" width="5.5" x="4.3" y="10" />
-      <rect fill="#000" height="4" rx="2" width="5.5" x="14.2" y="10" />
-    </>
+    <g transform="rotate(-45 12 12)">
+      <rect fill="#000" height="2.8" rx="1.4" width="6.3" x="4.1" y="10.6" />
+      <rect fill="#000" height="2.8" rx="1.4" width="6.3" x="13.6" y="10.6" />
+      <circle cx="12" cy="12" fill="#000" r="2.6" />
+    </g>
   ),
-  over: (
-    <rect
-      fill="currentColor"
-      height="2.6"
-      rx="1.3"
-      width="7"
-      x="8.5"
-      y="10.7"
-    />
-  ),
-  accent: dot(12, 12, 1.9),
+  accent: dot(12, 12, 1.7),
 })
 
 const lens = node(10.5, 10.5, 2.2)

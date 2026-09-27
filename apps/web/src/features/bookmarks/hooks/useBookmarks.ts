@@ -17,6 +17,8 @@ import {
   type BookmarkQuery,
   type ProblemReference,
 } from '@/features/progress/contracts'
+import { petSay } from '@/features/pet/mello-events'
+import { petLines } from '@/features/pet/pet-lines'
 
 export const bookmarksQueryKey = (authUserId: string, query: BookmarkQuery) =>
   ['bookmarks', authUserId, query] as const
@@ -131,7 +133,10 @@ export function useAddBookmark() {
 
   return useMutation({
     mutationFn: (problem: ProblemReference) => addBookmark(problem),
-    onSuccess: () => invalidateBookmarkQueries(queryClient),
+    onSuccess: () => {
+      petSay(petLines.bookmarkSaved)
+      return invalidateBookmarkQueries(queryClient)
+    },
   })
 }
 

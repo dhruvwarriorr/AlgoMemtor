@@ -425,6 +425,22 @@ source, tests, and `git status` before relying on it.
   Settings has a sliding section marker and card-surface sections. Typed example
   placeholders share `lib/use-typed-example.ts`.
 
+- 2026-09-27: no worker services. Queued provider syncs and memory jobs stay
+  in PostgreSQL and run inside Express through `services/job-pump.ts`, woken
+  by `POST /api/jobs/pump` from a visible signed-in page (`useJobPump` in
+  `AppLayout`) and by server routes that queue work; claims are owner-scoped,
+  privacy deletions drain on any wake, and the hourly sync is replaced by a
+  per-visit freshness refresh (`PROVIDER_ACTIVE_SYNC_STALE_MINUTES`). The
+  browser connector also uploads CodeChef history; CodeChef contest solves
+  carry their difficulty rating (`solve_context`/`difficulty_rating`) and
+  practice solves count as unrated. The chosen pet names the coach
+  everywhere (`useCoachName`); page assistants (Doubt Helper, Solution
+  Explorer) are hosted in the pet's chat when the pet is on, with the docked
+  panel as the fallback. Native `select`/`details`/`datalist` are replaced
+  by `components/ui/select.tsx` and `disclosure.tsx`; do not reintroduce
+  them. PageHero has no eyebrow chip. Onboarding is a three-step flow (coach,
+  connect incl. the extension, profile).
+
 Important: this snapshot describes the working tree, which currently contains
 uncommitted Week 10 work. It is context, not permission to commit or rewrite it.
 

@@ -5,6 +5,8 @@ import { useAuth } from '@/features/auth/useAuth'
 import { recommendationsQueryKey } from '@/features/recommendations/hooks/useRecommendations'
 
 import { fetchLearnerProfile, saveLearnerProfile } from '../api/learner-profile'
+import { petSay } from '@/features/pet/mello-events'
+import { petLines } from '@/features/pet/pet-lines'
 
 export const learnerProfileQueryKey = (authUserId: string) =>
   ['learner-profile', authUserId] as const
@@ -32,6 +34,7 @@ export function useSaveLearnerProfile() {
     mutationFn: (profile: SaveLearnerProfileRequest) =>
       saveLearnerProfile(profile),
     onSuccess: async (response) => {
+      petSay(petLines.settingsSaved)
       if (!user) {
         return
       }

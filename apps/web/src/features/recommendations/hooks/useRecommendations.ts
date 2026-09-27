@@ -19,6 +19,8 @@ import {
   saveRecommendationFeedback,
   saveRecommendationSteering,
 } from '../api/recommendations'
+import { endPetActivity, startPetActivity } from '@/features/pet/mello-events'
+import { petLines } from '@/features/pet/pet-lines'
 
 export const recommendationsQueryKey = (authUserId: string) =>
   ['recommendations', authUserId] as const
@@ -108,7 +110,18 @@ export function useRefreshRecommendations() {
 
   return useMutation({
     mutationFn: refreshRecommendations,
+    onMutate: () =>
+      startPetActivity(
+        'recommendations',
+        'thinking',
+        petLines.recommendationsRefresh,
+      ),
+    onError: () => endPetActivity('recommendations'),
     onSuccess: async (response) => {
+      endPetActivity('recommendations', {
+        message: 'Fresh picks are in!',
+        state: 'idea',
+      })
       if (user === null) {
         return
       }

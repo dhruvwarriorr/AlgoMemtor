@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 import { AnimatePresence, motion } from 'motion/react'
 
-import { RefreshCw, Target } from '@/components/icons/algo-icons'
+import { RefreshCw } from '@/components/icons/algo-icons'
 import { ProviderLogo } from '@/components/brand/ProviderLogo'
 import { PageHero } from '@/components/kit/PageHero'
 import { OrbLoader } from '@/components/motion/OrbLoader'
@@ -207,8 +207,6 @@ function RecommendationsPage() {
             {isRefreshing ? 'Refreshing…' : 'Refresh recommendations'}
           </Button>
         }
-        eyebrow="Today's picks"
-        icon={Target}
         info="Recommendations are ranked from a bounded set of provider problems that pass deterministic filters for your level, topics and history. Each one explains why it fits; the canonical link opens on the provider."
         subtitle="Ten problems picked for your goals, each with the reason it fits."
         title="Recommendations"

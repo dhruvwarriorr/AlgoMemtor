@@ -11,6 +11,11 @@ export function CellTooltip({ tip }: { tip: CellTip | null }) {
     >
       <p className="text-sm font-semibold tabular-nums">{tip.title}</p>
       <p className="text-[0.7rem] opacity-70">{tip.detail}</p>
+      {tip.notes?.map((note) => (
+        <p className="mt-0.5 text-[0.7rem] tabular-nums opacity-90" key={note}>
+          {note}
+        </p>
+      ))}
     </div>
   )
 }

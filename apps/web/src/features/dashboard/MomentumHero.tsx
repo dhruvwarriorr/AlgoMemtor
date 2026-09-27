@@ -2,7 +2,11 @@ import { useState, type FormEvent, type ReactNode } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { Link, useNavigate } from 'react-router-dom'
 
-import { ArrowUpRight, Sparkles } from '@/components/icons/algo-icons'
+import {
+  ArrowUpRight,
+  CalendarCheck,
+  Sparkles,
+} from '@/components/icons/algo-icons'
 import { CountUp } from '@/components/motion/CountUp'
 import { SyncPlatformsButton } from '@/features/connector/SyncPlatformsButton'
 import {
@@ -12,6 +16,7 @@ import {
 import { orderedMentorTools } from '@/features/mentor/feature-routes'
 import { useTypedExample } from '@/lib/use-typed-example'
 import { cn } from '@/lib/utils'
+import { useCoachName } from '@/features/pet/pet-preference'
 
 type TrendDay = { date: string; attempted: number; solved: number }
 
@@ -40,6 +45,7 @@ const askExamples = [
 ]
 
 function AskCoachBar() {
+  const coachName = useCoachName()
   const navigate = useNavigate()
   const reduceMotion = useReducedMotion()
   const [question, setQuestion] = useState('')
@@ -65,7 +71,7 @@ function AskCoachBar() {
         className="size-[18px] shrink-0 text-[#7dd3fc] [--icon-node:#4ade80]"
       />
       <label className="sr-only" htmlFor="dashboard-ask-coach">
-        Ask your coach
+        Ask {coachName}
       </label>
       <input
         className="h-full min-w-0 flex-1 bg-transparent text-[0.95rem] text-white outline-none placeholder:text-white/50"
@@ -75,7 +81,7 @@ function AskCoachBar() {
         onFocus={() => setFocused(true)}
         placeholder={
           focused || reduceMotion
-            ? 'Ask your coach what to work on…'
+            ? `Ask ${coachName} what to work on…`
             : `${typed}▏`
         }
         value={question}
@@ -518,9 +524,13 @@ export function MomentumHero({
             {...rise(0)}
             className="inline-flex w-fit items-center gap-2 rounded-full border border-white/12 bg-white/[0.06] px-3 py-1 text-xs text-white/75 backdrop-blur"
           >
-            <span className="relative flex size-2">
-              <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#4ade80] opacity-60 motion-reduce:animate-none" />
-              <span className="relative inline-flex size-2 rounded-full bg-[#4ade80]" />
+            {/* Today: the calendar glyph with a live node on its corner. */}
+            <span aria-hidden="true" className="relative flex size-4">
+              <CalendarCheck className="size-4 text-[#7dd3fc]" />
+              <span className="absolute -top-0.5 -right-0.5 flex size-1.5">
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-[#4ade80] opacity-70 motion-reduce:animate-none" />
+                <span className="relative inline-flex size-1.5 rounded-full bg-[#4ade80]" />
+              </span>
             </span>
             {today}
           </motion.p>

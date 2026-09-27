@@ -21,8 +21,10 @@ import {
 } from '@/features/recommendations/hooks/useRecommendations'
 
 import { dashboardActivity } from './dashboard-activity'
+import { useCoachName } from '@/features/pet/pet-preference'
 
 function DashboardPage() {
+  const coachName = useCoachName()
   const identity = useUserIdentity()
   const analyticsQuery = useProgressAnalytics(30)
   const activityQuery = useActivity()
@@ -33,8 +35,7 @@ function DashboardPage() {
   const setTopicStatus = useSetCoachTopicStatus()
   const greetingText = greeting()
   const title = `${greetingText}, ${identity.name}`
-  const description =
-    'Your coach has read your latest activity. Here is where your practice stands.'
+  const description = `${coachName} has read your latest activity. Here is where your practice stands.`
 
   if (analyticsQuery.isPending) {
     return (

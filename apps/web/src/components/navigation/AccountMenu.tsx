@@ -42,6 +42,13 @@ function AccountMenu() {
   const { isSigningOut, signOut } = useSignOut()
   // Remember where the menu was opened; navigating elsewhere closes it.
   const [openedAt, setOpenedAt] = useState<string | null>(null)
+  // Any navigation closes the menu for good, so coming back to the page it
+  // was opened on (browser Back) does not reopen it.
+  const [seenPath, setSeenPath] = useState(location.pathname)
+  if (seenPath !== location.pathname) {
+    setSeenPath(location.pathname)
+    setOpenedAt(null)
+  }
   const open = openedAt === location.pathname
   const setOpen = (next: boolean) =>
     setOpenedAt(next ? location.pathname : null)

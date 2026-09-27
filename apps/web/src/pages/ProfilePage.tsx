@@ -33,6 +33,7 @@ import { providerAccountErrorMessage } from '@/features/profile/api/provider-acc
 import { useLearnerProfile } from '@/features/profile/hooks/useLearnerProfile'
 import { useProviderAccounts } from '@/features/profile/hooks/useProviderAccounts'
 import { cn } from '@/lib/utils'
+import { useCoachName } from '@/features/pet/pet-preference'
 
 const ease = [0.16, 1, 0.3, 1] as const
 
@@ -224,6 +225,7 @@ function ChipList({
 }
 
 function ProfilePage() {
+  const coachName = useCoachName()
   const { user } = useAuth()
   const profileQuery = useLearnerProfile()
   const accountsQuery = useProviderAccounts()
@@ -274,7 +276,7 @@ function ProfilePage() {
   return (
     <PageContainer accent="sky">
       <PageHeader
-        description="Everything your coach knows about you, from goals to linked platform evidence."
+        description={`Everything ${coachName} knows about you, from goals to linked platform evidence.`}
         title="Profile"
       />
 
@@ -455,7 +457,7 @@ function ProfilePage() {
             </div>
             <p className="max-w-sm text-sm text-muted-foreground">
               No provider accounts are linked. Linking remains optional, and it
-              lets your coach read verified solves and ratings.
+              lets {coachName} read verified solves and ratings.
             </p>
             <Link
               className={buttonVariants({ variant: 'outline' })}

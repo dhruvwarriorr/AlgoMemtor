@@ -165,7 +165,7 @@ export function TideField() {
         const [r, g, b] = tone(height01)
         const index = level % 4 === 0
         const alpha =
-          (0.04 + 0.1 * Math.min(1, Math.max(0, height01))) * (index ? 1.5 : 1)
+          (0.06 + 0.12 * Math.min(1, Math.max(0, height01))) * (index ? 1.5 : 1)
         ctx.strokeStyle = `rgba(${r},${g},${b},${alpha.toFixed(3)})`
         ctx.lineWidth = index ? 1.1 : 0.7
         ctx.stroke(path)

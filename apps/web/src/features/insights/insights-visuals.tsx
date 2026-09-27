@@ -1213,11 +1213,28 @@ function hourLabel(hour: number) {
   return `${String(hour).padStart(2, '0')}:00`
 }
 
+// Punch-card dates are local calendar days (YYYY-MM-DD).
+const punchDate = new Intl.DateTimeFormat(undefined, {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'UTC',
+})
+
+function formatPunchDate(day: string) {
+  const [year, month, date] = day.split('-').map(Number)
+  if (year === undefined || month === undefined || date === undefined)
+    return day
+  return punchDate.format(new Date(Date.UTC(year, month - 1, date)))
+}
+
 export function WeeklyRhythm({
   punchCard,
+  punchCardDates,
   timezone,
 }: {
   punchCard: AnalyticsInsights['punchCard']
+  punchCardDates?: AnalyticsInsights['punchCardDates']
   timezone?: string
 }) {
   const { ref, shown } = useReveal<HTMLDivElement>()
@@ -1279,16 +1296,27 @@ export function WeeklyRhythm({
                         <span
                           className="grid h-6 place-items-center sm:h-7"
                           key={hour}
-                          onMouseEnter={(event) =>
+                          onMouseEnter={(event) => {
+                            const dates = punchCardDates?.[day]?.[hour]
                             setTip(
                               cellTipFrom(
                                 event.currentTarget,
                                 wrapperRef.current,
                                 `${value} ${value === 1 ? 'submission' : 'submissions'}`,
-                                `${weekdays[day]}, ${hourLabel(hour)}`,
+                                `${weekdays[day]}, ${hourLabel(hour)}–${hourLabel((hour + 1) % 24)}`,
+                                dates === null || dates === undefined
+                                  ? []
+                                  : dates.latest === dates.busiest
+                                    ? [
+                                        `Last on ${formatPunchDate(dates.latest)}`,
+                                      ]
+                                    : [
+                                        `Last on ${formatPunchDate(dates.latest)}`,
+                                        `Busiest ${formatPunchDate(dates.busiest)} (${dates.busiestCount})`,
+                                      ],
                               ),
                             )
-                          }
+                          }}
                         >
                           <motion.span
                             animate={shown ? { scale } : { scale: 0 }}
@@ -1373,8 +1401,10 @@ export function WeeklyRhythm({
 
 export function ContestPulse({
   deltas,
+  className,
 }: {
   deltas: ReadonlyArray<{ key: string; delta: number; label: string }>
+  className?: string
 }) {
   const { ref, shown, reduceMotion } = useReveal<HTMLDivElement>()
   const largest = Math.max(1, ...deltas.map((item) => Math.abs(item.delta)))
@@ -1382,7 +1412,7 @@ export function ContestPulse({
   return (
     <div
       aria-label={`${deltas.length} rated contests: ${deltas.filter((item) => item.delta > 0).length} gains, ${deltas.filter((item) => item.delta < 0).length} drops`}
-      className="relative flex h-36 items-center gap-[3px]"
+      className={cn('relative flex h-36 items-center gap-[3px]', className)}
       ref={ref}
       role="img"
     >

@@ -1,33 +1,14 @@
-import { PrismaLearnerActivityRepository } from './repositories/learner-activity-repository.js'
 import type { LearnerActivityRepository } from './repositories/learner-activity-repository.js'
-import 'dotenv/config'
 
-import {
-  HttpAiMemoryClient,
-  UnavailableAiMemoryClient,
-  type AiMemoryClient,
-} from './integrations/ai/ai-memory-client.js'
-import {
-  HttpAiCoachClient,
-  UnavailableAiCoachClient,
-  type AiCoachClient,
-} from './integrations/ai/ai-coach-client.js'
-import { readAiRecommendationConfig } from './config/ai-config.js'
-import { createPrismaClient, readDatabaseConfig } from './database/prisma.js'
-import {
-  PrismaProgressRepository,
-  type MemoryEvidencePayload,
-} from './repositories/progress-repository.js'
+import type { AiMemoryClient } from './integrations/ai/ai-memory-client.js'
+import type { AiCoachClient } from './integrations/ai/ai-coach-client.js'
+import type { MemoryEvidencePayload } from './repositories/progress-repository.js'
 import type { LearnerProfileRepository } from './repositories/learner-profile-repository.js'
-import { PrismaLearnerProfileRepository } from './repositories/learner-profile-repository.js'
 import type { RecommendationRepository } from './repositories/recommendation-repository.js'
-import { PrismaRecommendationRepository } from './repositories/recommendation-repository.js'
-import {
-  PrismaCoachRepository,
-  type CoachRepository,
-} from './repositories/coach-repository.js'
+import type { CoachRepository } from './repositories/coach-repository.js'
 import { structuredLogger } from './utils/structured-logger.js'
 import type {
+  OutboxClaimScope,
   OutboxJobRecord,
   ProgressRepository,
 } from './repositories/progress-repository.js'
@@ -79,8 +60,15 @@ export class MemoryWorker {
     await this.activeRun
   }
 
-  private async processOne() {
-    const job = await this.options.repository.claimNextJob(this.now())
+  // Processes one due job in the scope (one learner's jobs, or given job
+  // types). The request-driven job pump calls it; the claim's lock keeps two
+  // callers from running the same job.
+  async processNext(scope: OutboxClaimScope) {
+    return this.processOne(scope)
+  }
+
+  private async processOne(scope?: OutboxClaimScope) {
+    const job = await this.options.repository.claimNextJob(this.now(), scope)
     if (job === null) return false
     try {
       await this.processJob(job)
@@ -315,65 +303,4 @@ export class MemoryWorker {
         : { problemExternalId: evidence.problemExternalId }),
     })
   }
-}
-
-export async function runMemoryWorker() {
-  const prisma = createPrismaClient(readDatabaseConfig())
-  const aiConfig = readAiRecommendationConfig()
-  const repository = new PrismaProgressRepository(prisma)
-  const learnerProfileRepository = new PrismaLearnerProfileRepository(prisma)
-  const recommendationRepository = new PrismaRecommendationRepository(prisma)
-  const coachRepository = new PrismaCoachRepository(prisma)
-  const learnerActivityRepository = new PrismaLearnerActivityRepository(prisma)
-  const client = aiConfig.configured
-    ? new HttpAiMemoryClient(aiConfig)
-    : new UnavailableAiMemoryClient()
-  const aiCoachClient = aiConfig.configured
-    ? new HttpAiCoachClient({
-        baseUrl: aiConfig.baseUrl,
-        internalServiceToken: aiConfig.internalServiceToken,
-        timeoutMs: 125_000,
-      })
-    : new UnavailableAiCoachClient()
-  const worker = new MemoryWorker({
-    repository,
-    client,
-    aiCoachClient,
-    learnerProfileRepository,
-    recommendationRepository,
-    coachRepository,
-    learnerActivityRepository,
-  })
-
-  await prisma.$connect()
-  const interval = setInterval(() => {
-    void worker.processOnce()
-  }, 1_000)
-  void worker.processOnce()
-
-  let stopping = false
-  async function shutdown(signal: string) {
-    if (stopping) return
-    stopping = true
-    clearInterval(interval)
-    console.log(`Received ${signal}; closing the memory worker.`)
-    await worker.waitForIdle()
-    await prisma.$disconnect()
-  }
-
-  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-    process.once(signal, () => {
-      void shutdown(signal).then(
-        () => process.exit(0),
-        () => process.exit(1),
-      )
-    })
-  }
-}
-
-if (
-  process.argv[1]?.endsWith('/memory-worker.ts') === true ||
-  process.argv[1]?.endsWith('/memory-worker.js') === true
-) {
-  void runMemoryWorker()
 }

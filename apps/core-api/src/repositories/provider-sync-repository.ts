@@ -53,11 +53,15 @@ export interface ProviderSyncRepository {
     state: Omit<ProviderSyncState, 'provider'>,
     providerAccountId?: string,
   ): Promise<ProviderSyncState>
+  // With an auth user ID, only that learner's jobs are claimed.
   claimNext(
     leaseOwner: string,
     now?: Date,
     leaseMs?: number,
+    authUserId?: string,
   ): Promise<ProviderSyncJobRecord | null>
+  // Whether this learner has a job that is running or due to run now.
+  hasPendingJob?(authUserId: string, now?: Date): Promise<boolean>
   complete(jobId: string, leaseOwner: string): Promise<boolean>
   markFailed(
     jobId: string,
@@ -221,14 +225,34 @@ export class InMemoryProviderSyncRepository implements ProviderSyncRepository {
     return parsed
   }
 
-  async claimNext(leaseOwner: string, now = new Date(), leaseMs = 60_000) {
+  private isDue(job: ProviderSyncJobRecord, now: Date) {
+    return (
+      (job.status === 'queued' && new Date(job.runAfter) <= now) ||
+      (job.status === 'running' &&
+        job.leaseExpiresAt !== undefined &&
+        job.leaseExpiresAt <= now)
+    )
+  }
+
+  async hasPendingJob(authUserId: string, now = new Date()) {
+    return [...this.jobs.values()].some(
+      (job) =>
+        job.userId === authUserId &&
+        (job.status === 'running' || this.isDue(job, now)),
+    )
+  }
+
+  async claimNext(
+    leaseOwner: string,
+    now = new Date(),
+    leaseMs = 60_000,
+    authUserId?: string,
+  ) {
     const candidate = [...this.jobs.values()]
       .filter(
         (job) =>
-          (job.status === 'queued' && new Date(job.runAfter) <= now) ||
-          (job.status === 'running' &&
-            job.leaseExpiresAt !== undefined &&
-            job.leaseExpiresAt <= now),
+          (authUserId === undefined || job.userId === authUserId) &&
+          this.isDue(job, now),
       )
       .sort((left, right) => left.runAfter.localeCompare(right.runAfter))[0]
     if (candidate === undefined) return null
@@ -473,9 +497,26 @@ export class PrismaProviderSyncRepository implements ProviderSyncRepository {
     })
   }
 
-  async claimNext(leaseOwner: string, now = new Date(), leaseMs = 60_000) {
+  async hasPendingJob(authUserId: string, now = new Date()) {
     const record = await this.prisma.providerSyncJob.findFirst({
       where: {
+        user: { authUserId },
+        OR: [{ status: 'queued', runAfter: { lte: now } }, { status: 'running' }],
+      },
+      select: { id: true },
+    })
+    return record !== null
+  }
+
+  async claimNext(
+    leaseOwner: string,
+    now = new Date(),
+    leaseMs = 60_000,
+    authUserId?: string,
+  ) {
+    const record = await this.prisma.providerSyncJob.findFirst({
+      where: {
+        ...(authUserId === undefined ? {} : { user: { authUserId } }),
         OR: [
           { status: 'queued', runAfter: { lte: now } },
           { status: 'running', leaseExpiresAt: { lte: now } },

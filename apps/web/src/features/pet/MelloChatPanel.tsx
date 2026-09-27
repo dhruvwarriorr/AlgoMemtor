@@ -109,9 +109,16 @@ export const MelloChatPanel = memo(function MelloChatPanel({
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
 
   const messages = conversation.data?.messages ?? []
-  const pendingQuestion = sendMessage.isPending
-    ? sendMessage.variables.content
-    : null
+  // A refetch mid-answer can already hold the saved question; show it once.
+  const lastMessage = messages.at(-1)
+  const pendingQuestion =
+    sendMessage.isPending &&
+    !(
+      lastMessage?.role === 'user' &&
+      lastMessage.content.trim() === sendMessage.variables.content.trim()
+    )
+      ? sendMessage.variables.content
+      : null
 
   useEffect(() => {
     inputRef.current?.focus({ preventScroll: true })
@@ -170,7 +177,7 @@ export const MelloChatPanel = memo(function MelloChatPanel({
 
   return (
     <section
-      aria-label={`${pet.name}, your AI coach`}
+      aria-label={`${pet.name}, your coach`}
       className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl"
       data-mello-ignore
     >
@@ -185,7 +192,7 @@ export const MelloChatPanel = memo(function MelloChatPanel({
         <div className="min-w-0 flex-1">
           <h2 className="text-sm font-semibold text-foreground">{pet.name}</h2>
           <p className="truncate text-xs text-muted-foreground">
-            Your AI coach, right on this page
+            Right here on this page
           </p>
         </div>
         <Link
@@ -215,7 +222,7 @@ export const MelloChatPanel = memo(function MelloChatPanel({
         {conversation.isPending && conversationId !== null ? (
           <p className="text-sm text-muted-foreground">Loading your chat…</p>
         ) : null}
-        {messages.length === 0 && pendingQuestion === null ? (
+        {messages.length === 0 && !sendMessage.isPending ? (
           <div className="space-y-3">
             <p className="text-sm leading-6 text-foreground">
               Hi, I&apos;m {pet.name}! Ask me anything. I read the page you are
@@ -248,10 +255,12 @@ export const MelloChatPanel = memo(function MelloChatPanel({
           ),
         )}
         {pendingQuestion !== null ? (
+          <p className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-primary px-3 py-1.5 text-[13px] whitespace-pre-wrap text-primary-foreground">
+            {pendingQuestion}
+          </p>
+        ) : null}
+        {sendMessage.isPending ? (
           <>
-            <p className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-primary px-3 py-1.5 text-[13px] whitespace-pre-wrap text-primary-foreground">
-              {pendingQuestion}
-            </p>
             <p className="flex items-center gap-2 text-sm text-muted-foreground">
               <LoaderCircle
                 aria-hidden="true"

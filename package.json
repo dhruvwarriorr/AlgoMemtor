@@ -9,12 +9,10 @@
     "packages/shared-contracts"
   ],
   "scripts": {
-    "dev": "concurrently -n WEB,CORE,AI,MEMORY,PROVIDER -c cyan,green,magenta,blue,yellow \"npm:dev:web\" \"npm:dev:core\" \"npm:dev:ai\" \"npm:dev:worker\" \"npm:dev:provider-worker\"",
+    "dev": "concurrently -n WEB,CORE,AI -c cyan,green,magenta \"npm:dev:web\" \"npm:dev:core\" \"npm:dev:ai\"",
     "dev:web": "npm --prefix apps/web run dev",
     "dev:core": "npm --prefix apps/core-api run dev",
     "dev:ai": "cd apps/ai-api && uv run fastapi dev app/main.py --port 8000",
-    "dev:worker": "npm --prefix apps/core-api run dev:worker",
-    "dev:provider-worker": "npm --prefix apps/core-api run dev:provider-worker",
     "ai:local:setup": "uv sync --project apps/ai-api && uv run --project apps/ai-api python apps/ai-api/scripts/local_ai.py setup",
     "ai:local:check": "uv run --project apps/ai-api python apps/ai-api/scripts/local_ai.py check",
     "ai:embeddings:reindex": "uv run --project apps/ai-api python apps/ai-api/scripts/reindex_embeddings.py",

@@ -344,6 +344,11 @@ export const SolutionProblemExplanationSchema = z
     inputOutput: nonEmptyStringSchema.max(1_200),
     keyObservations: z.array(nonEmptyStringSchema.max(400)).max(5),
     exampleWalkthrough: nonEmptyStringSchema.max(2_000).optional(),
+    // The one small test case the walkthrough traces, written by the model
+    // in the problem's input format (never the statement's example section),
+    // so the Test Case Visualizer can run an approach's code on it.
+    walkthroughInput: z.string().min(1).max(1_000).optional(),
+    walkthroughOutput: z.string().min(1).max(1_000).optional(),
     edgeCases: z.array(nonEmptyStringSchema.max(300)).max(5),
   })
   .strict()

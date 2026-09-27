@@ -7,7 +7,6 @@ import type {
 import { motion, useReducedMotion } from 'motion/react'
 
 import { Flame, Search, X } from '@/components/icons/algo-icons'
-import { BookmarksIcon } from '@/components/icons/app-icons'
 import { ProviderLogo } from '@/components/brand/ProviderLogo'
 import { PageHero } from '@/components/kit/PageHero'
 import { SegmentedControl } from '@/components/kit/SegmentedControl'
@@ -18,6 +17,7 @@ import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
 import PageContainer from '@/components/layout/PageContainer'
 import { Button } from '@/components/ui/button'
+import { Select } from '@/components/ui/select'
 import { SolveOnProviderLink } from '@/features/discovery/components/SolveOnProviderLink'
 import { bandColor } from '@/features/discovery/rating-bands'
 import { ProblemLearningControls } from '@/features/progress/components/ProblemLearningControls'
@@ -334,8 +334,6 @@ function BookmarksPage() {
   return (
     <PageContainer accent="amber" className="gap-6">
       <PageHero
-        eyebrow="Saved for later"
-        icon={BookmarksIcon}
         info="Bookmarks keep a link to problems you chose to return to. Saving never copies provider problem content into AlgoMemtor."
         subtitle="Problems you chose to come back to."
         title="Bookmarks"
@@ -426,22 +424,26 @@ function BookmarksPage() {
               value={query.topic ?? ''}
             />
           </label>
-          <label className="min-w-0">
-            <span className="sr-only">Sort</span>
-            <select
-              className={filterField}
-              onChange={(event) =>
-                update({
-                  sort: event.currentTarget.value as typeof query.sort,
-                })
-              }
+          <div className="min-w-40">
+            <Select
+              aria-label="Sort"
+              className="rounded-xl font-normal hover:border-acc"
+              onValueChange={(value) => {
+                if (
+                  value === 'newest' ||
+                  value === 'difficulty' ||
+                  value === 'title'
+                )
+                  update({ sort: value })
+              }}
+              options={[
+                { value: 'newest', label: 'Newest saved' },
+                { value: 'difficulty', label: 'Difficulty' },
+                { value: 'title', label: 'Title' },
+              ]}
               value={query.sort}
-            >
-              <option value="newest">Newest saved</option>
-              <option value="difficulty">Difficulty</option>
-              <option value="title">Title</option>
-            </select>
-          </label>
+            />
+          </div>
           {hasActiveFilters ? (
             <Button onClick={clear} size="sm" type="button" variant="ghost">
               <X aria-hidden="true" />

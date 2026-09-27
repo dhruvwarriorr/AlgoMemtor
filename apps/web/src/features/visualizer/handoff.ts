@@ -58,6 +58,61 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const text = (value: unknown, limit: number): string | undefined =>
   typeof value === 'string' && value.length <= limit ? value : undefined
 
+// A test case written into an answer as fenced blocks tagged `input` and
+// `output` (the Doubt Helper's full walkthrough ends with one).
+export function testCaseFromMarkdown(content: string): {
+  input?: string
+  expected?: string
+} {
+  const block = (tag: string) => {
+    const match = new RegExp(
+      '```' + tag + '[ \\t]*\\n([\\s\\S]*?)```',
+      'i',
+    ).exec(content)
+    const text = match?.[1]?.replace(/\n$/, '')
+    return text === undefined || text.trim() === '' || text.length > INPUT_LIMIT
+      ? undefined
+      : text
+  }
+  const input = block('input')
+  const expected = block('output')
+  return {
+    ...(input === undefined ? {} : { input }),
+    ...(expected === undefined ? {} : { expected }),
+  }
+}
+
+// Whether a program reads standard input. Running one with no input only
+// waits at the first read until the step or time limit, so the visualizer
+// asks for input first. Comments and string literals are ignored.
+export function readsInput(language: VisualizerLanguage, code: string) {
+  const source =
+    language === 'python'
+      ? code.replace(/(['"])(?:\\.|(?!\1).)*\1/g, '""').replace(/#.*$/gm, '')
+      : code
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/\/\/.*$/gm, '')
+          .replace(/"(?:\\.|[^"\\])*"/g, '""')
+  const pattern =
+    language === 'python'
+      ? /\binput\s*\(|\bsys\.stdin\b|\bstdin\.read/
+      : language === 'java'
+        ? /\bSystem\.in\b/
+        : /\b(?:cin|scanf|getchar|getline|fgets|fread|gets)\b/
+  return pattern.test(source)
+}
+
+// Code languages a solution can be run in by the visualizer.
+export function visualizerLanguageForFence(
+  fence: string,
+): VisualizerLanguage | null {
+  const tag = fence.trim().toLowerCase()
+  if (['cpp', 'c++', 'cc', 'cxx', 'c', 'h', 'hpp'].includes(tag)) return 'cpp'
+  if (['python', 'py', 'python3'].includes(tag)) return 'python'
+  if (tag === 'java') return 'java'
+  return null
+}
+
 // History state can hold anything; only well-formed handoffs are used.
 export function readVisualizerHandoff(
   state: unknown,

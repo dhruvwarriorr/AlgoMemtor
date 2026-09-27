@@ -1,6 +1,7 @@
 import { DEFAULT_API_URL } from './config.js'
 import type { SyncProvider } from './types.js'
 import type { CsesTaskStatus } from './cses.js'
+import { emptyCodeChefState, type CodeChefState } from './codechef.js'
 
 export type LeetCodeBackfill =
   | { phase: 'not_started' }
@@ -21,6 +22,7 @@ export type SyncOutcome = {
 export type ConnectorState = {
   leetcode: { handle?: string; newestId?: number; backfill: LeetCodeBackfill }
   cses: { userId?: string; fetched: Record<string, CsesTaskStatus> }
+  codechef: CodeChefState
   outcomes: Partial<Record<SyncProvider, SyncOutcome>>
 }
 
@@ -47,6 +49,7 @@ export const DEFAULT_SETTINGS: ConnectorSettings = {
 export const emptyState = (): ConnectorState => ({
   leetcode: { backfill: { phase: 'not_started' } },
   cses: { fetched: {} },
+  codechef: emptyCodeChefState(),
   outcomes: {},
 })
 
@@ -88,6 +91,40 @@ export const parseState = (value: unknown): ConnectorState => {
         if (status === 'solved' || status === 'attempted')
           state.cses.fetched[id] = status
       }
+    }
+  }
+  const codechef = value.codechef
+  if (isRecord(codechef)) {
+    if (typeof codechef.handle === 'string')
+      state.codechef.handle = codechef.handle
+    if (typeof codechef.newestId === 'number')
+      state.codechef.newestId = codechef.newestId
+    const backfill = codechef.backfill
+    if (isRecord(backfill)) {
+      if (backfill.phase === 'done') state.codechef.backfill = { phase: 'done' }
+      if (
+        backfill.phase === 'running' &&
+        typeof backfill.next === 'number' &&
+        Number.isInteger(backfill.next) &&
+        backfill.next >= 0
+      ) {
+        state.codechef.backfill = { phase: 'running', next: backfill.next }
+      }
+    }
+    if (isRecord(codechef.ratings)) {
+      for (const [key, rating] of Object.entries(codechef.ratings)) {
+        if (
+          typeof rating === 'number' &&
+          Number.isInteger(rating) &&
+          rating >= 0
+        )
+          state.codechef.ratings[key] = rating
+      }
+    }
+    if (Array.isArray(codechef.pendingRatings)) {
+      state.codechef.pendingRatings = codechef.pendingRatings
+        .filter((key): key is string => typeof key === 'string')
+        .slice(0, 500)
     }
   }
   if (isRecord(value.outcomes)) {

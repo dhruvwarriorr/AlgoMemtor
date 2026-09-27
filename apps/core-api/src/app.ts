@@ -80,6 +80,8 @@ import {
   CoachResponseSchema,
   languageFamilyCounts,
   programmingLanguageFamily,
+  JobPumpRequestSchema,
+  JobPumpResponseSchema,
   RecommendationSteeringListResponseSchema,
   RecommendationSteeringResponseSchema,
   SaveRecommendationSteeringRequestSchema,
@@ -281,6 +283,10 @@ import {
 } from './services/coach-service.js'
 import { serializeProviderAccount } from './services/provider-account-service.js'
 import { MentorService } from './services/mentor-service.js'
+import { JobPump } from './services/job-pump.js'
+import { withObservedDifficulty } from './services/observed-difficulty.js'
+import { ProviderSyncWorker } from './services/provider-sync-worker.js'
+import { MemoryWorker } from './memory-worker.js'
 import { registerMentorRoutes } from './mentor-routes.js'
 import type { MentorRepository } from './repositories/mentor-repository.js'
 import {
@@ -318,6 +324,14 @@ export type CreateAppOptions = {
   learnerActivityRepository?: LearnerActivityRepository
   // Fetchers the coach's live refresh uses for a learner's newest data.
   providerActivityFetchers?: readonly ProviderActivityDataFetcher[]
+  // Fetchers queued provider syncs use for a learner's full history.
+  providerSyncActivityFetchers?: readonly ProviderActivityDataFetcher[]
+  // Runs queued provider-sync and memory jobs inside this process when a
+  // signed-in page or a connector upload wakes them (services/job-pump.ts).
+  // Off by default so tests control when queued work runs.
+  jobPumpEnabled?: boolean
+  // A visit refreshes linked accounts last synced longer ago than this.
+  activeSessionSyncStaleMs?: number
   providerActivityMinRefreshIntervalMs?: number
   problemProvider?: ProblemProvider
   problemProviders?: readonly ProblemProvider[]
@@ -820,10 +834,10 @@ export const createApp = (options: CreateAppOptions = {}) => {
     options.problemActionRepository ?? new InMemoryProblemActionRepository()
   const progressRepository =
     options.progressRepository ?? new InMemoryProgressRepository()
+  const learnerActivityRepository =
+    options.learnerActivityRepository ?? new InMemoryLearnerActivityRepository()
   const learnerActivityService = new LearnerActivityService({
-    repository:
-      options.learnerActivityRepository ??
-      new InMemoryLearnerActivityRepository(),
+    repository: learnerActivityRepository,
     accountRepository: providerAccountRepository,
     dataRepository: providerDataRepository,
     profileRepository: providerProfileRepository,
@@ -972,6 +986,54 @@ export const createApp = (options: CreateAppOptions = {}) => {
         : learnerActivityService.get(authUserId)
     },
   })
+  // No worker services poll the queues. Activity wakes a bounded drain in
+  // this process instead: the signed-in site through /api/jobs/pump, and
+  // server actions that just queued work.
+  const jobPump =
+    options.jobPumpEnabled === true
+      ? new JobPump({
+          memory: new MemoryWorker({
+            repository: progressRepository,
+            client: aiMemoryClient,
+            aiCoachClient,
+            coachRepository,
+            learnerProfileRepository,
+            recommendationRepository,
+            learnerActivityRepository,
+            logger,
+          }),
+          provider: new ProviderSyncWorker({
+            activityService: learnerActivityService,
+            repository: providerSyncRepository,
+            providerAccountRepository,
+            statsService: providerAccountStatsService,
+            profileService: providerProfileService,
+            dataRepository: providerDataRepository,
+            activityFetchers: options.providerSyncActivityFetchers ?? [],
+            logger,
+          }),
+          ...(progressRepository.hasPendingJob === undefined
+            ? {}
+            : {
+                hasPendingOutboxJob: (scope) =>
+                  progressRepository.hasPendingJob?.(scope) ??
+                  Promise.resolve(false),
+              }),
+          ...(providerSyncRepository.hasPendingJob === undefined
+            ? {}
+            : {
+                hasPendingProviderJob: (authUserId) =>
+                  providerSyncRepository.hasPendingJob?.(authUserId) ??
+                  Promise.resolve(false),
+              }),
+          logger,
+        })
+      : undefined
+  const wakeJobs = (authUserId: string) => jobPump?.wake(authUserId)
+  const activeSessionSyncStaleMs =
+    options.activeSessionSyncStaleMs ?? 60 * 60 * 1000
+  // A wake per learner per second at most; the status read is cheap.
+  const lastPumpAt = new Map<string, number>()
   const internalServiceToken =
     options.internalServiceToken ??
     process.env.INTERNAL_SERVICE_TOKEN?.trim() ??
@@ -1782,6 +1844,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
           authUserId,
           providerResult.data,
         )
+        wakeJobs(authUserId)
       } catch (error) {
         logger.warn('provider_initial_sync_enqueue_failed', {
           provider: providerResult.data,
@@ -2244,6 +2307,9 @@ export const createApp = (options: CreateAppOptions = {}) => {
           )
           syncQueued = sync.data.accepted
         }
+        // The connector's token only reaches connector routes, so the server
+        // drains the queued sync for this learner itself.
+        wakeJobs(authUserId)
         response.json(
           ConnectorClaimResponseSchema.parse({
             data: {
@@ -2318,6 +2384,8 @@ export const createApp = (options: CreateAppOptions = {}) => {
         const authUserId = connectorToken(response).authUserId
         const result = await connectorService.ingest(authUserId, body.data)
         await refreshLearnerActivity(authUserId)
+        // Stored activity can queue memory work for this learner.
+        wakeJobs(authUserId)
         response.json(ConnectorIngestResponseSchema.parse({ data: result }))
       } catch (error) {
         if (
@@ -2418,6 +2486,7 @@ export const createApp = (options: CreateAppOptions = {}) => {
           authenticatedSubject(response),
           providerResult.data,
         )
+        wakeJobs(authenticatedSubject(response))
         response
           .status(202)
           .json(ProviderSyncRequestResponseSchema.parse(result))
@@ -3575,6 +3644,8 @@ export const createApp = (options: CreateAppOptions = {}) => {
           authenticatedSubject(response),
           conversationId,
         )
+        // Removes the conversation's AI audit copy right away.
+        wakeJobs(authenticatedSubject(response))
         response.status(204).send()
       } catch (error) {
         if (!respondWithCoachError(error, response)) throw error
@@ -3980,6 +4051,61 @@ export const createApp = (options: CreateAppOptions = {}) => {
     },
   )
 
+  app.post('/api/jobs/pump', requireAuthenticated, async (request, response) => {
+    const body = JobPumpRequestSchema.safeParse(request.body ?? {})
+    if (!body.success) {
+      response
+        .status(400)
+        .json(
+          createApiError('INVALID_JOB_PUMP_REQUEST', 'The request is invalid.'),
+        )
+      return
+    }
+    const authUserId = authenticatedSubject(response)
+    if (jobPump === undefined) {
+      response.json(
+        JobPumpResponseSchema.parse({
+          data: { pending: false, nextPollAfterMs: 600_000 },
+        }),
+      )
+      return
+    }
+    const now = Date.now()
+    if (now - (lastPumpAt.get(authUserId) ?? 0) >= 1_000) {
+      lastPumpAt.set(authUserId, now)
+      if (lastPumpAt.size > 10_000) lastPumpAt.clear()
+      if (body.data.visit === true) {
+        try {
+          await providerSyncService.requestActiveSessionSync(
+            authUserId,
+            activeSessionSyncStaleMs,
+          )
+        } catch (error) {
+          logger.warn('active_session_sync_enqueue_failed', {
+            errorCode:
+              error instanceof Error &&
+              'code' in error &&
+              typeof error.code === 'string'
+                ? error.code
+                : 'PROVIDER_SYNC_ENQUEUE_FAILED',
+          })
+        }
+      }
+      jobPump.wake(authUserId)
+    }
+    const { pending } = await jobPump.status(authUserId)
+    response.json(
+      JobPumpResponseSchema.parse({
+        data: {
+          pending,
+          // While work is pending the page checks back soon; otherwise a
+          // slow heartbeat resumes continuations queued for later.
+          nextPollAfterMs: pending ? 4_000 : 120_000,
+        },
+      }),
+    )
+  })
+
   app.delete(
     '/api/me/data',
     requireAuthenticated,
@@ -4004,6 +4130,9 @@ export const createApp = (options: CreateAppOptions = {}) => {
       const job = await progressService.requestDeleteAll(
         authenticatedSubject(response),
       )
+      // Deletion starts at once; privacy jobs are also drained by every
+      // other learner's activity, so it never waits for this learner.
+      wakeJobs(authenticatedSubject(response))
       response.status(202).json(
         DeleteAllDataResponseSchema.parse({
           data: { status: 'pending', jobId: job.id },
@@ -4536,11 +4665,18 @@ export const createApp = (options: CreateAppOptions = {}) => {
         })
       }
     }
-    const metadataByKey = new Map(
-      metadata.map((problem) => [
-        `${problem.provider}:${problem.externalId}`,
-        problem,
-      ]),
+    // CodeChef solves from the browser connector carry their own context: a
+    // contest solve counts at the problem's rating, a practice solve is
+    // unrated.
+    const metadataByKey = withObservedDifficulty(
+      new Map(
+        metadata.map((problem) => [
+          `${problem.provider}:${problem.externalId}`,
+          problem,
+        ]),
+      ),
+      solvedProblems,
+      new Date().toISOString(),
     )
     for (const reference of uniqueSolvedReferences) {
       const problem = metadataByKey.get(

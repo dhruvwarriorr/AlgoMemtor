@@ -86,6 +86,12 @@ describe('buildAnalyticsInsights', () => {
     })
     expect(insights.punchCard[0]?.[9]).toBe(1)
     expect(insights.punchCard[0]?.[21]).toBe(1)
+    expect(insights.punchCardDates?.[0]?.[9]).toEqual({
+      latest: '2026-09-21',
+      busiest: '2026-09-21',
+      busiestCount: 1,
+    })
+    expect(insights.punchCardDates?.[0]?.[3]).toBeNull()
     expect(insights.ratingBands).toEqual([
       {
         min: 1400,

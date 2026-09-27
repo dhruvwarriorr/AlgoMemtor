@@ -168,7 +168,13 @@ export type ProgressRepository = {
     problemExternalId?: string
     idempotencyKey: string
   }): Promise<OutboxJobRecord>
-  claimNextJob(now?: Date): Promise<OutboxJobRecord | null>
+  // A scope limits the claim to one learner's jobs or to certain job types.
+  claimNextJob(
+    now?: Date,
+    scope?: OutboxClaimScope,
+  ): Promise<OutboxJobRecord | null>
+  // Whether a job in this scope is being processed or is due now.
+  hasPendingJob?(scope: OutboxClaimScope, now?: Date): Promise<boolean>
   completeJob(jobId: string, lockedAt?: Date): Promise<boolean>
   retryJob(
     jobId: string,
@@ -197,6 +203,11 @@ export type ProgressRepository = {
     evidenceType: string,
     evidenceId: string,
   ): Promise<MemoryEvidencePayload | null>
+}
+
+export type OutboxClaimScope = {
+  authUserId?: string
+  jobTypes?: readonly string[]
 }
 
 const parseAuthUserId = (value: string) => authUserIdSchema.parse(value)
@@ -541,16 +552,38 @@ export class InMemoryProgressRepository implements ProgressRepository {
     return job
   }
 
-  async claimNextJob(now = this.now()) {
+  private dueJobs(now: Date, scope?: OutboxClaimScope) {
     const staleBefore = new Date(now.getTime() - 60_000)
-    const job = [...this.jobs.values()]
-      .filter(
-        (item) =>
-          (item.status === 'pending' && item.nextAttemptAt <= now) ||
+    const owner =
+      scope?.authUserId === undefined
+        ? undefined
+        : parseAuthUserId(scope.authUserId)
+    return [...this.jobs.values()].filter(
+      (item) =>
+        (owner === undefined || item.authUserId === owner) &&
+        (scope?.jobTypes === undefined ||
+          scope.jobTypes.includes(item.jobType)) &&
+        ((item.status === 'pending' && item.nextAttemptAt <= now) ||
           (item.status === 'processing' &&
             (this.jobLocks.get(item.id)?.getTime() ?? 0) <=
-              staleBefore.getTime()),
+              staleBefore.getTime())),
+    )
+  }
+
+  async hasPendingJob(scope: OutboxClaimScope, now = this.now()) {
+    return (
+      this.dueJobs(now, scope).length > 0 ||
+      [...this.jobs.values()].some(
+        (item) =>
+          item.status === 'processing' &&
+          (scope.authUserId === undefined ||
+            item.authUserId === parseAuthUserId(scope.authUserId)),
       )
+    )
+  }
+
+  async claimNextJob(now = this.now(), scope?: OutboxClaimScope) {
+    const job = this.dueJobs(now, scope)
       .sort(
         (left, right) =>
           left.nextAttemptAt.getTime() - right.nextAttemptAt.getTime(),
@@ -1343,8 +1376,51 @@ export class PrismaProgressRepository implements ProgressRepository {
     })
   }
 
-  async claimNextJob(now = new Date()) {
+  // Due jobs in a scope, as a SQL condition on "core"."outbox_jobs".
+  // `includeProcessing` also matches jobs being processed right now.
+  private dueCondition(
+    now: Date,
+    scope?: OutboxClaimScope,
+    includeProcessing = false,
+  ) {
     const staleBefore = new Date(now.getTime() - 60_000)
+    const owner =
+      scope?.authUserId === undefined
+        ? Prisma.empty
+        : Prisma.sql`AND "user_id" = (
+            SELECT "id" FROM "core"."users"
+            WHERE "auth_user_id" = ${parseAuthUserId(scope.authUserId)}::uuid
+          )`
+    const types =
+      scope?.jobTypes === undefined || scope.jobTypes.length === 0
+        ? Prisma.empty
+        : Prisma.sql`AND "job_type" IN (${Prisma.join([...scope.jobTypes])})`
+    const processing = includeProcessing
+      ? Prisma.sql`OR "status" = 'processing'`
+      : Prisma.empty
+    return Prisma.sql`(
+        ("status" = 'pending' AND "next_attempt_at" <= ${now})
+        OR (
+          "status" = 'processing'
+          AND "locked_at" IS NOT NULL
+          AND "locked_at" <= ${staleBefore}
+        )
+        ${processing}
+      ) ${owner} ${types}`
+  }
+
+  async hasPendingJob(scope: OutboxClaimScope, now = new Date()) {
+    const rows = await this.prisma.$queryRaw<Array<{ id: string }>>(
+      Prisma.sql`
+        SELECT "id" FROM "core"."outbox_jobs"
+        WHERE ${this.dueCondition(now, scope, true)}
+        LIMIT 1
+      `,
+    )
+    return rows.length > 0
+  }
+
+  async claimNextJob(now = new Date(), scope?: OutboxClaimScope) {
     const record = await this.prisma.$transaction(async (transaction) => {
       const claimed = await transaction.$queryRaw<Array<{ id: string }>>(
         Prisma.sql`
@@ -1356,15 +1432,7 @@ export class PrismaProgressRepository implements ProgressRepository {
           WHERE "id" = (
             SELECT "id"
             FROM "core"."outbox_jobs"
-            WHERE (
-                "status" = 'pending'
-                AND "next_attempt_at" <= ${now}
-              )
-              OR (
-                "status" = 'processing'
-                AND "locked_at" IS NOT NULL
-                AND "locked_at" <= ${staleBefore}
-              )
+            WHERE ${this.dueCondition(now, scope)}
             ORDER BY "next_attempt_at" ASC, "created_at" ASC
             FOR UPDATE SKIP LOCKED
             LIMIT 1

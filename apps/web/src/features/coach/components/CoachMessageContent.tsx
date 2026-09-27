@@ -1,4 +1,4 @@
-import { isValidElement, useState, type ReactNode } from 'react'
+import { isValidElement, useMemo, useState, type ReactNode } from 'react'
 import { Check, Code2, Copy } from '@/components/icons/algo-icons'
 import Markdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -16,7 +16,17 @@ function textOf(node: ReactNode): string {
 
 // Fenced code from the coach: a labelled block with a copy action. Inline
 // `code` spans are rendered by the `code` component below.
-function CodeBlock({ children }: { children: ReactNode }) {
+// An extra control for a code block's header, for example "Visualize this
+// test case" on a full solution.
+export type CodeAction = (code: string, language: string) => ReactNode
+
+function CodeBlock({
+  children,
+  action,
+}: {
+  children: ReactNode
+  action?: CodeAction
+}) {
   const element = isValidElement<{ className?: string; children?: ReactNode }>(
     children,
   )
@@ -24,7 +34,13 @@ function CodeBlock({ children }: { children: ReactNode }) {
     : null
   const language = element?.props.className?.replace(/^language-/, '') ?? ''
   const text = textOf(element?.props.children ?? children).replace(/\n$/, '')
-  return <CodeBlockView code={text} language={language} />
+  return (
+    <CodeBlockView
+      action={action?.(text, language)}
+      code={text}
+      language={language}
+    />
+  )
 }
 
 export function CodeBlockView({
@@ -32,11 +48,13 @@ export function CodeBlockView({
   language,
   id,
   highlighted = false,
+  action,
 }: {
   code: string
   language: string
   id?: string
   highlighted?: boolean
+  action?: ReactNode
 }) {
   const [copied, setCopied] = useState(false)
   const text = code
@@ -63,19 +81,22 @@ export function CodeBlockView({
     >
       <div className="flex items-center justify-between border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
         <span className="font-mono">{codeLanguageLabel(language)}</span>
-        <button
-          aria-label={copied ? 'Copied' : 'Copy code'}
-          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 transition-colors hover:bg-background hover:text-foreground"
-          onClick={() => void copy()}
-          type="button"
-        >
-          {copied ? (
-            <Check aria-hidden="true" className="size-3.5" />
-          ) : (
-            <Copy aria-hidden="true" className="size-3.5" />
-          )}
-          {copied ? 'Copied' : 'Copy'}
-        </button>
+        <span className="flex items-center gap-1">
+          {action}
+          <button
+            aria-label={copied ? 'Copied' : 'Copy code'}
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 transition-colors hover:bg-background hover:text-foreground"
+            onClick={() => void copy()}
+            type="button"
+          >
+            {copied ? (
+              <Check aria-hidden="true" className="size-3.5" />
+            ) : (
+              <Copy aria-hidden="true" className="size-3.5" />
+            )}
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+        </span>
       </div>
       <pre className="overflow-x-auto p-3 font-mono text-[0.85rem] leading-6 text-foreground">
         <code>{text}</code>
@@ -90,12 +111,15 @@ type CoachMessageContentProps = {
   // When set, fenced code is shown as a compact chip that opens the code in
   // the side panel, so the chat itself stays prose.
   onCodeBlock?: (index: number) => void
+  // An extra control in each code block's header.
+  codeAction?: CodeAction
 }
 
 export function CoachMessageContent({
   content,
   role,
   onCodeBlock,
+  codeAction,
 }: CoachMessageContentProps) {
   if (role === 'user') {
     return (
@@ -106,7 +130,7 @@ export function CoachMessageContent({
   if (onCodeBlock === undefined) {
     return (
       <div className="mt-3 text-sm leading-6 text-foreground">
-        <MarkdownText content={content} />
+        <MarkdownText codeAction={codeAction} content={content} />
       </div>
     )
   }
@@ -140,13 +164,27 @@ export function CoachMessageContent({
   )
 }
 
-function MarkdownText({ content }: { content: string }) {
+function MarkdownText({
+  content,
+  codeAction,
+}: {
+  content: string
+  codeAction?: CodeAction | undefined
+}) {
+  const components = useMemo<Components>(
+    () =>
+      codeAction === undefined
+        ? markdownComponents
+        : {
+            ...markdownComponents,
+            pre: ({ children }) => (
+              <CodeBlock action={codeAction}>{children}</CodeBlock>
+            ),
+          },
+    [codeAction],
+  )
   return (
-    <Markdown
-      components={markdownComponents}
-      remarkPlugins={[remarkGfm]}
-      skipHtml
-    >
+    <Markdown components={components} remarkPlugins={[remarkGfm]} skipHtml>
       {plainMath(content)}
     </Markdown>
   )

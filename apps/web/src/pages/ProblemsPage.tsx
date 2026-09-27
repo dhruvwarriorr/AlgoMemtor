@@ -3,7 +3,6 @@ import { motion, useReducedMotion } from 'motion/react'
 import type { ExternalProblemSummary } from '@algomemtor/shared-contracts'
 
 import PageContainer from '@/components/layout/PageContainer'
-import { ProblemsIcon } from '@/components/icons/app-icons'
 import { PageHero } from '@/components/kit/PageHero'
 import { CountUp } from '@/components/motion/CountUp'
 import { EmptyState } from '@/components/states/EmptyState'
@@ -152,8 +151,6 @@ function ProblemsPage() {
   return (
     <PageContainer accent="teal" className="gap-6">
       <PageHero
-        eyebrow="Catalog"
-        icon={ProblemsIcon}
         info="Problems come from provider catalogs as metadata only. Open one to read, code and submit on its original platform. Filters live in the URL, so this view can be shared or refreshed."
         subtitle="Browse provider problems and solve them where they live."
         title="Problems"

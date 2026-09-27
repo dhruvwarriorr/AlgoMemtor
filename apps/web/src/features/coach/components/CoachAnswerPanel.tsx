@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils'
 import { answerDetails, coachCodeBlockId } from '../answer-details'
 import { CodeBlockView } from './CoachMessageContent'
 import { RichBlock } from './CoachRichContent'
+import { useCoachName } from '@/features/pet/pet-preference'
 
 function Section({
   icon,
@@ -69,6 +70,7 @@ export function CoachAnswerPanel({
   onClose,
   className,
 }: CoachAnswerPanelProps) {
+  const coachName = useCoachName()
   const details = answerDetails(message)
   const empty = !details.hasContent
 
@@ -138,7 +140,7 @@ export function CoachAnswerPanel({
           {details.codeBlocks.length > 0 ? (
             <Section
               icon={<Code2 aria-hidden="true" className="size-3.5" />}
-              title="Code from your coach"
+              title={`Code from ${coachName}`}
             >
               {details.codeBlocks.map((block) => (
                 <CodeBlockView

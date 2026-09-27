@@ -23,7 +23,6 @@ import PageContainer from '@/components/layout/PageContainer'
 import {
   DoubtHelperIcon,
   SolutionExplorerIcon,
-  UpsolveIcon,
 } from '@/components/icons/mentor-icons'
 import { PageHero } from '@/components/kit/PageHero'
 import { EmptyState } from '@/components/states/EmptyState'
@@ -727,8 +726,6 @@ function UpsolvePage() {
           {refresh.isPending ? 'Syncing platforms' : 'Refresh'}
         </Button>
       }
-      eyebrow="Upsolve"
-      icon={UpsolveIcon}
       info="Your next five problems from recent contests, starting with the first unsolved ones of your latest contests. A problem counts as upsolved only when it was solved after the contest ended."
       subtitle="Close the loop on the contests you just took."
       title="Upsolve"

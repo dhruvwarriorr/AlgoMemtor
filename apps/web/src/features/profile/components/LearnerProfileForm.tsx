@@ -8,7 +8,6 @@ import {
   type LearningPreference,
   type OnboardingTopic,
   type PracticePlatform,
-  type RatedPracticePlatform,
   type RatingComfortRange,
   type SaveLearnerProfileRequest,
 } from '@algomemtor/shared-contracts'
@@ -20,6 +19,8 @@ import { Button } from '@/components/ui/button'
 
 import { recommendationPreferenceForRequest } from './recommendation-preference'
 import { combinedPracticeNote, splitPracticeNote } from './practice-note'
+import { Select } from '@/components/ui/select'
+import { useCoachName } from '@/features/pet/pet-preference'
 
 type Option<T extends string> = {
   value: T
@@ -142,13 +143,6 @@ const platformOptions: readonly Option<PracticePlatform>[] = [
   { value: 'hackerrank', label: 'HackerRank' },
 ]
 
-const ratedPlatformOptions: readonly Option<RatedPracticePlatform>[] = [
-  { value: 'codeforces', label: 'Codeforces' },
-  { value: 'codechef', label: 'CodeChef' },
-  { value: 'atcoder', label: 'AtCoder' },
-  { value: 'leetcode', label: 'LeetCode' },
-]
-
 const learningPreferenceOptions: readonly Option<LearningPreference>[] = [
   { value: 'solve_problems_directly', label: 'Solve problems directly' },
   {
@@ -221,8 +215,56 @@ type LearnerProfileFormProps = {
   onSubmit: (profile: SaveLearnerProfileRequest) => Promise<void>
 }
 
-const inputClassName =
-  'h-10 w-full min-w-0 rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 text-base text-foreground outline-none transition-shadow focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15 aria-invalid:border-destructive aria-invalid:ring-destructive/20 disabled:cursor-not-allowed disabled:opacity-60'
+// Every IANA time zone the browser knows, with its current UTC offset, for
+// the time-zone picker. Typing a few letters jumps to a zone.
+let timezoneList:
+  { value: string; label: string; description: string }[] | null = null
+
+function utcOffset(timeZone: string) {
+  try {
+    const name = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      timeZoneName: 'shortOffset',
+    })
+      .formatToParts(new Date())
+      .find((part) => part.type === 'timeZoneName')?.value
+    return name === 'GMT' || name === undefined
+      ? 'UTC'
+      : name.replace('GMT', 'UTC')
+  } catch {
+    return ''
+  }
+}
+
+function timezoneOptions(current: string) {
+  if (timezoneList === null) {
+    const zones =
+      typeof Intl.supportedValuesOf === 'function'
+        ? Intl.supportedValuesOf('timeZone')
+        : [
+            'Asia/Kolkata',
+            'Asia/Singapore',
+            'Europe/London',
+            'Europe/Berlin',
+            'America/New_York',
+            'America/Los_Angeles',
+          ]
+    timezoneList = ['UTC', ...zones.filter((zone) => zone !== 'UTC')].map(
+      (zone) => ({
+        value: zone,
+        label: zone.replaceAll('_', ' '),
+        text: zone,
+        description: utcOffset(zone),
+      }),
+    )
+  }
+  return current === '' || timezoneList.some((zone) => zone.value === current)
+    ? timezoneList
+    : [
+        { value: current, label: current, description: utcOffset(current) },
+        ...timezoneList,
+      ]
+}
 
 // Settings-style rows: the heading block on the left, every control on the right.
 const sectionClassName =
@@ -276,9 +318,6 @@ function initialFormState(profile: LearnerProfile | null): FormState {
 }
 
 function buildProfileRequest(state: FormState, combinePracticeNotes: boolean) {
-  const ratingRangeMin = state.ratingRangeMin.trim()
-  const ratingRangeMax = state.ratingRangeMax.trim()
-  const hasRatingRange = Boolean(ratingRangeMin || ratingRangeMax)
   const practiceNotes = combinePracticeNotes
     ? state.practiceNote === combinedPracticeNote(state)
       ? state
@@ -306,15 +345,6 @@ function buildProfileRequest(state: FormState, combinePracticeNotes: boolean) {
       platforms: state.platforms,
       standings: [],
     },
-    ...(hasRatingRange
-      ? {
-          ratingComfortRange: {
-            platform: state.ratingRangePlatform,
-            min: Number(ratingRangeMin),
-            max: Number(ratingRangeMax),
-          },
-        }
-      : {}),
     learningPreferences: state.learningPreferences,
     ...(additionalConsiderations ? { additionalConsiderations } : {}),
     ...(recommendationPreference === undefined
@@ -474,23 +504,21 @@ function SelectField<T extends string>({
       <label className="text-sm font-medium text-foreground" htmlFor={id}>
         {label} <span className="text-destructive">*</span>
       </label>
-      <select
-        aria-describedby={error ? errorId : undefined}
+      <Select
         aria-invalid={Boolean(error)}
-        className={inputClassName}
         disabled={disabled}
         id={id}
-        onChange={(event) => onChange(event.currentTarget.value as T | '')}
-        required
+        onValueChange={(next) =>
+          onChange(options.find((option) => option.value === next)?.value ?? '')
+        }
+        options={options.map((option) => ({
+          value: option.value,
+          label: option.label,
+        }))}
+        placeholder={placeholder}
         value={value}
-      >
-        <option value="">{placeholder}</option>
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+        {...(error ? { 'aria-describedby': errorId } : {})}
+      />
       <FieldError id={errorId} message={error} />
     </div>
   )
@@ -499,7 +527,7 @@ function SelectField<T extends string>({
 function LearnerProfileFormFields({
   idPrefix,
   initialProfile,
-  combinePracticeNotes = false,
+  combinePracticeNotes = true,
   isSaving = false,
   onChange,
   onSubmit,
@@ -507,6 +535,7 @@ function LearnerProfileFormFields({
   submitLabel,
   successMessage,
 }: Omit<LearnerProfileFormProps, 'isLoading' | 'loadError' | 'onRetryLoad'>) {
+  const coachName = useCoachName()
   const [state, setState] = useState(() => initialFormState(initialProfile))
   const [errors, setErrors] = useState<FormErrors>({})
   const validationSummaryRef = useRef<HTMLDivElement>(null)
@@ -899,103 +928,6 @@ function LearnerProfileFormFields({
           />
         </fieldset>
 
-        <fieldset className="space-y-4" disabled={isSaving}>
-          <legend className="font-medium text-foreground">
-            Preferred rating range
-          </legend>
-          <p className="text-sm text-muted-foreground">
-            Optional. Enter both ends of a provider-specific range, or leave
-            both blank and use the difficulty choice above.
-          </p>
-          <div className="grid min-w-0 gap-4 md:grid-cols-3">
-            <div className="flex min-w-0 flex-col gap-2">
-              <label
-                className="text-sm font-medium text-foreground"
-                htmlFor={`${idPrefix}-rating-range-platform`}
-              >
-                Platform
-              </label>
-              <select
-                className={inputClassName}
-                id={`${idPrefix}-rating-range-platform`}
-                onChange={(event) =>
-                  setField(
-                    'ratingRangePlatform',
-                    event.currentTarget.value as RatedPracticePlatform,
-                    'ratingComfortRange',
-                  )
-                }
-                value={state.ratingRangePlatform}
-              >
-                {ratedPlatformOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex min-w-0 flex-col gap-2">
-              <label
-                className="text-sm font-medium text-foreground"
-                htmlFor={`${idPrefix}-rating-range-min`}
-              >
-                Minimum rating
-              </label>
-              <input
-                aria-invalid={Boolean(errors.ratingComfortRange)}
-                className={inputClassName}
-                id={`${idPrefix}-rating-range-min`}
-                inputMode="numeric"
-                min="1"
-                onChange={(event) =>
-                  setField(
-                    'ratingRangeMin',
-                    event.currentTarget.value,
-                    'ratingComfortRange',
-                  )
-                }
-                placeholder="Optional"
-                type="number"
-                value={state.ratingRangeMin}
-              />
-            </div>
-            <div className="flex min-w-0 flex-col gap-2">
-              <label
-                className="text-sm font-medium text-foreground"
-                htmlFor={`${idPrefix}-rating-range-max`}
-              >
-                Maximum rating
-              </label>
-              <input
-                aria-describedby={
-                  errors.ratingComfortRange
-                    ? `${idPrefix}-rating-range-error`
-                    : undefined
-                }
-                aria-invalid={Boolean(errors.ratingComfortRange)}
-                className={inputClassName}
-                id={`${idPrefix}-rating-range-max`}
-                inputMode="numeric"
-                min="1"
-                onChange={(event) =>
-                  setField(
-                    'ratingRangeMax',
-                    event.currentTarget.value,
-                    'ratingComfortRange',
-                  )
-                }
-                placeholder="Optional"
-                type="number"
-                value={state.ratingRangeMax}
-              />
-            </div>
-          </div>
-          <FieldError
-            id={`${idPrefix}-rating-range-error`}
-            message={errors.ratingComfortRange}
-          />
-        </fieldset>
-
         <aside className="rounded-lg border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
           Linking a public provider profile is optional. It does not give
           AlgoMemtor access to passwords, private data, submissions, or verified
@@ -1086,7 +1018,7 @@ function LearnerProfileFormFields({
               id={`${idPrefix}-practice-note-help`}
             >
               Optional. Include preferences for recommendations and anything
-              else your coach should consider. Up to 1,500 characters. Do not
+              else {coachName} should consider. Up to 1,500 characters. Do not
               include personal or sensitive information.
             </p>
             <FieldError
@@ -1187,28 +1119,15 @@ function LearnerProfileFormFields({
           >
             Timezone for progress dates
           </label>
-          <input
+          <Select
             aria-describedby={`${idPrefix}-timezone-help`}
-            className={inputClassName}
             disabled={isSaving}
             id={`${idPrefix}-timezone`}
-            list={`${idPrefix}-timezone-options`}
-            onChange={(event) =>
-              setField('timezone', event.currentTarget.value)
-            }
-            placeholder="e.g. Asia/Kolkata"
-            spellCheck={false}
+            onValueChange={(value) => setField('timezone', value)}
+            options={timezoneOptions(state.timezone)}
+            placeholder="Choose a time zone"
             value={state.timezone}
           />
-          <datalist id={`${idPrefix}-timezone-options`}>
-            <option value="UTC" />
-            <option value="Asia/Kolkata" />
-            <option value="Asia/Singapore" />
-            <option value="Europe/London" />
-            <option value="Europe/Berlin" />
-            <option value="America/New_York" />
-            <option value="America/Los_Angeles" />
-          </datalist>
           <p
             className="text-sm text-muted-foreground"
             id={`${idPrefix}-timezone-help`}

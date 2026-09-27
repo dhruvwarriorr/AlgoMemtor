@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { YearCalendar } from './InsightsCharts'
+import { calendarYears } from './insights-format'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -17,11 +18,15 @@ describe('YearCalendar', () => {
         solvedOverTime={{ '2026-09-20': 2, '2025-03-01': 1 }}
       />,
     )
+    // The range picker shows its current choice; its years are listed below.
     expect(markup).toContain('Last 12 months')
-    expect(markup).toContain('<option value="2026">2026</option>')
-    expect(markup).toContain('<option value="2025">2025</option>')
-    expect(markup).toContain('<option value="2024">2024</option>')
-    expect(markup).not.toContain('<option value="2023">')
+    expect(markup).toContain('aria-haspopup="listbox"')
+    expect(
+      calendarYears(2026, '2024-11-02T10:00:00.000Z', {
+        '2026-09-20': 2,
+        '2025-03-01': 1,
+      }),
+    ).toEqual([2026, 2025, 2024])
     // Only the 12-month window is counted by default.
     expect(markup).toContain('2 solves')
   })

@@ -55,6 +55,7 @@ import { AiLoader, type AiLoaderStep } from '@/components/motion/AiLoader'
 import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { Button, buttonVariants } from '@/components/ui/button'
+import { Disclosure } from '@/components/ui/disclosure'
 import { useNotification } from '@/app/useNotification'
 import { CoachMessageContent } from '@/features/coach/components/CoachMessageContent'
 import {
@@ -91,10 +92,21 @@ import {
   readDoubtQuestion,
   recallDoubtCode,
   rememberDoubtCode,
+  testCaseFromMarkdown,
   visualizerLanguageFor,
+  visualizerLanguageForFence,
   type DoubtIntakeHandoff,
   type VisualizerHandoff,
 } from '@/features/visualizer/handoff'
+import type { VisualizerLanguage } from '@/features/visualizer/trace'
+import { useCoachName } from '@/features/pet/pet-preference'
+import { petLines } from '@/features/pet/pet-lines'
+import {
+  cueMelloSuccess,
+  endPetActivity,
+  petSay,
+  startPetActivity,
+} from '@/features/pet/mello-events'
 import { cn } from '@/lib/utils'
 
 const doubtIcons: Record<ProblemHelpDoubtType, DoubtIconComponent> = {
@@ -345,68 +357,112 @@ function turnHeading(turn: ProblemHelpTurn) {
     : `Hint ${turn.hintLevel} · ${levelNames[turn.hintLevel - 1] ?? ''}`
 }
 
-function Transcript({ turns }: { turns: readonly ProblemHelpTurn[] }) {
+// Questions, attempts and their answers live in the chat (the coach pet, or
+// the docked panel with the pet off); the page keeps the hint trail.
+const chatTurnKinds = new Set(['question', 'attempt', 'answer', 'feedback'])
+
+function Transcript({
+  turns,
+  onVisualize,
+}: {
+  turns: readonly ProblemHelpTurn[]
+  // Opens the Test Case Visualizer with a solution's code and test case.
+  onVisualize?: (
+    code: string,
+    language: VisualizerLanguage,
+    testCase: { input?: string; expected?: string },
+  ) => void
+}) {
   const reduceMotion = useReducedMotion()
   return (
     <ol className="relative flex flex-col gap-6 before:absolute before:top-3 before:bottom-3 before:left-4 before:w-px before:bg-linear-to-b before:from-acc/60 before:via-border before:to-transparent">
-      {turns.map((turn) =>
-        turn.role === 'learner' ? (
-          <motion.li
-            animate={{ opacity: 1, x: 0 }}
-            className="flex flex-col items-end"
-            initial={reduceMotion ? false : { opacity: 0, x: 12 }}
-            key={turn.id}
-            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-          >
-            <div className="max-w-[88%] rounded-2xl rounded-br-md border border-border bg-secondary px-4 py-3 text-sm leading-6 text-foreground [&_em]:text-muted-foreground [&_p]:my-0.5 [&_strong]:font-semibold">
-              <CoachMessageContent content={turn.content} role="assistant" />
-            </div>
-            <time
-              className="mt-1 px-1 text-[0.7rem] text-muted-foreground"
-              dateTime={turn.createdAt}
+      {turns
+        .filter((turn) => !chatTurnKinds.has(turn.kind))
+        .map((turn) =>
+          turn.role === 'learner' ? (
+            <motion.li
+              animate={{ opacity: 1, x: 0 }}
+              className="flex flex-col items-end"
+              initial={reduceMotion ? false : { opacity: 0, x: 12 }}
+              key={turn.id}
+              transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
             >
-              {turn.kind === 'intake'
-                ? 'Your doubt'
-                : turn.kind === 'attempt'
-                  ? 'Your attempt'
-                  : 'Your question'}{' '}
-              · {formatDateTime(turn.createdAt)}
-            </time>
-          </motion.li>
-        ) : (
-          <motion.li
-            animate={{ opacity: 1, y: 0 }}
-            className="relative flex gap-3"
-            initial={reduceMotion ? false : { opacity: 0, y: 12 }}
-            key={turn.id}
-            transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-          >
-            <span
-              aria-hidden="true"
-              className="coach-orb mt-0.5 size-8 shrink-0"
-            />
-            <article className="min-w-0 flex-1">
-              <h3 className="inline-flex items-center gap-1.5 rounded-full bg-acc-soft px-2.5 py-0.5 font-sans text-xs font-semibold text-acc-ink">
-                {turn.kind === 'hint' && turn.hintLevel !== undefined ? (
-                  <span
-                    aria-hidden="true"
-                    className="grid size-4 place-items-center rounded-full bg-acc font-mono text-[0.6rem] text-white dark:text-[#0b0c0e]"
-                  >
-                    {turn.hintLevel}
-                  </span>
-                ) : null}
-                {turnHeading(turn)}
-              </h3>
-              <div className="text-[0.95rem] [&>div]:mt-2">
-                <CoachMessageContent
-                  content={withoutYourTurn(turn.content)}
-                  role="assistant"
-                />
+              <div className="max-w-[88%] rounded-2xl rounded-br-md border border-border bg-secondary px-4 py-3 text-sm leading-6 text-foreground [&_em]:text-muted-foreground [&_p]:my-0.5 [&_strong]:font-semibold">
+                <CoachMessageContent content={turn.content} role="assistant" />
               </div>
-            </article>
-          </motion.li>
-        ),
-      )}
+              <time
+                className="mt-1 px-1 text-[0.7rem] text-muted-foreground"
+                dateTime={turn.createdAt}
+              >
+                {turn.kind === 'intake'
+                  ? 'Your doubt'
+                  : turn.kind === 'attempt'
+                    ? 'Your attempt'
+                    : 'Your question'}{' '}
+                · {formatDateTime(turn.createdAt)}
+              </time>
+            </motion.li>
+          ) : (
+            <motion.li
+              animate={{ opacity: 1, y: 0 }}
+              className="relative flex gap-3"
+              initial={reduceMotion ? false : { opacity: 0, y: 12 }}
+              key={turn.id}
+              transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <span
+                aria-hidden="true"
+                className="coach-orb mt-0.5 size-8 shrink-0"
+              />
+              <article className="min-w-0 flex-1">
+                <h3 className="inline-flex items-center gap-1.5 rounded-full bg-acc-soft px-2.5 py-0.5 font-sans text-xs font-semibold text-acc-ink">
+                  {turn.kind === 'hint' && turn.hintLevel !== undefined ? (
+                    <span
+                      aria-hidden="true"
+                      className="grid size-4 place-items-center rounded-full bg-acc font-mono text-[0.6rem] text-white dark:text-[#0b0c0e]"
+                    >
+                      {turn.hintLevel}
+                    </span>
+                  ) : null}
+                  {turnHeading(turn)}
+                </h3>
+                <div className="text-[0.95rem] [&>div]:mt-2">
+                  <CoachMessageContent
+                    content={withoutYourTurn(turn.content)}
+                    role="assistant"
+                    {...(turn.kind === 'solution' && onVisualize !== undefined
+                      ? {
+                          codeAction: (code: string, fence: string) => {
+                            const language = visualizerLanguageForFence(fence)
+                            if (language === null) return null
+                            return (
+                              <button
+                                className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-primary transition-colors hover:bg-background"
+                                onClick={() =>
+                                  onVisualize(
+                                    code,
+                                    language,
+                                    testCaseFromMarkdown(turn.content),
+                                  )
+                                }
+                                type="button"
+                              >
+                                <TestCaseVisualizerIcon
+                                  aria-hidden="true"
+                                  className="size-3.5"
+                                />
+                                Visualize this
+                              </button>
+                            )
+                          },
+                        }
+                      : {})}
+                  />
+                </div>
+              </article>
+            </motion.li>
+          ),
+        )}
     </ol>
   )
 }
@@ -451,6 +507,7 @@ function IntakeAside({
 }: {
   doubtType: ProblemHelpDoubtType | null
 }) {
+  const coachName = useCoachName()
   const option = doubtOptions.find((item) => item.value === doubtType)
   const Icon = option ? doubtIcons[option.value] : DoubtHelperIcon
   return (
@@ -477,7 +534,7 @@ function IntakeAside({
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
             {option
               ? option.hint
-              : 'The mentor tailors the first hint to the kind of doubt.'}
+              : `${coachName} tailors the first hint to the kind of doubt.`}
           </p>
         </motion.div>
       </AnimatePresence>
@@ -532,6 +589,7 @@ function IntakeForm({
   initialProblem: string
   intake: DoubtIntakeHandoff | null
 }) {
+  const coachName = useCoachName()
   const navigate = useNavigate()
   const { notify } = useNotification()
   const start = useStartHelpSession()
@@ -589,7 +647,7 @@ function IntakeForm({
       return
     }
     if (attempt.trim() === '') {
-      setFieldError('Tell the mentor what you tried or where you are stuck.')
+      setFieldError(`Tell ${coachName} what you tried or where you are stuck.`)
       return
     }
     if (codeRequired && code.trim() === '') {
@@ -597,6 +655,7 @@ function IntakeForm({
       return
     }
     setFieldError(null)
+    startPetActivity('doubt-start', 'reading', petLines.doubtStarted)
     start.mutate(
       {
         ...(url === '' ? {} : { problemUrl: url }),
@@ -633,9 +692,11 @@ function IntakeForm({
               // problems; pasted ones are asked for again if storage fails.
             }
           }
+          endPetActivity('doubt-start', petLines.hintReady)
           void navigate(`/doubt-helper/${response.data.id}`)
         },
         onError: (error) => {
+          endPetActivity('doubt-start')
           if (errorCode(error) === 'PROBLEM_CONTEXT_UNAVAILABLE') {
             setNeedsStatement(true)
           }
@@ -733,7 +794,7 @@ function IntakeForm({
               {needsStatement ? (
                 <p className="text-sm text-sun-foreground" role="status">
                   The problem could not be read from that link. Paste the
-                  statement so the mentor does not have to guess.
+                  statement so {coachName} does not have to guess.
                 </p>
               ) : null}
               {problemUrl.trim() === '' ? (
@@ -964,6 +1025,7 @@ function IntakeForm({
 
 function SessionView({ sessionId }: { sessionId: string }) {
   const { notify } = useNotification()
+  const coachName = useCoachName()
   const location = useLocation()
   const navigate = useNavigate()
   const sessionQuery = useHelpSession(sessionId)
@@ -987,7 +1049,10 @@ function SessionView({ sessionId }: { sessionId: string }) {
   })
   const [needsStatement, setNeedsStatement] = useState(false)
   const endRef = useRef<HTMLDivElement | null>(null)
-  const turnCount = sessionQuery.data?.turns.length ?? 0
+  // Only the page's own trail scrolls it; chat replies stay in the chat.
+  const turnCount =
+    sessionQuery.data?.turns.filter((item) => !chatTurnKinds.has(item.kind))
+      .length ?? 0
 
   useEffect(() => {
     if (location.state !== null && location.state !== undefined) {
@@ -1039,15 +1104,32 @@ function SessionView({ sessionId }: { sessionId: string }) {
         request.action === 'confirm_solution')
         ? { ...request, transientStatement: statement.trim() }
         : request
+    const inChat =
+      request.action === 'ask' || request.action === 'submit_attempt'
+    // In the chat the pet thinks in its own panel; hints and the full
+    // walkthrough are read on the page.
+    if (
+      !inChat &&
+      request.action !== 'complete' &&
+      request.action !== 'abandon'
+    )
+      startPetActivity('doubt-turn', 'reading')
     return new Promise((resolve) => {
       turn.mutate(withStatement, {
         onSuccess: () => {
+          endPetActivity('doubt-turn')
           setCode('')
           setErrorText('')
+          if (request.action === 'next_hint') petSay(petLines.hintReady)
+          if (request.action === 'complete') {
+            cueMelloSuccess()
+            petSay(petLines.doubtSolved)
+          }
           if (success) notify({ title: success, tone: 'success' })
           resolve(true)
         },
         onError: (error) => {
+          endPetActivity('doubt-turn')
           if (errorCode(error) === 'PROBLEM_CONTEXT_UNAVAILABLE') {
             setNeedsStatement(true)
           }
@@ -1110,6 +1192,26 @@ function SessionView({ sessionId }: { sessionId: string }) {
     PROBLEM_HELP_MAX_GUIDED_LEVEL,
   )
   const visualizerLanguage = visualizerLanguageFor(session.language)
+
+  // A full solution's code, run on the walkthrough's test case.
+  function visualizeSolution(
+    solutionCode: string,
+    language: VisualizerLanguage,
+    testCase: { input?: string; expected?: string },
+  ) {
+    const handoff: VisualizerHandoff = {
+      source: 'doubt_helper',
+      language,
+      code: solutionCode,
+      ...testCase,
+      problem:
+        session.problem.canonicalUrl === undefined
+          ? { title: session.problem.title }
+          : { title: session.problem.title, url: session.problem.canonicalUrl },
+      sessionId: session.id,
+    }
+    void navigate(VISUALIZER_PATH, { state: { visualizer: handoff } })
+  }
 
   function openVisualizer() {
     const remembered = recallDoubtCode(session.id)
@@ -1196,10 +1298,12 @@ function SessionView({ sessionId }: { sessionId: string }) {
         aria-live="polite"
         className="min-w-0"
       >
-        <Transcript turns={turns} />
-        {turn.isPending ? (
+        <Transcript onVisualize={visualizeSolution} turns={turns} />
+        {turn.isPending &&
+        turn.variables?.action !== 'ask' &&
+        turn.variables?.action !== 'submit_attempt' ? (
           <div className="mt-6" role="status">
-            <AiLoader steps={workingSteps} title="Your mentor is thinking" />
+            <AiLoader steps={workingSteps} title={`${coachName} is thinking`} />
           </div>
         ) : null}
         <div ref={endRef} />
@@ -1405,28 +1509,36 @@ function SessionView({ sessionId }: { sessionId: string }) {
           emptyState={
             dockMode === 'attempt' ? (
               <p>
-                Tell your mentor what you tried and what happened. Attach your
+                Tell {coachName} what you tried and what happened. Attach your
                 code or the verdict for precise feedback.
               </p>
             ) : (
               <p>
-                Ask about the last hint or anything in this problem. Your mentor
+                Ask about the last hint or anything in this problem. {coachName}{' '}
                 already knows the problem and every hint so far, and keeps to
                 your current hint level.
               </p>
             )
           }
           extra={
-            <details
-              className="rounded-lg border border-border px-3 py-2"
-              open={visualizerQuestion !== null}
+            <Disclosure
+              contentClassName="px-3 pb-3"
+              defaultOpen={visualizerQuestion !== null}
+              icon={
+                <Code2
+                  aria-hidden="true"
+                  className="size-3.5 text-muted-foreground"
+                />
+              }
+              summary={
+                <span className="text-xs text-muted-foreground">
+                  Attach code{dockMode === 'attempt' ? ' or a verdict' : ''}{' '}
+                  (used for this answer only, never saved)
+                </span>
+              }
+              summaryClassName="px-3 py-2"
             >
-              <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
-                <Code2 aria-hidden="true" className="mr-1 inline size-3.5" />
-                Attach code{dockMode === 'attempt' ? ' or a verdict' : ''} (used
-                for this answer only, never saved)
-              </summary>
-              <div className="mt-3 grid gap-3">
+              <div className="grid gap-3">
                 <textarea
                   aria-label="Code for this answer"
                   className={cn(
@@ -1456,7 +1568,7 @@ function SessionView({ sessionId }: { sessionId: string }) {
                   />
                 ) : null}
               </div>
-            </details>
+            </Disclosure>
           }
           launcherLabel="Ask or share an attempt"
           {...(visualizerQuestion === null
@@ -1487,11 +1599,12 @@ function SessionView({ sessionId }: { sessionId: string }) {
           onSubmit={sendFromDock}
           open={dockOpen}
           pending={turn.isPending}
-          pendingLabel="Your mentor is thinking…"
+          pendingLabel={`${coachName} is thinking…`}
           disabled={session.stage === 'solution_confirmation'}
           disabledReason="Choose whether to reveal the full solution first."
           subtitle={`${session.problem.title} · Hint ${session.hintLevel} of 5`}
-          title="Your mentor"
+          draftKey={`doubt-${session.id}`}
+          title={coachName}
         />
       ) : null}
     </div>
@@ -1618,8 +1731,6 @@ function DoubtHelperPage() {
       id="main-content"
     >
       <PageHero
-        eyebrow="Doubt Helper"
-        icon={DoubtHelperIcon}
         info={
           <>
             Layered hints for a specific problem, and bug diagnosis for wrong

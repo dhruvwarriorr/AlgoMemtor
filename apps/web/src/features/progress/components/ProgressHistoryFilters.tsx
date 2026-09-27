@@ -1,6 +1,5 @@
-import type { LearnerProblemStatus } from '@algomemtor/shared-contracts'
-
 import { Button } from '@/components/ui/button'
+import { Select } from '@/components/ui/select'
 
 import type {
   ProgressHistoryEventType,
@@ -64,43 +63,44 @@ export function ProgressHistoryFilters({
       <div className="mt-5 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <label className="space-y-1.5 text-sm font-medium text-foreground">
           Activity type
-          <select
-            className={fieldClassName}
-            onChange={(event) =>
+          <Select
+            onValueChange={(value) =>
               onUpdate({
-                eventType: event.currentTarget.value
-                  ? (event.currentTarget.value as ProgressHistoryEventType)
-                  : undefined,
+                eventType: eventTypes.find((item) => item.value === value)
+                  ?.value,
               })
             }
+            options={[
+              { value: '', label: 'All activity' },
+              ...eventTypes.map((eventType) => ({
+                value: eventType.value,
+                label: eventType.label,
+              })),
+            ]}
             value={query.eventType ?? ''}
-          >
-            <option value="">All activity</option>
-            {eventTypes.map((eventType) => (
-              <option key={eventType.value} value={eventType.value}>
-                {eventType.label}
-              </option>
-            ))}
-          </select>
+          />
         </label>
         <label className="space-y-1.5 text-sm font-medium text-foreground">
           Status
-          <select
-            className={fieldClassName}
-            onChange={(event) =>
+          <Select
+            onValueChange={(value) =>
               onUpdate({
-                status: event.currentTarget.value
-                  ? (event.currentTarget.value as LearnerProblemStatus)
-                  : undefined,
+                status:
+                  value === 'unsolved' ||
+                  value === 'attempted' ||
+                  value === 'solved'
+                    ? value
+                    : undefined,
               })
             }
+            options={[
+              { value: '', label: 'All statuses' },
+              { value: 'unsolved', label: 'Unsolved' },
+              { value: 'attempted', label: 'Attempted' },
+              { value: 'solved', label: 'Solved' },
+            ]}
             value={query.status ?? ''}
-          >
-            <option value="">All statuses</option>
-            <option value="unsolved">Unsolved</option>
-            <option value="attempted">Attempted</option>
-            <option value="solved">Solved</option>
-          </select>
+          />
         </label>
         <label className="space-y-1.5 text-sm font-medium text-foreground">
           Topic

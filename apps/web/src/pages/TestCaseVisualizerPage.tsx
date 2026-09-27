@@ -20,7 +20,6 @@ import {
   Sparkles,
   X,
 } from '@/components/icons/algo-icons'
-import { TestCaseVisualizerIcon } from '@/components/icons/mentor-icons'
 import { PageHero } from '@/components/kit/PageHero'
 import PageContainer from '@/components/layout/PageContainer'
 import { AiLoader, type AiLoaderStep } from '@/components/motion/AiLoader'
@@ -56,6 +55,7 @@ import {
   saveDraft,
   type VisualizerContext,
   type VisualizerDraft,
+  readsInput,
 } from '@/features/visualizer/handoff'
 import { TraceRunnerError } from '@/features/visualizer/run-trace'
 import { buildScene } from '@/features/visualizer/scene/build'
@@ -78,6 +78,8 @@ import {
 import { useTraceRunner } from '@/features/visualizer/use-trace-runner'
 import type { RunPhase } from '@/features/visualizer/worker/protocol'
 import { cn } from '@/lib/utils'
+import { endPetActivity, startPetActivity } from '@/features/pet/mello-events'
+import { petLines } from '@/features/pet/pet-lines'
 
 type RunResult = {
   id: number
@@ -385,9 +387,20 @@ function TestCaseVisualizerPage() {
       setRunError('Write or paste some code first.')
       return
     }
+    if (
+      source.input.trim() === '' &&
+      readsInput(source.language, source.code)
+    ) {
+      setRunError(
+        'This code reads input, but the input box is empty. Add a test case input, then run it.',
+      )
+      return
+    }
     setRunError(null)
     setPlaying(false)
     setPhase(source.language === 'python' ? 'loading' : 'running')
+    startPetActivity('visualizer-run', 'working', petLines.visualizerRun)
+    let traced = false
     try {
       const nextTrace = await runner.run(
         {
@@ -406,6 +419,7 @@ function TestCaseVisualizerPage() {
       setFocusLine(null)
       setView('visualize')
       window.scrollTo({ top: 0, behavior: 'smooth' })
+      traced = true
     } catch (error) {
       if (
         error instanceof TraceRunnerError &&
@@ -417,6 +431,15 @@ function TestCaseVisualizerPage() {
       )
     } finally {
       setPhase(null)
+      endPetActivity(
+        'visualizer-run',
+        traced
+          ? petLines.visualizerDone
+          : {
+              message: 'That run did not finish. Check the message above.',
+              state: 'thinking',
+            },
+      )
     }
   }
 
@@ -745,8 +768,6 @@ function TestCaseVisualizerPage() {
           ))}
         </div>
       }
-      eyebrow="Test Case Visualizer"
-      icon={TestCaseVisualizerIcon}
       info="Run your C++, Java or Python code on a test case and watch every array, pointer, stack, queue, map, tree, graph and recursive call move step by step. Code runs only in this browser tab. The AI Debugger shows where it goes wrong."
       subtitle="Watch your code run on a test case, step by step."
       title="Test Case Visualizer"

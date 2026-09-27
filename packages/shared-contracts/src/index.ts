@@ -589,3 +589,9 @@ export {
   VisualizerDebugResponseSchema,
   type VisualizerDebugResponse,
 } from './visualizer.js'
+export {
+  JobPumpRequestSchema,
+  JobPumpResponseSchema,
+  type JobPumpRequest,
+  type JobPumpResponse,
+} from './jobs.js'

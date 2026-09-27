@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils'
 import { useProviders } from '../hooks/useProviders'
 import { RatingSpectrum } from './RatingSpectrum'
 import { useTopics } from '../hooks/useTopics'
+import { Select } from '@/components/ui/select'
 
 const fieldClassName =
   'h-10 w-full min-w-0 rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 text-sm text-foreground outline-none transition focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15'
@@ -186,8 +187,7 @@ export function ProblemFilters({
       : []),
   ]
 
-  const selectClassName =
-    'h-9 min-w-0 rounded-xl border border-input bg-background px-3 text-sm text-foreground outline-none transition-[border-color,box-shadow] hover:border-acc focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15'
+  const selectClassName = 'h-9 min-w-0 rounded-xl text-sm hover:border-acc'
 
   return (
     <section
@@ -354,43 +354,38 @@ export function ProblemFilters({
             </button>
           ))}
         </div>
-        <label>
-          <span className="sr-only">Topic</span>
-          <select
+        <div className="w-44">
+          <Select
+            aria-label="Topic"
             className={selectClassName}
             disabled={topicsQuery.isPending}
-            onChange={(event) =>
-              onUpdate({ topic: event.target.value || undefined })
-            }
+            onValueChange={(value) => onUpdate({ topic: value || undefined })}
+            options={[
+              { value: '', label: 'All topics' },
+              ...(topicsQuery.data?.data.map((topic) => ({
+                value: topic.slug,
+                label: topic.name,
+              })) ?? []),
+            ]}
             value={filters.topic ?? ''}
-          >
-            <option value="">All topics</option>
-            {topicsQuery.data?.data.map((topic) => (
-              <option key={topic.id} value={topic.slug}>
-                {topic.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span className="sr-only">Results per page</span>
-          <select
+          />
+        </div>
+        <div className="w-32">
+          <Select
+            aria-label="Results per page"
             className={selectClassName}
-            onChange={(event) =>
-              onUpdate({ pageSize: Number(event.target.value) })
-            }
-            value={filters.pageSize}
-          >
-            {[10, 20, 50].includes(filters.pageSize) ? null : (
-              <option value={filters.pageSize}>
-                {filters.pageSize} / page
-              </option>
-            )}
-            <option value="10">10 / page</option>
-            <option value="20">20 / page</option>
-            <option value="50">50 / page</option>
-          </select>
-        </label>
+            onValueChange={(value) => onUpdate({ pageSize: Number(value) })}
+            options={[
+              ...([10, 20, 50].includes(filters.pageSize)
+                ? []
+                : [filters.pageSize]),
+              10,
+              20,
+              50,
+            ].map((size) => ({ value: String(size), label: `${size} / page` }))}
+            value={String(filters.pageSize)}
+          />
+        </div>
       </div>
 
       <AnimatePresence initial={false}>

@@ -11,10 +11,6 @@
     "postinstall": "prisma generate",
     "test": "vitest run src",
     "dev": "tsx watch src/server.ts",
-    "dev:worker": "tsx watch src/memory-worker.ts",
-    "dev:provider-worker": "tsx watch src/provider-sync-worker.ts",
-    "start:worker": "node dist/memory-worker.js",
-    "start:provider-worker": "node dist/provider-sync-worker.js",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit"

@@ -1,12 +1,18 @@
 # AlgoMemtor browser connector
 
 A Manifest V3 extension for Chrome-family browsers (Chrome, Edge, Brave) and
-Firefox-family browsers (Firefox, Zen). It syncs your own LeetCode and CSES
-history to AlgoMemtor from the browser you are signed in to, and verifies the
-Codeforces and CodeChef accounts you are signed in to and asks AlgoMemtor to
-sync them. Your passwords,
-cookies, and code never leave the browser; it uploads only problems, verdicts,
-times, languages, runtimes, and memory.
+Firefox-family browsers (Firefox, Zen). It syncs your own LeetCode, CSES and
+CodeChef history to AlgoMemtor from the browser you are signed in to, and
+verifies the Codeforces and CodeChef accounts you are signed in to and asks
+AlgoMemtor to sync them. Your passwords, cookies, and code never leave the
+browser; it uploads only problems, verdicts, times, languages, runtimes,
+memory, and CodeChef difficulty ratings.
+
+CodeChef history comes from its recent-activity pages (read a few pages per
+run until the whole history is in), the contest solves your profile lists,
+and each contest problem's difficulty rating. A problem solved inside a
+contest keeps its rating on the Insights rating ladder; a problem solved from
+the Practice section is recorded as unrated.
 
 ## For learners
 
@@ -17,12 +23,12 @@ times, languages, runtimes, and memory.
    are signed in there, it connects on its own: no token to copy.
 3. Use **Sync platforms** on the AlgoMemtor Dashboard or Settings page (or
    Sync now in the popup) to sync right away; manual syncs are limited to one
-   per 15 minutes. Stay signed in to leetcode.com and cses.fi. The first sync starts right
+   per 15 minutes. Stay signed in to leetcode.com, cses.fi and codechef.com. The first sync starts right
    away, the extension syncs every hour (configurable in its popup), runs a
    sync whenever it is turned on, and shows a notification when a sync
    finishes.
 4. Each platform syncs on its own: Codeforces and CodeChef (quick sign-in
-   checks) go first, then LeetCode and CSES. A platform that fails or takes
+   checks, then CodeChef history) go first, then LeetCode and CSES. A platform that fails or takes
    longer than 4 minutes is reported for that platform alone, and the others
    still sync.
 

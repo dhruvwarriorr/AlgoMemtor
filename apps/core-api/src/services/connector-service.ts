@@ -59,12 +59,20 @@ const canonicalProblemUrl = (
 ) =>
   provider === 'leetcode'
     ? `https://leetcode.com/problems/${encodeURIComponent(externalId)}/`
-    : `https://cses.fi/problemset/task/${encodeURIComponent(externalId)}/`
+    : provider === 'codechef'
+      ? `https://www.codechef.com/problems/${encodeURIComponent(externalId)}`
+      : `https://cses.fi/problemset/task/${encodeURIComponent(externalId)}/`
 
 const sourceUrl = (provider: ConnectorProvider) =>
   provider === 'leetcode'
     ? 'https://leetcode.com/api/submissions/'
-    : 'https://cses.fi/problemset/'
+    : provider === 'codechef'
+      ? 'https://www.codechef.com/recent/user'
+      : 'https://cses.fi/problemset/'
+
+// CodeChef problem codes are upper case in its URLs and public feed.
+const problemId = (provider: ConnectorProvider, externalId: string) =>
+  provider === 'codechef' ? externalId.toUpperCase() : externalId
 
 const sectionSlug = (value: string | undefined) => {
   const slug = (value ?? '')
@@ -74,9 +82,14 @@ const sectionSlug = (value: string | undefined) => {
   return /^[a-z0-9-]{1,48}$/.test(slug) ? slug : null
 }
 
-// Distinct from public-feed event IDs so both sources can coexist per account.
+// LeetCode and CSES IDs are distinct from public-feed event IDs so both
+// sources can coexist per account. A CodeChef submission keeps its solution
+// ID, the same event ID the server's public feed stores, so the two sources
+// update one row instead of counting it twice.
 const connectorEventId = (provider: ConnectorProvider, id: string) =>
-  `${provider === 'leetcode' ? 'lc' : 'cses'}:${id}`
+  provider === 'codechef'
+    ? id
+    : `${provider === 'leetcode' ? 'lc' : 'cses'}:${id}`
 
 export type ConnectorServiceOptions = {
   accountRepository: ProviderAccountRepository
@@ -123,7 +136,7 @@ export class ConnectorService {
 
   async linkedAccounts(authUserId: string) {
     const accounts = await Promise.all(
-      (['leetcode', 'cses'] as const).map((provider) =>
+      (['leetcode', 'cses', 'codechef'] as const).map((provider) =>
         this.options.accountRepository.findByAuthUserIdAndProvider(
           authUserId,
           provider,
@@ -132,7 +145,9 @@ export class ConnectorService {
     )
     return accounts.flatMap((account) =>
       account === null ||
-      (account.provider !== 'leetcode' && account.provider !== 'cses')
+      (account.provider !== 'leetcode' &&
+        account.provider !== 'cses' &&
+        account.provider !== 'codechef')
         ? []
         : [
             {
@@ -168,10 +183,11 @@ export class ConnectorService {
     const submissions: ProviderSubmission[] = request.submissions.map(
       (item) => {
         const eventId = connectorEventId(provider, item.eventId)
-        const canonicalUrl = canonicalProblemUrl(provider, item.externalId)
+        const externalId = problemId(provider, item.externalId)
+        const canonicalUrl = canonicalProblemUrl(provider, externalId)
         return ProviderSubmissionSchema.parse({
           provider,
-          externalId: item.externalId,
+          externalId,
           eventId,
           ...(item.problemTitle === undefined
             ? {}
@@ -208,8 +224,29 @@ export class ConnectorService {
         firstAccepted.set(submission.externalId, submission)
       }
     }
+    // Where each CodeChef problem was solved; a contest solve wins over a
+    // practice solve of the same problem.
+    const solveContexts = new Map<
+      string,
+      { solveContext: 'contest' | 'practice'; difficultyRating?: number }
+    >()
+    for (const problem of request.solvedProblems) {
+      if (provider !== 'codechef' || problem.solveContext === undefined)
+        continue
+      const externalId = problemId(provider, problem.externalId)
+      if (solveContexts.get(externalId)?.solveContext === 'contest') continue
+      solveContexts.set(externalId, {
+        solveContext: problem.solveContext,
+        ...(problem.solveContext === 'contest' &&
+        problem.difficultyRating !== undefined
+          ? { difficultyRating: problem.difficultyRating }
+          : {}),
+      })
+    }
     const solvedIds = new Set([
-      ...request.solvedProblems.map((problem) => problem.externalId),
+      ...request.solvedProblems.map((problem) =>
+        problemId(provider, problem.externalId),
+      ),
       ...firstAccepted.keys(),
     ])
     const catalogTags = await this.catalogTags(provider, [...solvedIds])
@@ -231,6 +268,7 @@ export class ConnectorService {
         const canonicalUrl = canonicalProblemUrl(provider, externalId)
         const accepted = firstAccepted.get(externalId)
         const tags = catalogTags.get(externalId)
+        const context = solveContexts.get(externalId)
         return ProviderSolvedProblemSchema.parse({
           provider,
           externalId,
@@ -247,6 +285,7 @@ export class ConnectorService {
           ...(tags === undefined || tags.topics.length === 0
             ? {}
             : { topics: tags.topics }),
+          ...(context ?? {}),
           completeness: request.solvedListComplete ? 'complete' : 'partial',
           provenance: provenance(externalId, canonicalUrl),
         })
@@ -361,10 +400,11 @@ export class ConnectorService {
 
   private async catalogTags(provider: ConnectorProvider, ids: string[]) {
     const tags = new Map<string, { providerTags: string[]; topics: string[] }>()
-    // LeetCode solves are keyed by slug and tagged by the sync worker's tag
-    // lookup; CSES tasks share IDs with the cached catalog.
+    // LeetCode solves are keyed by slug and tagged by the queued sync's tag
+    // lookup; CSES tasks and CodeChef codes share IDs with the cached
+    // catalog.
     const lookup = this.options.problemMetadataCache?.findByReferences
-    if (provider !== 'cses' || lookup === undefined || ids.length === 0)
+    if (provider === 'leetcode' || lookup === undefined || ids.length === 0)
       return tags
     let problems: ExternalProblemSummary[] = []
     try {

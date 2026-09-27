@@ -57,7 +57,7 @@ const manifest = (target) => ({
   name: 'AlgoMemtor Connector',
   version,
   description:
-    'Syncs your LeetCode, CSES, Codeforces, and CodeChef accounts to AlgoMemtor. Passwords and code never leave your browser.',
+    'Syncs your LeetCode, CSES, CodeChef, and Codeforces accounts to AlgoMemtor. Passwords and code never leave your browser.',
   icons: { 48: 'icon-48.png', 128: 'icon-128.png' },
   action: {
     default_popup: 'popup.html',

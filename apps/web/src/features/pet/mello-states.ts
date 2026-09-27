@@ -74,6 +74,10 @@ export type MelloInputs = {
   scrolling: boolean
   inAwe: boolean
   idleMs: number
+  // A pose a speech bubble asked for while it shows.
+  cued?: MelloState | null
+  // An ongoing app activity the pet follows (a sync it reads along with).
+  activity?: MelloState | null
 }
 
 export function resolveMelloState(inputs: MelloInputs): MelloState {
@@ -87,6 +91,8 @@ export function resolveMelloState(inputs: MelloInputs): MelloState {
   if (sinceAnswer >= 0 && sinceAnswer < ideaMs) return 'idea'
   if (sinceAnswer >= 0 && sinceAnswer < ideaMs + teachingMs) return 'teaching'
   if (now - succeededAt >= 0 && now - succeededAt < successMs) return 'success'
+  if (inputs.cued) return inputs.cued
+  if (inputs.activity) return inputs.activity
   if (inputs.appBusy) return 'working'
   if (inputs.onPet) return 'awe'
   if (inputs.typing) return 'watching'

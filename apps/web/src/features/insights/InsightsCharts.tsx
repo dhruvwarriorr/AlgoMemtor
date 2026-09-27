@@ -19,6 +19,8 @@ import { providerLabels } from '@/features/platform/components/provider-labels'
 import { useReveal } from '@/features/insights/use-reveal'
 import { cellTipFrom, type CellTip } from '@/lib/cell-tip'
 import { cn } from '@/lib/utils'
+import { Select } from '@/components/ui/select'
+import { calendarYears } from './insights-format'
 
 const providerColors: Record<ProviderKey, string> = {
   codeforces: '#2d6cdf',
@@ -327,22 +329,9 @@ export function YearCalendar({
   const currentYear = now.getFullYear()
   // The learner's local calendar date; day keys use the same calendar.
   const todayKey = `${currentYear}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-  const firstYear = useMemo(() => {
-    const fromActivity =
-      firstActivityAt === undefined
-        ? Number.NaN
-        : new Date(firstActivityAt).getFullYear()
-    const fromDays = Object.keys(solvedOverTime)
-      .filter((day) => (solvedOverTime[day] ?? 0) > 0)
-      .map((day) => Number(day.slice(0, 4)))
-    const candidates = [fromActivity, ...fromDays].filter((year) =>
-      Number.isFinite(year),
-    )
-    return Math.min(currentYear, ...candidates)
-  }, [currentYear, firstActivityAt, solvedOverTime])
-  const years = Array.from(
-    { length: currentYear - firstYear + 1 },
-    (_, index) => currentYear - index,
+  const years = useMemo(
+    () => calendarYears(currentYear, firstActivityAt, solvedOverTime),
+    [currentYear, firstActivityAt, solvedOverTime],
   )
   const [range, setRange] = useState<CalendarRange>('recent')
 
@@ -448,26 +437,24 @@ export function YearCalendar({
           <span className="rounded-md bg-secondary px-2 py-1 text-sm font-semibold tabular-nums">
             {total.toLocaleString()} solves
           </span>
-          <label className="sr-only" htmlFor="insights-calendar-range">
-            Heatmap range
-          </label>
-          <select
-            className="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground outline-none transition-[border-color,box-shadow] focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
+          <Select
+            aria-label="Heatmap range"
+            className="w-auto min-w-36"
             id="insights-calendar-range"
-            onChange={(event) => {
-              const value = event.currentTarget.value
+            onValueChange={(value) => {
               setTip(null)
               setRange(value === 'recent' ? 'recent' : Number(value))
             }}
+            options={[
+              { value: 'recent', label: 'Last 12 months' },
+              ...years.map((year) => ({
+                value: String(year),
+                label: String(year),
+              })),
+            ]}
+            size="sm"
             value={String(range)}
-          >
-            <option value="recent">Last 12 months</option>
-            {years.map((year) => (
-              <option key={year} value={year}>
-                {year}
-              </option>
-            ))}
-          </select>
+          />
         </div>
       }
       description={

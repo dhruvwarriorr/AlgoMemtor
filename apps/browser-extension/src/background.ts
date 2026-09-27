@@ -10,6 +10,7 @@ import {
   type SyncOutcome,
 } from './state.js'
 import { codeChefPageHandle, syncClaim } from './claims.js'
+import { syncCodeChef } from './codechef.js'
 import { fetchLeetCodeStatuses } from './leetcode.js'
 import { failure, syncCses, syncLeetCode, type SyncDeps } from './sync.js'
 import { SYNC_PROVIDERS, type SyncProvider } from './types.js'
@@ -143,7 +144,29 @@ const syncProvider = async (
     direct !== null && direct.status !== 'signed_out'
       ? direct
       : await syncClaim(provider, pageDeps.read, claim, base.now, probe)
-  return { state, outcome }
+  if (
+    provider !== 'codechef' ||
+    outcome.status !== 'synced' ||
+    outcome.handle === undefined
+  ) {
+    return { state, outcome }
+  }
+  // The claim linked and verified the handle; now upload its history. The
+  // feed is public, so direct reads work; a CodeChef tab is the fallback.
+  const history = async (read: SyncDeps['read']) =>
+    syncCodeChef({ ...base, read }, state.codechef, outcome.handle ?? '')
+  let result = await history(readDirect)
+  if (result.outcome.status === 'error') {
+    const viaPage = await history(pageDeps.read)
+    if (viaPage.outcome.status !== 'error') result = viaPage
+  }
+  return {
+    state: { ...state, codechef: result.state },
+    outcome: {
+      ...result.outcome,
+      message: `${outcome.message} ${result.outcome.message}`.slice(0, 280),
+    },
+  }
 }
 
 // One platform never holds up or stops the others: each gets a time limit,

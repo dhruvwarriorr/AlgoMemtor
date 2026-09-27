@@ -10,7 +10,6 @@ import {
 
 import PageContainer from '@/components/layout/PageContainer'
 import { ProviderLogo } from '@/components/brand/ProviderLogo'
-import { ContestsIcon } from '@/components/icons/app-icons'
 import { PageHero } from '@/components/kit/PageHero'
 import { SegmentedControl } from '@/components/kit/SegmentedControl'
 import { SpotlightCard } from '@/components/kit/surfaces'
@@ -509,8 +508,6 @@ function ContestsPage() {
   return (
     <PageContainer accent="rose" className="gap-6">
       <PageHero
-        eyebrow="Contest calendar"
-        icon={ContestsIcon}
         info="Upcoming and historical contests from the connected public provider catalogs. Links open the contest on its provider."
         subtitle="What is coming up across your platforms."
         title="Contests"

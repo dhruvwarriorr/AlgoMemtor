@@ -124,6 +124,11 @@ export const ProviderSolvedProblemSchema = z
     sourceSubmissionId: nonEmptyStringSchema.optional(),
     providerTags: z.array(nonEmptyStringSchema).optional(),
     topics: z.array(nonEmptyStringSchema).optional(),
+    // Where the solve happened, when the source says (CodeChef through the
+    // browser connector). A contest solve keeps the problem's rating; a
+    // practice solve is unrated even if the catalog rates the problem.
+    solveContext: z.enum(['contest', 'practice']).optional(),
+    difficultyRating: z.number().int().positive().max(10_000).optional(),
     completeness: CompletenessSchema,
     provenance: ProviderProvenanceSchema,
   })
@@ -448,6 +453,25 @@ export const AnalyticsInsightsSchema = z
       )
       .max(24),
     punchCard: z.array(z.array(insightCount).length(24)).length(7),
+    // For each punch-card cell: the latest date with a submission in that
+    // weekday and hour, and the single busiest date (learner's time zone).
+    punchCardDates: z
+      .array(
+        z
+          .array(
+            z
+              .object({
+                latest: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+                busiest: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+                busiestCount: insightCount,
+              })
+              .strict()
+              .nullable(),
+          )
+          .length(24),
+      )
+      .length(7)
+      .optional(),
     monthly: z
       .array(
         z

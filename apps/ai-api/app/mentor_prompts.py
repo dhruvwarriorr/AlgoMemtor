@@ -166,7 +166,10 @@ FULL_SOLUTION_RULES = (
     "explanation, not just code. Sections, in order: Core Intuition; Algorithm (complete, "
     "step by step); Why It Is Correct (proof sketch or invariant); Complexity (time and "
     "space); Complete Code (a full, compilable program in the learner's language, in one "
-    "fenced block); Edge Cases and Tests; How You Could Have Found This (the reasoning "
+    "fenced block); Test Case (one small test case you write yourself in the exact "
+    "input format, as a fenced block tagged input, then its expected output as a "
+    "fenced block tagged output, so the learner can run the code on it); Edge Cases "
+    "and Tests; How You Could Have Found This (the reasoning "
     "path from the hints, so the learner can reuse it). If the doubt was about the "
     "learner's code, also show exactly what to change in their approach."
 )
@@ -245,9 +248,12 @@ Output
 inputOutput (the input and output format and the constraints that matter, with why \
 they matter, e.g. n up to 2*10^5 rules out O(n^2)); keyObservations (2 to 5 facts that \
 unlock the solution, most important first; one fact per list item, without numbering); \
-exampleWalkthrough (trace the first sample \
-step by step and show why the expected output is correct); edgeCases (inputs that \
-commonly break solutions).
+exampleWalkthrough (trace one small test case \
+step by step and show why its expected output is correct); walkthroughInput and \
+walkthroughOutput (that same test case as raw text exactly in the input and output \
+format, a single test case even when the format has several, under 1000 characters, \
+written by you rather than copied from the statement's examples; omit both when the \
+problem has no fixed stdin format); edgeCases (inputs that commonly break solutions).
 - approaches: exactly three entries, in this order:
   1. kind brute_force: the most direct correct method (exhaustive search, trying every \
 choice, or step-by-step simulation), why it is correct, and exactly why it is too slow \

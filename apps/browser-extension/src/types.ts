@@ -1,11 +1,11 @@
 // Shapes the connector sends to AlgoMemtor. They mirror the server's
 // `ConnectorIngestRequestSchema`, which validates every field again.
 
-export type ConnectorProvider = 'leetcode' | 'cses'
+export type ConnectorProvider = 'leetcode' | 'cses' | 'codechef'
 
-// Every platform the extension handles: LeetCode and CSES upload history;
-// Codeforces and CodeChef verify the signed-in handle and ask the server to
-// sync.
+// Every platform the extension handles: LeetCode, CSES and CodeChef upload
+// history; Codeforces and CodeChef verify the signed-in handle and ask the
+// server to sync.
 export type SyncProvider = ConnectorProvider | 'codeforces' | 'codechef'
 
 // The quick handle checks run first, so a long history read never delays
@@ -34,6 +34,11 @@ export type ConnectorSolvedProblem = {
   externalId: string
   title?: string
   section?: string
+  // CodeChef: a contest solve keeps the problem's rating; practice is
+  // unrated.
+  solveContext?: 'contest' | 'practice'
+  contestCode?: string
+  difficultyRating?: number
 }
 
 export type ConnectorUpload = {

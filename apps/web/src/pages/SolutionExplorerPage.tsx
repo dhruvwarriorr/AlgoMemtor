@@ -21,18 +21,19 @@ import {
 import { PageHero } from '@/components/kit/PageHero'
 import { AiLoader, type AiLoaderStep } from '@/components/motion/AiLoader'
 import PageContainer from '@/components/layout/PageContainer'
-import {
-  DoubtHelperIcon,
-  SolutionExplorerIcon,
-} from '@/components/icons/mentor-icons'
+import { DoubtHelperIcon } from '@/components/icons/mentor-icons'
 import { ErrorState } from '@/components/states/ErrorState'
 import { Button, buttonVariants } from '@/components/ui/button'
+import { Disclosure } from '@/components/ui/disclosure'
 import { useNotification } from '@/app/useNotification'
 import { CoachMessageContent } from '@/features/coach/components/CoachMessageContent'
 import {
   MentorChatDock,
   type DockMessage,
 } from '@/features/mentor/components/MentorChatDock'
+import { useCoachName } from '@/features/pet/pet-preference'
+import { petLines } from '@/features/pet/pet-lines'
+import { endPetActivity, startPetActivity } from '@/features/pet/mello-events'
 import {
   LanguagePicker,
   ProviderBadge,
@@ -114,10 +115,12 @@ function ApproachExplorer({
   approaches,
   language,
   problem,
+  testCase,
 }: {
   approaches: readonly SolutionApproach[]
   language: string
   problem: { title: string; url?: string }
+  testCase: { input?: string; expected?: string }
 }) {
   const optimal = approaches.findIndex((item) => item.kind === 'optimized')
   const [state, setState] = useState<{ active: number; direction: 1 | -1 }>({
@@ -152,6 +155,7 @@ function ApproachExplorer({
             index={state.active}
             language={language}
             problem={problem}
+            testCase={testCase}
           />
         </div>
       ) : null}
@@ -191,10 +195,14 @@ function ExplorationView({
   exploration,
   onRefresh,
   refreshing,
+  onAsk,
+  coachName,
 }: {
   exploration: SolutionExploration
   onRefresh: () => void
   refreshing: boolean
+  onAsk: () => void
+  coachName: string
 }) {
   const { problem } = exploration
   const explanation = exploration.problemExplanation
@@ -299,6 +307,14 @@ function ExplorationView({
             />
             Regenerate
           </Button>
+          <Button
+            className="mt-2 w-full"
+            onClick={onAsk}
+            size="sm"
+            type="button"
+          >
+            Ask {coachName} about it
+          </Button>
         </aside>
       </section>
 
@@ -314,17 +330,14 @@ function ExplorationView({
                 />
               </div>
               {explanation.exampleWalkthrough ? (
-                <details className="mt-4 rounded-xl border border-border px-4 py-3 open:bg-secondary/30">
-                  <summary className="cursor-pointer text-sm font-medium text-foreground">
-                    Sample walkthrough
-                  </summary>
-                  <div className="mt-2 text-sm [&>div]:mt-1">
+                <Disclosure className="mt-4" summary="Sample walkthrough">
+                  <div className="text-sm [&>div]:mt-1">
                     <CoachMessageContent
                       content={explanation.exampleWalkthrough}
                       role="assistant"
                     />
                   </div>
-                </details>
+                </Disclosure>
               ) : null}
             </div>
             <div className="flex min-w-0 flex-col gap-4">
@@ -386,6 +399,14 @@ function ExplorationView({
         approaches={exploration.approaches}
         language={exploration.language}
         problem={problemRef}
+        testCase={{
+          ...(explanation?.walkthroughInput === undefined
+            ? {}
+            : { input: explanation.walkthroughInput }),
+          ...(explanation?.walkthroughOutput === undefined
+            ? {}
+            : { expected: explanation.walkthroughOutput }),
+        }}
       />
 
       <section
@@ -467,6 +488,7 @@ function SolutionExplorerPage() {
   const submittedUrl =
     problem !== null && isSafeCoachPublicUrl(problem) ? problem : null
   const [draft, setDraft] = useState(problem ?? '')
+  const coachName = useCoachName()
   const [formError, setFormError] = useState<string | null>(null)
   const [language, setLanguage] = useRememberedLanguage()
   const accessQuery = useSolutionAccess(submittedUrl, language || 'C++')
@@ -475,13 +497,6 @@ function SolutionExplorerPage() {
   const [result, setResult] = useState<{
     key: string
     data: SolutionExploration
-  } | null>(null)
-  const [pasteMode, setPasteMode] = useState(false)
-  const [problemTitle, setProblemTitle] = useState('')
-  // A problem without a link, identified by its name once submitted.
-  const [pasted, setPasted] = useState<{
-    title: string
-    statement: string
   } | null>(null)
   const [statement, setStatement] = useState('')
   const [needsStatement, setNeedsStatement] = useState(false)
@@ -496,11 +511,7 @@ function SolutionExplorerPage() {
     messages: DockMessage[]
   }>({ key: '', messages: [] })
 
-  const targetKey = pasteMode
-    ? pasted === null
-      ? null
-      : `pasted:${pasted.title}`
-    : submittedUrl
+  const targetKey = submittedUrl
   const current = result?.key === targetKey ? result.data : null
   const chatKey =
     current === null ? '' : `${targetKey ?? ''}|${current.language}`
@@ -508,39 +519,32 @@ function SolutionExplorerPage() {
 
   function run(
     options: { attemptConfirmed?: boolean; refresh?: boolean } = {},
-    pastedProblem = pasteMode ? pasted : null,
   ) {
-    const key =
-      pastedProblem !== null ? `pasted:${pastedProblem.title}` : targetKey
+    const key = targetKey
     if (key === null || explore.isPending) return
     setLastRun(options)
+    // Only when the link could not be read: the statement the learner
+    // pasted for this one request, never saved.
     const pastedStatement = statement.trim()
+    startPetActivity('explore', 'reading', petLines.exploreStarted)
     explore.mutate(
       {
-        ...(pastedProblem !== null
-          ? {
-              problemTitle: pastedProblem.title,
-              transientStatement: pastedProblem.statement,
-              // Without a link there is no platform evidence; pasting the
-              // problem here is the learner's own confirmation.
-              attemptConfirmed: true,
-            }
-          : {
-              problemUrl: submittedUrl ?? '',
-              ...(pastedStatement === ''
-                ? {}
-                : { transientStatement: pastedStatement }),
-            }),
+        problemUrl: submittedUrl ?? '',
+        ...(pastedStatement === ''
+          ? {}
+          : { transientStatement: pastedStatement }),
         language: language.trim() || 'C++',
         ...(options.attemptConfirmed ? { attemptConfirmed: true } : {}),
         ...(options.refresh ? { refresh: true } : {}),
       },
       {
         onSuccess: (response) => {
+          endPetActivity('explore', petLines.exploreDone)
           setNeedsStatement(false)
           setResult({ key, data: response.data })
         },
         onError: (error) => {
+          endPetActivity('explore')
           if (errorCode(error) === 'PROBLEM_CONTEXT_UNAVAILABLE') {
             setNeedsStatement(true)
           }
@@ -575,9 +579,7 @@ function SolutionExplorerPage() {
     setChatThread({ key, messages: [...chatMessages, learnerTurn] })
     chat.mutate(
       {
-        ...(pasteMode && pasted !== null
-          ? { problemTitle: pasted.title }
-          : { problemUrl: submittedUrl ?? '' }),
+        problemUrl: submittedUrl ?? '',
         language: current.language,
         question,
         ...(history.length === 0 ? {} : { history }),
@@ -601,7 +603,7 @@ function SolutionExplorerPage() {
           ),
         onError: (error) =>
           notify({
-            title: 'The assistant could not answer',
+            title: `${coachName} could not answer`,
             description: mentorErrorMessage(error, 'Try again shortly.'),
             tone: 'error',
           }),
@@ -612,19 +614,6 @@ function SolutionExplorerPage() {
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (pasteMode) {
-      const title = problemTitle.trim()
-      const text = statement.trim()
-      if (title === '' || text === '') {
-        setFormError('Add the problem name and paste its statement.')
-        return
-      }
-      setFormError(null)
-      setResult(null)
-      setPasted({ title, statement: text })
-      run({}, { title, statement: text })
-      return
-    }
     const url = draft.trim()
     if (!isSafeCoachPublicUrl(url)) {
       setFormError('Paste a public https problem link.')
@@ -730,8 +719,6 @@ function SolutionExplorerPage() {
   return (
     <PageContainer accent="violet" className="gap-6">
       <PageHero
-        eyebrow="Solution Explorer"
-        icon={SolutionExplorerIcon}
         info="Paste a problem link after you solve or genuinely attempt it. You get a clear explanation of the problem, three approaches from brute force to optimal with complete code, the official editorial and the best community solutions in your language, and an assistant for follow-up questions."
         subtitle="Every way to solve a problem you have already tried."
         title="Solution Explorer"
@@ -757,60 +744,32 @@ function SolutionExplorerPage() {
             noValidate
             onSubmit={submit}
           >
-            {pasteMode ? (
-              <div className="grid max-w-3xl gap-4 rounded-2xl border border-border bg-card p-4 shadow-soft sm:p-5">
-                <label className="flex flex-col gap-2 text-sm font-medium text-foreground">
-                  Problem name
-                  <input
-                    className={inputClass}
-                    maxLength={200}
-                    onChange={(event) => setProblemTitle(event.target.value)}
-                    placeholder="e.g. Grid Paths"
-                    value={problemTitle}
-                  />
-                </label>
-                <label className="flex flex-col gap-2 text-sm font-medium text-foreground">
-                  Problem statement
-                  <textarea
-                    className={cn(
-                      inputClass,
-                      'min-h-40 resize-y font-mono text-xs',
-                    )}
-                    maxLength={20_000}
-                    onChange={(event) => setStatement(event.target.value)}
-                    placeholder="Paste the full statement, constraints and samples."
-                    value={statement}
-                  />
-                </label>
-              </div>
-            ) : (
-              <div className="flex min-w-0 items-center gap-2 rounded-full border border-border bg-card p-1.5 pl-4 shadow-soft transition-[border-color,box-shadow] focus-within:border-ring focus-within:shadow-[0_0_0_4px_color-mix(in_oklab,var(--ring)_15%,transparent)]">
-                <label className="sr-only" htmlFor="solutions-problem">
-                  Problem link
-                </label>
-                <Link2
+            <div className="flex min-w-0 items-center gap-2 rounded-full border border-border bg-card p-1.5 pl-4 shadow-soft transition-[border-color,box-shadow] focus-within:border-ring focus-within:shadow-[0_0_0_4px_color-mix(in_oklab,var(--ring)_15%,transparent)]">
+              <label className="sr-only" htmlFor="solutions-problem">
+                Problem link
+              </label>
+              <Link2
+                aria-hidden="true"
+                className="size-4 shrink-0 text-muted-foreground"
+              />
+              <input
+                aria-describedby={formError ? 'solutions-error' : undefined}
+                className="h-10 min-w-0 flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground sm:text-sm"
+                id="solutions-problem"
+                inputMode="url"
+                onChange={(event) => setDraft(event.target.value)}
+                placeholder="https://leetcode.com/problems/two-sum/"
+                type="url"
+                value={draft}
+              />
+              <Button className="group shrink-0 rounded-full" type="submit">
+                Open
+                <ArrowRight
                   aria-hidden="true"
-                  className="size-4 shrink-0 text-muted-foreground"
+                  className="transition-transform duration-300 group-hover:translate-x-0.5"
                 />
-                <input
-                  aria-describedby={formError ? 'solutions-error' : undefined}
-                  className="h-10 min-w-0 flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground sm:text-sm"
-                  id="solutions-problem"
-                  inputMode="url"
-                  onChange={(event) => setDraft(event.target.value)}
-                  placeholder="https://leetcode.com/problems/two-sum/"
-                  type="url"
-                  value={draft}
-                />
-                <Button className="group shrink-0 rounded-full" type="submit">
-                  Open
-                  <ArrowRight
-                    aria-hidden="true"
-                    className="transition-transform duration-300 group-hover:translate-x-0.5"
-                  />
-                </Button>
-              </div>
-            )}
+              </Button>
+            </div>
             {formError ? (
               <p
                 className="text-sm text-danger-foreground"
@@ -820,7 +779,7 @@ function SolutionExplorerPage() {
                 {formError}
               </p>
             ) : null}
-            {needsStatement && !pasteMode ? (
+            {needsStatement ? (
               <div className="grid max-w-3xl gap-3 rounded-2xl border border-border bg-card p-4">
                 <p className="text-sm text-sun-foreground" role="status">
                   The problem could not be read from that link. Paste the
@@ -854,30 +813,9 @@ function SolutionExplorerPage() {
                 onChange={setLanguage}
                 value={language}
               />
-              {!needsStatement ? (
-                <button
-                  className="pb-2 text-xs font-medium text-acc underline-offset-4 hover:underline"
-                  onClick={() => {
-                    setPasteMode((value) => !value)
-                    setFormError(null)
-                  }}
-                  type="button"
-                >
-                  {pasteMode
-                    ? 'Use a link instead'
-                    : 'No link? Paste the statement'}
-                </button>
-              ) : null}
-              {pasteMode ? (
-                <Button disabled={explore.isPending} type="submit">
-                  <BookOpen aria-hidden="true" /> Explore approaches
-                </Button>
-              ) : null}
             </div>
           </form>
-          {targetKey === null && !pasteMode ? (
-            <LinkCheck value={draft} />
-          ) : null}
+          {targetKey === null ? <LinkCheck value={draft} /> : null}
           {targetKey === null ? (
             <div className="mt-auto border-t border-border pt-4">
               {recentExplorations}
@@ -902,11 +840,13 @@ function SolutionExplorerPage() {
         // A loaded exploration stays visible even if a background refetch
         // of the access check fails.
         <ExplorationView
+          coachName={coachName}
           exploration={current}
+          onAsk={() => setChatOpen(true)}
           onRefresh={() => run({ refresh: true })}
           refreshing={explore.isPending}
         />
-      ) : pasteMode ? null : accessQuery.isPending ? (
+      ) : accessQuery.isPending ? (
         <p className="text-sm text-muted-foreground" role="status">
           Checking your progress on this problem…
         </p>
@@ -996,11 +936,12 @@ function SolutionExplorerPage() {
               <span className="font-medium text-foreground">
                 {current.problem.title}
               </span>
-              : the approaches, the code, a proof or your own idea. The
-              assistant already has this whole page.
+              : the approaches, the code, a proof or your own idea. {coachName}{' '}
+              already has this whole page.
             </p>
           }
-          launcherLabel="Ask about this solution"
+          draftKey={`solution-${chatKey}`}
+          launcherLabel={`Ask ${coachName} about this solution`}
           messages={chatMessages}
           mode="ask"
           modes={[
@@ -1017,7 +958,8 @@ function SolutionExplorerPage() {
           pending={chat.isPending}
           subtitle={`${current.problem.title} · ${current.language}`}
           suggestions={chatSuggestions}
-          title="Solution assistant"
+          pendingLabel={`${coachName} is thinking…`}
+          title="Solution Explorer"
         />
       ) : null}
     </PageContainer>

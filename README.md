@@ -459,9 +459,11 @@ Docker publishes PostgreSQL on loopback port `5433` so a separate Homebrew
 instance on `5432` cannot silently receive API traffic. Keep the core and AI
 `DATABASE_URL` values pointed at the same database; override them deliberately
 if using Homebrew instead.
-Linking a provider queues its first sync immediately. The separate provider
-worker must be running for profile and activity data to appear; `npm run dev`
-starts it with the other services.
+Linking a provider queues its first sync immediately. There are no worker
+processes: queued syncs and learner-memory jobs run inside the core API while
+a signed-in page is open (the page wakes `POST /api/jobs/pump`) or right after
+a connector upload. With every tab closed, queued work waits for the next
+visit.
 
 Stop it with:
 
@@ -499,22 +501,23 @@ Or start services independently:
 npm run dev:web
 npm run dev:core
 npm run dev:ai
-npm run dev:worker
 ```
 
-| Service              | URL                                       |
-| -------------------- | ----------------------------------------- |
-| React                | `http://localhost:5173`                   |
-| Express health check | `http://localhost:3001/health`            |
-| FastAPI health check | `http://localhost:8000/health`            |
-| Memory worker        | durable outbox consumer; no HTTP endpoint |
+| Service              | URL                            |
+| -------------------- | ------------------------------ |
+| React                | `http://localhost:5173`        |
+| Express health check | `http://localhost:3001/health` |
+| FastAPI health check | `http://localhost:8000/health` |
 
 ## Production deployment
 
 The repository ships production Dockerfiles for the core API (which also runs
-both workers and the Prisma migrations), the AI API, and the web app (served by
-nginx, which proxies `/api/`), plus `docker-compose.prod.yml` with PostgreSQL +
-pgvector and one-shot migration jobs:
+the Prisma migrations), the AI API, and the web app (served by nginx, which
+proxies `/api/`), plus `docker-compose.prod.yml` with PostgreSQL + pgvector and
+one-shot migration jobs. No background-worker service is needed, so the APIs
+can run as ordinary (including free-tier) web services with a managed
+PostgreSQL such as Neon; queued work pauses while nobody is using the site
+(see "Request-driven job pump" in the project documentation):
 
 ```bash
 cp deploy/compose.env.example .env

@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react'
 
 import { Lock } from '@/components/icons/algo-icons'
 import { Button } from '@/components/ui/button'
+import { Disclosure } from '@/components/ui/disclosure'
 import { inputClass } from '@/features/mentor/format'
 import { cn } from '@/lib/utils'
 
@@ -361,16 +362,21 @@ export function CodeComposer({
               value={expected}
             />
           </label>
-          <details className="rounded-xl border border-border px-3 py-2 text-sm">
-            <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
-              Edge cases worth trying
-            </summary>
-            <ul className="mt-2 grid list-disc gap-1 pl-5 text-xs leading-5 text-muted-foreground">
+          <Disclosure
+            contentClassName="px-3 pb-3"
+            summary={
+              <span className="text-xs text-muted-foreground">
+                Edge cases worth trying
+              </span>
+            }
+            summaryClassName="px-3 py-2"
+          >
+            <ul className="grid list-disc gap-1 pl-5 text-xs leading-5 text-muted-foreground">
               {edgeCaseIdeas.map((idea) => (
                 <li key={idea}>{idea}</li>
               ))}
             </ul>
-          </details>
+          </Disclosure>
           <p className="inline-flex items-start gap-1.5 text-xs leading-5 text-muted-foreground">
             <Lock aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
             Runs only in this browser tab. Up to{' '}

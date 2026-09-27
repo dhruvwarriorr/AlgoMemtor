@@ -399,6 +399,10 @@ model ProviderSolvedObservation {
   providerTags       String[]        @default([]) @map("provider_tags")
   normalizedTopics   String[]        @default([]) @map("normalized_topics")
   tagsCheckedAt      DateTime?       @map("tags_checked_at") @db.Timestamptz(3)
+  // CodeChef via the browser connector: a contest solve keeps the problem's
+  // rating; a practice solve is unrated.
+  solveContext       String?         @map("solve_context") @db.VarChar(16)
+  difficultyRating   Int?            @map("difficulty_rating")
   occurredAt         DateTime?       @map("occurred_at") @db.Timestamptz(3)
   firstObservedAt    DateTime        @default(now()) @map("first_observed_at") @db.Timestamptz(3)
   lastObservedAt     DateTime        @default(now()) @map("last_observed_at") @db.Timestamptz(3)

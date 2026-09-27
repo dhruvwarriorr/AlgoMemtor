@@ -1,4 +1,7 @@
 import type { MelloClip, MelloState, PetClips } from './mello-states'
+import { petNames, type PetId } from './pet-ids'
+
+export { isPetId, petIds, type PetId } from './pet-ids'
 
 // Every pet is the same AI Coach in a different body. Their sprites live in
 // assets/<pet>/<pose>.webp.
@@ -6,13 +9,6 @@ const sprites = import.meta.glob<string>('./assets/*/*.webp', {
   eager: true,
   import: 'default',
 })
-
-export const petIds = ['mello', 'kai', 'luna', 'kai-female'] as const
-export type PetId = (typeof petIds)[number]
-
-export function isPetId(value: unknown): value is PetId {
-  return petIds.some((id) => id === value)
-}
 
 function sprite(pet: PetId, state: MelloState) {
   const src = sprites[`./assets/${pet}/${state}.webp`]
@@ -118,7 +114,7 @@ export const pets: Record<PetId, Pet> = {
   mello: {
     id: 'mello',
     pickerLabel: 'Mello',
-    name: 'Mello',
+    name: petNames.mello,
     tagline: 'The calm companion',
     accent: '#8b5cf6',
     clips: clipsFor('mello', melloShapes, { idle: 'Sipping tea' }),
@@ -126,7 +122,7 @@ export const pets: Record<PetId, Pet> = {
   kai: {
     id: 'kai',
     pickerLabel: 'Kai',
-    name: 'Kai',
+    name: petNames.kai,
     tagline: 'The organized coach',
     accent: '#3b82f6',
     clips: clipsFor('kai', sheetShapes, {
@@ -137,7 +133,7 @@ export const pets: Record<PetId, Pet> = {
   luna: {
     id: 'luna',
     pickerLabel: 'Luna',
-    name: 'Luna',
+    name: petNames.luna,
     tagline: 'The kind explainer',
     accent: '#f472b6',
     clips: clipsFor('luna', sheetShapes, { idle: 'Reading along' }),
@@ -145,7 +141,7 @@ export const pets: Record<PetId, Pet> = {
   'kai-female': {
     id: 'kai-female',
     pickerLabel: 'Kai (female)',
-    name: 'Kai',
+    name: petNames['kai-female'],
     tagline: 'The organized coach, with her checklist',
     accent: '#60a5fa',
     clips: clipsFor('kai-female', sheetShapes, {

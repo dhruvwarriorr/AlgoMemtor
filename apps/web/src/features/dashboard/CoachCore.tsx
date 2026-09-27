@@ -6,6 +6,7 @@ import { ArrowUpRight } from '@/components/icons/algo-icons'
 import { ThinkingOrbs } from '@/components/motion/ThinkingOrbs'
 import { dashEase as ease } from '@/features/dashboard/dashboard-format'
 import { cn } from '@/lib/utils'
+import { useCoachName } from '@/features/pet/pet-preference'
 
 type FocusTopic = { topic: string; name: string; detail: string }
 
@@ -39,6 +40,7 @@ export function CoachCore({
   onDismiss: (topic: string) => void
   className?: string
 }) {
+  const coachName = useCoachName()
   const reduceMotion = useReducedMotion()
   const id = useId().replace(/[^\w-]/g, '')
   const [lead] = topics
@@ -61,7 +63,7 @@ export function CoachCore({
           className="shimmer-text font-sans text-sm font-medium text-white/70 [--shimmer:#ffffff]"
           id="coach-focus-heading"
         >
-          Your coach is focusing on
+          {coachName} is focusing on
         </h2>
         <ThinkingOrbs className="size-8" />
       </div>
@@ -224,7 +226,7 @@ export function CoachCore({
         </div>
       ) : (
         <p className="mt-1 max-w-sm text-sm text-white/75">
-          No topics are due right now. Your coach will surface the next step as
+          No topics are due right now. {coachName} will surface the next step as
           new activity arrives.
         </p>
       )}

@@ -468,6 +468,15 @@ def _clean_text(value: str, limit: int) -> str:
     return shorten_text(text, limit).rstrip()
 
 
+def _test_case_text(value: str | None) -> str | None:
+    """Raw test data keeps its line breaks; only trailing spaces go."""
+    if not value:
+        return None
+    text = "\n".join(line.rstrip() for line in value.strip("\n").splitlines())
+    text = text.strip("\n")
+    return text if text.strip() and len(text) <= 1_000 else None
+
+
 def _clean_item(value: str, limit: int) -> str:
     return shorten_text(" ".join(plain_math(redact_text(value)).split()), limit)
 
@@ -1254,6 +1263,8 @@ class MentorService:
                     if explanation.exampleWalkthrough
                     else None
                 ),
+                walkthroughInput=_test_case_text(explanation.walkthroughInput),
+                walkthroughOutput=_test_case_text(explanation.walkthroughOutput),
                 edgeCases=clean_points(explanation.edgeCases, 300, 5),
             ),
             statementSource=origin,  # type: ignore[arg-type]

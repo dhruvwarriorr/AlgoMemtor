@@ -13,6 +13,7 @@ import {
 } from '../components/player-icons'
 import { speeds, type JumpTarget, type Speed } from '../components/playback'
 import type { Marker } from './markers'
+import { Select } from '@/components/ui/select'
 
 const markerClass: Record<Marker['tone'], string> = {
   call: 'bg-primary/60',
@@ -171,21 +172,28 @@ export function Transport({
           </span>{' '}
           / {total.toLocaleString()}
         </span>
-        <label className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="hidden sm:inline">Speed</span>
-          <select
-            aria-label="Playback speed"
-            className="h-8 rounded-md border border-input bg-background px-1.5 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onChange={(event) => onSpeed(Number(event.target.value) as Speed)}
-            value={speed}
-          >
-            {speeds.map((choice) => (
-              <option key={choice} value={choice}>
-                {choice < 1 ? `${1 / choice}s / step` : `${choice} steps/s`}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span aria-hidden="true" className="hidden sm:inline">
+            Speed
+          </span>
+          <div className="w-28">
+            <Select
+              aria-label="Playback speed"
+              className="text-xs"
+              onValueChange={(value) => {
+                const choice = speeds.find((item) => String(item) === value)
+                if (choice !== undefined) onSpeed(choice)
+              }}
+              options={speeds.map((choice) => ({
+                value: String(choice),
+                label:
+                  choice < 1 ? `${1 / choice}s / step` : `${choice} steps/s`,
+              }))}
+              size="sm"
+              value={String(speed)}
+            />
+          </div>
+        </div>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <input
             checked={importantOnly}

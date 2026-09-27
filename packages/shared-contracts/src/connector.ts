@@ -10,7 +10,10 @@ import {
 // source code, or provider-built URLs; the server builds canonical URLs from
 // the validated identifiers below.
 
-export const ConnectorProviderSchema = z.enum(['leetcode', 'cses'])
+// CodeChef is read in the browser too: its public feed leaves out some
+// solves, and the learner's own session also shows each contest problem's
+// rating.
+export const ConnectorProviderSchema = z.enum(['leetcode', 'cses', 'codechef'])
 export type ConnectorProvider = z.infer<typeof ConnectorProviderSchema>
 
 export const ConnectorTokenSchema = z
@@ -75,7 +78,7 @@ export const ConnectorSessionResponseSchema = z
               })
               .strict(),
           )
-          .max(2),
+          .max(3),
       })
       .strict(),
   })
@@ -86,9 +89,14 @@ export type ConnectorSessionResponse = z.infer<
 
 const leetCodeSlugSchema = z.string().regex(/^[a-z0-9-]{1,128}$/)
 const csesTaskIdSchema = z.string().regex(/^[1-9][0-9]{0,5}$/)
+const codeChefCodeSchema = z.string().regex(/^[A-Za-z0-9_]{1,64}$/)
 
 export const connectorProblemIdSchema = (provider: ConnectorProvider) =>
-  provider === 'leetcode' ? leetCodeSlugSchema : csesTaskIdSchema
+  provider === 'leetcode'
+    ? leetCodeSlugSchema
+    : provider === 'codechef'
+      ? codeChefCodeSchema
+      : csesTaskIdSchema
 
 const titleSchema = z.string().trim().min(1).max(512)
 
@@ -114,6 +122,14 @@ export const ConnectorSolvedProblemSchema = z
     title: titleSchema.optional(),
     // The CSES problemset section the task is listed under, used as its tag.
     section: z.string().trim().min(1).max(64).optional(),
+    // CodeChef: where the problem was solved. A solve inside a contest keeps
+    // the problem's CodeChef difficulty rating; a practice solve is unrated.
+    solveContext: z.enum(['contest', 'practice']).optional(),
+    contestCode: z
+      .string()
+      .regex(/^[A-Za-z0-9_]{1,64}$/)
+      .optional(),
+    difficultyRating: z.number().int().positive().max(10_000).optional(),
   })
   .strict()
 export type ConnectorSolvedProblem = z.infer<
@@ -123,8 +139,8 @@ export type ConnectorSolvedProblem = z.infer<
 export const ConnectorIngestRequestSchema = z
   .object({
     provider: ConnectorProviderSchema,
-    // The signed-in username (LeetCode) or numeric user ID (CSES) that the
-    // connector read from the provider session.
+    // The signed-in username (LeetCode, CodeChef) or numeric user ID (CSES)
+    // that the connector read from the provider session.
     account: z.object({ handle: PublicProviderHandleSchema }).strict(),
     submissions: z.array(ConnectorSubmissionSchema).max(1000),
     // The provider's own list of problems it marks as solved for this account.
@@ -172,8 +188,9 @@ export type ConnectorIngestRequest = z.infer<
 >
 
 // Codeforces and CodeChef data is public and synced by the server; the
-// connector only reports which handle is signed in, which links and verifies
-// the account and queues a server sync.
+// connector reports which handle is signed in, which links and verifies the
+// account and queues a server sync. CodeChef history is also uploaded
+// through ingest.
 export const ConnectorClaimProviderSchema = z.enum(['codeforces', 'codechef'])
 export type ConnectorClaimProvider = z.infer<
   typeof ConnectorClaimProviderSchema

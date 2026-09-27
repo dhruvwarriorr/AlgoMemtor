@@ -29,6 +29,7 @@ import {
   useLearnerMemoryAction,
 } from '../hooks/useLearnerMemories'
 import type { LearnerMemory, LearnerMemoryCategory } from '../contracts'
+import { Select } from '@/components/ui/select'
 
 const categoryLabels: Record<string, string> = {
   preference: 'Preference',
@@ -375,20 +376,19 @@ function MemoryEditor({
       </label>
       <label className="block space-y-1.5 text-sm font-medium text-foreground">
         Category
-        <select
-          className="h-10 w-full rounded-md border border-input bg-background transition-[border-color,box-shadow] hover:border-[color-mix(in_oklab,var(--primary)_35%,var(--input))] px-3 text-base font-normal text-foreground outline-none focus-visible:border-ring focus-visible:ring-4 focus-visible:ring-ring/15"
+        <Select
+          className="font-normal"
           disabled={isSaving}
-          onChange={(event) =>
-            setCategory(event.currentTarget.value as LearnerMemoryCategory)
-          }
+          onValueChange={(value) => {
+            const next = categories.find((item) => item === value)
+            if (next !== undefined) setCategory(next)
+          }}
+          options={categories.map((value) => ({
+            value,
+            label: categoryLabels[value],
+          }))}
           value={category}
-        >
-          {categories.map((value) => (
-            <option key={value} value={value}>
-              {categoryLabels[value]}
-            </option>
-          ))}
-        </select>
+        />
       </label>
       <div className="flex flex-wrap justify-end gap-2">
         <Button

@@ -1,4 +1,5 @@
 import {
+  JobPumpResponseSchema,
   ApiErrorResponseSchema,
   ConnectorTokensResponseSchema,
   CreateConnectorTokenRequestSchema,
@@ -340,6 +341,14 @@ function normalizeSearchText(value: string) {
 }
 
 export const handlers: RequestHandler[] = [
+  // Queued work runs on the live server; mocks have none pending.
+  http.post('/api/jobs/pump', () =>
+    HttpResponse.json(
+      JobPumpResponseSchema.parse({
+        data: { pending: false, nextPollAfterMs: 120_000 },
+      }),
+    ),
+  ),
   ...progressHandlers,
   ...coachHandlers,
   ...mentorHandlers,
