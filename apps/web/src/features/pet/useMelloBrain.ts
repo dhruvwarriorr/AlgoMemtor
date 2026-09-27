@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import {
+  startTransition,
+  useEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from 'react'
 import { useQueryClient, type Mutation } from '@tanstack/react-query'
 import { useLocation } from 'react-router-dom'
 
@@ -211,10 +217,17 @@ export function useMelloBrain({
     const onInput = (event: Event) => {
       const target = event.target
       if (!isEditable(target) || !(target instanceof HTMLElement)) return
+      // Typing in the pet's own chat is not the learner typing on the page.
+      if (target.closest('[data-mello-ignore]')) return
       const at = Date.now()
-      setNow(at)
-      setTypingUntil(at + typingLingerMs)
-      setLean(typingLean(target, pet.current))
+      const lean = typingLean(target, pet.current)
+      // A transition keeps this re-render out of the input event, so it
+      // cannot reset a controlled input before React applies the keystroke.
+      startTransition(() => {
+        setNow(at)
+        setTypingUntil(at + typingLingerMs)
+        setLean(lean)
+      })
     }
     document.addEventListener('input', onInput, true)
     return () => document.removeEventListener('input', onInput, true)

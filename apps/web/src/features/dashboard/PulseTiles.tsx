@@ -184,6 +184,7 @@ function SolvedSpark({ values }: { values: readonly number[] }) {
               cx={last.x}
               cy={last.y}
               fill="none"
+              initial={{ r: 3 }}
               stroke="currentColor"
               strokeWidth="1.5"
               transition={{ duration: 2.2, repeat: Infinity, delay: 1.9 }}

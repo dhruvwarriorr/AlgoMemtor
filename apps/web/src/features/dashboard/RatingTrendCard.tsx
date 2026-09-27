@@ -489,6 +489,7 @@ export function RatingTrendCard({
                   cx={coords.at(-1)?.x}
                   cy={coords.at(-1)?.y}
                   fill="none"
+                  initial={{ r: 4 }}
                   stroke="#4ade80"
                   strokeWidth="2"
                   transition={{ duration: 2.4, repeat: Infinity, delay: 2 }}

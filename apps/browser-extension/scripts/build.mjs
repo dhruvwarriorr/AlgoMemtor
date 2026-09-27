@@ -2,9 +2,11 @@
 // (and Firefox-based browsers such as Zen), then packages each as a zip.
 //
 //   ALGOMEMTOR_WEB_URL  site the extension pairs with (local default: localhost:5173)
-//   ALGOMEMTOR_API_URL  core API it uploads to        (local default: localhost:3003)
-// Vercel builds use its production domain and VITE_API_BASE_URL when explicit
-// connector URLs are absent. Deployment builds reject localhost URLs.
+//   ALGOMEMTOR_API_URL  core API it uploads to        (local default: localhost:3001)
+// Without ALGOMEMTOR_WEB_URL, Vercel builds fall back to its production
+// domain, which Vercel picks as the shortest custom domain on the project, so
+// set ALGOMEMTOR_WEB_URL whenever more than one domain is attached. Deployment
+// builds reject localhost URLs.
 //
 // Output: dist/<target>/ (load unpacked), release/*.zip, and copies of the
 // zips in apps/web/public/extension/ so the website can offer downloads.
@@ -39,9 +41,7 @@ if (deploymentBuild && (!configuredWebUrl || !configuredApiUrl)) {
     'Deployment connector build needs a public site URL (ALGOMEMTOR_WEB_URL or Vercel domain) and API URL (ALGOMEMTOR_API_URL, VITE_API_BASE_URL, or VITE_CORE_API_URL).',
   )
 }
-const webUrl = new URL(
-  configuredWebUrl ?? 'http://localhost:5173',
-)
+const webUrl = new URL(configuredWebUrl ?? 'http://localhost:5173')
 // Manual-sync cooldown in minutes (0 disables it, for local testing only).
 const cooldownMinutes = Number(
   process.env.ALGOMEMTOR_MANUAL_SYNC_COOLDOWN_MINUTES ?? '15',
@@ -49,9 +49,7 @@ const cooldownMinutes = Number(
 if (!Number.isFinite(cooldownMinutes) || cooldownMinutes < 0) {
   throw new Error('ALGOMEMTOR_MANUAL_SYNC_COOLDOWN_MINUTES must be 0 or more.')
 }
-const apiUrl = new URL(
-  configuredApiUrl ?? 'http://localhost:3003',
-)
+const apiUrl = new URL(configuredApiUrl ?? 'http://localhost:3001')
 for (const url of [webUrl, apiUrl]) {
   const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1'
   if (deploymentBuild && local) {
@@ -64,12 +62,20 @@ for (const url of [webUrl, apiUrl]) {
 
 // Match patterns cannot carry a port, so local builds match every port.
 const pattern = (url) => `${url.protocol}//${url.hostname}/*`
+const isLocal = (url) =>
+  url.hostname === 'localhost' || url.hostname === '127.0.0.1'
+// The site may be opened with or without "www.", so pair on both.
+const sitePatterns = (url) => {
+  if (isLocal(url)) return [pattern(url)]
+  const apex = url.hostname.replace(/^www\./, '')
+  return [`${url.protocol}//${apex}/*`, `${url.protocol}//www.${apex}/*`]
+}
 const hostPermissions = [
   'https://leetcode.com/*',
   'https://cses.fi/*',
   'https://codeforces.com/*',
   'https://www.codechef.com/*',
-  ...new Set([pattern(apiUrl), pattern(webUrl)]),
+  ...new Set([pattern(apiUrl), ...sitePatterns(webUrl)]),
 ]
 
 const manifest = (target) => ({
@@ -87,7 +93,7 @@ const manifest = (target) => ({
   permissions: ['storage', 'alarms', 'notifications', 'scripting'],
   host_permissions: hostPermissions,
   content_scripts: [
-    { matches: [pattern(webUrl)], js: ['pair.js'], run_at: 'document_idle' },
+    { matches: sitePatterns(webUrl), js: ['pair.js'], run_at: 'document_idle' },
   ],
   ...(target === 'chrome'
     ? {
@@ -98,7 +104,7 @@ const manifest = (target) => ({
         background: { scripts: ['background.js'], type: 'module' },
         browser_specific_settings: {
           gecko: {
-            id: 'connector@algomemtor.app',
+            id: 'connector@algomemtor.site',
             strict_min_version: '128.0',
             data_collection_permissions: { required: ['websiteContent'] },
           },

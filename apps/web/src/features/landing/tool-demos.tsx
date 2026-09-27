@@ -452,6 +452,7 @@ export function DialDemo() {
                     cx={x2}
                     cy={y2}
                     fill="none"
+                    initial={{ r: 3 }}
                     stroke={color}
                     strokeWidth="1.5"
                     transition={{ duration: 2.4, repeat: Infinity, delay: 1.2 }}

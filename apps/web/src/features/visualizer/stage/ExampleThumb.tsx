@@ -160,9 +160,9 @@ export function ExampleThumb({ visual }: { visual: ExampleVisual }) {
               animate={animate({
                 cx: [92 - index * 22, 70 - index * 22, 92 - index * 22],
               })}
-              cx={92 - index * 22}
               cy={32}
               fill={index === 2 ? primary : soft}
+              initial={{ cx: 92 - index * 22 }}
               key={index}
               r={8}
               stroke={primary}
@@ -434,7 +434,7 @@ export function ExampleThumb({ visual }: { visual: ExampleVisual }) {
             cx={98}
             cy={38}
             fill="var(--destructive)"
-            r={5}
+            initial={{ r: 5 }}
             transition={loop}
           />
         </svg>

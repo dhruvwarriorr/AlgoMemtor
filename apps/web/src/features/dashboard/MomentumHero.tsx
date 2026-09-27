@@ -343,6 +343,7 @@ function MomentumDial({
               cx={todayBar.end.x}
               cy={todayBar.end.y}
               fill="none"
+              initial={{ r: 4 }}
               pointerEvents="none"
               stroke={TODAY_COLOR}
               strokeWidth="2"
