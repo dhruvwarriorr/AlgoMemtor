@@ -5,3 +5,6 @@ playwright-report/
 test-results/
 package-lock.json
 public/
+.next/
+next-env.d.ts
+apps/web/src/server/generated/

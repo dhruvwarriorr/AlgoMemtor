@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from '@/lib/router'
 import { useQueryClient } from '@tanstack/react-query'
 
-import { useNotification } from '@/app/useNotification'
+import { useNotification } from '@/providers/useNotification'
 import { Button } from '@/components/ui/button'
 
 import {

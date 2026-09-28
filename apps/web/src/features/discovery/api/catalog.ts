@@ -55,7 +55,7 @@ export function buildProblemCatalogSearchParams(
     params.set('pageSize', String(query.pageSize))
   }
 
-  if (import.meta.env.DEV && mockScenario) {
+  if (process.env.NODE_ENV !== 'production' && mockScenario) {
     params.set('scenario', mockScenario)
   }
 

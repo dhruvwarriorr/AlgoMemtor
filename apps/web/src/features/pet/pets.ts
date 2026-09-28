@@ -3,17 +3,10 @@ import { petNames, type PetId } from './pet-ids'
 
 export { isPetId, petIds, type PetId } from './pet-ids'
 
-// Every pet is the same AI Coach in a different body. Their sprites live in
-// assets/<pet>/<pose>.webp.
-const sprites = import.meta.glob<string>('./assets/*/*.webp', {
-  eager: true,
-  import: 'default',
-})
-
+// Every pet is the same AI Coach in a different body. Their sprites are
+// static files at public/pets/<pet>/<pose>.webp; every pet has every pose.
 function sprite(pet: PetId, state: MelloState) {
-  const src = sprites[`./assets/${pet}/${state}.webp`]
-  if (src === undefined) throw new Error(`Missing sprite ${pet}/${state}`)
-  return src
+  return `/pets/${pet}/${state}.webp`
 }
 
 const labels: Record<MelloState, string> = {

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "installCommand": "cd ../.. && npm ci --no-audit --no-fund",
+  "buildCommand": "cd ../.. && npm run build:contracts && ALGOMEMTOR_WEB_URL=${ALGOMEMTOR_WEB_URL:-https://www.algomemtor.site} ALGOMEMTOR_DEPLOYMENT_BUILD=1 npm run build:extension && npm run build:web",
+  "regions": ["bom1"],
+  "functions": {
+    "src/app/api/**/*": { "maxDuration": 300 },
+    "src/app/internal/**/*": { "maxDuration": 300 }
+  }
+}

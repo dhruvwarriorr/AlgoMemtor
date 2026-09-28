@@ -8,13 +8,14 @@ function requireEnvironmentVariable(name: string, value: unknown): string {
   return value.trim()
 }
 
+// NEXT_PUBLIC_ values are inlined into the browser bundle at build time.
 const supabaseUrl = requireEnvironmentVariable(
-  'VITE_SUPABASE_URL',
-  import.meta.env.VITE_SUPABASE_URL,
+  'NEXT_PUBLIC_SUPABASE_URL',
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
 )
 const supabasePublishableKey = requireEnvironmentVariable(
-  'VITE_SUPABASE_PUBLISHABLE_KEY',
-  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+  'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
 )
 // Auth callbacks return to the site the user is visiting. A build-time site
 // URL can accidentally point a deployed app back to a developer's localhost.

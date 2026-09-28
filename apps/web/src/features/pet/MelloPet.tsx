@@ -7,9 +7,9 @@ import {
   type PointerEvent,
 } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { useLocation } from 'react-router-dom'
+import { useLocation } from '@/lib/router'
 
-import { useNotification } from '@/app/useNotification'
+import { useNotification } from '@/providers/useNotification'
 import { useAuth } from '@/features/auth/useAuth'
 import { cn } from '@/lib/utils'
 

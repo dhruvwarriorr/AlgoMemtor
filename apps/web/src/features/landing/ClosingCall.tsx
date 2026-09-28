@@ -1,6 +1,6 @@
 import { useRef, type CSSProperties } from 'react'
 import { motion, useReducedMotion, useScroll, useTransform } from 'motion/react'
-import { Link } from 'react-router-dom'
+import { Link } from '@/lib/router'
 
 import { ArrowUpRight } from '@/components/icons/algo-icons'
 import { useAuth } from '@/features/auth/useAuth'

@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 import type { LearnerProblemStatus } from '@algomemtor/shared-contracts'
 import { Bookmark, BookmarkCheck } from '@/components/icons/algo-icons'
 
-import { useNotification } from '@/app/useNotification'
+import { useNotification } from '@/providers/useNotification'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import {

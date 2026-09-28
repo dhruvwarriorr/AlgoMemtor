@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { Link } from 'react-router-dom'
+import { Link } from '@/lib/router'
 import type {
   ProviderActivityEvent,
   RecommendationItem,
@@ -17,7 +17,7 @@ import {
   titleCase,
 } from '@/features/dashboard/dashboard-format'
 import { providerLabels } from '@/features/platform/components/provider-labels'
-import { isAcceptedSubmission } from '@/pages/dashboard-activity'
+import { isAcceptedSubmission } from '@/views/dashboard-activity'
 import { cn } from '@/lib/utils'
 
 const noticeClass =

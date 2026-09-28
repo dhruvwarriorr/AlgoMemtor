@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from '@/lib/router'
 import type { CoachMessage } from '@algomemtor/shared-contracts'
 
 import {
@@ -9,7 +9,7 @@ import {
   Send,
   X,
 } from '@/components/icons/algo-icons'
-import { useNotification } from '@/app/useNotification'
+import { useNotification } from '@/providers/useNotification'
 import { useAuth } from '@/features/auth/useAuth'
 import { featureRedirects } from '@/features/coach/answer-details'
 import { CoachMessageContent } from '@/features/coach/components/CoachMessageContent'

@@ -1,7 +1,7 @@
 import type { PyodideAPI } from 'pyodide'
 
 import type { ExecutionTrace, TraceRequest } from '../../trace'
-import tracerSource from './tracer.py?raw'
+import tracerSource from './tracer.py'
 
 type RunTrace = ((
   code: string,

@@ -15,7 +15,7 @@ import {
   Unplug,
 } from '@/components/icons/algo-icons'
 
-import { useNotification } from '@/app/useNotification'
+import { useNotification } from '@/providers/useNotification'
 import { ErrorState } from '@/components/states/ErrorState'
 import { PageSkeleton } from '@/components/states/PageSkeleton'
 import { Button } from '@/components/ui/button'

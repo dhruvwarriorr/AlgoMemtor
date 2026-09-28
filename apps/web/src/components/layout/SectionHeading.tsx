@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { ArrowRight } from '@/components/icons/algo-icons'
-import { Link } from 'react-router-dom'
+import { Link } from '@/lib/router'
 
 type SectionHeadingProps = {
   id: string

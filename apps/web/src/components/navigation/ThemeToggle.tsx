@@ -1,7 +1,7 @@
 import { Monitor, Moon, Sun } from '@/components/icons/algo-icons-line'
 
-import type { Theme } from '@/app/theme-context'
-import { useTheme } from '@/app/useTheme'
+import type { Theme } from '@/providers/theme-context'
+import { useTheme } from '@/providers/useTheme'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 

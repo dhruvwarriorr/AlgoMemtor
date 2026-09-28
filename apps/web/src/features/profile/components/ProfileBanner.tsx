@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { Link } from 'react-router-dom'
+import { Link } from '@/lib/router'
 import type { LearnerProfile } from '@algomemtor/shared-contracts'
 
 import { UserAvatar } from '@/components/brand/UserAvatar'

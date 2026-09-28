@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { Link } from 'react-router-dom'
+import { Link } from '@/lib/router'
 import {
   isSafeCoachPublicUrl,
   type CommunitySolution,

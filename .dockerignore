@@ -14,5 +14,6 @@
 docs
 apps/browser-extension/release
 apps/web/public/extension
-apps/core-api/src/generated
+apps/web/src/server/generated
+**/.next
 **/.DS_Store

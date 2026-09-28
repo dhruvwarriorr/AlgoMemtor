@@ -1,7 +1,6 @@
-// Path of the self-hosted Pyodide runtime, defined in vite.config.ts.
-declare const __PYODIDE_BASE__: string
-
-declare module '*.py?raw' {
+// The Python tracer is imported as source text (a Turbopack `raw` rule in
+// next.config.ts).
+declare module '*.py' {
   const source: string
   export default source
 }

@@ -28,7 +28,7 @@ class AiSettings(BaseSettings):
     ai_provider: AiProvider = "openrouter"
     database_url: str | None = None
     # Connections per process. Serverless instances each hold their own
-    # pool, so the defaults stay small for Neon's free compute.
+    # pool, so the defaults stay small for the Supabase pooler's client limit.
     database_pool_size: int = Field(default=2, ge=1, le=20)
     database_max_overflow: int = Field(default=1, ge=0, le=20)
     database_connect_timeout_seconds: int = Field(default=5, ge=1, le=30)

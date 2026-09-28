@@ -1,5 +1,5 @@
 import { motion, useReducedMotion } from 'motion/react'
-import { Link, NavLink } from 'react-router-dom'
+import { Link, NavLink } from '@/lib/router'
 
 import { LogoMark } from '@/components/brand/LogoMark'
 import { cn } from '@/lib/utils'

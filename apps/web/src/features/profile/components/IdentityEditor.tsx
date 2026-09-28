@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { ImageUp, LoaderCircle, Trash2 } from '@/components/icons/algo-icons'
 
-import { useNotification } from '@/app/useNotification'
+import { useNotification } from '@/providers/useNotification'
 import { UserAvatar } from '@/components/brand/UserAvatar'
 import { Button } from '@/components/ui/button'
 import {

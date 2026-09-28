@@ -1,5 +1,6 @@
-import { lazy, Suspense } from 'react'
-import { Outlet, useLocation } from 'react-router-dom'
+import { lazy, Suspense, type PropsWithChildren } from 'react'
+
+import { useLocation } from '@/lib/router'
 
 import { AppTopbar } from '@/components/navigation/AppTopbar'
 import { useJobPump } from '@/features/jobs/job-pump'
@@ -13,7 +14,7 @@ const MelloPet = lazy(() =>
 )
 
 // Signed-in workspace: a top bar over one large, full-width content panel.
-function AppLayout() {
+function AppLayout({ children }: PropsWithChildren) {
   const { pathname } = useLocation()
   // Wakes queued server work while a signed-in page is open.
   useJobPump()
@@ -38,7 +39,7 @@ function AppLayout() {
             className="animate-page flex min-w-0 flex-1 flex-col"
             key={pathname}
           >
-            <Outlet />
+            {children}
           </div>
         </div>
       </div>

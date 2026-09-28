@@ -6,10 +6,10 @@ import {
   Pencil,
   Sun,
 } from '@/components/icons/algo-icons-line'
-import { Link, NavLink, useLocation } from 'react-router-dom'
+import { Link, NavLink, useLocation } from '@/lib/router'
 
-import type { Theme } from '@/app/theme-context'
-import { useTheme } from '@/app/useTheme'
+import type { Theme } from '@/providers/theme-context'
+import { useTheme } from '@/providers/useTheme'
 import { UserAvatar } from '@/components/brand/UserAvatar'
 import { useAuth } from '@/features/auth/useAuth'
 import { useUserIdentity } from '@/features/auth/user-identity'

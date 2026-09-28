@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from '@/lib/router'
 
 import { ArrowUpRight, X } from '@/components/icons/algo-icons'
 import { MentorChatBody } from '@/features/mentor/components/MentorChatBody'

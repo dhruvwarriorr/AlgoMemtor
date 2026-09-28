@@ -1,6 +1,6 @@
 import { ArrowUpRight } from '@/components/icons/algo-icons-line'
 import { motion, useReducedMotion } from 'motion/react'
-import { Link, NavLink, useLocation } from 'react-router-dom'
+import { Link, NavLink, useLocation } from '@/lib/router'
 
 import { LogoMark } from '@/components/brand/LogoMark'
 import { Wordmark } from '@/components/brand/Wordmark'

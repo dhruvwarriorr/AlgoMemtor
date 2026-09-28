@@ -3,7 +3,8 @@
 // and Java run in TypeScript interpreters; Python runs in Pyodide, which is
 // loaded once from this app's own origin. Nothing is sent to a server.
 
-import type { PyodideAPI } from 'pyodide'
+import type { loadPyodide as LoadPyodide, PyodideAPI } from 'pyodide'
+import pyodidePackage from 'pyodide/package.json'
 
 import { runCpp } from '../engines/cpp'
 import type { ExecutionTrace, TraceRequest } from '../trace'
@@ -45,12 +46,20 @@ function lockDown() {
 
 async function loadPython(): Promise<PyodideAPI> {
   python ??= (async () => {
+    // The runtime is served as-is from public/pyodide/<version>/ (see
+    // scripts/copy-pyodide.mjs) and loaded from there, not bundled.
+    const indexURL = new URL(
+      `/pyodide/${pyodidePackage.version}/`,
+      self.location.origin,
+    ).href
     const [{ loadPyodide }, engine] = await Promise.all([
-      import('pyodide'),
+      import(/* turbopackIgnore: true */ `${indexURL}pyodide.mjs`) as Promise<{
+        loadPyodide: typeof LoadPyodide
+      }>,
       import('../engines/python'),
     ])
     const runtime = await loadPyodide({
-      indexURL: new URL(__PYODIDE_BASE__, self.location.origin).href,
+      indexURL,
       stdout: () => undefined,
       stderr: () => undefined,
     })

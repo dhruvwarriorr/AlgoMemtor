@@ -15,7 +15,7 @@ target_metadata = None
 
 
 def _database_url() -> str:
-    # Migrations use the direct (non-pooled) Neon URL when one is given;
+    # Migrations use the Supabase session-pooler or direct URL when given;
     # schema changes need a session-level connection.
     database_url = (
         os.environ.get("DATABASE_MIGRATION_URL", "").strip()

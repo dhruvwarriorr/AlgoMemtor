@@ -1,6 +1,6 @@
 import { useId, type CSSProperties } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { Link } from 'react-router-dom'
+import { Link } from '@/lib/router'
 
 import { ArrowUpRight } from '@/components/icons/algo-icons'
 import { ThinkingOrbs } from '@/components/motion/ThinkingOrbs'

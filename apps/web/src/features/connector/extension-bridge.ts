@@ -84,13 +84,9 @@ export async function sendTokenToExtension(input: {
   )
 }
 
-// Where the extension sends uploads: the configured core API, or this site
-// when its /api proxies to the core API.
+// Where the extension sends uploads: this site, which serves the API.
 export function connectorApiAddress() {
-  const configured: unknown = import.meta.env.VITE_CORE_API_URL
-  return typeof configured === 'string' && configured.trim() !== ''
-    ? configured.trim().replace(/\/+$/, '')
-    : window.location.origin
+  return window.location.origin
 }
 
 export type BrowserFamily = 'firefox' | 'chrome'

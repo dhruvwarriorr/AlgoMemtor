@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams } from '@/lib/router'
 import type { ExternalProblemCatalogQueryParams } from '@algomemtor/shared-contracts'
 
 import {
@@ -14,7 +14,7 @@ function preserveMockScenario(
   currentSearchParams: URLSearchParams,
   nextSearchParams: URLSearchParams,
 ) {
-  const mockScenario = import.meta.env.DEV
+  const mockScenario = process.env.NODE_ENV !== 'production'
     ? currentSearchParams.get('scenario')?.trim()
     : undefined
 
@@ -32,7 +32,7 @@ export function useProblemCatalogFilters() {
     () => parseCatalogSearchParams(searchParams),
     [searchParams],
   )
-  const mockScenario = import.meta.env.DEV
+  const mockScenario = process.env.NODE_ENV !== 'production'
     ? searchParams.get('scenario')?.trim() || undefined
     : undefined
 

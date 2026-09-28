@@ -1,10 +1,12 @@
-import { Outlet, useLocation } from 'react-router-dom'
+import type { PropsWithChildren } from 'react'
+
+import { useLocation } from '@/lib/router'
 
 import Topbar from '@/components/navigation/Topbar'
 import { cn } from '@/lib/utils'
 import { ScrollRestoration } from '@/routes/ScrollRestoration'
 
-function AppShell() {
+function AppShell({ children }: PropsWithChildren) {
   // The landing page is a dark, cinematic scene in every theme.
   const isLanding = useLocation().pathname === '/'
 
@@ -23,7 +25,7 @@ function AppShell() {
         Skip to content
       </a>
       <Topbar />
-      <Outlet />
+      {children}
     </div>
   )
 }

@@ -1,6 +1,3 @@
-/* eslint-disable react-refresh/only-export-components -- a static icon
- * module: every export is a component built by createIcon, which the
- * fast-refresh rule cannot recognise. */
 import type { ComponentPropsWithoutRef, ComponentType, ReactNode } from 'react'
 
 import { cn } from '@/lib/utils'

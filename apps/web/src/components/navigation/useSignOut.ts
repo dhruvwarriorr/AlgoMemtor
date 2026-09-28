@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate } from '@/lib/router'
 
-import { useNotification } from '@/app/useNotification'
+import { useNotification } from '@/providers/useNotification'
 import { useAuth } from '@/features/auth/useAuth'
 
 export function useSignOut() {
@@ -16,7 +16,7 @@ export function useSignOut() {
     setIsSigningOut(true)
     try {
       await signOut()
-      await navigate('/', { replace: true })
+      navigate('/', { replace: true })
     } catch (error: unknown) {
       notify({
         title: 'Unable to sign out',

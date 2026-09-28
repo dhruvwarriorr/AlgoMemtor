@@ -12,7 +12,7 @@ import {
   Sparkles,
   X,
 } from '@/components/icons/algo-icons'
-import { useNotification } from '@/app/useNotification'
+import { useNotification } from '@/providers/useNotification'
 import { useTypedExample } from '@/lib/use-typed-example'
 import {
   useRecommendationSteering,

@@ -8,7 +8,7 @@ import type {
 import { useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 
-import { useNotification } from '@/app/useNotification'
+import { useNotification } from '@/providers/useNotification'
 import { X } from '@/components/icons/algo-icons'
 import { ProviderLogo } from '@/components/brand/ProviderLogo'
 import { SpotlightCard } from '@/components/kit/surfaces'

@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from '@/lib/router'
 
 import PageContainer from '@/components/layout/PageContainer'
 import { Button, buttonVariants } from '@/components/ui/button'

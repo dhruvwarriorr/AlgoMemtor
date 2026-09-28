@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react'
-import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { useEffect, useRef, type PropsWithChildren } from 'react'
+
+import { Navigate, useLocation, useNavigate } from '@/lib/router'
 import { useQueryClient } from '@tanstack/react-query'
 
 import PageContainer from '@/components/layout/PageContainer'
@@ -17,7 +18,7 @@ import {
 } from '@/features/profile/hooks/useLearnerSettings'
 import { useLearnerProfile } from '@/features/profile/hooks/useLearnerProfile'
 
-function ProtectedRoute() {
+function ProtectedRoute({ children }: PropsWithChildren) {
   const location = useLocation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -127,7 +128,7 @@ function ProtectedRoute() {
     }
   }
 
-  return <Outlet />
+  return children
 }
 
 export default ProtectedRoute

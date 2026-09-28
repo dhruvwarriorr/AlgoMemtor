@@ -6,7 +6,7 @@ import {
   type RefObject,
 } from 'react'
 import { useQueryClient, type Mutation } from '@tanstack/react-query'
-import { useLocation } from 'react-router-dom'
+import { useLocation } from '@/lib/router'
 
 import { coachSendMutationKey } from '@/features/coach/hooks'
 

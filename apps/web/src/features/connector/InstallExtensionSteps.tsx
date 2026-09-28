@@ -6,8 +6,8 @@ import { browserFamily, type BrowserFamily } from './extension-bridge'
 const storeUrl = (family: BrowserFamily): string | undefined => {
   const value: unknown =
     family === 'firefox'
-      ? import.meta.env.VITE_FIREFOX_EXTENSION_URL
-      : import.meta.env.VITE_CHROME_EXTENSION_URL
+      ? process.env.NEXT_PUBLIC_FIREFOX_EXTENSION_URL
+      : process.env.NEXT_PUBLIC_CHROME_EXTENSION_URL
   return typeof value === 'string' && value.startsWith('https://')
     ? value
     : undefined

@@ -1,6 +1,7 @@
 // Replaced at build time (scripts/build.mjs) from ALGOMEMTOR_WEB_URL and
-// ALGOMEMTOR_API_URL, so a release build points at the deployed site.
+// ALGOMEMTOR_API_URL, so a release build points at the deployed site. The
+// site serves the API itself, so both are the same origin by default.
 export const WEB_URL = 'http://localhost:5173'
-export const DEFAULT_API_URL = 'http://localhost:3001'
+export const DEFAULT_API_URL = 'http://localhost:5173'
 // Minimum gap between manual syncs (popup or website button).
 export const MANUAL_SYNC_COOLDOWN_MINUTES = 15

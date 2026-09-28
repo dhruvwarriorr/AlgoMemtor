@@ -8,7 +8,7 @@ from .settings import get_ai_settings
 
 
 def async_database_url(database_url: str) -> str:
-    """Accept the plain URL Neon shows and select the async psycopg driver."""
+    """Accept the plain URL Supabase shows and select the async psycopg driver."""
     for prefix in ("postgresql://", "postgres://"):
         if database_url.startswith(prefix):
             return "postgresql+psycopg://" + database_url.removeprefix(prefix)
@@ -20,8 +20,9 @@ def shared_engine(database_url: str) -> AsyncEngine:
     """One small connection pool per process for every AI repository.
 
     Each serverless instance holds its own pool, so the pool stays small to
-    fit Neon's free compute. Server-side prepared statements are disabled
-    because Neon's pooled (PgBouncer) endpoint runs in transaction mode.
+    fit the Supabase pooler's client limit. Server-side prepared statements
+    are disabled because the Supabase transaction pooler (Supavisor, port
+    6543) does not support them.
     """
     settings = get_ai_settings()
     return create_async_engine(

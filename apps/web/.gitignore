@@ -2,23 +2,23 @@
 logs
 *.log
 npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
 
 node_modules
-dist
-dist-ssr
+.next
+out
+next-env.d.ts
+*.tsbuildinfo
 *.local
+
+# Generated at install and build time
+src/server/generated/
+public/pyodide/
 
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
 .idea
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+.vercel
+.env*
+!.env.example
