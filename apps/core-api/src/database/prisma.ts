@@ -13,6 +13,18 @@ const DatabaseConfigSchema = z
       .min(250)
       .max(60_000)
       .default(5_000),
+    DATABASE_TRANSACTION_MAX_WAIT_MS: z.coerce
+      .number()
+      .int()
+      .min(250)
+      .max(60_000)
+      .default(15_000),
+    DATABASE_TRANSACTION_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(300_000)
+      .default(60_000),
   })
   .passthrough()
 
@@ -20,6 +32,8 @@ export type DatabaseConfig = {
   url: string
   poolMax: number
   connectionTimeoutMs: number
+  transactionMaxWaitMs: number
+  transactionTimeoutMs: number
 }
 
 export function readDatabaseConfig(
@@ -31,6 +45,8 @@ export function readDatabaseConfig(
     url: config.DATABASE_URL,
     poolMax: config.DATABASE_POOL_MAX,
     connectionTimeoutMs: config.DATABASE_CONNECTION_TIMEOUT_MS,
+    transactionMaxWaitMs: config.DATABASE_TRANSACTION_MAX_WAIT_MS,
+    transactionTimeoutMs: config.DATABASE_TRANSACTION_TIMEOUT_MS,
   }
 }
 
@@ -42,7 +58,13 @@ export function createPrismaClient(config: DatabaseConfig) {
     max: config.poolMax,
   })
 
-  return new PrismaClient({ adapter })
+  return new PrismaClient({
+    adapter,
+    transactionOptions: {
+      maxWait: config.transactionMaxWaitMs,
+      timeout: config.transactionTimeoutMs,
+    },
+  })
 }
 
 export type CorePrismaClient = ReturnType<typeof createPrismaClient>
