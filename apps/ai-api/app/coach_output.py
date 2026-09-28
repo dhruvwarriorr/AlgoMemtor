@@ -10,6 +10,7 @@ lists, truncating text) and drops only the individual items that cannot be.
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 from urllib.parse import urlparse
@@ -404,12 +405,65 @@ def _presentation(value: object) -> CoachPresentation | None:
     )
 
 
+_JSON_ANSWER = re.compile(r"^\s*(?:```(?:json)?\s*)?\{")
+_JSON_DECODER = json.JSONDecoder(strict=False)
+
+
+def _unwrap_json_answer(raw: dict[str, Any]) -> dict[str, Any]:
+    """Recover a reply the model wrote as JSON text instead of structured output.
+
+    Answering in prose rather than through the final tool (or the plain-text
+    path) puts the model's whole payload, ``{"presentation": ..., "answer":
+    ...}``, into the answer text, and the learner would see raw JSON. The
+    inner answer replaces it; the inner lists fill only fields the outer
+    payload left empty.
+    """
+    answer = raw.get("answer")
+    if not isinstance(answer, str) or not _JSON_ANSWER.match(answer):
+        return raw
+    text = answer.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1] if "\n" in text else ""
+        text = text.rsplit("```", 1)[0]
+    text = text[text.find("{") :]
+    for candidate in (text, text.replace("\u201c", '"').replace("\u201d", '"')):
+        try:
+            inner, _ = _JSON_DECODER.raw_decode(candidate)
+        except ValueError:
+            continue
+        inner_answer = inner.get("answer") if isinstance(inner, dict) else None
+        if not isinstance(inner_answer, str) or not inner_answer.strip():
+            continue
+        merged: dict[str, Any] = {**raw, "answer": inner_answer}
+        for key in ("evidence", "proposals"):
+            if not raw.get(key) and isinstance(inner.get(key), list):
+                merged[key] = inner[key]
+        outer_presentation = raw.get("presentation")
+        inner_presentation = inner.get("presentation")
+        if isinstance(inner_presentation, dict):
+            merged["presentation"] = {
+                **inner_presentation,
+                **{
+                    key: value
+                    for key, value in (
+                        outer_presentation.items()
+                        if isinstance(outer_presentation, dict)
+                        else []
+                    )
+                    if value
+                },
+            }
+        return merged
+    return raw
+
+
 def coerce_coach_output(raw: object) -> CoachModelOutput | None:
     """Repair a raw model payload. Returns ``None`` only without a usable answer."""
     if isinstance(raw, CoachModelOutput):
         return raw
     if not isinstance(raw, dict):
         return None
+    raw = _unwrap_json_answer(_unwrap_json_answer(raw))
     answer = raw.get("answer")
     if not isinstance(answer, str) or not answer.strip():
         return None

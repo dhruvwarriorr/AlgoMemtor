@@ -1,3 +1,5 @@
+import { waitUntil } from '@vercel/functions'
+
 import {
   ExternalProblemSummarySchema,
   ProviderFreshnessSchema,
@@ -59,7 +61,9 @@ export class CachedCatalogProvider implements ProblemProvider {
   private readonly logger: StructuredLogger
   private readonly now: () => number
   private cache: CacheEntry | undefined
-  private persistedLoaded = false
+  // One read of the stored catalog per instance; concurrent first callers
+  // wait for it instead of finding no cache and starting a live refresh.
+  private persistedLoad: Promise<void> | undefined
   private refreshPromise: Promise<CacheEntry> | undefined
   private blockedUntilMs = 0
   private lastErrorCode: string | undefined
@@ -105,9 +109,14 @@ export class CachedCatalogProvider implements ProblemProvider {
     }
   }
 
-  private async loadPersistedCatalog(request: ProblemProviderRequest) {
-    if (this.persistedLoaded || this.metadataCache === undefined) return
-    this.persistedLoaded = true
+  private loadPersistedCatalog(request: ProblemProviderRequest) {
+    if (this.metadataCache === undefined) return Promise.resolve()
+    this.persistedLoad ??= this.loadPersistedCatalogOnce(request)
+    return this.persistedLoad
+  }
+
+  private async loadPersistedCatalogOnce(request: ProblemProviderRequest) {
+    if (this.metadataCache === undefined) return
     try {
       const persisted = await this.metadataCache.findByProvider(this.key)
       if (persisted === null || this.cache !== undefined) return
@@ -234,19 +243,23 @@ export class CachedCatalogProvider implements ProblemProvider {
 
   private persistCatalog(cache: CacheEntry) {
     if (this.metadataCache === undefined) return
-    void this.metadataCache
-      .replaceProviderCatalog({
-        provider: this.key,
-        problems: cache.problems,
-        availability: this.health.availability,
-        fetchedAtMs: cache.fetchedAtMs,
-        expiresAtMs: cache.expiresAtMs,
-      })
-      .catch(() => {
-        this.logger.warn('provider_persistent_cache_write_failed', {
+    // Written after the response on Vercel (waitUntil keeps the function
+    // alive for it); a suspended function would otherwise cut it off.
+    waitUntil(
+      this.metadataCache
+        .replaceProviderCatalog({
           provider: this.key,
+          problems: cache.problems,
+          availability: this.health.availability,
+          fetchedAtMs: cache.fetchedAtMs,
+          expiresAtMs: cache.expiresAtMs,
         })
-      })
+        .catch(() => {
+          this.logger.warn('provider_persistent_cache_write_failed', {
+            provider: this.key,
+          })
+        }),
+    )
   }
 
   private createFreshness(

@@ -118,6 +118,7 @@ import { ProviderSyncService } from './services/provider-sync-service'
 import { ProviderSyncWorker } from './services/provider-sync-worker'
 import { RecommendationService } from './services/recommendation-service'
 import { RequestGate } from './utils/request-gate'
+import { dedupeConcurrentReads } from './utils/dedupe-reads'
 import { structuredLogger } from './utils/structured-logger'
 
 // Everything the route handlers share: repositories, services and the
@@ -504,18 +505,55 @@ function createServerContext() {
 
   // --- Repositories and services -------------------------------------------
 
-  const learnerProfileRepository = new PrismaLearnerProfileRepository(prisma)
-  const providerAccountRepository = new PrismaProviderAccountRepository(prisma)
+  const learnerProfileRepository = dedupeConcurrentReads(
+    new PrismaLearnerProfileRepository(prisma),
+    ['findByAuthUserId'],
+  )
+  const providerAccountRepository = dedupeConcurrentReads(
+    new PrismaProviderAccountRepository(prisma),
+    ['findAllByAuthUserId', 'findAllIncludingDisconnectedByAuthUserId'],
+  )
   const providerSyncRepository = new PrismaProviderSyncRepository(prisma)
-  const providerProfileRepository = new PrismaProviderProfileRepository(prisma)
-  const providerDataRepository = new PrismaProviderDataRepository(prisma)
-  const problemActionRepository = new PrismaProblemActionRepository(prisma)
-  const progressRepository = new PrismaProgressRepository(prisma)
+  const providerProfileRepository = dedupeConcurrentReads(
+    new PrismaProviderProfileRepository(prisma),
+    ['findLatestByAuthUserId'],
+  )
+  const providerDataRepository = dedupeConcurrentReads(
+    new PrismaProviderDataRepository(prisma),
+    [
+      'listSubmissions',
+      'listSolvedProblems',
+      'listRatingChanges',
+      'listContestParticipations',
+    ],
+  )
+  const problemActionRepository = dedupeConcurrentReads(
+    new PrismaProblemActionRepository(prisma),
+    ['listByAuthUserId'],
+  )
+  const progressRepository = dedupeConcurrentReads(
+    new PrismaProgressRepository(prisma),
+    [
+      'listReflections',
+      'listTimerSessions',
+      'hasPendingDeletion',
+      'getConsent',
+    ],
+  )
   const learnerActivityRepository = new PrismaLearnerActivityRepository(prisma)
-  const bookmarkRepository = new PrismaBookmarkRepository(prisma)
+  const bookmarkRepository = dedupeConcurrentReads(
+    new PrismaBookmarkRepository(prisma),
+    ['listByAuthUserId'],
+  )
   const avatarRepository = new PrismaAvatarRepository(prisma)
-  const recommendationRepository = new PrismaRecommendationRepository(prisma)
-  const coachRepository = new PrismaCoachRepository(prisma)
+  const recommendationRepository = dedupeConcurrentReads(
+    new PrismaRecommendationRepository(prisma),
+    ['listFeedbackByAuthUserId', 'listBatchesByAuthUserId'],
+  )
+  const coachRepository = dedupeConcurrentReads(
+    new PrismaCoachRepository(prisma),
+    ['getRoadmap', 'listRoadmapRevisions'],
+  )
 
   const aiUsageLimiter = new AiUsageLimiter(
     readAiUsageLimitConfig(),

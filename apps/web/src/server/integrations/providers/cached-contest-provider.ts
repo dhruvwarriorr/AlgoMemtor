@@ -1,3 +1,5 @@
+import { waitUntil } from '@vercel/functions'
+
 import {
   ExternalContestSchema,
   ProviderFreshnessSchema,
@@ -53,7 +55,9 @@ export class CachedContestProvider implements ContestProvider {
   private readonly logger: StructuredLogger
   private readonly now: () => number
   private cache: CacheEntry | undefined
-  private persistedLoaded = false
+  // One read of the stored catalog per instance; concurrent first callers
+  // wait for it instead of finding no cache and starting a live refresh.
+  private persistedLoad: Promise<void> | undefined
   private refreshPromise: Promise<CacheEntry> | undefined
   private blockedUntilMs = 0
   private lastErrorCode: string | undefined
@@ -172,9 +176,14 @@ export class CachedContestProvider implements ContestProvider {
     }
   }
 
-  private async loadPersistedCatalog() {
-    if (this.persistedLoaded || this.cacheRepository === undefined) return
-    this.persistedLoaded = true
+  private loadPersistedCatalog() {
+    if (this.cacheRepository === undefined) return Promise.resolve()
+    this.persistedLoad ??= this.loadPersistedCatalogOnce()
+    return this.persistedLoad
+  }
+
+  private async loadPersistedCatalogOnce() {
+    if (this.cacheRepository === undefined) return
     try {
       const persisted = await this.cacheRepository.findByProvider(this.key)
       if (persisted === null || this.cache !== undefined) return
@@ -301,18 +310,22 @@ export class CachedContestProvider implements ContestProvider {
 
   private persistCatalog(cache: CacheEntry) {
     if (this.cacheRepository === undefined) return
-    void this.cacheRepository
-      .replaceProviderCatalog({
-        provider: this.key,
-        contests: cache.contests,
-        availability: this.health.availability,
-        fetchedAtMs: cache.fetchedAtMs,
-        expiresAtMs: cache.expiresAtMs,
-      })
-      .catch(() => {
-        this.logger.warn('provider_contest_cache_write_failed', {
+    // Written after the response on Vercel (waitUntil keeps the function
+    // alive for it); a suspended function would otherwise cut it off.
+    waitUntil(
+      this.cacheRepository
+        .replaceProviderCatalog({
           provider: this.key,
+          contests: cache.contests,
+          availability: this.health.availability,
+          fetchedAtMs: cache.fetchedAtMs,
+          expiresAtMs: cache.expiresAtMs,
         })
-      })
+        .catch(() => {
+          this.logger.warn('provider_contest_cache_write_failed', {
+            provider: this.key,
+          })
+        }),
+    )
   }
 }

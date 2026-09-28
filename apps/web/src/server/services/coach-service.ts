@@ -2036,8 +2036,10 @@ export class CoachService {
   }
 
   private async buildAndSaveRoadmap(userId: string) {
-    const roadmap = await this.buildRoadmap(userId)
-    const existing = await this.options.repository.getRoadmap(userId)
+    // The saved plan is read once, alongside the rebuild's other reads.
+    const stored = this.options.repository.getRoadmap(userId)
+    const roadmap = await this.buildRoadmap(userId, stored)
+    const existing = await stored
     const normalizedTopics = roadmap.topics.map((topic) => {
       const prior = existing?.topics.find((item) => item.topic === topic.topic)
       return prior !== undefined &&
@@ -2962,6 +2964,11 @@ export class CoachService {
     const activityDigestPromise =
       this.options.activityDigest?.(userId).catch(() => null) ??
       Promise.resolve(null)
+    // The catalogs are independent too; on a fresh instance they are the
+    // slowest read, so they start with everything else.
+    const catalogPromise = Promise.allSettled(
+      this.options.providers.map((provider) => provider.search({})),
+    )
     const safeList = <T>(value: Promise<T[]>) =>
       value.catch(() => {
         contextDataFailed = true
@@ -3042,9 +3049,7 @@ export class CoachService {
     ])
     const [activityDigest, catalogSettled] = await Promise.all([
       activityDigestPromise,
-      Promise.allSettled(
-        this.options.providers.map((provider) => provider.search({})),
-      ),
+      catalogPromise,
     ])
     const excludedTopics = [
       ...new Set([
@@ -3445,8 +3450,15 @@ export class CoachService {
     }
   }
 
-  private async buildRoadmap(userId: string): Promise<ImprovementRoadmap> {
+  private async buildRoadmap(
+    userId: string,
+    stored: Promise<ImprovementRoadmap | null> = this.options.repository.getRoadmap(
+      userId,
+    ),
+  ): Promise<ImprovementRoadmap> {
     const now = this.now()
+    // Awaited after the reads below; a failure still surfaces there.
+    stored.catch(() => undefined)
     let evidenceDataFailed = false
     const safeList = <T>(value: Promise<T[]>) =>
       value.catch(() => {
@@ -3496,7 +3508,7 @@ export class CoachService {
         ? [this.options.providers[index].key]
         : [],
     )
-    const previousRoadmap = await this.options.repository.getRoadmap(userId)
+    const previousRoadmap = await stored
     const catalogByIdentity = new Map<string, ExternalProblemSummary>()
     catalogResults.forEach((result) =>
       result.problems.forEach((problem) => {
