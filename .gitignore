@@ -20,3 +20,11 @@ apps/browser-extension/release/
 apps/web/public/extension/
 deploy/*.env
 docs/architecture/
+
+# Test files and folders
+**/tests/
+**/__tests__/
+**/test_*.py
+**/*.test.*
+**/*.spec.*
+docs/deployment.md
