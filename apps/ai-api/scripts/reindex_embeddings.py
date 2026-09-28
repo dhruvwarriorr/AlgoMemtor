@@ -10,7 +10,6 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import create_async_engine
 
 # Run from the repository root (npm script) or from apps/ai-api: resolve the
 # app package and read apps/ai-api/.env either way.
@@ -18,7 +17,9 @@ SERVICE_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SERVICE_ROOT))
 os.chdir(SERVICE_ROOT)
 
+from app.database import shared_engine
 from app.embedding import create_embedder
+from app.knowledge_repository import get_knowledge_repository
 from app.settings import get_ai_settings
 
 TABLES = {
@@ -44,10 +45,17 @@ async def reindex_table(name: str, batch_size: int) -> int:
     if not settings.database_url:
         raise RuntimeError("DATABASE_URL is required.")
     table, text_expression, extra_filter = TABLES[name]
-    engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+    engine = shared_engine(settings.database_url)
     embedder = create_embedder(settings)
     updated = 0
     try:
+        if name == "knowledge":
+            repository = get_knowledge_repository()
+            if repository is not None:
+                # Insert/update the built-in text in a short transaction.
+                # Embedding provider calls remain in this maintenance script,
+                # outside application startup and database transactions.
+                await repository.seed_default()
         while True:
             query = sa.text(
                 f"SELECT id, {text_expression} AS text FROM {table} "

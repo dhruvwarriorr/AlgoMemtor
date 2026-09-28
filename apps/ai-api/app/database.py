@@ -29,6 +29,10 @@ def shared_engine(database_url: str) -> AsyncEngine:
         pool_pre_ping=True,
         pool_size=settings.database_pool_size,
         max_overflow=settings.database_max_overflow,
+        pool_timeout=settings.database_pool_timeout_seconds,
         pool_recycle=300,
-        connect_args={"prepare_threshold": None},
+        connect_args={
+            "prepare_threshold": None,
+            "connect_timeout": settings.database_connect_timeout_seconds,
+        },
     )

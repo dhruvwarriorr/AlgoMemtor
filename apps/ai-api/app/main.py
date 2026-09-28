@@ -1,11 +1,20 @@
 import json
 import logging
-from contextlib import asynccontextmanager
+import time
 from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, status
-from fastapi.responses import StreamingResponse
+from fastapi import (
+    Body,
+    Depends,
+    FastAPI,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    status,
+)
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from .ai_health import ai_health
 from .auth import AuthenticatedUser, require_authenticated_user
@@ -44,7 +53,6 @@ from .memory_repository import (
     MemoryOwnershipError,
     MemoryRepositoryError,
     MemoryStorageError,
-    NullMemoryRepository,
 )
 from .memory_service import MemoryNotFoundError, MemoryService, get_memory_service
 from .mentor_models import (
@@ -87,53 +95,73 @@ from .settings import get_ai_settings
 
 OPTIONAL_CLEANUP_BODY = Body(default=None)
 logger = logging.getLogger(__name__)
+settings = get_ai_settings()
 internal_rate_limiter = InMemoryRateLimiter(
-    limit=get_ai_settings().internal_rate_limit_per_minute
+    limit=settings.internal_rate_limit_per_minute
 )
 
-
-async def initialize_ai_resources() -> None:
-    """Warm durable RAG resources once per worker, outside request paths."""
-    coach = get_coach_service()
-    if coach.knowledge_repository is not None:
-        try:
-            await coach.knowledge_repository.seed_default(
-                coach.embedder,
-                coach.settings.active_embedding_version,
-                coach.settings.embedding_timeout_seconds,
-            )
-        except Exception:
-            logger.warning(
-                "Knowledge index warm-up failed; static retrieval remains available",
-                exc_info=True,
-            )
-    memory_service = get_memory_service()
-    if isinstance(memory_service.repository, NullMemoryRepository):
-        logger.warning("Memory persistence disabled: DATABASE_URL not configured")
-
-
-@asynccontextmanager
-async def lifespan(_app: FastAPI):
-    await initialize_ai_resources()
-    yield
-
-
-app = FastAPI(title="AlgoMemtor AI API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="AlgoMemtor AI API", version="0.1.0")
 
 
 @app.middleware("http")
-async def limit_internal_requests(request, call_next):
-    return await rate_limit_internal_request(request, call_next, internal_rate_limiter)
+async def observe_and_limit_requests(request: Request, call_next):
+    started = time.perf_counter()
+    request_id = request.headers.get("x-vercel-id") or str(uuid4())
+    try:
+        response = await rate_limit_internal_request(
+            request,
+            call_next,
+            internal_rate_limiter,
+            settings.internal_service_token,
+        )
+    except Exception as error:
+        route = getattr(request.scope.get("route"), "path", request.url.path)
+        logger.error(
+            json.dumps(
+                {
+                    "level": "error",
+                    "event": "request_failed",
+                    "requestId": request_id,
+                    "method": request.method,
+                    "route": route,
+                    "errorType": type(error).__name__,
+                    "durationMs": round((time.perf_counter() - started) * 1_000),
+                },
+                separators=(",", ":"),
+            )
+        )
+        raise
+    route = getattr(request.scope.get("route"), "path", request.url.path)
+    logger.info(
+        json.dumps(
+            {
+                "level": "info",
+                "event": "request_completed",
+                "requestId": request_id,
+                "method": request.method,
+                "route": route,
+                "status": response.status_code,
+                "durationMs": round((time.perf_counter() - started) * 1_000),
+            },
+            separators=(",", ":"),
+        )
+    )
+    response.headers["X-Request-Id"] = request_id
+    return response
 
 
 @app.get("/health")
-async def health() -> dict[str, object]:
-    settings = get_ai_settings()
-    return {
-        "status": "ok",
-        "service": "ai-api",
-        "ai": await ai_health(settings),
-    }
+async def health() -> JSONResponse:
+    ai = await ai_health(settings)
+    ready = ai.get("ready") is True
+    return JSONResponse(
+        {
+            "status": "ok" if ready else "degraded",
+            "service": "ai-api",
+            "ai": ai,
+        },
+        status_code=200 if ready else 503,
+    )
 
 
 @app.get("/api/me")

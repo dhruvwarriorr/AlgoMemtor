@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import time
 from collections import defaultdict, deque
 from collections.abc import Awaitable, Callable
+from hmac import compare_digest
 
 from fastapi import HTTPException, Request, status
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 
 
 class InMemoryRateLimiter:
@@ -43,19 +43,30 @@ class InMemoryRateLimiter:
 
 
 def request_key(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for", "")
-    address = forwarded.split(",", 1)[0].strip() or (
-        request.client.host if request.client is not None else "unknown"
-    )
-    digest = hashlib.sha256(address.encode()).hexdigest()[:24]
-    return f"{digest}:{request.url.path}"
+    # The Core API is the only supported internal caller and has its own
+    # durable per-learner usage limits. This process-local limiter is a final
+    # service-wide safety valve, so it must not trust client-supplied IP
+    # forwarding headers or create unbounded keys from path parameters.
+    return f"internal:{request.method}"
 
 
 async def rate_limit_internal_request(
     request: Request,
     call_next: Callable[[Request], Awaitable[Response]],
     limiter: InMemoryRateLimiter,
+    internal_service_token: str,
 ) -> Response:
     if request.url.path.startswith("/internal/"):
-        await limiter.check(request_key(request))
+        supplied = request.headers.get("x-internal-service-token", "")
+        if internal_service_token and compare_digest(supplied, internal_service_token):
+            try:
+                await limiter.check(request_key(request))
+            except HTTPException as error:
+                # Exceptions raised by user middleware sit outside FastAPI's
+                # exception handler and can otherwise become a misleading 500.
+                return JSONResponse(
+                    {"detail": error.detail},
+                    status_code=error.status_code,
+                    headers=error.headers,
+                )
     return await call_next(request)

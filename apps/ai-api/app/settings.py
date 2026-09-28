@@ -31,6 +31,10 @@ class AiSettings(BaseSettings):
     # pool, so the defaults stay small for Neon's free compute.
     database_pool_size: int = Field(default=2, ge=1, le=20)
     database_max_overflow: int = Field(default=1, ge=0, le=20)
+    database_connect_timeout_seconds: int = Field(default=5, ge=1, le=30)
+    database_pool_timeout_seconds: float = Field(default=5, gt=0, le=30)
+    health_probe_timeout_seconds: float = Field(default=3, gt=0, le=10)
+    health_cache_seconds: float = Field(default=30, ge=0, le=300)
     internal_service_token: str = ""
     core_api_url: str = ""
 

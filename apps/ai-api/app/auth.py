@@ -8,7 +8,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import PyJWKClient
 from jwt.exceptions import PyJWTError
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 SUPABASE_JWT_ALGORITHMS = ("ES256", "RS256")
@@ -18,6 +18,7 @@ class AuthSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     supabase_jwt_issuer: str
+    supabase_jwks_timeout_seconds: float = Field(default=5, gt=0, le=30)
 
     @field_validator("supabase_jwt_issuer")
     @classmethod
@@ -61,9 +62,13 @@ class InvalidAccessTokenError(Exception):
 
 
 class SupabaseJwtVerifier:
-    def __init__(self, issuer: str, jwks_url: str) -> None:
+    def __init__(self, issuer: str, jwks_url: str, timeout_seconds: float = 5) -> None:
         self.issuer = issuer
-        self.jwks_client = PyJWKClient(jwks_url)
+        self.jwks_client = PyJWKClient(
+            jwks_url,
+            cache_keys=True,
+            timeout=timeout_seconds,
+        )
 
     def verify(self, token: str) -> AuthenticatedUser:
         try:
@@ -97,7 +102,11 @@ class SupabaseJwtVerifier:
 @lru_cache
 def get_jwt_verifier() -> SupabaseJwtVerifier:
     settings = AuthSettings()
-    return SupabaseJwtVerifier(settings.supabase_jwt_issuer, settings.jwks_url)
+    return SupabaseJwtVerifier(
+        settings.supabase_jwt_issuer,
+        settings.jwks_url,
+        settings.supabase_jwks_timeout_seconds,
+    )
 
 
 bearer_scheme = HTTPBearer(auto_error=False)

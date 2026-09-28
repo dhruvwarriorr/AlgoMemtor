@@ -5,7 +5,7 @@ import hashlib
 import re
 from functools import lru_cache
 from typing import Protocol
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 import sqlalchemy as sa
 from pgvector.sqlalchemy import VECTOR
@@ -110,7 +110,12 @@ class KnowledgeRepository:
                 "\n".join(chunk.content for chunk in KNOWLEDGE_CHUNKS).encode()
             ).hexdigest()
             async with self.engine.begin() as connection:
-                if await self._already_seeded(connection, checksum, embedding_model):
+                if await self._already_seeded(
+                    connection,
+                    source_id,
+                    checksum,
+                    embedding_model,
+                ):
                     # Serverless instances start often: skip rewriting an
                     # unchanged, fully embedded reference.
                     self._seeded = True
@@ -173,18 +178,22 @@ class KnowledgeRepository:
                             },
                         )
                     )
-                if embedder is not None:
-                    await self._populate_embeddings(
-                        connection,
-                        embedder,
-                        embedding_model,
-                        timeout_seconds,
-                    )
+            # Provider calls must never run while a database transaction is
+            # open. Embeddings are populated after the short seed transaction
+            # commits and are persisted in a separate short transaction.
+            if embedder is not None:
+                await self._populate_embeddings(
+                    source_id,
+                    embedder,
+                    embedding_model,
+                    timeout_seconds,
+                )
             self._seeded = True
 
     async def _already_seeded(
         self,
         connection: sa.Connection,
+        source_id: UUID,
         checksum: str,
         embedding_model: str | None,
     ) -> bool:
@@ -202,35 +211,38 @@ class KnowledgeRepository:
             sa.select(sa.func.count())
             .select_from(knowledge_chunks)
             .where(
+                knowledge_chunks.c.source_id == source_id,
                 sa.or_(
                     knowledge_chunks.c.embedding_v2.is_(None),
                     knowledge_chunks.c.embedding_version != embedding_model,
-                )
+                ),
             )
         )
         return pending == 0
 
     async def _populate_embeddings(
         self,
-        connection: sa.Connection,
+        source_id: UUID,
         embedder: KnowledgeEmbedder,
         embedding_model: str | None,
         timeout_seconds: float,
     ) -> None:
-        rows = await connection.execute(
-            sa.select(
-                knowledge_chunks.c.chunk_key,
-                knowledge_chunks.c.topic,
-                knowledge_chunks.c.title,
-                knowledge_chunks.c.content,
-            ).where(
-                sa.or_(
-                    knowledge_chunks.c.embedding_v2.is_(None),
-                    knowledge_chunks.c.embedding_version != embedding_model,
+        async with self.engine.connect() as connection:
+            rows = await connection.execute(
+                sa.select(
+                    knowledge_chunks.c.chunk_key,
+                    knowledge_chunks.c.topic,
+                    knowledge_chunks.c.title,
+                    knowledge_chunks.c.content,
+                ).where(
+                    knowledge_chunks.c.source_id == source_id,
+                    sa.or_(
+                        knowledge_chunks.c.embedding_v2.is_(None),
+                        knowledge_chunks.c.embedding_version != embedding_model,
+                    ),
                 )
             )
-        )
-        pending = list(rows.mappings())
+            pending = list(rows.mappings())
         if not pending:
             return
         semaphore = asyncio.Semaphore(4)
@@ -247,17 +259,24 @@ class KnowledgeRepository:
         results = await asyncio.gather(
             *(embed(row) for row in pending), return_exceptions=True
         )
+        successful: list[tuple[str, list[float] | None]] = []
         for result in results:
             if isinstance(result, asyncio.CancelledError):
                 raise result
-            if isinstance(result, Exception):
-                continue
-            chunk_key, vector = result
-            await connection.execute(
-                knowledge_chunks.update()
-                .where(knowledge_chunks.c.chunk_key == chunk_key)
-                .values(embedding_v2=vector, embedding_version=embedding_model)
-            )
+            if not isinstance(result, Exception):
+                successful.append(result)
+        if not successful:
+            return
+        async with self.engine.begin() as connection:
+            for chunk_key, vector in successful:
+                await connection.execute(
+                    knowledge_chunks.update()
+                    .where(
+                        knowledge_chunks.c.source_id == source_id,
+                        knowledge_chunks.c.chunk_key == chunk_key,
+                    )
+                    .values(embedding_v2=vector, embedding_version=embedding_model)
+                )
 
     async def search(
         self,
