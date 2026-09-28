@@ -216,9 +216,9 @@ export function useMelloBrain({
   useEffect(() => {
     const onInput = (event: Event) => {
       const target = event.target
+      // Any text box counts, the pet's own chat included: it watches the
+      // learner type a question to it too.
       if (!isEditable(target) || !(target instanceof HTMLElement)) return
-      // Typing in the pet's own chat is not the learner typing on the page.
-      if (target.closest('[data-mello-ignore]')) return
       const at = Date.now()
       const lean = typingLean(target, pet.current)
       // A transition keeps this re-render out of the input event, so it

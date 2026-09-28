@@ -2075,17 +2075,17 @@ export class CoachService {
     conversationId: string,
     input: SendCoachMessageRequest,
   ): Promise<CoachResponse> {
-    const consent = await this.options.progressRepository.getConsent(userId)
+    // Independent reads, fetched together.
+    const [consent, conversation] = await Promise.all([
+      this.options.progressRepository.getConsent(userId),
+      this.options.repository.getConversation(userId, conversationId),
+    ])
     if (
       consent?.enabled !== true ||
       consent.policyVersion !== COACH_POLICY_VERSION
     ) {
       throw new CoachConsentRequiredError()
     }
-    const conversation = await this.options.repository.getConversation(
-      userId,
-      conversationId,
-    )
     if (conversation === null) throw new CoachConversationNotFoundError()
     const safeContent = redactCoachContextText(input.content, 12_000)
     const transientValue = input.transientContext?.trim()

@@ -9,9 +9,6 @@ export function LandingFooter() {
           <LogoMark className="size-8" />
           <Wordmark className="text-base [--wave-base:#ffffff]" />
         </div>
-        <p className="text-white/40">
-          Problems belong to their original platforms.
-        </p>
         <p className="text-white/35">© 2026 AlgoMemtor</p>
       </div>
     </footer>

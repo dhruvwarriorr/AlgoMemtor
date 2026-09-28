@@ -170,18 +170,15 @@
   color-scheme: dark;
 }
 
-#root {
+/* Next.js renders the app straight into <body>, so the body is the full-height
+   column pages grow into (full-screen loaders centre in it). */
+body {
+  margin: 0;
   width: 100%;
-  min-width: 0;
+  min-width: 320px;
   min-height: 100svh;
   display: flex;
   flex-direction: column;
-}
-
-body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100svh;
 }
 
 @theme inline {

@@ -18,9 +18,11 @@
   files. Percent-encode reserved characters in the password inside database
   URLs (for example, `@` becomes `%40`).
 
-The target is two Mumbai (`bom1`) deployments on Vercel using the existing
+The target is two Tokyo (`hnd1`) deployments on Vercel next to the existing
 AlgoMemtor Supabase project in Tokyo (`ap-northeast-1`) for Postgres and Auth.
-Database requests from the Vercel functions cross regions.
+Functions sit in the database's region because one request makes several
+database round trips in a row; from Mumbai each cost about 135 ms, while a
+learner's single request to Tokyo costs that distance only once.
 
 | Piece             | Code                                                                                       | Hosts                                                 |
 | ----------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------- |

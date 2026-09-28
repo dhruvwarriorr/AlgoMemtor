@@ -1,4 +1,4 @@
-import { useEffect, useRef, type PropsWithChildren } from 'react'
+import { useEffect, useMemo, useRef, type PropsWithChildren } from 'react'
 
 import { Navigate, useLocation, useNavigate } from '@/lib/router'
 import { useQueryClient } from '@tanstack/react-query'
@@ -18,12 +18,43 @@ import {
 } from '@/features/profile/hooks/useLearnerSettings'
 import { useLearnerProfile } from '@/features/profile/hooks/useLearnerProfile'
 
+// Whether this learner finished onboarding, remembered in the browser as a
+// single flag (no profile data). A returning learner's page then opens at
+// once and loads alongside their profile instead of waiting for it; the
+// fresh profile still decides, and redirects if onboarding is needed again.
+const onboardedKey = (userId: string) => `algomemtor:onboarded:${userId}`
+
+function readOnboarded(userId: string | undefined) {
+  if (userId === undefined) return false
+  try {
+    return window.localStorage.getItem(onboardedKey(userId)) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeOnboarded(userId: string, onboarded: boolean) {
+  try {
+    if (onboarded) window.localStorage.setItem(onboardedKey(userId), '1')
+    else window.localStorage.removeItem(onboardedKey(userId))
+  } catch {
+    // Storage can be unavailable (private mode); the gate just waits.
+  }
+}
+
 function ProtectedRoute({ children }: PropsWithChildren) {
   const location = useLocation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { status } = useAuth()
+  const { status, user } = useAuth()
   const profileQuery = useLearnerProfile()
+  const userId = user?.id
+  const knownOnboarded = useMemo(() => readOnboarded(userId), [userId])
+  const profile = profileQuery.data?.data
+  useEffect(() => {
+    if (userId === undefined || profile === undefined) return
+    writeOnboarded(userId, profile?.onboardingCompleted === true)
+  }, [userId, profile])
   const isDataResetPending = isLearnerDataDeletionPendingError(
     profileQuery.error,
   )
@@ -98,7 +129,7 @@ function ProtectedRoute({ children }: PropsWithChildren) {
   }
 
   if (location.pathname !== '/onboarding') {
-    if (profileQuery.isPending) {
+    if (profileQuery.isPending && !knownOnboarded) {
       return (
         <PageContainer className="items-center justify-center text-center">
           <div role="status">
@@ -121,8 +152,9 @@ function ProtectedRoute({ children }: PropsWithChildren) {
     }
 
     if (
-      profileQuery.data.data === null ||
-      !profileQuery.data.data.onboardingCompleted
+      profileQuery.data !== undefined &&
+      (profileQuery.data.data === null ||
+        !profileQuery.data.data.onboardingCompleted)
     ) {
       return <Navigate replace state={{ from: location }} to="/onboarding" />
     }

@@ -660,13 +660,52 @@ class MemoryRepository:
         *,
         similarity: float | None = None,
     ) -> StoredMemory:
-        memory_id = row["id"]
-        evidence_result = await connection.execute(
-            sa.select(memory_evidence_links.c.evidence_id)
-            .where(memory_evidence_links.c.memory_id == memory_id)
+        evidence = await self._evidence_ids(connection, [row["id"]])
+        return self._memory_from_row(
+            row, evidence.get(row["id"], []), similarity=similarity
+        )
+
+    async def _stored_memories(
+        self, connection: Any, rows: Any, *, with_similarity: bool = False
+    ) -> list[StoredMemory]:
+        """Build many memories with one evidence query instead of one per row.
+
+        The database is a network hop away, so a query per memory made a
+        learner's memory list take seconds.
+        """
+        evidence = await self._evidence_ids(connection, [row["id"] for row in rows])
+        return [
+            self._memory_from_row(
+                row,
+                evidence.get(row["id"], []),
+                similarity=float(row["similarity"]) if with_similarity else None,
+            )
+            for row in rows
+        ]
+
+    async def _evidence_ids(
+        self, connection: Any, memory_ids: list[Any]
+    ) -> dict[Any, list[Any]]:
+        if not memory_ids:
+            return {}
+        result = await connection.execute(
+            sa.select(
+                memory_evidence_links.c.memory_id,
+                memory_evidence_links.c.evidence_id,
+            )
+            .where(memory_evidence_links.c.memory_id.in_(memory_ids))
             .order_by(memory_evidence_links.c.created_at.asc())
         )
-        evidence_ids = [evidence_id for (evidence_id,) in evidence_result]
+        evidence: dict[Any, list[Any]] = {}
+        for memory_id, evidence_id in result:
+            evidence.setdefault(memory_id, []).append(evidence_id)
+        return evidence
+
+    @staticmethod
+    def _memory_from_row(
+        row: Any, evidence_ids: list[Any], *, similarity: float | None
+    ) -> StoredMemory:
+        memory_id = row["id"]
         return StoredMemory(
             id=memory_id,
             learnerId=row["learner_id"],
@@ -717,12 +756,7 @@ class MemoryRepository:
         async with self.engine.connect() as connection:
             result = await connection.execute(statement, {"query_embedding": embedding})
             rows = result.mappings().all()
-            return [
-                await self._stored_memory(
-                    connection, row, similarity=float(row["similarity"])
-                )
-                for row in rows
-            ]
+            return await self._stored_memories(connection, rows, with_similarity=True)
 
     async def search_sql(
         self,
@@ -763,7 +797,7 @@ class MemoryRepository:
         async with self.engine.connect() as connection:
             result = await connection.execute(statement)
             rows = result.mappings().all()
-            return [await self._stored_memory(connection, row) for row in rows]
+            return await self._stored_memories(connection, rows)
 
     async def get_memory(
         self, learner_id: UUID, memory_id: UUID
@@ -794,7 +828,7 @@ class MemoryRepository:
         async with self.engine.connect() as connection:
             result = await connection.execute(statement)
             rows = result.mappings().all()
-            return [await self._stored_memory(connection, row) for row in rows]
+            return await self._stored_memories(connection, rows)
 
     async def list_memories_by_category(
         self,
@@ -823,7 +857,7 @@ class MemoryRepository:
         async with self.engine.connect() as connection:
             result = await connection.execute(statement)
             rows = result.mappings().all()
-            return [await self._stored_memory(connection, row) for row in rows]
+            return await self._stored_memories(connection, rows)
 
     async def consolidate_memories(
         self,
